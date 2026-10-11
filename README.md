@@ -68,14 +68,11 @@ Each team member is an AI agent with a specific role (finance, customer support,
 
 ## How it differs from Munder Difflin
 
-Don't Be Michael grew out of [Munder Difflin](https://github.com/chaitanyagiri/munder-difflin),
-and it keeps that project's core: every team member is a real Claude Code process in its own
-terminal, and the team coordinates through the hive, a folder of plain files. What was built on
-top is a different product for a different person.
+Don't Be Michael grew out of [Munder Difflin](https://github.com/chaitanyagiri/munder-difflin). It keeps the same core idea: every team member is a real Claude Code process running in its own terminal, and the team coordinates through a shared folder of plain files called the hive.
 
-Munder Difflin is an agent harness for developers: it turns the coding CLIs you already run into
-clones of you. Don't Be Michael is an office for a small business owner who never opens a
-terminal. That changes almost every decision:
+What was built on top is a different product for a different person.
+
+Munder Difflin is an agent harness for developers. It turns the coding tools you already use into copies of you. Don't Be Michael is an office for small business owners who never want to open a terminal. That difference changes almost every decision:
 
 | | Munder Difflin | Don't Be Michael |
 |---|---|---|
@@ -93,8 +90,7 @@ business and want the work done without watching terminals, this is.
 
 ## Your team
 
-Setup asks for your business and your kind of business, then suggests a team from that business's
-Office Pack. You pick who joins, and you can hire more later.
+During setup, you tell the app your business name and the kind of business you run. It then suggests a starting team from that business type’s Office Pack. You choose who joins, and you can hire more people later.
 
 | Kind of business | Suggested team |
 |---|---|
