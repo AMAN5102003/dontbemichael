@@ -1,5 +1,5 @@
 import { askTitle } from './askHeadline';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
@@ -114,33 +114,113 @@ export function TasksKanban() {
   /** Resolve an assignee id to a display name — falls back to the restorable
    *  roster so a done card keeps its author's name even after that worker's
    *  terminal is gone, then to the raw id. */
-  const nameFor = (id?: string): string | undefined =>
+  const nameFor = useCallback((id?: string): string | undefined =>
     id
-      ? (agents.find((a) => a.id === id)?.name
-        ?? restorableAgents.find((a) => a.id === id)?.name
-        ?? id)
-      : undefined;
+      ? (id === 'god'
+        ? godName
+        : (agents.find((a) => a.id === id)?.name
+          ?? restorableAgents.find((a) => a.id === id)?.name
+          ?? id))
+      : undefined, [agents, restorableAgents, godName]);
 
   const [showAllDone, setShowAllDone] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
+  const [memberFilter, setMemberFilter] = useState<string>('all');
+
+  const assignees = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of agents) {
+      if (a.id && a.name) map.set(a.id, a.name);
+    }
+    for (const a of restorableAgents) {
+      if (a.id && a.name && !map.has(a.id)) map.set(a.id, a.name);
+    }
+    for (const t of tasks) {
+      if (t.assignee && !map.has(t.assignee)) {
+        map.set(t.assignee, nameFor(t.assignee) ?? t.assignee);
+      }
+    }
+    return Array.from(map.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [agents, restorableAgents, tasks, nameFor]);
+
+  const filteredTasks = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const cleanQ = q.replace(/^#/, '');
+    return tasks.filter((task) => {
+      if (statusFilter !== 'all' && task.status !== statusFilter) {
+        return false;
+      }
+      if (memberFilter !== 'all') {
+        if (memberFilter === 'unassigned') {
+          if (task.assignee) return false;
+        } else if (task.assignee !== memberFilter) {
+          return false;
+        }
+      }
+      if (q) {
+        const title = (task.title ?? '').toLowerCase();
+        const desc = (task.description ?? '').toLowerCase();
+        const notes = (task.notes ?? '').toLowerCase();
+        const id = (task.id ?? '').toLowerCase().replace(/^#/, '');
+        const waiting = (task.waitingOn ?? '').toLowerCase();
+        const assignee = (nameFor(task.assignee) ?? task.assignee ?? '').toLowerCase();
+        const matches =
+          title.includes(q) ||
+          desc.includes(q) ||
+          notes.includes(q) ||
+          id.includes(cleanQ) ||
+          waiting.includes(q) ||
+          assignee.includes(q);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [tasks, searchQuery, statusFilter, memberFilter, nameFor]);
+
+  const hasActiveFilter = Boolean(searchQuery.trim() || statusFilter !== 'all' || memberFilter !== 'all');
+
+  const handleClearFilters = useCallback(() => {
+    setSearchQuery('');
+    setStatusFilter('all');
+    setMemberFilter('all');
+  }, []);
+
+  const visibleColumns = statusFilter === 'all' ? COLUMNS : COLUMNS.filter((c) => c.key === statusFilter);
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative', padding: '18px 24px 0' }}>
       {/* Header (DESIGN.md 7.20): the board's counts, and why there is no add
           button: new work goes through Michael, who writes the ledger. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap', marginBottom: 12 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--cth-ink)' }}>{t('floorView.tasks')}</h1>
         <InfoTip text={t('floorView.tasksIntro')} />
-        {COLUMNS.map((col) => (
-          <span key={col.key} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: '0 10px', borderRadius: 999,
-            background: col.key === 'blocked' || col.key === 'done' ? col.soft : 'var(--cth-card)',
-            boxShadow: col.key === 'blocked' || col.key === 'done' ? 'none' : 'inset 0 0 0 1px var(--cth-line)',
-            fontSize: 11.5, fontWeight: 500, color: col.key === 'blocked' || col.key === 'done' ? col.text : 'var(--cth-ink-2)'
-          }}>
-            <i style={{ width: 6, height: 6, borderRadius: 2, background: col.accent, display: 'block' }} />
-            {t(col.labelKey)}
-            <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600 }}>{tasks.filter((x) => x.status === col.key).length}</b>
-          </span>
-        ))}
+        {COLUMNS.map((col) => {
+          const isSelected = statusFilter === col.key;
+          return (
+            <button
+              key={col.key}
+              type="button"
+              onClick={() => setStatusFilter((curr) => curr === col.key ? 'all' : col.key)}
+              title={t(col.labelKey)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: '0 10px', borderRadius: 999,
+                background: col.key === 'blocked' || col.key === 'done' ? col.soft : 'var(--cth-card)',
+                boxShadow: isSelected
+                  ? `inset 0 0 0 2px ${col.accent}`
+                  : (col.key === 'blocked' || col.key === 'done' ? 'none' : 'inset 0 0 0 1px var(--cth-line)'),
+                fontSize: 11.5, fontWeight: isSelected ? 600 : 500, color: col.key === 'blocked' || col.key === 'done' ? col.text : 'var(--cth-ink-2)',
+                border: 'none', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)'
+              }}
+            >
+              <i style={{ width: 6, height: 6, borderRadius: 2, background: col.accent, display: 'block' }} />
+              {t(col.labelKey)}
+              <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600 }}>{tasks.filter((x) => x.status === col.key).length}</b>
+            </button>
+          );
+        })}
         <span style={{ marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--cth-ink-3)' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
@@ -149,15 +229,104 @@ export function TasksKanban() {
         </span>
       </div>
 
+      {/* Search and filters toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 200, maxWidth: 300, flex: '1 1 auto' }}>
+          <svg style={{ position: 'absolute', insetInlineStart: 9, pointerEvents: 'none', color: 'var(--cth-ink-3)' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('kanban.searchPlaceholder')}
+            aria-label={t('kanban.searchAria')}
+            style={{
+              width: '100%', height: 30, paddingInlineStart: 28, paddingInlineEnd: searchQuery ? 28 : 10,
+              borderRadius: 'var(--cth-r-md)', border: 'none', background: 'var(--cth-card)',
+              boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', color: 'var(--cth-ink)',
+              fontFamily: 'var(--cth-font-ui)', fontSize: 12, outline: 'none'
+            }}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              aria-label={t('common.clear')}
+              title={t('common.clear')}
+              style={{
+                position: 'absolute', insetInlineEnd: 6, width: 18, height: 18, borderRadius: '50%',
+                border: 'none', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)',
+                cursor: 'pointer', fontSize: 10, display: 'grid', placeItems: 'center', padding: 0
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as Status | 'all')}
+          aria-label={t('kanban.filterStatus')}
+          title={t('kanban.filterStatus')}
+          style={{
+            height: 30, padding: '0 8px', borderRadius: 'var(--cth-r-md)', border: 'none', cursor: 'pointer',
+            background: statusFilter !== 'all' ? 'var(--cth-neutral-soft)' : 'var(--cth-card)',
+            color: 'var(--cth-ink)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: statusFilter !== 'all' ? 600 : 400
+          }}
+        >
+          <option value="all">{t('kanban.allStatuses')}</option>
+          {COLUMNS.map((col) => (
+            <option key={col.key} value={col.key}>{t(col.labelKey)}</option>
+          ))}
+        </select>
+
+        <select
+          value={memberFilter}
+          onChange={(e) => setMemberFilter(e.target.value)}
+          aria-label={t('kanban.filterMember')}
+          title={t('kanban.filterMember')}
+          style={{
+            height: 30, padding: '0 8px', borderRadius: 'var(--cth-r-md)', border: 'none', cursor: 'pointer',
+            background: memberFilter !== 'all' ? 'var(--cth-neutral-soft)' : 'var(--cth-card)',
+            color: 'var(--cth-ink)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: memberFilter !== 'all' ? 600 : 400
+          }}
+        >
+          <option value="all">{t('kanban.allMembers')}</option>
+          <option value="unassigned">{t('kanban.unassigned')}</option>
+          {assignees.map((a) => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </select>
+
+        {hasActiveFilter && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginInlineStart: 'auto' }}>
+            <span style={{ fontSize: 11.5, color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-mono)' }}>
+              {t('kanban.showingFiltered', { count: filteredTasks.length, total: tasks.length })}
+            </span>
+            <PixelButton
+              variant="ghost"
+              size="sm"
+              onClick={handleClearFilters}
+            >
+              {t('kanban.clearFilters')}
+            </PixelButton>
+          </div>
+        )}
+      </div>
+
       {/* Columns */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
-        {COLUMNS.map((col) => {
-          const all = tasks.filter((x) => x.status === col.key);
+        {visibleColumns.map((col) => {
+          const all = filteredTasks.filter((x) => x.status === col.key);
           // Done reads newest first, folded or not (it is kept in creation order).
           const cards = col.key === 'done' ? (showAllDone ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : all;
           return (
             <div key={col.key} style={{
-              flex: '1 1 0', minWidth: 200, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
+              flex: statusFilter === 'all' ? '1 1 0' : '0 0 360px', minWidth: 200, maxWidth: statusFilter === 'all' ? undefined : 480, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
               background: col.key === 'blocked' ? 'var(--cth-coral-soft)' : 'color-mix(in srgb, var(--cth-floor) 55%, transparent)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '12px 14px 8px', fontSize: 13, fontWeight: 600, color: col.key === 'blocked' ? col.text : 'var(--cth-ink)' }}>
@@ -167,7 +336,9 @@ export function TasksKanban() {
               </div>
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '2px 10px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {all.length === 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>{t('kanban.empty')}</div>
+                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>
+                    {hasActiveFilter ? t('kanban.noMatchingTasks') : t('kanban.empty')}
+                  </div>
                 )}
                 {cards.map((x) => (
                   <TaskCard

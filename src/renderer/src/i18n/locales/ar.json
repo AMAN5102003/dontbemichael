@@ -1522,7 +1522,16 @@
     "ageDays": "{{count}} ي",
     "closedByOwner": "أغلقه المالك",
     "nothingAsked": "لا سؤال",
-    "nothingAskedTitle": "محجوبة، لكن لا شيء فيها ينتظرك. يُطلب من {{godName}} أن يسألك أو ينقلها."
+    "nothingAskedTitle": "محجوبة، لكن لا شيء فيها ينتظرك. يُطلب من {{godName}} أن يسألك أو ينقلها.",
+    "searchPlaceholder": "البحث في المهام بالعنوان أو الكلمة الرئيسية...",
+    "searchAria": "البحث في المهام",
+    "filterStatus": "التصفية حسب الحالة",
+    "filterMember": "التصفية حسب عضو الفريق",
+    "allStatuses": "جميع الحالات",
+    "allMembers": "جميع أعضاء الفريق",
+    "clearFilters": "مسح عوامل التصفية",
+    "showingFiltered": "عرض {{count}} من إجمالي {{total}} مهام",
+    "noMatchingTasks": "لا توجد مهام تطابق بحثك أو عوامل التصفية"
   },
   "queueComposer": {
     "recording": "● يسجّل، انقر إيقاف للتفريغ النصي",
