@@ -11,7 +11,10 @@ Its count is local to this open dock: distinct arriving replies, with notes
 shown as Jump to latest. It does not change the persisted unread count or
 the existing read and notification policy. Earlier history, repeated polls
 and status edits do not add to the arrival count. Expanding More preserves
-the text being read, including at the bottom.
+the text being read, including at the bottom. The baseline includes folded
+exchanges, so revealing Earlier never counts an existing reply. New reply
+IDs below the reader count even if their timestamps precede the latest
+known reply. Catching up cancels any unresolved question target.
 
 ## Try it without an agent
 
@@ -55,7 +58,9 @@ reduced motion, following, visible anchors, arrivals, duplicate polls, notes,
 status reflow, Earlier, hidden and missing targets, repeated navigation,
 quotes, expansion, resize, asynchronous child layout, item removal, send
 success and failure, delayed targets, initial history, reopening, Escape,
-file chips, all locales, both themes, keyboard focus and a short window.
+file chips, folded exchanges, delayed arrivals below the reader, catch-up
+superseding pending navigation, all locales, both themes, keyboard focus
+and a short window.
 Geometry comparisons allow one CSS pixel for fractional layout rounding.
 
 For an installed-office smoke test, use `npm run dev` and repeat the reading

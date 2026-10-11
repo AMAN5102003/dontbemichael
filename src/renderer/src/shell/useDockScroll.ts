@@ -34,7 +34,7 @@ function restore(el: HTMLElement, position: Position): void {
  * refresh; ResizeObserver covers font/file layout without observing each reply. */
 export function useDockScroll(
   list: RefObject<HTMLDivElement>, content: RefObject<HTMLDivElement>,
-  open: boolean, navigation: number, focus: string | undefined, items: DockItem[]
+  open: boolean, navigation: number, focus: string | undefined, items: DockItem[], history: DockItem[]
 ) {
   const following = useRef(true);
   const position = useRef<Position>({ top: 0, anchors: [] });
@@ -42,7 +42,6 @@ export function useDockScroll(
   const pendingFocus = useRef<string>();
   const seen = useRef(new Set<string>());
   const arrivals = useRef(new Set<string>());
-  const latestAt = useRef(Number.NEGATIVE_INFINITY);
   const [news, setNews] = useState({ replies: 0, show: false });
   const published = useRef(news);
 
@@ -59,6 +58,7 @@ export function useDockScroll(
   };
   const remember = (el: HTMLElement) => { position.current = capture(el); };
   const follow = (el: HTMLElement) => {
+    pendingFocus.current = undefined;
     following.current = true;
     arrivals.current.clear();
     el.scrollTop = el.scrollHeight;
@@ -83,7 +83,7 @@ export function useDockScroll(
       lastNavigation.current = undefined;
       seen.current.clear();
       arrivals.current.clear();
-      latestAt.current = Number.NEGATIVE_INFINITY;
+      pendingFocus.current = undefined;
       updateNews(0, false);
       return;
     }
@@ -94,25 +94,29 @@ export function useDockScroll(
       arrivals.current.clear();
       following.current = true;
     }
+    const newReplies = new Set<string>();
+    // The full snapshot includes folded exchanges. Revealing them is not an
+    // arrival. Ignore prepended history, but allow delayed replies below the
+    // reader even when their timestamps precede the newest known reply.
     // First nonempty history is a baseline, including a delayed initial load.
     if (!navigate && seen.current.size > 0) {
-      for (const it of items) {
-        if (!seen.current.has(it.id) && Date.parse(it.at) >= latestAt.current && !following.current) arrivals.current.add(it.id);
+      const firstKnown = history.findIndex((it) => seen.current.has(it.id));
+      if (firstKnown >= 0 && !following.current) {
+        for (const it of history.slice(firstKnown + 1)) {
+          if (it.kind === 'michael' && !seen.current.has(it.id)) newReplies.add(it.id);
+        }
       }
     }
     const present = new Set(items.map((it) => it.id));
     for (const id of arrivals.current) if (!present.has(id)) arrivals.current.delete(id);
-    for (const it of items) {
-      seen.current.add(it.id);
-      const at = Date.parse(it.at);
-      if (at > latestAt.current) latestAt.current = at;
-    }
+    for (const it of history) seen.current.add(it.id);
     const target = pendingFocus.current
       ? el.querySelector<HTMLElement>(`[data-q="${CSS.escape(pendingFocus.current)}"]`)
       : null;
     if (target) {
       el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top - (el.clientHeight - target.offsetHeight) / 2;
       pendingFocus.current = undefined;
+      arrivals.current.clear();
       following.current = atBottom(el);
       remember(el);
     } else if (following.current) {
@@ -122,6 +126,14 @@ export function useDockScroll(
       restore(el, position.current);
       remember(el);
     } else remember(el);
+    // Measure after restoring the passage. Replies already visible (or above
+    // it) do not need a catch-up control; folded replies have no rendered row.
+    if (!following.current && !target && newReplies.size) {
+      const bottom = el.getBoundingClientRect().top + el.clientHeight;
+      for (const row of rows(el)) {
+        if (newReplies.has(row.dataset.dockItem!) && row.getBoundingClientRect().bottom > bottom) arrivals.current.add(row.dataset.dockItem!);
+      }
+    }
     publish();
   });
 

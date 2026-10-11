@@ -178,6 +178,28 @@ async function runDockTests() {
   check(bottom() <= 1, 'missing question falls back to latest');
   passed.push('hidden and missing navigation targets');
 
+  reset(); await settle();
+  const foldedReply = { ...reply(300), replyTo: oldQ.id };
+  await commit([oldQ, oldR, ...current, foldedReply]);
+  await pause(); const beforeReveal = anchor();
+  [...document.querySelectorAll('button')].find((b) => b.textContent === 'Earlier')!.click(); await settle();
+  unchanged(beforeReveal, 'revealing a folded exchange preserves reading');
+  check(!jump(), 'an existing reply in a folded exchange is not a new arrival');
+  passed.push('folded exchange arrival baseline');
+
+  reset(); await settle(); await navigate('q200'); await pause(); append(); await settle();
+  jump()!.click(); await settle();
+  await commit([question(200), ...current]);
+  check(bottom() <= 1 && !jump(), 'catch-up cancels an unresolved question target');
+  passed.push('catch-up supersedes pending navigation');
+
+  reset(); await settle(); await pause(); const beforeDelayedReply = anchor();
+  const delayedReply = { ...reply(400), replyTo: 'q11', at: at(23) };
+  await commit([...current.slice(0, 24), delayedReply, ...current.slice(24)]);
+  unchanged(beforeDelayedReply, 'a delayed reply below the reader preserves reading');
+  check(jump()?.textContent?.includes('1 new reply'), 'arrival IDs count even when their timestamps precede the latest reply');
+  passed.push('delayed arrival below the reader');
+
   reset(); await settle(); await pause(350);
   const beforeMore = anchor();
   const more = list().querySelector(`[data-dock-item="${beforeMore.id}"] button`) as HTMLButtonElement;

@@ -96,7 +96,7 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
   const [announce, setAnnounce] = useState('');
   const prevStatus = useRef<Record<string, OwnerQuestionStatus>>({});
   const items = useMemo(() => visibleItems(dock.items, showEarlier), [dock.items, showEarlier]);
-  const scroll = useDockScroll(listRef, contentRef, open, navigation, focus, items);
+  const scroll = useDockScroll(listRef, contentRef, open, navigation, focus, items, dock.items);
 
   // A notification can name a question hidden by the 30 day view. Reveal it
   // before the scroll hook consumes its pending target.
