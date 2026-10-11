@@ -113,3 +113,21 @@ test('case does not decide the verdict', () => {
   assert.equal(classifyPathToken('README.MD'), 'preview');
   assert.equal(classifyPathToken('src/App.TSX'), 'edit');
 });
+
+test('extensions longer than 8 characters match without truncation and classify correctly', () => {
+  // Bare properties file (10-char extension in EDIT_EXTS)
+  assert.deepEqual(tokensIn('check application.properties for db config'), ['application.properties']);
+  assert.equal(classifyPathToken('application.properties'), 'edit');
+
+  // Paths with gitignore (9-char) and dockerignore (12-char)
+  assert.deepEqual(tokensIn('see src/build.gitignore and src/config.dockerignore'), [
+    'src/build.gitignore',
+    'src/config.dockerignore'
+  ]);
+  assert.equal(classifyPathToken('src/build.gitignore'), 'edit');
+  assert.equal(classifyPathToken('src/config.dockerignore'), 'edit');
+
+  // Existing short extensions and version-like strings behave correctly
+  assert.deepEqual(tokensIn('built src/index.ts in v0.4.5 after 1.5 hours'), ['src/index.ts']);
+  assert.equal(classifyPathToken('src/index.ts'), 'edit');
+});
