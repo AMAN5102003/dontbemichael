@@ -48,6 +48,7 @@ import {
   type MailboxRecord,
   type MailServer
 } from '../shared/mailboxes';
+import { markUntrustedMessage } from '../shared/untrustedText';
 import { OWN_SENDS_ONLY, proposalSendProblem, standingProblem, standingTooLong, threadFrom, STANDING_KIND_MAX, type MailProposal, type SendRecord, type StandingApproval, type StandingCheckEmail, type ThreadHeaders } from '../shared/mailProposals';
 
 // Limits (eng review E6 left these to the implementer).
@@ -1141,7 +1142,8 @@ async function runMailRequest(
       // Long enough for the longest id search gives: "label:" + a 60 character label + ":" + uid.
       const id = str(body.id, 100) ?? (typeof body.id === 'number' ? String(body.id) : undefined);
       if (!id) return { status: 400, body: { error: 'read needs the message id from search.' } };
-      return { status: 200, body: await svc.read(mailbox!, id) };
+      // Anyone can write to the business: label the text as data and point out lines aimed at an AI.
+      return { status: 200, body: markUntrustedMessage(await svc.read(mailbox!, id)) };
     }
     if (op === 'archive' || op === 'mark_read' || op === 'mark_junk') {
       const raw = Array.isArray(body.ids) ? body.ids : body.id !== undefined ? [body.id] : [];
