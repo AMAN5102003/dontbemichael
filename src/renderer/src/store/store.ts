@@ -392,6 +392,8 @@ interface State {
    *  and the owner question to show. */
   dockOpen: boolean;
   dockFocus?: string;
+  /** Every explicit navigation, including reopening the same question. */
+  dockNavigation: number;
   setDock: (open: boolean, focus?: string) => void;
   /** "Send now" while floor auto-delivery is paused: marks the message manual
    *  (drain bypasses the pause gate for it) and moves it to the queue front. */
@@ -1213,7 +1215,8 @@ export const useStore = create<State>((set, get) => ({
   setOrgTrigger: (cfg) => set({ orgTrigger: cfg }),
   dockOpen: false,
   dockFocus: undefined,
-  setDock: (open, focus) => set({ dockOpen: open, dockFocus: open ? focus : undefined }),
+  dockNavigation: 0,
+  setDock: (open, focus) => set((s) => ({ dockOpen: open, dockFocus: open ? focus : undefined, dockNavigation: s.dockNavigation + 1 })),
   enqueueMessage: (agentId, text, meta) =>
     set((s) => {
       const trimmed = text.trim();

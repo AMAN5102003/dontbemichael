@@ -822,7 +822,15 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   the queue chip: mono 11 px on `indigo` (`on-indigo` text) for unread replies,
   `coral-strong` (`on-coral` text) while Michael waits on the owner. The dock
   opens only on the owner's action and closes on ✕, Esc, or a floor click with nothing
-  typed. A known slash command still types straight into Michael's terminal.
+  typed. Opening follows the latest or navigates once to the requested question. While
+  the owner reads earlier messages, arrivals preserve the visible passage. A reserved
+  48 px footer holds a 32 px secondary button with `indigo` text, `card`, `line-2`,
+  `r-md`, `t-body-sm` 600 and the downward arrow. It reads "N new replies" for new
+  reply IDs, or "Jump to latest" for notes; it is separate from the unread badge.
+  The empty footer keeps its height without a border or fill. Clicking the button
+  or scrolling to the bottom resumes following. Navigation is immediate, including
+  under reduced motion, and never moves keyboard focus. A known slash command still
+  types straight into Michael's terminal.
 - **Next job chip**: calendar icon, "Next:" `ink-2`, mono time 600, job and person.
   `card`, `line`, `r-lg`, 40 px tall. Click opens Office schedule.
 - **Hire**, pushed right: secondary "Hire" with a plus (opens the hire wizard). No pack

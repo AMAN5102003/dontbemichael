@@ -1,5 +1,5 @@
 import i18n from '@/i18n';
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ownerWorkOrder, type DockItem, type DockQuestion, type DockReply, type OwnerDock, type OwnerQuestionStatus } from '@shared/ownerRequests';
 import { useStore } from '@/store/store';
@@ -7,6 +7,8 @@ import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { AgentAvatar } from '@/components/AgentAvatar';
 import { InfoTip } from '@/components/InfoTip';
 import { FileText } from '@/components/FileChip';
+import { Icon } from '@/components/Icon';
+import { useDockScroll } from './useDockScroll';
 
 /**
  * Michael's conversation dock (docs/designs/michael-replies.md): it grows up
@@ -82,15 +84,25 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
   const godName = useResolvedGodName();
   const open = useStore((s) => s.dockOpen);
   const focus = useStore((s) => s.dockFocus);
+  const navigation = useStore((s) => s.dockNavigation);
   const setDock = useStore((s) => s.setDock);
   const queue = useStore((s) => s.messageQueues[godId]);
   const draft = useStore((s) => s.drafts[godId] ?? '');
   const rootRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, true>>({});
   const [announce, setAnnounce] = useState('');
   const prevStatus = useRef<Record<string, OwnerQuestionStatus>>({});
+  const items = useMemo(() => visibleItems(dock.items, showEarlier), [dock.items, showEarlier]);
+  const scroll = useDockScroll(listRef, contentRef, open, navigation, focus, items);
+
+  // A notification can name a question hidden by the 30 day view. Reveal it
+  // before the scroll hook consumes its pending target.
+  useLayoutEffect(() => {
+    if (open && focus && !items.some((it) => it.id === focus) && dock.items.some((it) => it.id === focus)) setShowEarlier(true);
+  }, [open, navigation, focus, items, dock.items]);
 
   // Tell main whether the dock is on screen, so a reply in view needs no notification.
   useEffect(() => {
@@ -107,26 +119,17 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
 
   // One polite announcement for news only: answered, couldn't finish, waiting for you (20A).
   useEffect(() => {
+    if (scroll.show) setAnnounce('');
     for (const it of dock.items) {
       if (it.kind !== 'owner') continue;
       const was = prevStatus.current[it.id];
       if (was && was !== it.status && (it.status === 'answered' || it.status === 'couldnt-finish' || it.status === 'waiting-for-you')) {
         const reply = [...dock.items].reverse().find((r): r is DockReply => r.kind === 'michael' && r.replyTo === it.id && !r.notes);
-        setAnnounce(reply ? firstSentence(reply.text) : t(`dock.status.${it.status}`));
+        if (!scroll.show) setAnnounce(reply ? firstSentence(reply.text) : t(`dock.status.${it.status}`));
       }
       prevStatus.current[it.id] = it.status;
     }
-  }, [dock, t]);
-
-  // Opens scrolled to the latest, or to the question it was opened for.
-  useEffect(() => {
-    if (!open) return;
-    const el = listRef.current;
-    if (!el) return;
-    const target = focus ? el.querySelector(`[data-q="${CSS.escape(focus)}"]`) : null;
-    if (target) (target as HTMLElement).scrollIntoView({ block: 'center' });
-    else el.scrollTop = el.scrollHeight;
-  }, [open, focus, dock.items.length]);
+  }, [dock, t, scroll.show]);
 
   // Closes on Esc with focus inside, or a click on the office floor while the
   // composer is empty (21A). Selecting a person or opening Needs you keeps it.
@@ -143,7 +146,6 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
     return () => document.removeEventListener('mousedown', onDown);
   }, [open, draft, setDock, composerRef]);
 
-  const items = useMemo(() => visibleItems(dock.items, showEarlier), [dock.items, showEarlier]);
   const hasEarlier = items.length < dock.items.length;
   const queued = queue ?? [];
   // Position in Michael's queue: -1 once typed, 0 when next, N with N ahead.
@@ -197,7 +199,8 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
         <InfoTip text={t('dock.openInfo', { godName })} />
         <button onClick={close} aria-label={t('dock.close')} title={t('dock.close')} style={{ ...quietBtn, marginInlineStart: 'auto', fontSize: 14, width: 32, height: 32, display: 'grid', placeItems: 'center', padding: 0 }}>✕</button>
       </div>
-      <div ref={listRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 13px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div ref={listRef} onScroll={scroll.onScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowAnchor: 'none', scrollBehavior: 'auto', padding: '12px 13px' }}>
+        <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {dock.items.length === 0 && (
           <div style={{ padding: '14px 4px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
             <AgentAvatar id={godId} name={godName} size={26} />
@@ -225,13 +228,20 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
           prevQuestion = it.replyTo;
           const question = dock.items.find((q): q is DockQuestion => q.kind === 'owner' && q.id === it.replyTo);
           return [divider, <ReplyBubble key={it.id} r={it} godId={godId} godName={godName} quote={quote}
-            expanded={!!expanded[it.id]} onMore={() => setExpanded((e) => ({ ...e, [it.id]: true }))}
-            onQuote={() => listRef.current?.querySelector(`[data-q="${CSS.escape(it.replyTo)}"]`)?.scrollIntoView({ block: 'center' })}
+            expanded={!!expanded[it.id]} onMore={() => { scroll.pauseForExpansion(); setExpanded((e) => ({ ...e, [it.id]: true })); }}
+            onQuote={() => setDock(true, it.replyTo)}
             canReply={it.act === 'query' && question?.status === 'waiting-for-you'}
             onReply={() => question && onReply({ inReplyTo: it.id, conversation: question.conversation, text: firstSentence(it.text) })} />];
         })}
+        </div>
       </div>
-      <div aria-live="polite" style={srOnly}>{announce}</div>
+      <div style={{ flexShrink: 0, height: 'var(--cth-space-7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {scroll.show && <button type="button" data-dock-jump onClick={scroll.jumpToLatest} style={jumpBtn}>
+          {scroll.replies ? t('dock.newReplies', { count: scroll.replies }) : t('dock.jumpToLatest')}
+          <Icon name="arrow-right" style={{ transform: 'rotate(90deg)' }} />
+        </button>}
+      </div>
+      <div aria-live="polite" aria-atomic="true" style={srOnly}>{scroll.show ? (scroll.replies ? t('dock.newReplies', { count: scroll.replies }) : t('dock.jumpToLatest')) : announce}</div>
     </div>
   );
 }
@@ -262,7 +272,7 @@ function OwnerBubble({ q, ahead, onCancel, onRetry, onNudge, onAskAgain }: {
   const godName = useResolvedGodName();
   const label = statusWords(q, ahead, godName, t);
   return (
-    <div data-q={q.id} style={{ alignSelf: 'flex-end', maxWidth: '84%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+    <div data-q={q.id} data-dock-item={q.id} style={{ alignSelf: 'flex-end', maxWidth: '84%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
       <div dir="auto" style={{
         background: 'var(--cth-neutral-soft)', borderRadius: 'var(--cth-r-lg)', borderEndEndRadius: 4, padding: '8px 11px',
         fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
@@ -300,7 +310,7 @@ function ReplyBubble({ r, godId, godName, quote, expanded, onMore, onQuote, canR
   const text = r.act === 'refuse' && !r.text.trim() ? t('dock.noReason') : r.text;
   const long = text.split('\n').length > lines || text.length > lines * 60;
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: '92%' }}>
+    <div data-dock-item={r.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: '92%' }}>
       <AgentAvatar id={godId} name={godName} size={22} />
       <div style={{
         minWidth: 0, background: r.notes ? 'var(--cth-card-2)' : 'var(--cth-card)', boxShadow: 'inset 0 0 0 1px var(--cth-line)',
@@ -340,4 +350,9 @@ const dockStyle: CSSProperties = {
 const quietBtn: CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-ui)', fontSize: 12, padding: 2 };
 const linkBtn: CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, marginInlineStart: 4, color: 'inherit', fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 };
 const chipBtn: CSSProperties = { height: 28, padding: '0 10px', borderRadius: 'var(--cth-r-md)', border: 'none', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', background: 'var(--cth-card)', color: 'var(--cth-ink)', fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' };
+const jumpBtn: CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 'var(--cth-space-2)', height: 'var(--cth-space-6)', padding: '0 var(--cth-space-3)',
+  border: 'none', borderRadius: 'var(--cth-r-md)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', background: 'var(--cth-card)',
+  color: 'var(--cth-indigo)', fontFamily: 'var(--cth-font-ui)', fontSize: 'var(--cth-text-body-sm)', fontWeight: 600, cursor: 'pointer'
+};
 const srOnly: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
