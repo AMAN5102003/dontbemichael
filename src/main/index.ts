@@ -2036,7 +2036,9 @@ function armHeartbeat(m: ScheduledMission): void {
       // worker's reply doesn't sit unread while other agents keep the floor busy.
       const actionable = godActionableInboxCount();
       if (isFloorQuiet(quiet) || actionable > 0) {
-        reengageGod(buildHeartbeatDigest(quiet, actionable));
+        const body = readConfig().missions?.find((x) => x.id === m.id)?.body ?? '';
+        const digest = buildHeartbeatDigest(quiet, actionable);
+        reengageGod(body.trim() ? `${body}\n\n${digest}` : digest);
         next = Math.round(base * 2.5);            // back off after re-engaging
       } else if (looksStuck(quiet)) {
         next = Math.max(30_000, Math.round(base / 4)); // tighten when an agent is wedged
