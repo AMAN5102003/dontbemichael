@@ -137,6 +137,13 @@ test('the Work style comes from the pack, with the business filled in', () => {
   assert.equal(teamMemberRole({ role: 'Finance', summary: 'owner card text', routing: 'Oscar keeps the books.' }), 'Finance: Oscar keeps the books.');
 });
 
+test('a business name or city with a dollar sign is filled in as typed', () => {
+  const ws = 'Your role at {Business}, {City}.';
+  const goal = (business) => teamMemberGoal({ role: 'Finance', summary: 's', does: [], wontDo: [], workStyle: ws }, business);
+  assert.equal(goal({ name: 'Ca$$h Cuts', city: 'Austin' }), 'Your role at Ca$$h Cuts, Austin.');
+  assert.equal(goal({ name: 'Buck$& Co', city: "St. $' Paul" }), "Your role at Buck$& Co, St. $' Paul.");
+});
+
 test('an imported pack agent without a Work style gets one from its card fields, written to it', () => {
   const goal = teamMemberGoal(
     { role: 'Finance', summary: 'Tracks food cost.', does: ['Watch invoices'], wontDo: ['Move money'] },
