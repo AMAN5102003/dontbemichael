@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export interface SidebarSplitterProps {
   /** Current sidebar width in px. */
@@ -18,6 +19,7 @@ export interface SidebarSplitterProps {
 export function SidebarSplitter({
   width, onChange, viewportWidth, min = 320, max = 1200
 }: SidebarSplitterProps) {
+  const { t } = useTranslation();
   const startRef = useRef<{ clientX: number; width: number } | null>(null);
   const [active, setActive] = useState(false);
 
@@ -47,15 +49,34 @@ export function SidebarSplitter({
     };
   }, [active, viewportWidth, min, max, onChange]);
 
+  const clampMax = Math.min(max, Math.max(min, viewportWidth - 360));
+  const KEY_STEP = 24;
+
+  // Same direction as the drag: left makes the sidebar wider, right narrower.
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const delta = e.key === 'ArrowLeft' ? KEY_STEP : -KEY_STEP;
+    onChange(Math.min(clampMax, Math.max(min, width + delta)));
+  };
+
   return (
     <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={t('sidebar.resizeLabel')}
+      aria-valuenow={Math.round(width)}
+      aria-valuemin={min}
+      aria-valuemax={clampMax}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
       onMouseDown={(e) => {
         startRef.current = { clientX: e.clientX, width };
         setActive(true);
         e.preventDefault();
       }}
       onDoubleClick={() => onChange(420)}
-      title="Drag to resize · double-click to reset"
+      title={t('sidebar.resizeTitle')}
       className="cth-splitter"
       style={{
         width: 10,

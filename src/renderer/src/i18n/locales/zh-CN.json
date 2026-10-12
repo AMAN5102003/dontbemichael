@@ -177,7 +177,9 @@
     "traces": "追踪",
     "memory": "记忆",
     "profile": "简介",
-    "capabilities": "权限"
+    "capabilities": "权限",
+    "resizeLabel": "调整侧边栏大小",
+    "resizeTitle": "拖动以调整大小，双击以重置。选中拖动条后，可用左右方向键调整。"
   },
   "toolWaterfall": {
     "fresh": "新计 {{tokens}}t",

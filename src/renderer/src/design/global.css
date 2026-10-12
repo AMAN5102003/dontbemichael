@@ -558,7 +558,8 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-askme-q p:first-child { margin-top: 0; }
 .cth-askme-q p:last-child { margin-bottom: 0; }
 .cth-splitter .cth-splitter-grip { opacity: 0; transition: opacity 120ms var(--cth-ease); }
-.cth-splitter:hover .cth-splitter-grip { opacity: .9; }
+.cth-splitter:hover .cth-splitter-grip,
+.cth-splitter:focus-visible .cth-splitter-grip { opacity: .9; }
 
 /* Talk to Michael (DESIGN.md 7.19): its ring, and a focus ring around the whole
    composer while its message box has focus. */
