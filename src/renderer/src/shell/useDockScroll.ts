@@ -2,26 +2,28 @@ import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { DockItem } from '@shared/ownerRequests';
 
 const BOTTOM_SLOP = 32;
-type Anchor = { id: string; offset: number };
-type Position = { top: number; anchors: Anchor[] };
+type Anchor = { id: string; offset: number; height: number };
+type Position = { top: number; height: number; viewport: number; anchors: Anchor[] };
 
 const atBottom = (el: HTMLElement) => el.scrollHeight - el.clientHeight - el.scrollTop <= BOTTOM_SLOP;
 const rows = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLElement>('[data-dock-item]'));
 
 function capture(el: HTMLElement): Position {
   const top = el.getBoundingClientRect().top;
-  // Keep visible neighbours too, so removing the first visible item still
-  // leaves a surviving passage at its old offset.
-  const anchors = rows(el).filter((row) => {
+  // Retain the previous geometry for every row: a native scroll can change
+  // scrollTop before Chromium delivers its scroll event. A commit in that
+  // interval must still know the newly visible passage's pre-change offset.
+  const anchors = rows(el).map((row) => {
     const rect = row.getBoundingClientRect();
-    return rect.bottom > top && rect.top < top + el.clientHeight;
-  }).map((row) => ({ id: row.dataset.dockItem!, offset: row.getBoundingClientRect().top - top }));
-  return { top: el.scrollTop, anchors };
+    return { id: row.dataset.dockItem!, offset: rect.top - top, height: rect.height };
+  });
+  return { top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight, anchors };
 }
 
 function restore(el: HTMLElement, position: Position): void {
   const byId = new Map(rows(el).map((row) => [row.dataset.dockItem, row]));
   for (const anchor of position.anchors) {
+    if (anchor.offset + anchor.height <= 0 || anchor.offset >= position.viewport) continue;
     const row = byId.get(anchor.id);
     if (!row) continue;
     el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
@@ -37,7 +39,7 @@ export function useDockScroll(
   open: boolean, navigation: number, focus: string | undefined, items: DockItem[], history: DockItem[]
 ) {
   const following = useRef(true);
-  const position = useRef<Position>({ top: 0, anchors: [] });
+  const position = useRef<Position>({ top: 0, height: 0, viewport: 0, anchors: [] });
   const lastNavigation = useRef<number>();
   const pendingFocus = useRef<string>();
   const seen = useRef(new Set<string>());
@@ -57,6 +59,23 @@ export function useDockScroll(
     updateNews(replies, show);
   };
   const remember = (el: HTMLElement) => { position.current = capture(el); };
+  const readPendingScroll = (el: HTMLElement) => {
+    const saved = position.current;
+    const delta = el.scrollTop - saved.top;
+    if (!delta) return;
+    // Content removal can clamp scrollTop without a reading action. Preserve
+    // the existing intent and let restoration pick a surviving visible row.
+    const max = Math.max(0, el.scrollHeight - el.clientHeight);
+    if (max < saved.top && el.scrollTop === max) return;
+    const wasFollowing = following.current;
+    following.current = saved.height - saved.viewport - el.scrollTop <= BOTTOM_SLOP;
+    if (following.current) {
+      if (!wasFollowing) pendingFocus.current = undefined;
+      arrivals.current.clear();
+      updateNews(0, false);
+    }
+    position.current = { ...saved, top: el.scrollTop, anchors: saved.anchors.map((a) => ({ ...a, offset: a.offset - delta })) };
+  };
   const follow = (el: HTMLElement) => {
     pendingFocus.current = undefined;
     following.current = true;
@@ -68,8 +87,13 @@ export function useDockScroll(
   const onScroll = () => {
     const el = list.current;
     if (!el) return;
+    readPendingScroll(el);
+    const wasFollowing = following.current;
     following.current = atBottom(el);
-    if (following.current) arrivals.current.clear();
+    if (following.current) {
+      if (!wasFollowing) pendingFocus.current = undefined;
+      arrivals.current.clear();
+    }
     remember(el);
     publish();
   };
@@ -88,6 +112,7 @@ export function useDockScroll(
       return;
     }
     const navigate = lastNavigation.current !== navigation;
+    if (!navigate) readPendingScroll(el);
     if (navigate) {
       lastNavigation.current = navigation;
       pendingFocus.current = focus;
@@ -142,6 +167,7 @@ export function useDockScroll(
     const body = content.current;
     if (!open || !el || !body) return;
     const observer = new ResizeObserver(() => {
+      readPendingScroll(el);
       if (following.current) el.scrollTop = el.scrollHeight;
       else restore(el, position.current);
       remember(el);

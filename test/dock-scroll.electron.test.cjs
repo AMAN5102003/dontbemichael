@@ -9,7 +9,7 @@ const { buildSync } = require('esbuild');
 
 const preview = process.argv.includes('--preview');
 for (const reduced of preview ? [false] : [false, true]) {
-  test(`conversation scrolling in Electron${reduced ? ' with reduced motion' : ''}`, { timeout: preview ? Infinity : 60000 }, async () => {
+  test(`conversation scrolling in Electron${reduced ? ' with reduced motion' : ''}`, { timeout: preview ? Infinity : 90000 }, async () => {
     // Value: protects=reading continuity and explicit navigation in the mounted dock;
     // fails_when=arrivals move the reader or polling recenters a retained target;
     // why_new=the existing dock tests check markup, not real layout; seam=main IPC only.
@@ -32,7 +32,7 @@ for (const reduced of preview ? [false] : [false, true]) {
       child.stdout.on('data', (s) => { output += s; });
       child.stderr.on('data', (s) => { output += s; });
       const code = await new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { child.kill(); reject(new Error(`Dock fixture timed out:\n${output}`)); }, preview ? 3600000 : 45000);
+        const timer = setTimeout(() => { child.kill(); reject(new Error(`Dock fixture timed out:\n${output}`)); }, preview ? 3600000 : 75000);
         child.on('error', (e) => { clearTimeout(timer); reject(e); });
         child.on('exit', (code) => { clearTimeout(timer); resolve(code); });
       });

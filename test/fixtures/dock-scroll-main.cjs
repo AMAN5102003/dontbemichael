@@ -13,6 +13,7 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript('dockTest.settle()');
     if (preview) return;
     const result = await win.webContents.executeJavaScript('runDockTests()');
+    result.push(...await win.webContents.executeJavaScript('runDockStressTests()'));
     const suffix = process.argv.includes('--reduced-motion') ? '-reduced' : '';
     if (process.env.DOCK_SCROLL_EVIDENCE) fs.writeFileSync(path.join(process.env.DOCK_SCROLL_EVIDENCE, `after-full${suffix}.png`), (await win.webContents.capturePage()).toPNG());
     // Real keyboard input establishes :focus-visible, unlike focus() after a
@@ -37,6 +38,8 @@ app.whenReady().then(async () => {
       if (button.top < dock.top || button.bottom > dock.bottom || dock.top < 0) throw new Error('short window clips jump control');
     })()`);
     result.push('short window');
+    const errors = await win.webContents.executeJavaScript('dockRuntimeErrors');
+    if (errors.length) throw new Error(`renderer errors: ${errors.join('; ')}`);
     if (process.argv.includes('--reduced-motion') && !await win.webContents.executeJavaScript('matchMedia("(prefers-reduced-motion: reduce)").matches')) throw new Error('reduced motion was not enabled');
     console.log(JSON.stringify(result));
     if (process.env.DOCK_SCROLL_EVIDENCE) fs.writeFileSync(path.join(process.env.DOCK_SCROLL_EVIDENCE, `after-short${suffix}.png`), (await win.webContents.capturePage()).toPNG());

@@ -14,7 +14,9 @@ and status edits do not add to the arrival count. Expanding More preserves
 the text being read, including at the bottom. The baseline includes folded
 exchanges, so revealing Earlier never counts an existing reply. New reply
 IDs below the reader count even if their timestamps precede the latest
-known reply. Catching up cancels any unresolved question target.
+known reply. Both the button and manual catch-up cancel any unresolved
+question target. A scroll that precedes its browser event is reconciled from
+the previous layout, so arrivals in the same frame preserve the new passage.
 
 ## Try it without an agent
 
@@ -62,6 +64,14 @@ file chips, folded exchanges, delayed arrivals below the reader, catch-up
 superseding pending navigation, all locales, both themes, keyboard focus
 and a short window.
 Geometry comparisons allow one CSS pixel for fractional layout rounding.
+
+The test also runs three fixed seeds of 50 mixed actions in each motion mode,
+30 reply bursts without waiting between commits, a 200-exchange history,
+the follow threshold, same-frame scroll/arrival/history races, selector-safe
+targets and 20 open/close cycles with native observer cleanup checks. It fails
+on uncaught renderer errors and unhandled promise rejections. Seeded actions
+check a separate expected arrival set and measured reading anchors after
+each step; failed seeds are reproducible.
 
 For an installed-office smoke test, use `npm run dev` and repeat the reading
 and catch-up sequence with existing conversations. Verify notification

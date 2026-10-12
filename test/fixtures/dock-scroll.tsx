@@ -22,6 +22,9 @@ let remount: () => void;
 let failSend = false;
 let fileOpened = false;
 let resolveFiles: ((value: unknown) => void) | undefined;
+const runtimeErrors: string[] = [];
+window.addEventListener('error', (e) => runtimeErrors.push(e.message));
+window.addEventListener('unhandledrejection', (e) => runtimeErrors.push(String(e.reason)));
 Object.assign(window, { cth: {
   platform: navigator.platform.startsWith('Win') ? 'win32' : navigator.platform.startsWith('Mac') ? 'darwin' : 'linux',
   hiveRegistry: async () => ({ agents: { god: { name: 'Michael' } } }),
@@ -289,3 +292,152 @@ async function runDockTests() {
   return passed;
 }
 Object.assign(window, { runDockTests });
+
+async function runDockStressTests() {
+  const passed: string[] = [];
+  const failures: string[] = [];
+  const check = (ok: unknown, message: string) => { if (!ok) throw new Error(message); };
+  const commit = (next: DockItem[]) => flushSync(() => update(next));
+  const navigate = (id?: string) => flushSync(() => useStore.getState().setDock(true, id));
+  const anchor = () => {
+    const top = list().getBoundingClientRect().top;
+    const row = [...list().querySelectorAll<HTMLElement>('[data-dock-item]')].find((r) => r.getBoundingClientRect().bottom > top)!;
+    return { id: row.dataset.dockItem!, offset: row.getBoundingClientRect().top - top };
+  };
+  const unchanged = (saved: ReturnType<typeof anchor>) => {
+    const row = list().querySelector<HTMLElement>(`[data-dock-item="${saved.id}"]`);
+    check(row && Math.abs(row.getBoundingClientRect().top - list().getBoundingClientRect().top - saved.offset) <= 1, `reading anchor ${saved.id} moved`);
+  };
+  const read = async () => { list().scrollTop = 200; await settle(); };
+  const scenario = async (name: string, run: () => Promise<void>) => {
+    reset(); await settle();
+    try { await run(); passed.push(name); }
+    catch (e) { failures.push(`${name}: ${String(e)}`); }
+  };
+
+  await scenario('scroll and arrival in the same frame', async () => {
+    list().scrollTop = 200;
+    const saved = anchor();
+    // Chromium has changed scrollTop, but its scroll event has not fired yet.
+    append(); await settle();
+    unchanged(saved);
+    check(jump()?.textContent === '2 new replies', 'same-frame arrivals must be counted');
+  });
+  await scenario('scroll and history prepend in the same frame', async () => {
+    list().scrollTop = 200;
+    const saved = anchor();
+    const q = { ...question(-10), status: 'has-it' as const };
+    commit([q, reply(-10), ...current]); await settle();
+    unchanged(saved); check(!jump(), 'a history prepend must not count as an arrival');
+  });
+  await scenario('manual catch-up and arrival in the same frame', async () => {
+    await read(); append(); await settle();
+    list().scrollTop = list().scrollHeight;
+    append(); await settle();
+    check(bottom() <= 1 && !jump(), 'catch-up intent must use the pre-arrival scroll height');
+  });
+  await scenario('manual catch-up supersedes a pending target', async () => {
+    navigate('delayed-question'); await settle(); await read(); append(); await settle();
+    list().scrollTop = list().scrollHeight; await settle();
+    const delayed = { ...question(200), id: 'delayed-question', at: current[6].at };
+    commit([...current.slice(0, 6), delayed, ...current.slice(6)]); await settle();
+    check(bottom() <= 1 && !jump(), 'a resolved target must not override manual catch-up');
+  });
+  for (const distance of [31, 33]) await scenario(`follow boundary at ${distance}px`, async () => {
+    list().scrollTop = list().scrollHeight - list().clientHeight - distance;
+    await settle(); const saved = anchor();
+    append(); await settle();
+    if (distance < 32) check(bottom() <= 1 && !jump(), 'near-bottom reader must follow');
+    else { unchanged(saved); check(jump()?.textContent === '2 new replies', 'reader outside tolerance must stay paused'); }
+  });
+  await scenario('30 reply bursts without waiting between commits', async () => {
+    await read(); const saved = anchor();
+    for (let i = 0; i < 30; i++) append();
+    await settle(); unchanged(saved);
+    check(jump()?.textContent === '60 new replies', 'every burst counts exactly once');
+    commit([...current]); await settle(); unchanged(saved);
+    check(jump()?.textContent === '60 new replies', 'a poll after bursts must not recount');
+  });
+  await scenario('replies above the passage are not catch-up arrivals', async () => {
+    await read(); const saved = anchor();
+    commit([current[0], { ...reply(700), replyTo: 'q0', at: current[0].at }, ...current.slice(1)]);
+    await settle(); unchanged(saved); check(!jump(), 'arrival above the viewport must not show a count');
+  });
+  await scenario('target IDs with selector punctuation', async () => {
+    const id = 'question "quoted" [bracket] \\ slash';
+    commit(current.map((it) => it.id === 'q4' ? { ...it, id } : it));
+    navigate(id); await settle();
+    const q = [...list().querySelectorAll<HTMLElement>('[data-q]')].find((r) => r.dataset.q === id)!;
+    check(Math.abs(q.getBoundingClientRect().top - list().getBoundingClientRect().top + q.offsetHeight / 2 - list().clientHeight / 2) <= 1, 'escaped target is not centered');
+  });
+  await scenario('200 exchanges and 40 arriving replies', async () => {
+    commit(Array.from({ length: 200 }, (_, n) => [question(n), reply(n)]).flat()); await settle();
+    list().scrollTop = list().scrollHeight / 2; await settle(); const saved = anchor();
+    const start = performance.now();
+    for (let i = 0; i < 20; i++) append();
+    const duration = performance.now() - start;
+    await settle(); unchanged(saved);
+    check(jump()?.textContent === '40 new replies', 'large history loses or recounts arrivals');
+    passed.push(`large-history burst commit time: ${Math.round(duration)}ms`);
+  });
+
+  // Exercise lifecycle cleanup with the real native observer, not a geometry mock.
+  const NativeObserver = window.ResizeObserver;
+  const observing = new Set<ResizeObserver>();
+  window.ResizeObserver = class extends NativeObserver {
+    observe(target: Element, options?: ResizeObserverOptions) { observing.add(this); super.observe(target, options); }
+    disconnect() { observing.delete(this); super.disconnect(); }
+  };
+  try {
+    await scenario('20 open and close cycles clean up observers', async () => {
+      for (let i = 0; i < 20; i++) {
+        flushSync(() => useStore.getState().setDock(false));
+        check(observing.size === 0, 'observer survived closing');
+        navigate();
+        check(observing.size === 1, 'opening must have exactly one container observer');
+      }
+      await settle(); check(bottom() <= 1 && !jump(), 'reopening must follow without stale arrivals');
+    });
+  } finally { window.ResizeObserver = NativeObserver; }
+
+  for (const seed of [7, 42, 2026]) await scenario(`seed ${seed}: 50 mixed actions`, async () => {
+    let state = seed;
+    const random = () => { state = (Math.imul(state, 1664525) + 1013904223) >>> 0; return state; };
+    let following = true;
+    const expected = new Set<string>();
+    let old = -1000;
+    for (let step = 0; step < 50; step++) {
+      const action = random() % 7;
+      const saved = anchor();
+      if (action === 0 || action === 1) {
+        const before = current.length;
+        append(action === 1);
+        if (!following) for (const it of current.slice(before)) expected.add(it.id);
+      } else if (action === 2) commit([...current]);
+      else if (action === 3) {
+        const q = { ...question(old--), status: 'has-it' as const, at: new Date(Date.now() - 40 * 86400000 + old * 2000).toISOString() };
+        commit([q, { ...reply(old), replyTo: q.id, at: q.at }, ...current]);
+      } else if (action === 4) {
+        document.querySelector<HTMLElement>('.cth-dock')!.style.maxHeight = `${300 + random() % 100}px`;
+      } else if (action === 5) {
+        navigate(); following = true; expected.clear();
+      } else {
+        list().scrollTop = 200 + random() % 200;
+        following = false;
+      }
+      await settle();
+      if (following) check(bottom() <= 1 && !jump(), `step ${step}: following stopped`);
+      else {
+        if (action !== 6) unchanged(saved);
+        const count = current.filter((it) => expected.has(it.id) && it.kind === 'michael' && !it.notes).length;
+        const label = count ? i18n.t('dock.newReplies', { count }) : expected.size ? i18n.t('dock.jumpToLatest') : null;
+        check((jump()?.textContent ?? null) === label, `step ${step}: expected ${label}, got ${jump()?.textContent}`);
+      }
+    }
+  });
+  check(runtimeErrors.length === 0, `renderer errors: ${runtimeErrors.join('; ')}`);
+  reset(); await settle(); await read(); append(); await settle();
+  if (failures.length) throw new Error(failures.join('\n'));
+  return passed;
+}
+Object.assign(window, { runDockStressTests, dockRuntimeErrors: runtimeErrors });
