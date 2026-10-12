@@ -1138,6 +1138,7 @@
     "focusConflict": "This may clash: {{conflict}} Change it, or save anyway.",
     "focusFromOlder": "Started from this job's older instructions.",
     "addFocus": "Add a focus area",
+    "cannotCheckEmail": "{{name}} cannot check email",
     "checking": "Checking…",
     "saveAnyway": "Save anyway"
   },

@@ -1138,6 +1138,7 @@
     "focusConflict": "这可能有冲突：{{conflict}} 请修改，或仍然保存。",
     "focusFromOlder": "以此任务的旧说明为起点。",
     "addFocus": "添加重点",
+    "cannotCheckEmail": "{{name}} 无法查看邮件",
     "checking": "正在检查…",
     "saveAnyway": "仍然保存"
   },

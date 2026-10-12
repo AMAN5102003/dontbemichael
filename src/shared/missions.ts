@@ -91,6 +91,18 @@ export function missionsFor(missions: ScheduledMission[], agentId: string, godId
   return missions.filter((m) => ownerOf(m, godId) === agentId);
 }
 
+/** A job that sends its agent to the mailbox: the name or focus speaks of the
+ *  inbox, or of checking, reading or sorting email. */
+const MAIL_CHECK = /\b(?:inbox|mailbox(?:es)?)\b|\b(?:check|read|triage|sort|clear)(?:\s+(?!and\b|then\b|to\b)\w+){0,2}\s+e-?mails?\b/i;
+
+/** True when `m` is a running job that looks in the mailbox and its agent's
+ *  email is off. The hook refuses the mail call, so each run is a wasted turn
+ *  (docs/designs/multi-mailbox.md); the schedules say so beside the job. */
+export function cannotCheckEmail(m: ScheduledMission, email: { enabled: boolean } | undefined): boolean {
+  if (!m.enabled || (m.kind ?? 'dispatch') !== 'dispatch' || email?.enabled) return false;
+  return MAIL_CHECK.test(`${m.label} ${m.focus ?? ''} ${m.body}`);
+}
+
 /** May `actor` (an agent id) ask for a change to `m`? Only its own. */
 export function canEdit(actor: string, m: Pick<ScheduledMission, 'to'>, godId: string): boolean {
   return ownerOf(m, godId) === actor;
