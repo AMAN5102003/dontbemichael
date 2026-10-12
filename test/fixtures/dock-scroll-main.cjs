@@ -16,18 +16,24 @@ app.whenReady().then(async () => {
     result.push(...await win.webContents.executeJavaScript('runDockStressTests()'));
     const suffix = process.argv.includes('--reduced-motion') ? '-reduced' : '';
     if (process.env.DOCK_SCROLL_EVIDENCE) fs.writeFileSync(path.join(process.env.DOCK_SCROLL_EVIDENCE, `after-full${suffix}.png`), (await win.webContents.capturePage()).toPNG());
-    // Real keyboard input establishes :focus-visible, unlike focus() after a
-    // scripted mouse click. Space must activate the native button too.
+    // Real keyboard input from the composer, the way an owner reaches the
+    // control. Wait for each key: input events can land after a script runs.
+    const js = (code) => win.webContents.executeJavaScript(code);
+    const press = async (keyCode, modifiers = []) => {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode, modifiers });
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode, modifiers });
+      await js('dockTest.settle()');
+    };
     win.webContents.focus();
-    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' });
-    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' });
-    const ring = await win.webContents.executeJavaScript(`(() => { dockTest.jump().focus(); return getComputedStyle(dockTest.jump()).outlineStyle; })()`);
-    if (ring === 'none') throw new Error('keyboard focus ring missing');
-    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Space' });
-    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Space' });
-    await win.webContents.executeJavaScript('dockTest.settle()');
-    if (!await win.webContents.executeJavaScript('dockTest.bottom() <= 1 && !dockTest.jump()')) throw new Error('Space did not activate jump');
-    result.push('real keyboard focus ring and Space activation');
+    await js(`document.querySelector('textarea').focus()`);
+    await press('Tab', ['shift']);
+    if (!await js('document.activeElement === dockTest.jump()')) throw new Error('Shift+Tab from the composer did not reach the jump control');
+    if (await js('getComputedStyle(dockTest.jump()).outlineStyle') === 'none') throw new Error('keyboard focus ring missing');
+    await press('Space');
+    if (!await js('dockTest.bottom() <= 1 && !dockTest.jump()')) throw new Error('Space did not activate jump');
+    // The button unmounts once caught up. Its focus must not fall to the body.
+    if (!await js(`document.activeElement === document.querySelector('textarea')`)) throw new Error('jump dropped keyboard focus');
+    result.push('real keyboard focus ring, Space activation and focus return');
     win.setSize(900, 480);
     await win.webContents.executeJavaScript(`(async () => {
       dockTest.reset(); await dockTest.settle();

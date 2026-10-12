@@ -17,6 +17,8 @@ IDs below the reader count even if their timestamps precede the latest
 known reply. Both the button and manual catch-up cancel any unresolved
 question target. A scroll that precedes its browser event is reconciled from
 the previous layout, so arrivals in the same frame preserve the new passage.
+The button disappears once used, so activating it returns focus to the
+composer, as closing the dock does.
 
 ## Try it without an agent
 
@@ -61,8 +63,9 @@ status reflow, Earlier, hidden and missing targets, repeated navigation,
 quotes, expansion, resize, asynchronous child layout, item removal, send
 success and failure, delayed targets, initial history, reopening, Escape,
 file chips, folded exchanges, delayed arrivals below the reader, catch-up
-superseding pending navigation, all locales, both themes, keyboard focus
-and a short window.
+superseding pending navigation, all locales, both themes and a short window.
+Real key presses reach the button from the composer with Shift+Tab, activate
+it with Space and check that focus returns to the composer.
 Geometry comparisons allow one CSS pixel for fractional layout rounding.
 
 The test also runs three fixed seeds of 50 mixed actions in each motion mode,

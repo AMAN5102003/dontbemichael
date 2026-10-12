@@ -236,7 +236,12 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
         </div>
       </div>
       <div style={{ flexShrink: 0, height: 'var(--cth-space-7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {scroll.show && <button type="button" data-dock-jump onClick={scroll.jumpToLatest} style={jumpBtn}>
+        {scroll.show && <button type="button" data-dock-jump style={jumpBtn} onClick={(e) => {
+          // The button unmounts once caught up. Return its focus to the composer, as close() does.
+          const focused = document.activeElement === e.currentTarget;
+          scroll.jumpToLatest();
+          if (focused) composerRef.current?.querySelector('textarea')?.focus();
+        }}>
           {scroll.replies ? t('dock.newReplies', { count: scroll.replies }) : t('dock.jumpToLatest')}
           <Icon name="arrow-right" style={{ transform: 'rotate(90deg)' }} />
         </button>}

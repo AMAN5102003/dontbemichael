@@ -829,7 +829,8 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   reply IDs, or "Jump to latest" for notes; it is separate from the unread badge.
   The empty footer keeps its height without a border or fill. Clicking the button
   or scrolling to the bottom resumes following. Navigation is immediate, including
-  under reduced motion, and never moves keyboard focus. A known slash command still
+  under reduced motion. Arrivals never move keyboard focus; the button disappears
+  once used, so it returns its focus to the composer. A known slash command still
   types straight into Michael's terminal.
 - **Next job chip**: calendar icon, "Next:" `ink-2`, mono time 600, job and person.
   `card`, `line`, `r-lg`, 40 px tall. Click opens Office schedule.
