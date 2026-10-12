@@ -54,7 +54,7 @@ and persisted unread state keep their existing paths.
 
 ## Before and after
 
-These are unedited Electron captures of the full production `App` renderer,
+The original images are unedited Electron captures of the full production `App` renderer,
 including the office floor, composer and Needs you panel. They use the same
 fictional Harbor & Pine office, light theme and 1440 by 900 window. The office
 data and preload boundary are simulated; these captures demonstrate UI behavior,
@@ -74,7 +74,11 @@ earlier passage.
 The branch stays at `scrollTop = 200`, preserving the passage and showing
 "2 new replies" in the reserved footer.
 
-![After: the passage stays visible with a catch-up button](keep-conversation-position/after-arrivals.png)
+![After: the passage stays visible and the highlighted catch-up button offers two new replies](keep-conversation-position/after-arrivals-highlighted.png)
+
+The amber outline and arrow highlight **2 new replies** for review. This annotated
+copy was made with the built-in image editor; the [original capture](keep-conversation-position/after-arrivals.png)
+is available for comparison.
 
 Activating the button reaches the latest replies, clears the count and resumes
 following. When the button held focus, focus returns to the composer.
