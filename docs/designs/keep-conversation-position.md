@@ -54,14 +54,17 @@ and persisted unread state keep their existing paths.
 
 ## Before and after
 
-These are unedited Electron captures of the actual dock in the fictional test
-fixture, using the same data, light theme and 900 by 720 window. They contain
-no office or customer data. The baseline is `main` at `b33bbde2`; the changed
-renderer is `79bfb24c`. Both start at `scrollTop = 200` before two replies arrive.
+These are unedited Electron captures of the full production `App` renderer,
+including the office floor, composer and Needs you panel. They use the same
+fictional Harbor & Pine office, light theme and 1440 by 900 window. The office
+data and preload boundary are simulated; these captures demonstrate UI behavior,
+not live provider delivery. The baseline dock is `main` at `b33bbde2`; the
+changed renderer is `6e018157`. Both start at `scrollTop = 200` before two
+replies arrive through the production conversation subscription.
 
 ### Before: arrivals interrupt reading
 
-The baseline moves to `scrollTop = 2861`, showing the new replies instead of the
+The baseline moves to `scrollTop = 1327`, showing the new replies instead of the
 earlier passage.
 
 ![Before: new replies move the reader to the bottom](keep-conversation-position/before-arrivals.png)
@@ -78,32 +81,15 @@ following. When the button held focus, focus returns to the composer.
 
 ![After catching up: latest replies visible and the count cleared](keep-conversation-position/after-caught-up.png)
 
-## Try it without an agent
+## In-app behavior
 
-After `npm ci`, run:
-
-```sh
-node test/dock-scroll.electron.test.cjs --preview
-```
-
-This opens the actual dock component and store in Electron with fictional
-messages. Only the main-process boundary is replaced. It uses a temporary
-profile, does not access an office or send to an agent, and removes its
-temporary files when the window closes.
-
-1. At the bottom, click Deliver two replies. Both should remain in view.
-2. Reset, then scroll back until an earlier answer is visible.
-3. Click Deliver two replies. The passage should stay in place and the footer
-   should say 2 new replies. Click it to catch up.
-4. Repeat using Deliver notes. The button should say Jump to latest.
-5. Go to question 4, scroll elsewhere, and deliver replies. The question
-   should not be recentered. Press Go to question 4 again to navigate again.
-6. Expand More while reading, switch themes and languages, resize the window,
-   and use Tab then Space on the catch-up button. Esc closes the dock.
-
-Reset restores the fictional history and clears the local component state.
-The test composer is a focus target; this preview's send cases are exercised
-by the automated test through the production `sendToMichael` path.
+Open a conversation and scroll back to an earlier answer. When replies arrive,
+the passage stays in place and the catch-up control shows the number of new
+replies. Activate it to reach the latest replies and resume following, or
+scroll to the bottom yourself. Notes use Jump to latest. Opening a quoted
+question, following a notification or sending a message remains explicit
+navigation. The screenshots above show the reading and catch-up states in
+the complete office interface.
 
 ## Automated verification
 
@@ -142,11 +128,9 @@ Windows and Linux need their own run; Linux needs a graphical session or Xvfb.
 
 ## Review notes and limits
 
-Independent Claude Code review reproduced focus falling to the page when the
-catch-up button unmounted. Returning focus to the composer fixes that and keeps
-Escape usable. It also corrected a keyboard test that had accidentally activated
-the fixture's Reset button: the regression now reaches catch-up with real
-Shift+Tab from the composer and waits for each input event before asserting.
+Independent Claude Code review caught focus loss when the catch-up button
+unmounted. Returning focus to the composer keeps Escape usable. The regression
+uses real Shift+Tab and Space input, with assertions after each input event.
 
 Anchoring is at row granularity. If the partially visible top row changes height
 at its bottom, the passage below it can shift by that amount. Keeping that row
