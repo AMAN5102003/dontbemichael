@@ -11,9 +11,9 @@ import { useRtl } from '@/i18n/useDirection';
 import { useDialog } from '@/shell/useDialog';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
 
-export { openQuestion, openQuestions, waitsOnHuman, parseTasks, type HiveTask, type HumanQA } from './hiveTasks';
+export { openQuestion, openQuestions, waitsOnHuman, parseTasks, filterTasks, type HiveTask, type HumanQA } from './hiveTasks';
 import { refreshNeedsYou, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
-import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel } from './hiveTasks';
+import { resultHeadline, waitsOnHuman, filterTasks, type HiveTask, type TaskStatus, nextAtLabel } from './hiveTasks';
 import { FileText, useAskFileChecks } from './FileChip';
 import { blockedWithNothingAsked, michaelCardState, type WorkHours } from '@shared/ownerRequests';
 import { isAnswered, isWithdrawn } from '@shared/askMeRouting';
@@ -147,37 +147,11 @@ export function TasksKanban() {
   }, [agents, restorableAgents, tasks, nameFor]);
 
   const filteredTasks = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const cleanQ = q.replace(/^#/, '');
-    return tasks.filter((task) => {
-      if (statusFilter !== 'all' && task.status !== statusFilter) {
-        return false;
-      }
-      if (memberFilter !== 'all') {
-        if (memberFilter === 'unassigned') {
-          if (task.assignee) return false;
-        } else if (task.assignee !== memberFilter) {
-          return false;
-        }
-      }
-      if (q) {
-        const title = (task.title ?? '').toLowerCase();
-        const desc = (task.description ?? '').toLowerCase();
-        const notes = (task.notes ?? '').toLowerCase();
-        const id = (task.id ?? '').toLowerCase().replace(/^#/, '');
-        const waiting = (task.waitingOn ?? '').toLowerCase();
-        const assignee = (nameFor(task.assignee) ?? task.assignee ?? '').toLowerCase();
-        const matches =
-          title.includes(q) ||
-          desc.includes(q) ||
-          notes.includes(q) ||
-          id.includes(cleanQ) ||
-          waiting.includes(q) ||
-          assignee.includes(q);
-        if (!matches) return false;
-      }
-      return true;
-    });
+    return filterTasks(
+      tasks,
+      { query: searchQuery, status: statusFilter, member: memberFilter },
+      nameFor
+    );
   }, [tasks, searchQuery, statusFilter, memberFilter, nameFor]);
 
   const hasActiveFilter = Boolean(searchQuery.trim() || statusFilter !== 'all' || memberFilter !== 'all');
@@ -203,6 +177,7 @@ export function TasksKanban() {
             <button
               key={col.key}
               type="button"
+              aria-pressed={isSelected}
               onClick={() => setStatusFilter((curr) => curr === col.key ? 'all' : col.key)}
               title={t(col.labelKey)}
               style={{
@@ -264,24 +239,6 @@ export function TasksKanban() {
             </button>
           )}
         </div>
-
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as Status | 'all')}
-          aria-label={t('kanban.filterStatus')}
-          title={t('kanban.filterStatus')}
-          style={{
-            height: 30, padding: '0 8px', borderRadius: 'var(--cth-r-md)', border: 'none', cursor: 'pointer',
-            background: statusFilter !== 'all' ? 'var(--cth-neutral-soft)' : 'var(--cth-card)',
-            color: 'var(--cth-ink)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
-            fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: statusFilter !== 'all' ? 600 : 400
-          }}
-        >
-          <option value="all">{t('kanban.allStatuses')}</option>
-          {COLUMNS.map((col) => (
-            <option key={col.key} value={col.key}>{t(col.labelKey)}</option>
-          ))}
-        </select>
 
         <select
           value={memberFilter}

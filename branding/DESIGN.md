@@ -834,12 +834,19 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
 ### 7.20 Tasks view (TasksKanban)
 
 - Header on the stage: "Tasks" `t-view`, count chips (To do, Doing, Waiting, Blocked in
-  coral soft, Done in green soft), right aligned lock icon plus "New work goes through Michael"
-  (`t-meta`, `ink-3`). No add button; the board is read only.
+  coral soft, Done in green soft; each chip is clickable with `aria-pressed` to filter the
+  board to that status, clicking again resets to all columns), right aligned lock icon plus
+  "New work goes through Michael" (`t-meta`, `ink-3`). No add button; the board is read only.
+- Search and filter toolbar: a search box (`r-md`, magnifier icon, clear `x` button when text
+  is present) matching title, description, id, waitingOn, or assignee; a team member filter
+  select (`All team members`, `Unassigned`, or a specific team member). When any filter is
+  active, a count indicator ("Showing X of Y tasks", mono count) and a ghost "Clear filters"
+  button sit on the right.
 - Five columns on a `floor` tinted ground, `r-xl`, 16 px gaps: To do, Doing, Waiting
   (`amber` key, yellow), Blocked, Done. Column head: key dot, name `t-ui` 600, mono count. Blocked
-  column tinted `coral` soft. A Waiting card shows an `amber` soft chip "Waiting on {who}"
-  (card-lifecycle.md section 8).
+  column tinted `coral` soft. An empty column shows "No tasks here", or "No tasks match your
+  search or filters" when search or filters are active. A Waiting card shows an `amber` soft
+  chip "Waiting on {who}" (card-lifecycle.md section 8).
 - Task card: `card`, `line`, `r-lg`, padding 12. Mono id (`#112`, `ink-3`), title `t-ui` 600
   up to 2 lines, assignee avatar plus name. Waiting on the owner: a 18 px coral "?"
   circle top right. Done: a small green check, text in `ink-2`. Hover shows the dismiss
@@ -1563,6 +1570,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-10 | Panel tabs: the mouse wheel scrolls an overflowing tab row sideways, and an edge fades while tabs are hidden past it (§7.11). |
 | 2026-10-12 | Web: the home page's task board after the refund story, the Tasks view (§7.20) as a read only picture that leads with Blocked and Waiting on small screens (§9.13). |
 | 2026-10-12 | Web: file tabs after the task board, a CSV open in a file tab (§7.2) from a chip on Oscar's Ask me card (§7.8), the card beside it, as a read only picture (§9.14). |
+| 2026-10-12 | Tasks view: search box, team member filter, clickable status count chips with `aria-pressed`, and "No tasks match your search or filters" (§7.20). |
 | 2026-10-04 | Banter flies as paper planes only; an envelope on the floor is always a real message (§8.8, §8.12). |
 | 2026-10-04 | Ask me file rows: a question's named files open from the card, or show in Finder (§7.8); `file` and `sheet` icons (§10). |
 | 2026-10-01 | Pre-landing review fixes: dialogs close when closing time starts and its bar sits above them; the compact grid stays clear of the right column; selecting someone dims the rest of the stage to 45% (§7.14); Traces behind a flag (§7.11); setup screens on v2 fields and rows (§7.25); the composer keeps its width and takes pastes (§7.19); Settings and closing time copy in plain words. |

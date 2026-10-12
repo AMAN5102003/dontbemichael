@@ -168,3 +168,56 @@ export function resultHeadline(result: string | undefined): string {
     .replace(/(\*\*|__|\*|_|`)(.+?)\1/g, '$2')
     .trim();
 }
+
+export interface TaskFilterCriteria {
+  query?: string;
+  q?: string;
+  status?: TaskStatus | 'all';
+  member?: string;
+}
+
+/** Filter tasks by search query, status, and assigned team member.
+ *  Searches title, description, id, waitingOn, and assignee.
+ *  Cards carry no running notes (owner, 2026-10-11). */
+export function filterTasks(
+  tasks: HiveTask[],
+  criteria: TaskFilterCriteria = {},
+  nameFor?: (id: string | undefined) => string | undefined
+): HiveTask[] {
+  const rawQ = criteria.query ?? criteria.q ?? '';
+  const q = rawQ.trim().toLowerCase();
+  const cleanQ = q.replace(/^#/, '');
+  const status = criteria.status ?? 'all';
+  const member = criteria.member ?? 'all';
+
+  return tasks.filter((task) => {
+    if (status !== 'all' && task.status !== status) {
+      return false;
+    }
+    if (member !== 'all') {
+      if (member === 'unassigned') {
+        if (task.assignee) return false;
+      } else if (task.assignee !== member) {
+        return false;
+      }
+    }
+    if (q) {
+      const title = (task.title ?? '').toLowerCase();
+      const desc = (task.description ?? '').toLowerCase();
+      const id = (task.id ?? '').toLowerCase().replace(/^#/, '');
+      const waiting = (task.waitingOn ?? '').toLowerCase();
+      const rawAssignee = (task.assignee ?? '').toLowerCase();
+      const resolvedAssignee = nameFor ? (nameFor(task.assignee) ?? '').toLowerCase() : '';
+      const matches =
+        title.includes(q) ||
+        desc.includes(q) ||
+        id.includes(cleanQ) ||
+        waiting.includes(q) ||
+        rawAssignee.includes(q) ||
+        (resolvedAssignee ? resolvedAssignee.includes(q) : false);
+      if (!matches) return false;
+    }
+    return true;
+  });
+}
+
