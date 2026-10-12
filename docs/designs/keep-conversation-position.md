@@ -20,6 +20,64 @@ the previous layout, so arrivals in the same frame preserve the new passage.
 The button disappears once used, so activating it returns focus to the
 composer, as closing the dock does.
 
+## Implementation guide
+
+| Area | Responsibility |
+| --- | --- |
+| `src/renderer/src/shell/useDockScroll.ts` | Keeps transient follow intent, row geometry, seen reply IDs, pending navigation and arrival counts for the open dock. |
+| `src/renderer/src/shell/MichaelDock.tsx` | Marks stable rows, connects scroll events and the container observer, reserves the catch-up footer, reveals hidden targets and returns button focus to the composer. |
+| `src/renderer/src/store/store.ts` | Increments `dockNavigation` on explicit `setDock` calls, including repeated navigation to the same question. This state is not persisted. |
+| `src/renderer/src/i18n/locales/` | Supplies catch-up text and plural categories for English, Chinese and Arabic. |
+| `test/dock-scroll.electron.test.cjs` and `test/fixtures/dock-scroll*` | Mount the production renderer and store with fictional history and mocked main-process APIs; assert actual Chromium geometry and keyboard input. |
+
+The hook captures stable row IDs and their offsets before layout changes.
+A passive commit restores the first surviving row overlapping the viewport,
+unless the reader is following within 32 px of the bottom. Explicit navigation
+is consumed once, clears arrivals and takes precedence over passive restoration.
+A missing target remains pending until it appears or catch-up supersedes it.
+
+Chromium may change `scrollTop` before dispatching a scroll event. Before a
+passive commit or resize, the hook reconciles that movement against the previous
+scroll height and row geometry. This prevents an arrival in the same frame from
+mistaking a newly scrolled reader for someone still following the bottom.
+
+The full history is the seen-ID baseline, including folded exchanges. Newly
+rendered replies below the viewport can count regardless of timestamp; revealing
+old history and repeated snapshots do not. Notes enable catch-up without adding
+to the reply number. Catch-up clears the local arrival set and resumes following.
+
+One `ResizeObserver` watches the list and content container, then disconnects
+when the dock closes. There are no per-row observers, background timers or new
+dependencies. Capturing row rectangles is linear in rendered history; this
+change does not add virtualization. Delivery, file handling, notification APIs
+and persisted unread state keep their existing paths.
+
+## Before and after
+
+These are unedited Electron captures of the actual dock in the fictional test
+fixture, using the same data, light theme and 900 by 720 window. They contain
+no office or customer data. The baseline is `main` at `b33bbde2`; the changed
+renderer is `79bfb24c`. Both start at `scrollTop = 200` before two replies arrive.
+
+### Before: arrivals interrupt reading
+
+The baseline moves to `scrollTop = 2861`, showing the new replies instead of the
+earlier passage.
+
+![Before: new replies move the reader to the bottom](keep-conversation-position/before-arrivals.png)
+
+### After: the reader chooses when to catch up
+
+The branch stays at `scrollTop = 200`, preserving the passage and showing
+"2 new replies" in the reserved footer.
+
+![After: the passage stays visible with a catch-up button](keep-conversation-position/after-arrivals.png)
+
+Activating the button reaches the latest replies, clears the count and resumes
+following. When the button held focus, focus returns to the composer.
+
+![After catching up: latest replies visible and the count cleared](keep-conversation-position/after-caught-up.png)
+
 ## Try it without an agent
 
 After `npm ci`, run:
@@ -81,3 +139,21 @@ and catch-up sequence with existing conversations. Verify notification
 navigation and normal composer sending in that environment. Fixture results
 do not establish provider delivery, OS notifications or screen-reader speech.
 Windows and Linux need their own run; Linux needs a graphical session or Xvfb.
+
+## Review notes and limits
+
+Independent Claude Code review reproduced focus falling to the page when the
+catch-up button unmounted. Returning focus to the composer fixes that and keeps
+Escape usable. It also corrected a keyboard test that had accidentally activated
+the fixture's Reset button: the regression now reaches catch-up with real
+Shift+Tab from the composer and waits for each input event before asserting.
+
+Anchoring is at row granularity. If the partially visible top row changes height
+at its bottom, the passage below it can shift by that amount. Keeping that row
+anchored protects More expansion; preserving a character inside an edited row
+would require a separate sub-row anchoring design. This limitation remains.
+
+The renderer is provider neutral and tests use subprocess argument arrays and
+Node path helpers, including temporary paths with spaces. This does not replace
+Windows or Linux execution, live-provider delivery, OS notification clicking,
+or screen-reader speech testing.
