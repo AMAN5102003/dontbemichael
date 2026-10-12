@@ -2,11 +2,13 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { SHOW_FOCUS_MODE } from '@shared/buildFeatures';
 import { useTranslation } from 'react-i18next';
 import { useStore, type FloorView } from '@/store/store';
+import { Icon } from '@/components/Icon';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
 import { notifyThemeChangeAll } from '@/components/terminalPool';
 import { UpdateBadge } from '@/components/UpdateBadge';
 import { BetaPill } from '@/components/BetaPill';
 import { CliUpdateBadge } from '@/components/CliUpdateNotice';
+import { OfficeBreakChip } from '@/components/OfficeBreakNotice';
 import { pillState, useNeedsYou, useNeedsYouCount } from './useNeedsYou';
 import { NEEDS_YOU_PILL_ID } from './rightColumn';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
@@ -54,10 +56,10 @@ export function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
         userSelect: 'none'
       }}
     >
-      <img className="cth-lockup-light" src={lockupLight} alt="Don't Be Michael" style={{ height: 22, width: 'auto' }} />
-      <img className="cth-lockup-dark" src={lockupDark} alt="Don't Be Michael" style={{ height: 22, width: 'auto' }} />
+      <img className="cth-lockup-light" src={lockupLight} alt="Don't Be Michael" style={{ height: 22, width: 'auto', flexShrink: 0 }} />
+      <img className="cth-lockup-dark" src={lockupDark} alt="Don't Be Michael" style={{ height: 22, width: 'auto', flexShrink: 0 }} />
       <ViewTabs />
-      <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <ClockPill />
         <span className="cth-titlebar-nodrag" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <UpdateBadge />
@@ -70,6 +72,7 @@ export function TopBar({ onOpenSettings }: { onOpenSettings: () => void }) {
             <BetaPill info={t('shell.betaInfo')} align="end" />
           </span>
           <CliUpdateBadge />
+          <OfficeBreakChip />
         </span>
         <IconButton label={theme === 'dark' ? t('shell.themeLight') : t('shell.themeDark')} onClick={toggleTheme}>
           {theme === 'dark' ? <SunGlyph /> : <MoonGlyph />}
@@ -94,6 +97,8 @@ export function ViewTabs() {
   const { t } = useTranslation();
   const view = useStore((s) => s.floorView);
   const setView = useStore((s) => s.setFloorView);
+  const fileTabs = useStore((s) => s.fileTabs);
+  const activeFileTab = useStore((s) => s.activeFileTab);
 
   // No count on Tasks (owner, 2026-10-01): a blocked count beside the Needs
   // you count read as the same thing with a different number. Coral numbers
@@ -108,7 +113,7 @@ export function ViewTabs() {
         onClick={() => setView(key)}
         aria-pressed={on}
         style={{
-          display: 'inline-flex', alignItems: 'center', gap: 7,
+          display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0, whiteSpace: 'nowrap',
           height: 32, padding: '0 13px', border: 'none', borderRadius: 'var(--cth-r-md)',
           cursor: 'pointer', fontFamily: 'var(--cth-font-ui)', fontSize: 13, fontWeight: 500,
           background: on ? 'var(--cth-ink)' : 'transparent',
@@ -122,10 +127,50 @@ export function ViewTabs() {
   };
 
   return (
-    <div role="group" aria-label={t('floorView.label')} style={{ display: 'flex', gap: 4, marginInlineStart: 26 }}>
+    <div role="group" aria-label={t('floorView.label')} style={{ display: 'flex', alignItems: 'center', gap: 4, marginInlineStart: 26, flex: '0 1 auto', minWidth: 0 }}>
       {tab('office', t('floorView.office'))}
       {tab('tasks', t('floorView.tasks'))}
       {tab('graph', t('floorView.graph'))}
+      {/* Files opened from a reply or a card (docs/designs/open-file-tab.md):
+          after a hairline, each a select button and a close button side by
+          side. They shrink to fit (DD2); the fixed tabs and Needs you never move. */}
+      {fileTabs.length > 0 && <span aria-hidden style={{ width: 1, height: 18, background: 'var(--cth-line-2)', margin: '0 4px', flexShrink: 0 }} />}
+      {fileTabs.map((f) => {
+        const on = view === 'file' && activeFileTab === f.id;
+        const icon = f.kind === 'excel' || f.kind === 'csv' ? 'sheet' : f.kind === 'image' ? 'image' : 'file';
+        return (
+          <span key={f.id} className="cth-titlebar-nodrag" title={`⁨${f.id}⁩`} style={{
+            display: 'inline-flex', alignItems: 'center', height: 32, flex: '0 1 auto', minWidth: 72,
+            borderRadius: 'var(--cth-r-md)', background: on ? 'var(--cth-ink)' : 'transparent',
+            transition: 'background var(--cth-dur-fast) var(--cth-ease)'
+          }}>
+            <button
+              onClick={() => useStore.getState().selectFileTab(f.id)}
+              aria-pressed={on}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 0, height: 32,
+                padding: '0 4px', paddingInlineStart: 11, border: 'none', background: 'transparent', cursor: 'pointer',
+                color: on ? 'var(--cth-bg)' : 'var(--cth-ink-2)', fontFamily: 'var(--cth-font-ui)', fontSize: 13, fontWeight: 500
+              }}
+            >
+              <span aria-hidden style={{ display: 'grid', placeItems: 'center', flexShrink: 0 }}><Icon name={icon} size={0.875} /></span>
+              <span dir="auto" style={{ minWidth: 0, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', unicodeBidi: 'isolate' }}>{f.title}</span>
+            </button>
+            <button
+              className="cth-file-tab-close"
+              onClick={() => useStore.getState().closeFileTab(f.id)}
+              aria-label={t('fileTab.close', { name: f.title })}
+              style={{
+                width: 22, height: 22, flexShrink: 0, marginInlineEnd: 5, display: 'grid', placeItems: 'center',
+                border: 'none', borderRadius: 5, background: 'transparent', cursor: 'pointer',
+                color: on ? 'var(--cth-bg)' : 'var(--cth-ink-3)', opacity: on ? 0.75 : 1
+              }}
+            >
+              <Icon name="x" size={0.75} />
+            </button>
+          </span>
+        );
+      })}
     </div>
   );
 }

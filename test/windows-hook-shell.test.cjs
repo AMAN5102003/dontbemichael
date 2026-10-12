@@ -82,7 +82,7 @@ test('on Windows, every Claude hook and the status line are written for the shel
   }
   if (process.platform !== 'win32') assert.equal(expected.shell, 'powershell', 'a Mac or Linux host has no Git Bash');
   const form = expected.shell === 'powershell' ? /^& '.+' '.+cth-hook\.cjs'$/ : /^".+" ".+cth-hook\.cjs"$/;
-  const settings = JSON.parse(fs.readFileSync(path.join(home, 'hive/agents/a1/settings.json'), 'utf8'));
+  const settings = JSON.parse(fs.readFileSync(path.join(home, 'agent-settings/a1.json'), 'utf8'));
   const hooks = Object.values(settings.hooks).flatMap((matchers) => matchers.flatMap((m) => m.hooks));
   assert.ok(hooks.length > 0);
   for (const h of hooks) {
@@ -99,7 +99,7 @@ test('on Windows, every Claude hook and the status line are written for the shel
     const posix = fs.mkdtempSync(path.join(os.tmpdir(), 'md-hook-shell-'));
     t.after(() => fs.rmSync(posix, { recursive: true, force: true }));
     await new HiveManager(() => posix).ensureAgent({ id: 'a1', name: 'A', provider: 'claude', cwd: posix });
-    const first = Object.values(JSON.parse(fs.readFileSync(path.join(posix, 'hive/agents/a1/settings.json'), 'utf8')).hooks)[0][0].hooks[0];
+    const first = Object.values(JSON.parse(fs.readFileSync(path.join(posix, 'agent-settings/a1.json'), 'utf8')).hooks)[0][0].hooks[0];
     assert.equal(first.shell, undefined);
     assert.match(first.command, /^".+" ".+cth-hook\.cjs"$/);
   }
@@ -124,7 +124,7 @@ test('on Windows with Git Bash found, hooks name bash, keep the quoted form, and
     if (realBash === undefined) delete process.env.CLAUDE_CODE_GIT_BASH_PATH; else process.env.CLAUDE_CODE_GIT_BASH_PATH = realBash;
   }
   assert.equal(launch.env.CLAUDE_CODE_GIT_BASH_PATH, bash, 'the found Git Bash is pinned');
-  const settings = JSON.parse(fs.readFileSync(path.join(home, 'hive/agents/a1/settings.json'), 'utf8'));
+  const settings = JSON.parse(fs.readFileSync(path.join(home, 'agent-settings/a1.json'), 'utf8'));
   const hooks = Object.values(settings.hooks).flatMap((matchers) => matchers.flatMap((m) => m.hooks));
   assert.ok(hooks.length > 0);
   for (const h of hooks) {

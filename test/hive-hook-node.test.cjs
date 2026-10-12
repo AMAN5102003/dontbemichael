@@ -126,7 +126,7 @@ test('the claude hook + statusLine commands run through the launcher', async (t)
   await hive.ensureAgent({ id: 'a1', name: 'A', provider: 'claude', cwd: home });
 
   const launcher = launcherIn(home);
-  const settings = JSON.parse(fs.readFileSync(path.join(home, 'hive/agents/a1/settings.json'), 'utf8'));
+  const settings = JSON.parse(fs.readFileSync(path.join(home, 'agent-settings/a1.json'), 'utf8'));
   const commands = [
     ...Object.values(settings.hooks).flatMap((matchers) => matchers.flatMap((m) => m.hooks.map((h) => h.command))),
     settings.statusLine.command
@@ -412,8 +412,11 @@ test('Gemini gets isolated lifecycle settings and an interactive protocol seed',
   assert.equal(settings.hooksConfig.enabled, true);
   assert.equal(settings.hooks.BeforeTool[0].matcher, '.*');
   assert.ok(settings.hooks.AfterAgent[0].hooks[0].command.includes('gemini-hook.cjs'));
-  assert.equal(injection.args[0], '-i');
-  assert.match(injection.args[1], /HIVE PROTOCOL/);
+  // The seed comes after Gemini's own flags (its workspace folders).
+  const seed = injection.args.indexOf('-i');
+  assert.ok(seed >= 0, 'gemini spawn carries -i');
+  assert.equal(seed, injection.args.length - 2);
+  assert.match(injection.args[seed + 1], /HIVE PROTOCOL/);
 });
 
 test('a hook fires with NO node on PATH, and its payload reaches HIVE_SOCK', { skip: !POSIX }, async (t) => {
@@ -454,7 +457,7 @@ test('a hook fires with NO node on PATH, and its payload reaches HIVE_SOCK', { s
   // NOTE: async spawn, not spawnSync — the shim connects back to a socket THIS
   // process is serving, so a sync call would block our own event loop and
   // deadlock the handshake.
-  const settings = JSON.parse(fs.readFileSync(path.join(home, 'hive/agents/a1/settings.json'), 'utf8'));
+  const settings = JSON.parse(fs.readFileSync(path.join(home, 'agent-settings/a1.json'), 'utf8'));
   const after = await run(settings.hooks.Stop[0].hooks[0].command, env);
   assert.equal(after.code, 0, `hook failed under a stripped PATH: ${after.stderr}`);
 

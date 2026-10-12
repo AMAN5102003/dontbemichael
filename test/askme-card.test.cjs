@@ -79,18 +79,49 @@ test('an Ask me card title drops opaque ids and bracketed metadata', () => {
 
 /**
  * Task detail (owner, 2026-10-01): the id and close sit on one row with the
- * title below at full width, and the card's notes show (agents write "notes";
- * the dialog read only "description", so it was empty on every card).
+ * title below at full width. Owner, 2026-10-11: cards carry no running notes
+ * (agents used them as diaries of up to 8,700 characters); an agent's activity
+ * lives in its conversation and the office log, and a To do card's next step
+ * time shows as "Next: ..." in local time.
  */
-test('task detail: title under the id row, and the card\'s notes show', () => {
+test('task detail: title under the id row, no running notes, the next step time shows', () => {
+  // Value: protects=cards read as where the work stands, not a diary; fails_when=notes come back on the card or in the prompts, or nextAt stops showing; why_new=owner, 2026-10-11; seam=source pins
   const src = read('src/renderer/src/components/TasksKanban.tsx');
-  // Both fields: the app's "description" and the agents' "notes" (the parser
-  // lives in hiveTasks.ts, shared with the Needs you feed).
-  assert.match(read('src/renderer/src/components/hiveTasks.ts'), /description: typeof t\.description === 'string' \? t\.description : undefined,\n\s*notes: typeof t\.notes === 'string' \? t\.notes : undefined,/);
-  assert.match(src, /\[\['description', task\.description\], \['notes', task\.notes\]\]/);
+  const model = read('src/renderer/src/components/hiveTasks.ts');
+  assert.doesNotMatch(model, /notes: typeof t\.notes/, 'the parser no longer reads notes');
+  assert.match(model, /nextAt: isNextAt\(t\.nextAt\) \? t\.nextAt : undefined,/);
+  assert.doesNotMatch(src, /task\.notes/);
+  assert.equal((src.match(/const next = nextAtLabel\(task\.nextAt, i18n\.language\);/g) || []).length, 2, 'on the card and in the detail, in the app language');
+  assert.equal((src.match(/t\('kanban\.nextAt', \{ when: next \}\)/g) || []).length, 2);
+  assert.doesNotMatch(read('src/renderer/src/components/TaskDetailOverlay.tsx'), /task\.notes/);
   assert.doesNotMatch(src, /noDescription/);
   assert.match(src, /<div style=\{\{ marginTop: 10, fontSize: 16, fontWeight: 600[^}]*\}\}>\{askTitle\(task\.title\)\}<\/div>/);
-  assert.match(read('src/main/hive.ts'), /Keep the card\\'s "notes" to what the work is and where it stands/);
+  const hive = read('src/main/hive.ts');
+  assert.doesNotMatch(hive, /Keep the card\\?'s "notes"/);
+  assert.equal((hive.match(/Write no running \\?"notes\\?" on a card \(house rule 8\)/g) || []).length, 2, 'Michael\'s business and legacy prompts');
+  assert.doesNotMatch(read('src/main/closingTime.ts'), /says where the work stands and the next step/);
+  for (const loc of ['en', 'zh-CN', 'ar']) assert.match(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).kanban.nextAt, /\{\{when\}\}/, loc);
+});
+
+test('a next step time that is not a date never reaches the card', () => {
+  // Value: protects=a card shows "Next" only for a real time, in local time; fails_when=the parser keeps an unparseable nextAt or the label prints "Invalid Date"; why_new=the parser and label were only source pinned; seam=none
+  // no_claim=the label's exact wording is the runtime locale's; only the local day and the absence of an invalid date are checked
+  const { parseTasks, nextAtLabel } = loadTs('src/renderer/src/components/hiveTasks.ts');
+  const when = '2026-10-12T08:00:00+05:30';
+  const [bad, good] = parseTasks({ tasks: [{ id: 'a', title: 'a', status: 'todo', nextAt: 'Monday after the 20th' }, { id: 'b', title: 'b', status: 'todo', nextAt: when }] });
+  assert.equal(bad.nextAt, undefined, 'agent text that is not a date is dropped');
+  assert.equal(good.nextAt, when);
+  assert.equal(nextAtLabel(undefined), undefined);
+  assert.equal(nextAtLabel('not a date'), undefined, 'never "Invalid Date"');
+  // Review 2026-10-12: loose agent dates never show (V8 reads the first as 2001,
+  // and a bare date as midnight UTC, the evening before west of it).
+  const [loose, dateOnly] = parseTasks({ tasks: [{ id: 'l', title: 'l', status: 'todo', nextAt: 'Mon 12 Oct 13:00' }, { id: 'd', title: 'd', status: 'todo', nextAt: '2026-10-12' }] });
+  assert.equal(loose.nextAt, undefined);
+  assert.equal(dateOnly.nextAt, undefined);
+  assert.equal(nextAtLabel('Mon 12 Oct 13:00'), undefined);
+  const label = nextAtLabel(when);
+  assert.ok(label && !/Invalid/.test(label), label);
+  assert.match(label, new RegExp(`\\b${new Date(when).getDate()}\\b`), 'the day in the viewer\'s local time');
 });
 
 /** The answer box grows with the text (owner, 2026-10-01). */

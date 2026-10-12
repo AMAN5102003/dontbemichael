@@ -337,6 +337,10 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   max-width: 72ch;
   padding: 16px 20px 32px;
 }
+/* An open file tab has the whole pane: no reading cap there (owner 2026-10-11). */
+.cth-file-tab .cth-md-preview { max-width: none; }
+/* A chip and the punctuation right after it break as one (remarkFileChips). */
+.cth-nowrap { white-space: nowrap; }
 .cth-md-preview h1, .cth-md-preview h2, .cth-md-preview h3,
 .cth-md-preview h4, .cth-md-preview h5 {
   color: var(--cth-ink-900);
@@ -606,3 +610,8 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   .cth-engine-spin { animation: none; }
   .cth-engine-bar > i, [dir="rtl"] .cth-engine-bar > i { animation: none; width: 100%; opacity: .5; }
 }
+
+/* File chips in replies and Ask me cards (docs/designs/open-file-tab.md, DD1). */
+.cth-file-chip:hover:not(:disabled) { background: var(--cth-indigo-soft) !important; }
+.cth-file-chip:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 1px; }
+.cth-file-tab-close:hover { background: var(--cth-neutral-soft) !important; color: var(--cth-ink) !important; opacity: 1 !important; }

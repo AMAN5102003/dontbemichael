@@ -39,12 +39,11 @@ own memory, working on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.1.7: a clear Microsoft 365 message, and safer large files.**
-> A mailbox on your own domain that runs on Microsoft 365 now says it cannot be connected yet,
-> instead of a misleading error. A Word, Excel or PowerPoint file too big to read is refused before
-> it can use up memory, an email is no longer sent twice after a restart, and web links open in your
-> browser. In 0.1.6, Can send stopped putting emails on Ask me.
-> [Every feature, release by release](./docs/FEATURES.md).
+> **New in 0.1.9: Michael alone keeps the task board, and Done is final.**
+> Team members file what they need once and Michael works it in order. Only you reopen a Done
+> card, with a short reason. A To do card shows when its next step is due, and its person is
+> reminded then. One activity's questions arrive as one numbered ask. In 0.1.8, the office took
+> a break at your Claude plan limit and files opened inside it.
 
 ## Contents
 
@@ -271,7 +270,7 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 - **A mailbox for each team member.** Connect Gmail, Google Workspace, iCloud, Yahoo, Zoho or any other IMAP mailbox with an app password in Settings, Connections, Mailboxes. The password is tested before it is saved and stays encrypted on your computer. Then add it on a team member's Access tab to watch its inbox, and choose Can send, Send on approval or Draft only. Each mailbox has one team member watching it; others can be added to send only from it. Outlook is not supported yet.
 - **Claude connectors.** Settings, Connections, Claude connectors lists every connector on your Claude account (HubSpot, Google Drive, Gmail, QuickBooks and the rest), read from Claude by itself. Each is off until you turn it on; then give it to the team members who need it on their Access tab. QuickBooks keeps Read only or Can make changes, and Oscar starts on and Read only. Your own Claude Code servers, plugin servers included, never reach the team.
 - **Every team member's panel.** Profile first (the job, its folder and the instructions it works from), then Access (email, Claude connectors, and schedules), Messages as a day by day history, Memory as readable notes, and Work, its session live.
-- **Office, Tasks, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, and who talks to whom.
+- **Office, Tasks, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, and who talks to whom. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these, while PDF and Office files open in their own app.
 - **Webhooks.** Another app sends a webhook (set it up in Settings, Connections) and Michael picks it up; the sender can check on the work and get its result.
 - **A fresh start without losing work.** A team member that has sat idle with a long conversation writes a handoff of anything unfinished, then starts fresh. You can bring the old conversation back.
 
@@ -296,7 +295,8 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 - A Mac with Apple Silicon or Intel, or a Windows 11 PC (x64).
 - [Claude Code](https://claude.com/claude-code), signed in to your Claude plan. A Claude Max plan
   keeps the office running all day; smaller plans reach their usage limit during the day, and the
-  office waits until it resets. No Claude plan? An Anthropic API key works too, billed to your
+  office takes a break until it resets, while scheduled jobs still go out on time and wait in the
+  inbox. No Claude plan? An Anthropic API key works too, billed to your
   Anthropic account. You don't need to install anything first: setup ends on **Get Michael
   ready**, which installs Claude Code and signs you in. Skip it, and Needs you keeps a card that
   opens the same step until Michael can start.

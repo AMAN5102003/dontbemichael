@@ -260,12 +260,21 @@ test('idle banter: paper planes between two quiet pods, the line shown where it 
   assert.match(stage, /later\(FLIGHT_MS, \(\) => \{\n\s*show\(\{ agentId: to\.id, text, from: \{ name: from\.name, acc: live\.current\.accentOf\(from\.id\) \}/, 'the line shows on landing, at the catcher');
   assert.match(stage, /if \(!still\.includes\(from\.id\) \|\| !still\.includes\(to\.id\)\) \{ busyUntil = 0; return; \}/, 'work ends the chat');
   assert.match(stage, /\{\(quote\.from \|\| members\.length > 1\) && <span className="cth-st-quote-who">\{quote\.from\?\.name \?\? speaker\.name\}<\/span>\}/);
-  assert.match(life, /kind === 'you' \|\| kind === 'note-plane' \?/);
+  assert.match(life, /kind === 'you' \|\| kind === 'owner' \|\| kind === 'note-plane' \?/);
+});
+
+test('the owner\'s message to Michael flies as a paper plane in the owner\'s indigo (owner, 2026-10-10)', () => {
+  const life = read('src/renderer/src/scene/studio/life.tsx');
+  // Like the plane Michael throws to Ask me, but indigo going up and coral coming down.
+  assert.match(life, /kind: 'owner', ping: true/);
+  assert.match(life, /case 'owner': return T\.indigo;/);
+  assert.match(life, /const plane = f\.kind === 'you' \|\| f\.kind === 'owner'/);
+  assert.match(life, /kind === 'you' \|\| kind === 'owner' \|\| kind === 'note-plane' \?/, 'drawn as the plane, never the envelope');
 });
 
 test('a paper plane turns with its path instead of flying as a fixed picture (owner, 2026-10-01)', () => {
   const life = read('src/renderer/src/scene/studio/life.tsx');
-  assert.match(life, /const plane = f\.kind === 'you' \|\| f\.kind === 'note-plane';/);
+  assert.match(life, /const plane = f\.kind === 'you' \|\| f\.kind === 'owner' \|\| f\.kind === 'note-plane';/);
   assert.match(life, /<animateMotion [^>]*\n?\s*rotate=\{plane \? 'auto' : undefined\} \/>/, 'only planes rotate; badges and envelopes stay upright');
   assert.match(life, /\{plane && f\.end\[0\] < f\.start\[0\] \? <g transform="scale\(1,-1\)">\{head\}<\/g> : head\}/, 'flying left it stays right side up');
   // rotate="auto" points the shape's +x axis down the path, so the glyph's

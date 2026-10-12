@@ -115,12 +115,13 @@ test('Tasks and Who talks to whom take the whole window: the right column hides 
   const path = require('node:path');
   const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
   const app = read('src/renderer/src/App.tsx');
-  assert.match(app, /const columnShown = columnOpen && floorView === 'office';/);
+  // A file tab keeps the column beside it (open-file-tab.md, F1); Tasks and the graph still hide it.
+  assert.match(app, /const columnShown = columnOpen && \(floorView === 'office' \|\| floorView === 'file'\);/);
   assert.match(app, /\{columnShown && \(\n\s+<SidebarSplitter/);
-  assert.match(app, /display: floorView === 'office' \? 'flex' : 'none', flexDirection: 'column'/);
+  assert.match(app, /display: floorView === 'office' \|\| floorView === 'file' \? 'flex' : 'none', flexDirection: 'column'/);
   assert.match(app, /\{\(columnOpen \|\| exiting\) && \(/, 'the column stays mounted while hidden');
   const store = read('src/renderer/src/store/store.ts');
-  assert.match(store, /function officeView\(view: FloorView\): \{ floorView\?: FloorView \} \{\n\s+if \(view === 'office'\) return \{\};\n\s+try \{ window\.localStorage\.setItem\(LS_FLOOR_VIEW, 'office'\); \}/);
+  assert.match(store, /function officeView\(view: FloorView\): \{ floorView\?: FloorView \} \{\n\s+if \(view === 'office' \|\| view === 'file'\) return \{\};\n\s+try \{ window\.localStorage\.setItem\(LS_FLOOR_VIEW, 'office'\); \}/);
   assert.equal((store.match(/\.\.\.officeView\(s\.floorView\)/g) || []).length, 5, 'select, openAgentMemory, openNeedsYou and both Michael tab requests');
   assert.match(store, /rightColumn: 'person', \.\.\.officeView\(s\.floorView\) \};/);
   assert.match(store, /rightColumn: 'board',\n\s+\.\.\.officeView\(s\.floorView\),/);

@@ -42,6 +42,17 @@ test("Pam's tab: scheduled runs are counted; a question and its answer stay toge
   assert.equal(v.days[1].threads[0].latest, undefined, 'a one-message conversation has no reply line');
 });
 
+test('conversations with no usable time share one last group, after every real day', () => {
+  const v = messageView([
+    msg({ id: 'bad', from: 'dwight', conversation: 'c1', created_at: 'not a time' }),
+    msg({ id: 'new', from: 'dwight', conversation: 'c2', created_at: at(15) }),
+    msg({ id: 'none', from: 'dwight', conversation: 'c3', created_at: '' }),
+    msg({ id: 'old', from: 'dwight', conversation: 'c4', created_at: at(15, 24) })
+  ]);
+  assert.deepEqual(v.days.map((d) => d.day), [localDay(at(15)), localDay(at(15, 24)), '']);
+  assert.deepEqual(v.days[2].threads.map((t) => t.first.id).sort(), ['bad', 'none']);
+});
+
 test('routine, verbs and the quoted gist', () => {
   assert.equal(isRoutine({ from: 'pam', subject: 'CLOSING-TIME-ACK' }), true);
   assert.equal(isRoutine({ from: 'dwight', subject: 'Deal' }), false);

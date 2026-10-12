@@ -58,7 +58,8 @@
     "ghost": "Gone",
     "compacting": "Tidying up",
     "looping": "Stuck",
-    "typing": "Your draft"
+    "typing": "Your draft",
+    "onBreak": "On a break"
   },
   "agentControl": {
     "deliveryPaused": "queued messages held (whole floor)",
@@ -277,7 +278,7 @@
     },
     "agentsModels": {
       "defaultModel": "Default agent model",
-      "defaultModelDesc": "Every newly spawned Claude agent ({{godName}} included) starts on this model unless another is picked for that agent. Marked \"· default\" in the model pickers.",
+      "defaultModelDesc": "Every newly spawned Claude team member starts on this model unless another is picked for that member. {{godName}} has a separate model setting. Marked \"· default\" in the model pickers.",
       "advanced": "Advanced",
       "maxTurns": "Max turns per run",
       "unlimited": "Unlimited",
@@ -687,6 +688,7 @@
     "engineNote": "A new engine or model takes effect the next time this team member starts."
   },
   "onboarding": {
+    "damagedConfig": "Your saved settings could not be read, so setup starts again. The old file is kept at",
     "resume": {
       "headline": "We found your office",
       "desc": "This computer already has an office in {{folder}}: {{business}}, with {{count}} team members. Continue with it to keep your team, their folders, their memory and their work.",
@@ -1311,6 +1313,7 @@
     "noHandoffs": "No handoffs yet. Only office notices so far.",
     "today": "Today",
     "yesterday": "Yesterday",
+    "undated": "Undated",
     "verb": {
       "request": "{{from}} asked {{to}}",
       "query": "{{from}} asked {{to}}",
@@ -1485,6 +1488,9 @@
     "colWaiting": "Waiting",
     "waitingOn": "Waiting on {{who}}",
     "waitingOnUnknown": "Waiting on someone",
+    "nextAt": "Next: {{when}}",
+    "reopenWhy": "Why reopen it?",
+    "reopen": "Reopen",
     "waitingOnTitle": "Held on someone outside the office or a teammate. {{godName}} moves it back to Doing when they answer.",
     "colBlocked": "Blocked",
     "colDone": "Done",
@@ -1510,7 +1516,7 @@
     "priorityLabel": "Priority",
     "created": "Created",
     "description": "Description",
-    "notes": "Notes",
+    "result": "Result",
     "question": "Question",
     "answer": "Answer",
     "assignHint": "Sends it to {{godName}} to hand out",
@@ -1664,6 +1670,16 @@
     "graph": "Who talks to whom",
     "tasksIntro": "Every job the team has, by stage. A ? means it waits on you: answer it on Needs you. Click a card for the details.",
     "graphIntroShort": "Each circle is a person, each line the messages between them. Click a person to open their memory; drag to pin."
+  },
+  "fileTab": {
+    "close": "Close {{name}}",
+    "office": "Office",
+    "openInApp": "Open in app",
+    "reading": "Reading…",
+    "empty": "Empty file",
+    "tooLarge": "Too large to show here",
+    "unreadable": "Can't show this file here",
+    "rows": "Showing {{shown}} of {{total}} rows"
   },
   "companyProfile": {
     "intro": "Key facts about your business. Every team member, {{godName}} included, works from them. Short answers only: anything longer goes in Memory & Knowledge.",
@@ -2043,7 +2059,14 @@
   },
   "workTab": {
     "live": "Live",
-    "focus": "Focus"
+    "focus": "Focus",
+    "exitFocus": "Exit focus mode (Esc)",
+    "zoomOut": "Zoom out ({{mod}} and minus)",
+    "zoomOutLabel": "Zoom out",
+    "zoomIn": "Zoom in ({{mod}} and plus)",
+    "zoomInLabel": "Zoom in",
+    "zoomReset": "Reset zoom ({{mod}} and 0)",
+    "zoomResetLabel": "Reset zoom"
   },
   "quit": {
     "killing": "Quitting…",
@@ -2191,5 +2214,13 @@
     },
     "signInUnknown": "Could not check sign in. Sign in if Claude asks.",
     "cardTitleTeam": "Some of your team can't start yet"
+  },
+  "officeBreak": {
+    "title": "The office is on a break",
+    "body": "Your Claude plan reached its limit. Work starts again around {{time}}.",
+    "bodyUnknown": "Your Claude plan reached its limit. Work starts again when it resets.",
+    "info": "Your Claude plan reached its usage limit, so the team cannot work. Scheduled jobs still go out on time and wait in the inbox until the break ends. The team starts again on its own. A bigger Claude plan means fewer breaks.",
+    "chip": "On a break until {{time}}",
+    "chipUnknown": "On a break"
   }
 }

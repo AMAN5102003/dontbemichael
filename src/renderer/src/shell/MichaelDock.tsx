@@ -6,8 +6,7 @@ import { useStore } from '@/store/store';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { AgentAvatar } from '@/components/AgentAvatar';
 import { InfoTip } from '@/components/InfoTip';
-import { MarkdownPreview } from '@/markdown/MarkdownPreview';
-import { AskFileRows } from '@/components/AskFileRows';
+import { FileText } from '@/components/FileChip';
 
 /**
  * Michael's conversation dock (docs/designs/michael-replies.md): it grows up
@@ -314,10 +313,10 @@ function ReplyBubble({ r, godId, godName, quote, expanded, onMore, onQuote, canR
           </button>
         )}
         <div dir="auto" style={!expanded && long ? { display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}>
-          <MarkdownPreview source={boldFirst(text)} variant="card" />
+          {/* Files it names are chips that open them (docs/designs/open-file-tab.md). */}
+          <FileText source={boldFirst(text)} who={{ raisedBy: 'god' }} />
         </div>
         {!expanded && long && <button onClick={onMore} style={linkBtn}>{t('dock.more')}</button>}
-        {!r.notes && <AskFileRows question={r.text} raisedBy="god" style={{ marginTop: 6 }} />}
         {canReply && <button onClick={onReply} style={{ ...linkBtn, display: 'block', marginTop: 4 }}>{t('dock.reply')}</button>}
       </div>
     </div>

@@ -66,7 +66,7 @@ export function pickIdleLine(previous: string | null, rand: () => number = Math.
 /** Claude Code's in-terminal question tool. Refused for team members. */
 export const ASK_TOOL = 'AskUserQuestion';
 export const ASK_TOOL_REFUSAL =
-  "Don't ask the owner here: nobody answers your terminal. Send the question to Michael through your outbox (\"to\": \"michael\", \"act\": \"query\"). He answers it, or puts it on the owner's ASK ME board.";
+  "Don't ask the owner here: nobody answers your terminal. File it as one new file in the hive's triage folder (your questions as one \"ask\", what you were doing in \"description\"). Michael checks it and puts it on the owner's ASK ME board.";
 
 /** A Notification that means the session is stopped on a prompt a person must
  *  answer in the terminal: a permission request or a question dialog, never the
@@ -108,6 +108,11 @@ interface HookPayload {
   transcript_path?: string;
   /** Status-line payloads only: the session's live context accounting. */
   context_window?: { total_input_tokens?: number; context_window_size?: number };
+  /** Status-line payloads only, on a Claude plan: each usage window's fill and
+   *  reset time (`five_hour`, `seven_day`, ...). */
+  rate_limits?: unknown;
+  /** StopFailure only: why the turn ended (`rate_limit` is the usage limit). */
+  error?: string;
   cwd?: string;
   tool_name?: string;
   tool_input?: unknown;
@@ -126,6 +131,13 @@ interface HookPayload {
   cache_read?: number;
   cache_creation?: number;
 }
+
+/** What the hook stream tells the office break (src/main/officeBreak.ts). */
+export type PlanSignal =
+  | { kind: 'limits'; agentId: string; rateLimits: unknown }
+  | { kind: 'limit'; agentId: string }
+  | { kind: 'prompt'; agentId: string }
+  | { kind: 'turn'; agentId: string };
 
 export class HookServer {
   private server: Server | null = null;
@@ -230,7 +242,11 @@ export class HookServer {
     /** Whether a member is on the team now (roster agents or restorable), so a
      *  Send only grant pauses when nobody reads its mailbox (shared-mailboxes.md,
      *  EV1). Optional so tests can omit it: then the config alone decides. */
-    private memberPresent?: (agentId: string) => boolean
+    private memberPresent?: (agentId: string) => boolean,
+    /** The office break's signals (issue 124): a status line's usage windows,
+     *  a turn cut off by the usage limit, a prompt taken, a turn finished.
+     *  Optional so tests can omit it. */
+    private onPlan?: (signal: PlanSignal) => void
   ) {}
 
   start(): void {
@@ -372,8 +388,19 @@ export class HookServer {
           limit: cw.context_window_size
         });
       }
+      if (agentId && p.rate_limits) this.plan({ kind: 'limits', agentId, rateLimits: p.rate_limits });
       return {};
     }
+
+    // A turn that ended on an API error (issue 124). Claude Code ignores the
+    // answer; the usage limit starts the office break. Registered with the
+    // `rate_limit` matcher, and checked again here.
+    if (event === 'StopFailure') {
+      if (agentId && !subagent && p.error === 'rate_limit') this.plan({ kind: 'limit', agentId });
+      return {};
+    }
+    if (event === 'UserPromptSubmit' && agentId && !subagent) this.plan({ kind: 'prompt', agentId });
+    if (event === 'Stop' && agentId && !subagent && !p.stop_hook_active) this.plan({ kind: 'turn', agentId });
 
     // 7C.3 — a graceful operator HALT overrides everything (incl. the inbox
     // drain below): stop the agent CLEANLY at this hook boundary rather than
@@ -475,7 +502,6 @@ export class HookServer {
     if (event === 'PreToolUse' && agentId && this.control) {
       const d = this.control.toolDecision(agentId, p.tool_name ?? '');
       if (d.deny) {
-        this.emitControl(agentId, p.tool_name, d.reason);
         this.emit(agentId, event, p);
         return {
           hookSpecificOutput: {
@@ -502,7 +528,6 @@ export class HookServer {
       const d = connectorAccess(cfg, agentId, p.tool_name ?? '', p.tool_input, agentId ? (this.roleReadsBooks?.(agentId) ?? false) : false);
       if (!d.ok) {
         console.log(`[connectors] refused ${p.tool_name} for ${agentId ?? 'no agent'}: ${d.reason}`);
-        if (agentId) this.emitControl(agentId, p.tool_name, d.reason);
         this.emit(agentId, event, p);
         return mcpDeny(d.reason);
       }
@@ -518,7 +543,6 @@ export class HookServer {
       const cap = quickbooksCapability(cfg.agentCapabilities?.[agentId]?.quickbooks, this.roleReadsBooks?.(agentId) ?? false);
       const d = quickbooksAccess(cfg.quickbooksClaude === true, cap, p.tool_name ?? '');
       if (!d.ok) {
-        this.emitControl(agentId, p.tool_name, d.reason);
         this.emit(agentId, event, p);
         return {
           hookSpecificOutput: {
@@ -547,7 +571,6 @@ export class HookServer {
       const refs = { forward: named(input.forward), attachFrom: Array.isArray(input.attach_from) && input.attach_from.some(named) };
       const d = op ? mailAccess(cfg, agentId, typeof input.mailbox === 'string' ? input.mailbox : undefined, op, proposal, { refs, present: this.memberPresent }) : { ok: false as const, reason: 'Unknown mail tool.' };
       if (!d.ok) {
-        this.emitControl(agentId, p.tool_name, d.reason);
         this.emit(agentId, event, p);
         return mcpDeny(d.reason);
       }
@@ -572,7 +595,6 @@ export class HookServer {
           caseInsensitive: process.platform !== 'linux'
         });
         if (d.deny) {
-          this.emitControl(agentId, p.tool_name, d.reason);
           this.emit(agentId, event, p);
           return {
             hookSpecificOutput: {
@@ -609,7 +631,6 @@ export class HookServer {
     if (event === 'PreToolUse' && agentId && (FOLDER_READ_TOOLS.has(toolName) || FOLDER_WRITE_TOOLS.has(toolName))) {
       const d = this.folderCheck(agentId, toolName, p.tool_input, p.cwd);
       if (d.deny) {
-        this.emitControl(agentId, toolName, d.reason);
         this.emit(agentId, event, p);
         return {
           hookSpecificOutput: {
@@ -750,7 +771,7 @@ export class HookServer {
       : null;
     const stuckCards = michaelTurn && typeof this.hive.stuckCards === 'function'
       ? this.everyTurnNote(this.stuckCardsShown, agentId!, p.session_id ?? null, this.hive.stuckCards(),
-        stuckCardsContext, 'CARDS TO TIDY (Blocked with nothing asked, or open questions held the wrong way): none now.')
+        stuckCardsContext, 'CARDS TO TIDY (new filings, Blocked with nothing asked, or open questions held the wrong way): none now.')
       : null;
     // Questions the owner asked in the dock that he still owes an answer
     // (docs/designs/michael-replies.md): every turn until he sends done or refuse.
@@ -826,6 +847,11 @@ export class HookServer {
       new Notification({ title: this.displayName(agentId), body }).show();
       return true;
     } catch { return false; /* notifications unsupported on this platform — ignore */ }
+  }
+
+  /** Hands a signal to the office break; it never breaks the hook. */
+  private plan(signal: PlanSignal): void {
+    try { this.onPlan?.(signal); } catch (e) { console.error('[office break]', e); }
   }
 
   /** Is the owner in 1:1 with this agent (registry `onHold`)? */
@@ -909,12 +935,6 @@ export class HookServer {
     } catch {
       return APP_NAME;
     }
-  }
-
-  /** Tell the renderer a tool call was gated/denied (#7C.1) so it can surface it
-   *  (toast / control strip) — distinct from the avatar hook stream. */
-  private emitControl(agentId: string, tool: string | undefined, reason: string | undefined): void {
-    this.getWebContents()?.send('control:approvalRequest', { agentId, tool, reason });
   }
 
   private emit(agentId: string | undefined, event: string, p: HookPayload, blocked = false): void {

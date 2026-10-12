@@ -380,7 +380,7 @@ test('send journal: after a stop mid-send with no copy in Sent, the retry is ref
   for (let i = 0; i < 2; i++) {
     const res = await restarted.call(quote);
     assert.deepEqual([res.status, res.body.kind], [502, 'refused']);
-    assert.match(res.body.error, /may already have gone out: the app stopped while sending it, and it is not in Sent yet\. Do not send it again; tell Michael/);
+    assert.match(res.body.error, /may already have gone out: sending it was interrupted, and it is not in Sent yet\. Do not send it again; tell Michael/);
   }
   const again = journalSetup(crashed, { sentHit: false });
   assert.equal((await again.call(quote)).body.kind, 'refused', 'a second restart still refuses it');
@@ -421,6 +421,32 @@ test('send journal: a send that cannot be recorded first does not go out', () =>
   assert.deepEqual([res.status, res.body.kind], [502, 'unknown']);
   assert.match(res.body.error, /^Not sent\. The app could not record this send before sending it/);
   assert.equal(state.sends.length, 0);
+}));
+
+test('a dropped connection mid-send with no copy in Sent is held, and a repeat is not sent (issue 101)', () => withJournalDir(async (dir, fs, path) => {
+  // Value: protects=a customer never gets the same email twice after a flaky connection; fails_when=an uncertain drop reads as not sent and the retry sends a second copy; why_new=issue 101; seam=fake SMTP
+  let tries = 0;
+  const { call, state } = journalSetup(path.join(dir, 'journal.json'), { onSend: () => { tries++; throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }); } });
+  const first = await call(quote);
+  assert.equal(first.status, 502);
+  assert.match(first.body.error, /may already have gone out: the connection dropped before the mail server answered, and it is not in Sent yet\. Do not send it again; tell Michael/);
+  const again = await call(quote);
+  assert.deepEqual([again.status, again.body.kind], [502, 'refused']);
+  assert.match(again.body.error, /may already have gone out: sending it was interrupted/);
+  assert.equal(tries, 1, 'the server saw the email once');
+  assert.equal(state.sends.length, 0);
+}));
+
+test('a mail server that was never reached is not held: the retry goes out (issue 101)', () => withJournalDir(async (dir, fs, path) => {
+  // Value: protects=an email that surely never left can be sent again; fails_when=a refused connection is held like a drop; why_new=issue 101; seam=fake SMTP
+  let down = true;
+  const { call, state } = journalSetup(path.join(dir, 'journal.json'), { onSend: () => { if (down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }); } });
+  const first = await call(quote);
+  assert.equal(first.status, 502);
+  assert.match(first.body.error, /^Not sent\./);
+  down = false;
+  assert.equal((await call(quote)).status, 200);
+  assert.equal(state.sends.length, 1);
 }));
 
 test('send journal: a send the server refused is cleared, so a retry goes out', () => withJournalDir(async (dir, fs, path) => {

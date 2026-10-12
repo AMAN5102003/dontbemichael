@@ -475,12 +475,32 @@ has no layer, so the update badge's cards keep competing at 400.
 
 ### 7.2 View tabs (TopBar)
 
-Office, Tasks, Who talks to whom. Tab: `t-ui` 500, `ink-2`, padding 7 × 13, `r-md`.
+Office, Tasks, Who talks to whom, then any **file tabs** (docs/designs/open-file-tab.md).
+Tab: `t-ui` 500, `ink-2`, padding 7 × 13, `r-md`.
 Active: `ink` fill, white text (dark mode: `ink` fill `#ECEAF4`, text `#14131C`). No tab
 carries a count: the Needs you button (§7.5) is the one coral number, what is waiting on
 the owner. A blocked count on Tasks beside it read as the same thing with a different
 number (owner, 2026-10-01); blocked work shows in the board's Blocked column and on
 Michael's wall. The choice persists (`cth.floorView`).
+
+File tabs: a file opened from a chip (§7.8) that the office can show (Markdown, text,
+JSON, CSV, TSV, images; PDF and Office files open in their own app) gets a tab after a
+1 × 18 px `line-2` hairline: a 14 px icon, the name (ellipsis at 160 px, full path as
+tooltip) and a 22 px close ✕ (its own button, "Close {name}"). One tab per file, keyed by
+its real path; opening it again selects it; at most 5, a sixth closes the one opened
+longest ago. They shrink to fit (down to about 72 px), and the fixed tabs, the clock and
+Needs you never move. Never saved: the app restarts on the last fixed view. Closing the
+selected tab selects the file tab to its left, or the view the owner came from. The right
+column stays beside a file tab, so an Ask me card is answered while its file is read.
+
+The file view: a `card` header with the name (14 / 600), its place in office words
+("Office / IT", or a team member's name and folder; `ink-3`, full path as tooltip), and
+`sm` secondary "Open in app" (not for JSON) and "Show in Finder". Body: Markdown as a
+document, text and JSON in mono 12 / 18 wrapped, CSV and TSV as a table (sticky header,
+the first 1,000 rows, then "Showing 1,000 of N rows"), images fitted to the width.
+States in `ink-3`: "Reading…", "Not found" (no actions), "Empty file", "Too large to show
+here" or "Can't show this file here" with Open in app (Show in Finder for JSON). The view
+re-reads the file within a second of a change while shown, keeping the scroll.
 
 ### 7.3 Clock pill
 
@@ -592,18 +612,20 @@ stands on its own.
   respects IME composition.
 - "Holding up N tasks", when tasks wait on the answer, opens to their titles in `ink-2`
   (a status dot each, up to 6, then "+N more").
-- Files the question names (owner, 2026-10-04; `docs/designs/ask-me-open-file.md`): on
-  the open card, between the question and the answer, one plain row per file between
-  `line` hairlines (no fill or ring of its own): a 16 px `file` or `sheet` icon in
-  `ink-3`, the file name without folder or extension (12, `ink`, one line, ellipsis, the
-  full path as its tooltip), its kind in `ink-3` (Markdown, Excel, PDF...), and a
-  secondary `sm` button: "Open" for a document inside the office folders, "Show in
-  Finder" ("Show in folder" on Windows) for anything else. The button is as wide as its
-  longer label from the start, so the name does not shrink when the check lands; if the
-  check fails it offers Show in Finder. A file that is gone keeps its row, the name in
-  `ink-3` and "Not found" as text, no button. Folded cards show nothing. Task detail
-  shows the same rows under each question, all checked at once, with no hairline under
-  the last row when an answer follows.
+- Files the question names (owner, 2026-10-04 and 2026-10-10; `docs/designs/open-file-tab.md`)
+  are chips in place of their path, inside the text: a code span with a known file
+  ending, a full path in plain text (`/`, `~/`, a drive letter), or a Markdown link to a
+  full path. Chip: `neutral-soft` fill, `r-sm`, 24 px tall, padding 0 8, gap 6; a 14 px
+  `file`, `sheet` or `image` icon in `ink-3`; the file name without folder or extension
+  (12 / 500 `ink`, ellipsis at 200 px, the full path as its tooltip); then the action in
+  `indigo-text` 600: "Open" for a file the office can show (it opens as a file tab, §7.2)
+  or a document inside the office folders (its own app), "Show in Finder" ("Show in
+  folder" on Windows) for anything else. The whole chip is one button; hover
+  `indigo-soft`, focus ring 2 px `indigo`. The action cell is as wide as its longer label
+  from the start, so nothing jumps when the check lands; if the check fails it offers
+  Show in Finder. A file that is gone, or outside every office folder, is a chip with no
+  fill, a `line` ring, all `ink-3` and "Not found": text, not a button. Folded cards show
+  nothing. Task detail and Michael's replies (§7.19) use the same chips.
 - Optional secondary actions Michael attached (for a broken mailbox: "Open Mailboxes").
 - **Mail approval cards** (MailProposalCards, docs/designs/send-on-approval.md): "{name}
   wants to send an email" with the avatar; From, To and Cc as `t-meta` lines; editable
@@ -777,7 +799,9 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
 
 - **Talk to Michael composer** (MessageQueueComposer for Michael; owner, 2026-09-30: "Brief
   Michael" was unclear): 400 px, 50 px tall,
-  `card`, `line-2` border, `r-2xl`, `shadow-lg`. Attach button (34 × 34, `neutral-soft`,
+  `card`, `line-2` border, `r-2xl`, `shadow-lg`. When Michael's conversation has saved history, a
+  conversation button first (34 × 34, `neutral-soft`, `r-md`, a speech bubble; `ink` fill while the
+  dock is open) opens or closes the dock. Attach button (34 × 34, `neutral-soft`,
   `r-md`), a message box with placeholder "Talk to Michael…", primary button "Send" with
   an arrow. The box grows with the text up to 140 px, then scrolls; the composer grows
   upward from the bar's bottom edge with its buttons on the bottom row, and the chips
@@ -792,7 +816,7 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   words on §3.5 meanings: Sent and Waiting on X `ink-3`, Michael has it `blue`, Answered
   `green`, Later than he said `amber` with Nudge, Waiting for you `coral-text`, Couldn't
   finish `ink-2` with Ask again). Michael's replies sit left on `card` with a `line` ring,
-  markdown at 12.5 / 18, first sentence bold, 4 lines then More, files as §7.8 rows;
+  markdown at 12.5 / 18, first sentence bold, 4 lines then More, files as §7.8 chips (notes too);
   terminal notes are muted (`card-2`, "From Michael's notes"); a refusal with no reason
   reads "No reason given". Bubble tails and the quote bar use logical corners and edges,
   so they mirror in Arabic. Empty: one line and two example chips. The dock slides 180 ms
@@ -834,13 +858,17 @@ Centered overlay over the stage (never over the right column), 528 px wide, `r-2
   `t-panel` under them at full width, cleaned like an Ask me title (§7.8) (owner,
   2026-10-01: side by side, a long id squeezed the title).
 - Four fields in a row with uppercase micro labels: STATUS (select, `coral` text when
-  Blocked; it offers To do, Doing and Done, and shows Blocked or Waiting only as the card's
+  Blocked; it offers To do, Doing and Done (a Done card offers only To do: choosing it opens a full
+  width row under the facts with a "Why reopen it?" `cth-input` box, primary Reopen and secondary
+  Cancel, and the reason reaches Michael; card-lifecycle.md section 10), and shows Blocked or Waiting only as the card's
   current state, since only Michael sets them; a Waiting card reads "Waiting on {who}"
   under it, `amber` text), ASSIGNEE (person chip), PRIORITY (5 dots,
   filled `ink`), CREATED (mono).
-- NOTES: the card's `description`, else the `notes` agents keep on it (owner, 2026-10-01:
-  the dialog read only `description`, so it was empty on every card); Michael is told to
-  keep them to what the work is and where it stands. No section when a card has none.
+- DESCRIPTION: the card's `description` when a request gave it one; no section otherwise.
+  Cards carry no running notes (owner, 2026-10-11: agents used them as diaries; an agent's
+  activity lives in its conversation and the office log). A To do card with a one off
+  step at a set time shows "Next: Mon, 12 Oct, 8:00 AM" (`nextAt`, local time), on the
+  card under the assignee and in the detail.
   QUESTIONS (the Q and A trail; an open question sits
   in a coral soft box with a "Waiting for you" pill; answered ones are plain), DEPENDENCIES
   (rows with a link icon, mono id, title, "waits on this").
@@ -879,7 +907,8 @@ Centered overlay over the stage (never over the right column), 528 px wide, `r-2
 - Closing time is not a dialog (owner, 2026-09-30): quitting with people at work starts it
   at once, and a closing bar takes the bottom bar's place: `card`, `r-xl`, `shadow-lg`, the
   moon mark, "Closing time" and the counter strip ("5 / 8 workers confirmed"), a progress
-  line, "3 still working" opening the rows (Remind, Close without them), "Cancel and go back
+  line, "3 still working" as a 24 px `indigo-soft` pill with a chevron (up to open, down while open)
+  inside a 28 px target, opening the rows (Remind, Close without them; one scroller, 300 px), "Cancel and go back
   to work", and "Force quit now", which asks once because unsaved work is lost.
 - A person who has gone home at closing time (confirmed, or closed without) is gone from the
   floor (owner, 2026-10-03; `docs/designs/closing-floor.md`): their desk goes dark and they
@@ -1093,7 +1122,7 @@ could speak.
 **Banter.** A little over half the time, when two quiet people sit in different pods, they
 trade an exchange instead (owner, 2026-10-01: Kelly and Ryan throwing paper planes or mail
 at each other). Each beat flies pod to pod as a paper plane, never an envelope (owner,
-2026-10-04: envelopes are only real messages), in the sender's department color, and on landing shows in the catcher's
+2026-10-04: envelopes are only real messages between the team; a plane is banter or what passes between the owner and Michael), in the sender's department color, and on landing shows in the catcher's
 bubble with the sender's name on top and the sender's color on the ring. Each line holds 2
 to 3.6 s by its length while the reply flies back, so the conversation reads in order; the
 last one holds a little longer. Exchanges are the full set in the file: `EXCHANGES`, the "that's
@@ -1162,7 +1191,7 @@ Every effect starts from a real event or state; nothing is decorative noise.
 | A question for the owner (a message to the owner, or a new Needs you item) | A paper plane flies from Michael's office toward Needs you, and the Needs you button bumps as it lands |
 | Two people message back and forth | A dashed violet arc joins their pods with a count bubble; it fades a minute after their last message |
 | Two quiet people banter (§8.8) | A paper plane in the sender's color flies pod to pod; the line pops up on the catcher's chip as it lands, and the reply flies back |
-| The owner messages Michael (from `human`) | The envelope rises from the composer under the stage |
+| The owner messages Michael (from `human`) | A paper plane in the owner's indigo rises from the composer under the stage to Michael's office, like the one he throws to Ask me in coral, and lands with two rings |
 | A new team member appears on the roster after launch | Their pod drops in, confetti in the department colors, and "Welcome, Jim" in front of the pod |
 | The office opens (each person's action is the clocking in marker) | Every light starts off. Michael's office comes on when he is in, a pod's when the first of its people is in, each desk when its person is; a light that comes on flickers like a strip light. A desk stays dark at most one minute, so a quiet engine never leaves it off |
 | Closing time (`onClosingTime`) | Each person's desk goes dark and they leave the chip as they confirm or are excused; a pod with nobody left goes dark and its chip fades out; Michael's office goes dark when it completes; cancelling brings it all back |
@@ -1283,6 +1312,54 @@ step): `card-2` fill, inset `line`, `r-xl`, no shadow, padding 16 × 20. Michael
 installed for you if it's missing" and "Sign in with your Claude plan, or an Anthropic API
 key"), and an `ink-3` line under them. No buttons: nothing in it can be clicked. One row at
 980 px and up; under that the text stacks beside the avatar.
+
+### 9.13 Task board (web)
+
+A home page section right after the refund story's Sending block (§9.11) and before the
+"Everything else" tiles: eyebrow "The board", heading "See every job, and who it's waiting
+on.", and a read only picture of the Tasks view (§7.20) in the story's cast. A `card-2`
+frame, `r-2xl`, `shadow-lg`, padding 18: the header ("Tasks" 18/24 600, count chips To do,
+Doing, Waiting, Blocked in `coral` soft, Done in `green` soft, a lock icon and "New work goes
+through Michael" in `t-meta` `ink-3`), then five columns in the app's order on a tinted
+`floor` ground, Blocked tinted `coral` soft, with 6 px square keys (`ink-4`, `blue`, `amber`,
+`coral`, `green`). Task cards as §7.20: mono id, title, assignee avatar and name. A Waiting
+card carries an `amber` soft "Waiting on {who}" chip, one on a customer and one on a
+teammate; the Blocked card is the story's refund (Northwind Cafe, Invoice #4471) with the
+18 px coral "?" and a `coral` soft "Waiting for you" chip; Done cards show a green check and
+the first line of Michael's result (`ink-2`, 11/15), then "N more". Under the frame, three
+plain notes keyed like the columns: Waiting says who it waits on, Blocked always waits on
+you, Done shows what came of it. The frame is one `role="img"` with a full text label;
+nothing in it can be clicked. Five columns at 980 px and up. Under that the board leads with
+what an owner checks first (owner, 2026-10-12): Blocked and Waiting side by side, Done across
+both columns with its cards two across, then To do and Doing as count rows without cards;
+under 480 px everything stacks in that order. The board never scrolls sideways.
+
+### 9.14 File tabs (web)
+
+A home page section right after the task board (§9.13) and before the "Everything else"
+tiles: eyebrow "Files", heading "Read the file he means, beside his question.", a lead that
+names only what opens in a tab (CSV files, notes, text and pictures; never "spreadsheets" or
+"in the office", owner CEO D8) and sets the picture later that morning, after the board's
+9:15, and a read only picture of a file tab (§7.2) opened from a file chip on an Ask me card (§7.8). Same
+frame as §9.13 (`card-2`, `r-2xl`, `shadow-lg`). The top bar as §7.2: Office, Tasks, Who
+talks to whom, the `line-2` hairline, then two file tabs (a Markdown note, and a CSV that is
+selected, `ink` fill, its name whole), each named as the app names it, without folder or
+extension (the same name as its chip), and the coral Needs you pill showing 1. Under it, the
+file view (§7.2: name, "Oscar / Payments" in `ink-3`, Open in app and Show in Finder) with
+the CSV as a table: Date, From, Invoice and Amount, amounts right aligned in mono, eight
+September payments, none named like the demo office (Harbor & Pine), whose last row has no
+invoice. Beside it, the
+right column's Ask me card, Michael's question for Oscar, asks whether that payment is the renewal deposit; the
+question names the file as a chip (`sheet` icon, the name without extension, "Open"), an
+answer is being typed, and it holds up 2 tasks. Under the frame, three plain notes that add
+what the lead leaves out: named files are buttons (Open, or Show in Finder, "Show in folder"
+on Windows, for anything else, §7.8); the question stays beside it (§7.2); up to five at once,
+a sixth closing the one opened longest ago, with PDF and Office files opening in their own
+app. The frame is one `role="img"` with a full text label; nothing in it
+can be clicked. File view and card side by side at 980 px and up; under that the card comes
+first (no wider than the app's 520 px right column), then the file, and the tab bar drops Who talks to whom and the Markdown tab, then the
+Needs you pill under 600 px and Tasks under 480 px, so the selected file tab keeps its whole
+name. Under 400 px the table steps down to 11 / 16. The section never scrolls sideways.
 
 ---
 
@@ -1480,8 +1557,12 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-07 | Access tab, Email: no switch; one row per address used with Inbox and Sending lines, and Add a mailbox with Watch the inbox or Send only (§7.12). Settings, Mailboxes names who else sends from a mailbox (§7.26). |
 | 2026-10-07 | Onboarding: the card is centered while the studio isn't showing and glides to its column when it appears, the background glow following it (§7.25); onboarding reference screens re-shot. |
 | 2026-10-07 | Onboarding: a Ready step (Get Michael ready) installs Claude Code and signs the owner in where they can see it; skipped, Ask me keeps a card (§7.25). |
+| 2026-10-10 | Files named in replies and Ask me cards are chips in place of their path (plain full paths too); Open shows Markdown, text, JSON, CSV and images in a closable file tab after Who talks to whom, at most 5, live, with Ask me beside it; PDF and Office files open in their app (§7.2, §7.8, §7.19). |
+| 2026-10-10 | The owner's message to Michael flies as a paper plane in the owner's indigo, not an envelope; it lands at his office with the two rings (§8.8, §8.12). |
 | 2026-10-09 | Web, Windows first class: the platform switch drops the Beta tag (§9.8, §9.9 retired for web); the Windows note is a lead line plus bullets; the home page gets the Sending switch with the mail approval card (§9.11), the setup inset (§9.12) and six "Everything else" tiles (§9.5); the social card says "on your computer" (§9.7). |
 | 2026-10-10 | Panel tabs: the mouse wheel scrolls an overflowing tab row sideways, and an edge fades while tabs are hidden past it (§7.11). |
+| 2026-10-12 | Web: the home page's task board after the refund story, the Tasks view (§7.20) as a read only picture that leads with Blocked and Waiting on small screens (§9.13). |
+| 2026-10-12 | Web: file tabs after the task board, a CSV open in a file tab (§7.2) from a chip on Oscar's Ask me card (§7.8), the card beside it, as a read only picture (§9.14). |
 | 2026-10-04 | Banter flies as paper planes only; an envelope on the floor is always a real message (§8.8, §8.12). |
 | 2026-10-04 | Ask me file rows: a question's named files open from the card, or show in Finder (§7.8); `file` and `sheet` icons (§10). |
 | 2026-10-01 | Pre-landing review fixes: dialogs close when closing time starts and its bar sits above them; the compact grid stays clear of the right column; selecting someone dims the rest of the stage to 45% (§7.14); Traces behind a flag (§7.11); setup screens on v2 fields and rows (§7.25); the composer keeps its width and takes pastes (§7.19); Settings and closing time copy in plain words. |

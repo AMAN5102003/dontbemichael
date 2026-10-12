@@ -6,6 +6,7 @@ import type { HarnessConfig } from '@/store/config';
 import { DEFAULT_ORG_TRIGGER } from '@shared/triggers';
 import { StudioStage } from '@/scene/studio/StudioStage';
 import { TasksKanban } from '@/components/TasksKanban';
+import { FileTabView } from '@/components/FileTabView';
 import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
 import { useHive } from '@/hooks/useHive';
 import { useGodNameSync } from '@/i18n/useGodNameSync';
@@ -200,6 +201,11 @@ export function App() {
     // Every field main sends reaches the bar; none is copied by hand.
     setClosing({ phase, ...rows });
     if (phase === 'started' || phase === 'progress') setClosingOpen(true);
+    // The lights going out play on the office floor, so closing time shows it,
+    // whatever tab was open (owner, 2026-10-11). Only at the start: a tab the
+    // owner picks while closing stays picked. Not saved as the remembered view,
+    // so the next launch still opens where the owner left off.
+    if (phase === 'started') useStore.setState({ floorView: 'office' });
   }), []);
 
   // Who has gone home: they leave the floor and open from nowhere until
@@ -325,7 +331,9 @@ export function App() {
   // Tasks and Who talks to whom take the whole window (owner, 2026-10-03). The
   // column stays mounted there, only hidden, so a person's terminal and a half
   // written reply survive the switch; opening it goes back to the office.
-  const columnShown = columnOpen && floorView === 'office';
+  // A file tab keeps it beside the file, so an Ask me card stays answerable
+  // while its file is read (docs/designs/open-file-tab.md, F1).
+  const columnShown = columnOpen && (floorView === 'office' || floorView === 'file');
   const columnRef = useRef<HTMLDivElement>(null);
   const lastColumnMode = useRef<'board' | 'person'>('board');
   // An ask arriving, or waiting at launch, opens the board. Focus stays put.
@@ -470,6 +478,7 @@ export function App() {
               background: 'var(--cth-bg)'
             }}>
               {floorView === 'tasks' && <TasksKanban />}
+              {floorView === 'file' && <FileTabView />}
               {floorView === 'graph' && (
                 <MemoryGraphPanel godId={godId} onJumpToMemory={(id) => useStore.getState().openAgentMemory(id)} />
               )}
@@ -520,7 +529,7 @@ export function App() {
             className={columnOpen ? 'cth-col-in' : 'cth-col-out'}
             style={{
               width: sidebarWidth, flexShrink: 0, minHeight: 0, zIndex: 60,
-              display: floorView === 'office' ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
+              display: floorView === 'office' || floorView === 'file' ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
               ...(columnOpen
                 ? { position: 'relative', margin: '4px 6px 0 0' }
                 : { position: 'absolute', top: 4, bottom: 0, insetInlineEnd: 6 })

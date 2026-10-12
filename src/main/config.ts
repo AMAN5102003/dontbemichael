@@ -3,7 +3,7 @@ import type { CompanyProfile } from '../shared/companyProfile';
 import type { ScheduledMission, ScheduleRequest } from '../shared/missions';
 import type { ClaudeConnectorsState } from '../shared/claudeConnectors';
 import { app } from 'electron';
-import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import {
@@ -16,7 +16,7 @@ import {
 import { defaultMcpDefaults } from '../shared/mcpCatalog';
 import { MAX_AGENT_TOKEN_CAP } from '../shared/tokenCaps';
 import { expandTilde, normalizeHiveHome } from './fs';
-import { writeFileAtomic } from './atomicFile';
+import { isHeldRename, RENAME_RETRY_MS, sleepSync, writeFileAtomic } from './atomicFile';
 import type { IntegrationRecord } from '../shared/integrations';
 import {
   DEFAULT_CONTEXT_TRIGGER,
@@ -708,9 +708,40 @@ export function onConfigWritten(listener: ConfigWriteListener): () => void {
   return () => { configWriteListeners.delete(listener); };
 }
 
+/** The copy kept of a config.json that could not be read, and the bytes it holds. */
+let keptCopy: { path: string; raw: string } | null = null;
+
+/** A config.json that exists but does not parse reads as the defaults, so the
+ *  next save would write over the owner's settings for good (issue 98). Keep a
+ *  copy beside it first, so it can be repaired; the app goes on working. If the
+ *  copy cannot be made, the save fails rather than lose the file. Returns the
+ *  copy's path, or null when the file is missing or readable. */
+function keepUnreadableConfig(p: string): string | null {
+  let raw: string;
+  try { raw = readFileSync(p, 'utf8'); } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
+  try { JSON.parse(raw); return null; } catch { /* damaged: keep it below */ }
+  if (keptCopy?.raw === raw) return keptCopy.path;
+  const copy = `${p}.damaged-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  copyFileSync(p, copy);
+  keptCopy = { path: copy, raw };
+  console.warn(`[config] config.json could not be read; kept a copy at ${copy}`);
+  return copy;
+}
+
+/** Where the copy of an unreadable config.json is kept, making it now if need
+ *  be, so setup can tell the owner why it starts again (issue 98). Null when
+ *  the file is missing or readable, or the copy could not be made. */
+export function damagedConfigCopy(): string | null {
+  try { return keepUnreadableConfig(configPath()); } catch { return null; }
+}
+
 function persistConfig(next: HarnessConfig): HarnessConfig {
   const p = configPath();
   mkdirSync(dirname(p), { recursive: true });
+  keepUnreadableConfig(p);
   writeFileAtomic(p, JSON.stringify(next, null, 2));
   // Saving one setting stores only that setting, so fill the rest back in first:
   // subscribers must see the same complete config a read gives them, never a
@@ -889,9 +920,12 @@ function updateClaudeJson(home: string, change: (c: ClaudeConfig) => boolean): b
   // Claude Code writes this file too. Write a copy beside it and swap it in, so
   // a crash never leaves it half written, and start again (up to three times)
   // when Claude changed it between our read and our write, so its edit is kept.
+  // On Windows the swap is refused while something else has the file open
+  // (antivirus, backup or sync tools); that also starts again from the read.
   const stamp = (): string => { try { const st = statSync(p); return `${st.mtimeMs}:${st.size}`; } catch { return 'none'; } };
+  const ATTEMPTS = 3;
   try {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
       const before = stamp();
       let c: ClaudeConfig = {};
       let mode = 0o600;
@@ -905,7 +939,14 @@ function updateClaudeJson(home: string, change: (c: ClaudeConfig) => boolean): b
       const tmp = `${p}.dbm-${process.pid}-${attempt}.tmp`;
       writeFileSync(tmp, JSON.stringify(c, null, 2), { encoding: 'utf8', mode });
       if (stamp() !== before) { rmSync(tmp, { force: true }); continue; }
-      renameSync(tmp, p);
+      try {
+        renameSync(tmp, p);
+      } catch (e) {
+        rmSync(tmp, { force: true });
+        if (!isHeldRename(e) || attempt === ATTEMPTS - 1) throw e;
+        sleepSync(RENAME_RETRY_MS[attempt]);
+        continue;
+      }
       return true;
     }
     console.warn(`[config] Claude config at ${p} kept changing; left it for the next start.`);

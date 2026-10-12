@@ -7,7 +7,7 @@ It is generated from the pull requests themselves rather than from commit metada
 dropped because their git email does not happen to match their GitHub account. It is regenerated
 from merged pull requests, so you appear without having to ask.
 
-**7 people** have contributed so far.
+**36 people** have contributed so far.
 
 <a href="https://github.com/agentvivekkumar/dontbemichael/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=agentvivekkumar/dontbemichael" alt="Contributor avatars">
@@ -22,15 +22,44 @@ requests, and a pull request always has a real account behind it.
 
 | Contributor | Contributions | First | Most recent |
 |---|---:|---|---|
-| [@agentvivekkumar](https://github.com/agentvivekkumar) | 37 | 2026-09-15 | 2026-10-10 |
+| [@agentvivekkumar](https://github.com/agentvivekkumar) | 47 | 2026-09-15 | 2026-10-12 |
+| [@amartya1523](https://github.com/amartya1523) | 10 | 2026-10-10 | 2026-10-12 |
+| [@dhruvpuri](https://github.com/dhruvpuri) | 7 | 2026-10-10 | 2026-10-10 |
+| [@codedbygo](https://github.com/codedbygo) | 2 | 2026-10-10 | 2026-10-10 |
+| [@init-pushu](https://github.com/init-pushu) | 2 | 2026-10-10 | 2026-10-12 |
+| [@shrinivas-sn](https://github.com/shrinivas-sn) | 2 | 2026-10-11 | 2026-10-11 |
+| [@adhi2801](https://github.com/adhi2801) | 2 | 2026-10-12 | 2026-10-12 |
 | [@josephzhang0602](https://github.com/josephzhang0602) | 1 | 2026-10-10 | 2026-10-10 |
 | [@rajukancharla21](https://github.com/rajukancharla21) † | 1 | 2026-10-10 | 2026-10-10 |
 | [@Junaid522](https://github.com/Junaid522) | 1 | 2026-10-10 | 2026-10-10 |
 | [@shubhamkapoor01](https://github.com/shubhamkapoor01) † | 1 | 2026-10-10 | 2026-10-10 |
 | [@avneeshjadhav04](https://github.com/avneeshjadhav04) | 1 | 2026-10-10 | 2026-10-10 |
 | [@shinic1](https://github.com/shinic1) | 1 | 2026-10-10 | 2026-10-10 |
+| [@pawan5310](https://github.com/pawan5310) | 1 | 2026-10-10 | 2026-10-10 |
+| [@kprsnt2](https://github.com/kprsnt2) | 1 | 2026-10-10 | 2026-10-10 |
+| [@Kushagra1122](https://github.com/Kushagra1122) | 1 | 2026-10-10 | 2026-10-10 |
+| [@lakshitmehta](https://github.com/lakshitmehta) | 1 | 2026-10-10 | 2026-10-10 |
+| [@siddharth20323](https://github.com/siddharth20323) | 1 | 2026-10-10 | 2026-10-10 |
+| [@shashvat-singham](https://github.com/shashvat-singham) | 1 | 2026-10-10 | 2026-10-10 |
+| [@atulchoudhary7781-dot](https://github.com/atulchoudhary7781-dot) | 1 | 2026-10-10 | 2026-10-10 |
+| [@YachanaParmar](https://github.com/YachanaParmar) | 1 | 2026-10-10 | 2026-10-10 |
+| [@pranjalp31](https://github.com/pranjalp31) | 1 | 2026-10-10 | 2026-10-10 |
+| [@adirathoreudr](https://github.com/adirathoreudr) | 1 | 2026-10-10 | 2026-10-10 |
+| [@deepthink0504](https://github.com/deepthink0504) | 1 | 2026-10-10 | 2026-10-10 |
+| [@sam-2707](https://github.com/sam-2707) | 1 | 2026-10-10 | 2026-10-10 |
+| [@rugvedshete](https://github.com/rugvedshete) | 1 | 2026-10-11 | 2026-10-11 |
+| [@AugustGitHub11](https://github.com/AugustGitHub11) | 1 | 2026-10-11 | 2026-10-11 |
+| [@Asin-Junior-Honore](https://github.com/Asin-Junior-Honore) | 1 | 2026-10-11 | 2026-10-11 |
+| [@Harsh4601](https://github.com/Harsh4601) | 1 | 2026-10-11 | 2026-10-11 |
+| [@tanaya09](https://github.com/tanaya09) | 1 | 2026-10-11 | 2026-10-11 |
+| [@piyush12kunjilwar](https://github.com/piyush12kunjilwar) | 1 | 2026-10-12 | 2026-10-12 |
+| [@jigar225](https://github.com/jigar225) | 1 | 2026-10-12 | 2026-10-12 |
+| [@celljuke](https://github.com/celljuke) | 1 | 2026-10-12 | 2026-10-12 |
+| [@dhivij](https://github.com/dhivij) | 1 | 2026-10-12 | 2026-10-12 |
+| [@AryakumarMishra](https://github.com/AryakumarMishra) | 1 | 2026-10-12 | 2026-10-12 |
+| [@hanifstudio](https://github.com/hanifstudio) | 1 | 2026-10-12 | 2026-10-12 |
 
-_43 pull requests from 7 people._
+_101 pull requests from 36 people._
 
 ## † Contributions that never got the merged badge
 

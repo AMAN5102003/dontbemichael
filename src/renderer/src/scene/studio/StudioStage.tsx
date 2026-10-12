@@ -6,7 +6,7 @@
  * type floor. Everything shown comes from real state: agent status and action,
  * the task ledger, the mailboxes in config, live hive messages.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
 import { useStore, actionText, liveActivity, ACTION_CLOCKING_IN, type Agent } from '@/store/store';
@@ -16,6 +16,8 @@ import { useAppTheme } from '@/design/theme';
 import { DeptIcon, PersonAvatar } from '@/scene/office/props';
 import { PixelBadge, type StatusKind } from '@/components/PixelBadge';
 import { useHasTerminalDraft } from '@/components/terminalPool';
+import { useOfficeBreak } from '@/components/OfficeBreakNotice';
+import type { OfficeBreakView } from '@shared/officeBreak';
 import { useMissions } from '@/components/triggers/ScheduleList';
 import { openQuestions, parseTasks } from '@/components/TasksKanban';
 import { missionsFor, nextRunAt } from '@shared/missions';
@@ -133,7 +135,7 @@ function deskState(a: Agent): DeskState {
  * light and tint reach under the panel; the scene still fits the space left
  * of it.
  */
-export function StudioStage({ config: initialConfig, bleed = 0, quietCards = false }: {
+export const StudioStage = memo(function StudioStage({ config: initialConfig, bleed = 0, quietCards = false }: {
   config: HarnessConfig; bleed?: number;
   /** Demo mode (tools/studio-lab; owner, 2026-10-01): every pod shows its chip,
    *  even while people work; a card pops up only on hover, or for a few
@@ -613,7 +615,7 @@ export function StudioStage({ config: initialConfig, bleed = 0, quietCards = fal
       </div>
     </div>
   );
-}
+});
 
 /* ── Label card (DESIGN.md 7.14) ──────────────────────────────────────────── */
 
@@ -668,7 +670,8 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
 }) {
   const { t } = useTranslation();
   const typing = useHasTerminalDraft(a.ptyId);
-  const status: StatusKind = typing ? 'typing' : (a.status as StatusKind);
+  const onBreak = useOfficeBreak();
+  const status: StatusKind = typing ? 'typing' : breakStatus(a, onBreak);
   const next = (() => {
     const now = Date.now();
     const times = missionsFor(missions, a.id, godId).filter((m) => m.enabled).map((m) => ({ at: nextRunAt(m, now), label: m.label })).filter((x): x is { at: number; label: string } => x.at !== null);
@@ -780,6 +783,12 @@ function PodChip({ style, dept, members, c, snap, onSelect, onEnter, onLeave, qu
 /** Statuses that mean someone is at work, so their pod shows its full card. */
 const ACTIVE = new Set<string>(['thinking', 'working', 'blocked', 'compacting', 'looping']);
 
+/** "On a break" for a Claude agent that is not mid turn while the plan's
+ *  usage limit holds the office (issue 124); otherwise its own status. */
+function breakStatus(a: Agent, b: OfficeBreakView | null): StatusKind {
+  return b && (a.provider ?? 'claude') === 'claude' && !ACTIVE.has(a.status) ? 'break' : (a.status as StatusKind);
+}
+
 /** Activity captions are stored lower case ("nothing to do"); a caption on
  *  its own line starts with a capital. */
 function sentence(s: string): string {
@@ -809,6 +818,7 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
   delegated: number; toYou: number; kept: number; board: Board;
 }) {
   const { t } = useTranslation();
+  const onBreak = useOfficeBreak();
   const ctx = god.contextTokens !== undefined && god.contextLimit ? Math.round((god.contextTokens / god.contextLimit) * 100) : null;
   const stat = (n: number, label: string, coral = false) => (
     <div style={{ padding: '6px 0 7px', textAlign: 'center' }}>
@@ -837,7 +847,7 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
             <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', color: 'var(--cth-ink)', paddingInlineEnd: 76 }}>{god.name}</b>
             <i style={{ fontStyle: 'normal', fontSize: 10, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>{t('studio.officeManager')}</i>
           </span>
-          <PixelBadge status={god.status as StatusKind} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+          <PixelBadge status={breakStatus(god, onBreak)} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
         </div>
         <div style={{ marginTop: 6, fontSize: 10.5, lineHeight: '14px', color: 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {god.action?.trim() ? sentence(actionText(god.action.trim(), t)) : t('studio.runningTheOffice')}

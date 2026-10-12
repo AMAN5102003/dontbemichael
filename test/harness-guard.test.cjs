@@ -44,10 +44,22 @@ test('the protocol files an agent is told to write are allowed', () => {
     `${HIVE}/agents/oscar/memory/handoff.md`,
     `${HIVE}/agents/oscar/outbox/msg-1.json`,
     `${HIVE}/agents/oscar/inbox/.done/msg-0.json`,
-    `${HIVE}/tasks.json`
+    `${HIVE}/triage/20261011T143000-oscar.json`
   ]) {
     assert.equal(decide(p).deny, false, p);
   }
+});
+
+test('only Michael writes the board; a team member files once in triage/ and Michael files it away', () => {
+  // Value: protects=the single writer of tasks.json (ship review D8) and the filing path it depends on; fails_when=the guard refuses a filing, so team members fall back to tasks.json, or still lets them write tasks.json; why_new=review D8 red team found triage/ refused; seam=harnessWriteDecision
+  const d = decide(`${HIVE}/tasks.json`);
+  assert.equal(d.deny, true, 'a team member never writes tasks.json');
+  assert.match(d.reason, /one new file per filing in the triage folder; Michael alone writes tasks\.json, so tell him what changed/);
+  assert.equal(decide(`${HIVE}/triage/.done/20261011T143000-oscar.json`).deny, true, 'filing away is Michael\'s');
+  assert.equal(decide(`${HIVE}/triage/sub/x.json`).deny, true);
+  const god = { agentId: 'god', isGod: true, cwd: '/Users/me/Documents/Pho/Office' };
+  assert.equal(decide(`${HIVE}/tasks.json`, god).deny, false);
+  assert.equal(decide(`${HIVE}/triage/.done/20261011T143000-oscar.json`, god).deny, false);
 });
 
 test('a business document in the hive is refused, and the reason says where it belongs', () => {

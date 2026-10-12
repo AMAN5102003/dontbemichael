@@ -13,6 +13,7 @@ import type { IntegrationRecord, IntegrationTemplate } from '../shared/integrati
 export type { IntegrationRecord, IntegrationTemplate } from '../shared/integrations';
 import type { UpdateStatus } from '../shared/updateState';
 import type { CliUpdateStatus } from '../shared/cliUpdate';
+import type { OfficeBreakView } from '../shared/officeBreak';
 export type { UpdateStatus } from '../shared/updateState';
 import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
@@ -168,7 +169,7 @@ export interface HiveTask {
   title: string;
   description?: string;
   assignee?: string;
-  status: 'todo' | 'doing' | 'waiting' | 'blocked' | 'done';
+  status: 'triage' | 'todo' | 'doing' | 'waiting' | 'blocked' | 'done';
   /** Who a Waiting card waits on (Michael writes it). */
   waitingOn?: string;
   dependsOn: string[];
@@ -785,6 +786,9 @@ const api = {
   // ─── Config ──────────────────────────────────────────────────────────────
   getConfig: (): Promise<HarnessConfig> =>
     ipcRenderer.invoke('config:get'),
+  /** Where the copy of an unreadable settings file is kept, or null (issue 98). */
+  damagedConfigCopy: (): Promise<string | null> =>
+    ipcRenderer.invoke('config:damagedCopy'),
   updateConfig: (patch: Partial<HarnessConfig>): Promise<HarnessConfig> =>
     ipcRenderer.invoke('config:update', patch),
   /** Set or clear one per-agent token ceiling against main's latest config. */
@@ -851,8 +855,23 @@ const api = {
   /** The files an Ask me question names: whether each opens in its default
    *  app, is only shown in Finder, or is missing. Main decides
    *  (docs/designs/ask-me-open-file.md). */
-  askFiles: (paths: string[], who: { raisedBy?: string; assignee?: string }): Promise<Array<'open' | 'reveal' | 'missing'>> =>
+  askFiles: (paths: string[], who: { raisedBy?: string; assignee?: string }): Promise<Array<{ verdict: 'open' | 'reveal' | 'missing'; tab: boolean; path: string }>> =>
     ipcRenderer.invoke('fs:askFiles', paths, who),
+  /** Read a named file for its office tab (docs/designs/open-file-tab.md). Main
+   *  checks the folders again; `place` is 'office' or a team member's id. */
+  readAskFile: (p: string, who: { raisedBy?: string; assignee?: string }): Promise<
+    | { ok: true; path: string; kind: 'markdown' | 'text' | 'json' | 'csv' | 'image'; text?: string; bytes?: Uint8Array; mime?: string; size: number; place: string; folder: string[] }
+    | { ok: false; error: 'not found' | 'too large' | 'unreadable' }
+  > => ipcRenderer.invoke('fs:readAskFile', p, who),
+  /** Watch an open file tab's file; `onAskFileChanged` fires with its id. */
+  watchAskFile: (id: string, p: string, who: { raisedBy?: string; assignee?: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('fs:watchAskFile', id, p, who),
+  unwatchAskFile: (id: string): Promise<void> => ipcRenderer.invoke('fs:unwatchAskFile', id),
+  onAskFileChanged: (cb: (id: string) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, id: string) => cb(id);
+    ipcRenderer.on('fs:askFileChanged', listener);
+    return () => ipcRenderer.removeListener('fs:askFileChanged', listener);
+  },
   /** Open (or, when main says so, show in Finder) one file an Ask me question names. */
   openAskFile: (p: string, who: { raisedBy?: string; assignee?: string }): Promise<{ ok: boolean; action?: 'opened' | 'revealed'; error?: string }> =>
     ipcRenderer.invoke('fs:openAskFile', p, who),
@@ -1303,12 +1322,6 @@ const api = {
   /** Read an agent's current control snapshot. */
   controlSnapshot: (agentId: string): Promise<AgentControlSnapshot | null> =>
     ipcRenderer.invoke('control:snapshot', agentId),
-  /** Subscribe to gate/deny events (a tool was blocked); returns unsubscribe fn. */
-  onApprovalRequest: (cb: (e: { agentId: string; tool?: string; reason?: string }) => void): (() => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { agentId: string; tool?: string; reason?: string }) => cb(payload);
-    ipcRenderer.on('control:approvalRequest', listener);
-    return () => ipcRenderer.removeListener('control:approvalRequest', listener);
-  },
 
   // ─── Task kanban (hive/tasks.json) ───────────────────────────────────────
   /** Atomically append one card against the latest main-process ledger. */
@@ -1321,8 +1334,8 @@ const api = {
     patch: Partial<Omit<HiveTask, 'id'>>
   ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch),
   /** The owner moves a card; Done is their decision to end it. Michael is told. */
-  hiveMoveTask: (id: string, status: HiveTask['status']): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('hive:moveTask', id, status),
+  hiveMoveTask: (id: string, status: HiveTask['status'], reason?: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('hive:moveTask', id, status, reason),
   /** The owner ends a card: Done, marked "Closed by owner", never deleted. */
   hiveCloseTask: (id: string, reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:closeTask', id, reason),
@@ -1702,6 +1715,13 @@ const api = {
   },
   /** The last known status, for a window that subscribed after the push. */
   cliUpdateCurrent: (): Promise<CliUpdateStatus | null> => ipcRenderer.invoke('cliUpdate:current'),
+  /** The office break (issue 124): null while the office works. */
+  officeBreakView: (): Promise<OfficeBreakView | null> => ipcRenderer.invoke('office:breakView'),
+  onOfficeBreak: (cb: (view: OfficeBreakView | null) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, payload: OfficeBreakView | null) => cb(payload);
+    ipcRenderer.on('office:break', listener);
+    return () => ipcRenderer.removeListener('office:break', listener);
+  },
   /** Quit and install the downloaded update — only ever called from an explicit
    *  "restart to update" click. */
   updateRestartAndInstall: (): Promise<{ ok: boolean; error?: string }> =>

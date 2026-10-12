@@ -1,6 +1,6 @@
 {
   "name": "dontbemichael",
-  "version": "0.1.7",
+  "version": "0.1.9",
   "private": true,
   "description": "An AI office for small business owners: Michael, your office manager, runs a team of AI agents on your own computer.",
   "main": "out/main/index.js",
@@ -55,7 +55,6 @@
     "fflate": "^0.8.3",
     "i18next": "^26.3.6",
     "imapflow": "^2.0.7",
-    "localtunnel": "^2.0.2",
     "mailparser": "^3.9.28",
     "monaco-editor": "^0.52.2",
     "node-pty": "^1.0.0",
@@ -74,7 +73,6 @@
     "@electron/notarize": "^2.5.0",
     "@electron/rebuild": "^3.7.0",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/localtunnel": "^2.0.4",
     "@types/mailparser": "^3.4.6",
     "@types/node": "^22.7.5",
     "@types/react": "^18.3.11",

@@ -14,6 +14,18 @@
 **Priority:** P2
 **Depends on:** Decision 2 (per-agent grants), Decision 22 (serialized executor); only relevant from Phase 2, when agents make real third-party calls.
 
+### A write to a connected app is never sent twice (issue #54)
+
+**What:** The send once rule mail already has, for writes the broker forwards to a connected app (anything other than GET or HEAD): an identical write is recorded before it goes upstream and answered from that record if it comes again, across a restart too.
+
+**Why:** The broker forwards a write with no dedupe behind a 30 second timeout (`src/main/integrationBroker.ts`, `UPSTREAM_TIMEOUT_MS`). If the provider accepts it but the answer is lost, or the app stops before it comes back, the agent's retry creates a second invoice, booking or contact. Plain mail sends got this in PR #126; connected app writes did not.
+
+**Context:** Reuse PR #126's pattern inside the broker, not a new store: an app private journal like `mail-send-journal.json`, keyed on the agent, integration, method, path and a hash of the body, written as pending before the upstream call and settled after. Pass the key upstream where the provider takes one (an `Idempotency-Key` header, QuickBooks `requestid`). A write left pending after a stop that the app cannot check is refused with a plain reason telling the agent to tell Michael, as PR #126 does for mail; the app never makes or moves a card for it (Michael owns every card). Issue #54 also proposed a per task work record for engine hand off and proof of done; those stay with "Make a second engine (Codex first) ready for an office", #36, #48 and #51.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+
 ### Message when the OS cannot encrypt stored credentials
 
 **What:** A plain-language path for when Electron's `safeStorage` reports encryption unavailable, so connecting an account fails visibly instead of silently.
@@ -117,11 +129,11 @@
 
 ### Authenticate hook events and keep the owner's messages out of the agents' folder
 
-**What:** Give each spawned agent a secret for its hook events and ignore events whose agent id doesn't match, and move the owner's sent messages and dock state (agents/human) out of the hive folder agents can write.
+**What:** Give each spawned agent a secret for its hook events and ignore events whose agent id doesn't match, and move the owner's sent messages and dock state (agents/human) out of the hive folder agents can write. The design from issue #61: at spawn, main mints a random token per agent and keeps the token to agent map in memory only, never in the hive folder; each bridge carries it the way it already gets per agent config (the agent's `--settings` hook command, the hooks shim's env or config, the proxy sidecar's env); `HookServer` takes the agent from the token, not from the frame's `agent_id`, drops and logs a frame with a missing, unknown or mismatched token, and honours a `subagent_id` only under its parent's token; the token changes on every respawn and restart.
 
 **Why:** Security reviews: an agent can send a fake Stop or SessionStart event naming Michael (his notes fallback now reads only his session start transcript inside Claude's folder, but another agent's own transcript is there too), and agents can write into agents/human.
 
-**Context:** Owner decision D4 in the ship took the two cheap checks and left this with the existing data folder task. Start in `src/main/hooks.ts` (the hook socket) and `src/main/hive.ts` (`ownerSentDir`, `ownerStatePath`).
+**Context:** Owner decision D4 in the ship took the two cheap checks and left this with the existing data folder task. Start in `src/main/hooks.ts` (the hook socket, which reads the agent from the frame today) and `src/main/hive.ts` (`ownerSentDir`, `ownerStatePath`). A forged frame can overwrite another agent's saved session id (so it resumes the wrong conversation), add cost rows for it, or fire its Stop. One test per bridge kind (Claude settings hook, hooks shim, proxy sidecar) sends a frame naming another agent, and one with no token, and passes only when both are dropped. Every engine bridge posts to the same socket, so this is a gate for a second engine (gap 10 under "Make a second engine (Codex first) ready for an office").
 
 **Effort:** L
 **Priority:** P2
@@ -263,6 +275,20 @@
 **Effort:** S
 **Priority:** P3
 
+## Task board (deferred from ship of mit/local-app-version-stuck-ee4e87, 2026-10-12)
+
+### A triage filing the app creates itself, so none is ever overwritten
+
+**What:** Team members send a filing as an outbox message to "triage", and the router creates the file in `triage/` with an exclusive create, instead of each agent writing there itself.
+
+**Why:** The write guard refuses an edit, another agent's name and a file that already exists (`src/main/harnessGuard.ts`, `isPlumbing`), but the check runs before the write, so two writes of the very same filing name at the same instant could still lose the first. Codex adversarial pass 2 found it; the owner accepted the risk for this release (ship D11), since agents do not write the same name twice at once.
+
+**Context:** The router already moves every outbox file (`HiveManager.routeOnce`); open the new file with `wx` there and archive the outbox copy, as messages do. Then the triage folder can be the app's alone in the write guard.
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Schedules
 
 ### Starter jobs in an agent's empty Schedules tab
@@ -276,6 +302,18 @@
 **Effort:** S
 **Priority:** P2
 **Depends on:** starter jobs written into the shipped packs.
+
+### Michael turns repeated work into a routine (issue #41)
+
+**What:** When the same kind of work keeps getting done (for example chasing overdue invoices three weeks running), Michael sets it up as a scheduled job for the team member who does it, with its how in that member's Work style.
+
+**Why:** Owners rarely notice which work repeats, so it stays manual. Starter jobs only cover what a business type usually needs, not how this office actually works.
+
+**Context:** The app works out the repeats and Michael decides, so the duty never lives only in his prompt (card-lifecycle rule): group done cards that look like the same job (title, assignee, what was done) and keep each group in front of Michael until he acts or passes. Approval follows the office management rule (owner, 2026-10-10, issue #41): Michael sets up routine jobs himself through the schedule path and adds the how to the Work style; a job that touches money, customers, legal or security goes to Ask me first with the proposed job filled in. Nothing starts without one of those two.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** nothing.
 
 ## Agents and 1:1
 
@@ -353,16 +391,6 @@ review (2026-09-25); needs a check with a mouse-aware prompt.
 
 **Priority:** P3
 
-### Label messages with no usable date
-
-**What:** In the Messages tab, give conversations whose messages have no valid `created_at` a
-heading ("Undated") instead of an empty one (`src/shared/messageView.ts` localDay returns '').
-
-**Why:** Only malformed files hit it, but the section then has no heading. Found by the local
-model review (2026-09-25).
-
-**Priority:** P4
-
 ## Business mode (deferred from plan, v0.0.1 ship)
 
 Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "ship, defer as P1 TODOs" on 2026-09-24).
@@ -376,18 +404,6 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 **Context:** `src/shared/agentDefinition.ts` already carries levels and outward capabilities; `src/main/harnessGuard.ts` shows the PreToolUse pattern. Start by compiling one agent's levels into its per-session settings.
 
 **Effort:** L
-**Priority:** P1
-**Depends on:** None
-
-### Regression test: nothing writes skip-permission flags into ~/.claude/settings.json
-
-**What:** The mandatory regression test from Decision 18.
-
-**Why:** The app writes per-session Claude settings; a regression that touched the owner's global settings would silently change every Claude Code session on the Mac.
-
-**Context:** Point HOME at a temp dir, spawn through `spawnAgentCore` paths, assert `~/.claude/settings.json` is untouched.
-
-**Effort:** S
 **Priority:** P1
 **Depends on:** None
 
@@ -414,18 +430,6 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 **Effort:** M
 **Priority:** P1
 **Depends on:** None
-
-### Plan-limit handling
-
-**What:** Detect Claude usage limits (StopFailure `rate_limit`, quota hooks), show an office break state and a banner.
-
-**Why:** On smaller Claude plans the office stops mid-day with no explanation; setup now tells owners a Max plan is needed, but nothing handles hitting the limit.
-
-**Context:** Hooks arrive in `src/main/hooks.ts`.
-
-**Effort:** M
-**Priority:** P1
-**Depends on:** Attention strip
 
 ### Attention strip and owner floor layout (Decisions 25, 27)
 
@@ -465,11 +469,11 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 
 ### First-success confirmation and morning report (Decision 32)
 
-**What:** Confirm the first finished job to the owner, and a morning summary.
+**What:** Confirm the first finished job to the owner, and a morning summary, plus a weekly digest for owners who open the app once a week (issue #81): emails handled and drafted, tasks closed by each team member, scheduled jobs run, and what still waits on the owner.
 
 **Why:** New owners need proof the office works while they were away.
 
-**Context:** Packs declare `firstAction` (Decision 29), used only in agent goals today.
+**Context:** Packs declare `firstAction` (Decision 29), used only in agent goals today. Every count comes from what the app recorded (the task ledger, the mail send records, the schedule runs), never from Michael's memory, and a week with nothing in it says so plainly. Deliver it the way reports already work: Michael posts it on Ask me as a report (`kind: "report"`), from a schedule the owner can see and change in Schedules. No estimated time saved: the owner declined it (2026-10-10, #81), because minutes per task set by the owner would end up wrong for everyone.
 
 **Effort:** M
 **Priority:** P1
@@ -489,11 +493,11 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 
 ### 14px text floor on the remaining setup screens (Decision 36)
 
-**What:** Raise the business and team setup screens' 10 to 13px text to 14px or more.
+**What:** Raise the last setup text under 14px to 14px or more.
 
-**Why:** The owner's standing rule; the surfaces added later in the branch were already fixed.
+**Why:** The owner's standing rule. The Business and Team steps (with TeamCard and PackTile) were raised in PR #138.
 
-**Context:** `src/renderer/src/components/OnboardingWizard.tsx` (business, team steps; TeamCard, PackTile).
+**Context:** Still under 14px: the company profile labels in `src/renderer/src/components/CompanyProfileFields.tsx` (shared with other screens; the PR #138 author offered to do these), and the Welcome and Permissions steps in `src/renderer/src/components/OnboardingWizard.tsx` (12 and 13px titles and notes).
 
 **Effort:** S
 **Priority:** P1
@@ -537,18 +541,34 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 
 **Context:** In order of impact:
 1. ~~The team always starts on the default engine.~~ Done 2026-09-26: setup now writes `defaultCommand` from Michael's engine (`teamDefaultsFromMichael`, `test/team-engine-from-michael.test.cjs`).
-2. Cost and token data: Codex is done. The telemetry fallback reads a Codex agent's rollout in its CODEX_HOME (`src/main/codexUsage.ts`, `hive.codexHome`), and `src/main/pricing.ts` prices GPT-5 models. Still open: Gemini and the other engines (no usage source yet), the context gauge for Codex (`readContextTokens` reads only the default engine's transcripts), and the lifetime cost ledger, which only records live OTel samples.
-3. MCP servers go only into Claude's `--settings` (`src/main/hive.ts:1163`). Codex now gets bundled skills in its private `CODEX_HOME/skills`; other engines still need native skill discovery.
-4. Gemini and Antigravity get no extra writable directories (`--add-dir` exists for Codex only, `src/main/hive.ts:859`), so hive file writes may be refused.
+2. Cost and token data: Codex is done. The telemetry fallback reads a Codex agent's rollout in its CODEX_HOME (`src/main/codexUsage.ts`, `hive.codexHome`), and `src/main/pricing.ts` prices GPT-5 models. Still open: Gemini and the other engines (no usage source yet), the context gauge for Codex (`readContextTokens` reads only the default engine's transcripts), and the lifetime cost ledger, which only records live OTel samples. For Gemini, issue #113 has the plan: read the session `.jsonl` at the hook payload's `transcript_path` (already kept as `hookServer.transcriptPath(id)`), skip `$set` and `$rewindTo` lines, keep the last copy of each message id (late token updates re-append it), keep rewound turns (they were billed), map `cacheRead = cached`, `input = input - cached + tool`, `output = output + thoughts`; fall back to the project slug in `~/.gemini/projects.json` when no hook has fired; add Gemini Pro and Flash rows to `pricing.ts`; prove it live with one Gemini worker under a low token cap.
+3. MCP servers go only into Claude's `--settings` (`src/main/hive.ts:1163`). Codex now gets bundled skills in its private `CODEX_HOME/skills`; other engines still need native skill discovery. The md-mail server is the same gap (issue #109): `index.ts` writes it and passes `--mcp-config` only for Claude, so a Codex member with email starts with no mail tools. Fix: write an `[mcp_servers.md-mail]` entry in the agent's private `CODEX_HOME/config.toml` (same command, args and env, a fresh broker token each spawn), removed at teardown like the Claude file. The mail gate in `hooks.ts` matches only Claude's `mcp__md-mail__` tool names, so the same change makes it match Codex's names too: a mail tool on any engine passes the same check, and a test proves a Codex mail call is gated.
+4. Antigravity gets no extra writable directories, so hive file writes may be refused. Gemini CLI done 2026-10-11: the folders Codex gets with `--add-dir` go into its per-agent settings file as `context.includeDirectories` and onto argv as `--include-directories` (Gemini CLI 0.60 and later skip a system settings file in a folder the user owns; `geminiIncludeDirArg`, `test/auto-mode-sandbox.test.cjs`).
 5. Antigravity agents never get their standing goal, and an Antigravity Michael never gets the roster (no SessionStart/UserPromptSubmit event).
-6. The memory tidy up runs a hidden Claude session (`src/main/memoryTidy.ts`, through `hiddenClaude.ts`); without Claude it does nothing.
+6. The app's own background calls run only on Claude (issue #85): memory tidy up (`src/main/memoryTidy.ts`), the standing approval check (`standingCheck.ts`), the hire check (`hireCheck.ts`) and the three Work style helpers (`workStyleConvert.ts`) all pass `defaultCommand` to `runHiddenClaude`, which builds Claude arguments. On a Codex office each fails; the worst is the standing approval check, so every email under a standing approval falls back to Ask me. Fix: a `runHiddenModel({ engine, tier, prompt, noTools, cwd, timeoutMs })` with one runner per engine, the engine taken from Michael's preset, not the command string. Claude keeps the current path. Codex runs `codex exec --ephemeral --ignore-user-config --skip-git-repo-check -s read-only -C <empty dir> --disable shell_tool --disable unified_exec --disable apps --disable browser_use --disable computer_use -c web_search=disabled -o <answer file>` (tested in #85 with codex-cli 0.162.1: two standing checks judged right, a prompt asking for a shell command refused). An engine with no runner returns unavailable at once and the caller uses its existing fallback. Callers that read text written by agents or outside senders (the standing check, the memory tidy up) keep `noTools: true` and a runner serves them only with every tool off. Tests: each caller with a fake runner, answered and unavailable, and one that a Codex office never runs `codex` with Claude arguments.
 7. Michael's first prompt is still written for one engine (`INITIAL_GOD_PROMPT` in `src/renderer/src/hooks/useHive.ts:77`). The spawn prompt and PROTOCOL.md now say "AI agents".
 8. No permission-prompt detection for these engines (no Notification event), which matters only with auto mode off.
+9. The access policy reaches Claude only (issue #48). Folder privacy (`denyRead`/`denyWrite`), connector deny and the MCP list are written into Claude's `--settings` (`hookSettings` in `src/main/hive.ts`); Codex gets its own workspace sandbox and `--add-dir`, but no folder read privacy or connector deny. Before any engine joins `BUILD_ENGINES`: build the one policy into each engine's own settings, record per engine which rules it can enforce, and where it can't, limit that agent (mail Draft only, connectors off) with the reason on its Access tab. A test per engine tries a read of another member's folder, a write outside its own and a denied connector, and passes only when each is blocked or the agent is limited. `test/engine-readiness.test.cjs` checks the preset half today. Issue #139 adds: make it a typed `isolation` capability on each engine preset (OS sandbox plus deny rules, a PreToolUse check only, or none), so `BUILD_ENGINES` refuses an engine that has not proved its kind, and an engine with none never hosts a member who holds a private folder; put the app's private mail token folder (`agentPrivatePaths.ts`, #63) in every engine's denied set; and note the hook gaps: pi has only PreToolUse, and the proxy tier (qwen) has no hooks at all, so its shell is unguarded.
+10. Hook events are not authenticated (issue #61): every engine's bridge posts to the one hook socket, which believes the agent named in the frame. The per agent token in "Authenticate hook events and keep the owner's messages out of the agents' folder" lands first, and the new engine's bridge passes its forged frame test.
+11. No test of a run on each engine (issue #83). With a fake CLI process standing in for the engine (no paid calls), one shared test per engine checks: it starts and finishes a task, reports completion, and handles a sign-in failure, a plan or quota limit, a cancel and its cleanup, each with a plain reason to the owner. It runs in CI on every platform the engine ships for, beside `test/office-privacy-conformance.test.cjs` and `test/engine-readiness.test.cjs`.
+
 A live end-to-end run is required before adding an engine: Gemini has never been run for real, and Codex needs an OpenAI account with credits.
 
 **Effort:** L
 **Priority:** P3
 **Depends on:** A decision to offer a second engine.
+
+### A backup engine through a plan limit (issue #129)
+
+**What:** An optional backup engine per team member, set by the owner (default none). When the office break starts (issue #124), a member with a backup restarts on it with a handoff note as its first message (its task, recent context, files touched) and keeps the same folder, memory and mailbox. At the reset it goes back to its own engine at its next idle point. The floor shows it ("Pam is on Codex until 3:40 PM"); members without a backup keep the break.
+
+**Why:** On a Pro plan the break can last hours of a business day. An owner who also has a ChatGPT plan could keep work moving.
+
+**Context:** The trigger is the office break (`src/main/officeBreak.ts`); the handoff can reuse `hive.takeHandoff`. Two facts shape the design. The usage limit is per Claude account, so every Claude member, Michael included, reaches it at once: there is no member with headroom left, and failover has to cover Michael (a Codex Michael needs gaps 5 and 7 of the second engine item), or the moved members work with nobody to report to until the reset. The backup is the owner's own choice per member, never picked by the app (the model choice rule). Behind a `buildFeatures.ts` flag until it has run live.
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** Make a second engine (Codex first) ready for an office, in full: the access policy (#48) and hook authentication (#61) above all, so a member that fails over keeps the owner's folder and connector limits.
 
 ## Onboarding
 
@@ -559,20 +579,6 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Why:** A member that fails at first launch is never retried and the owner is not told. Owner chose to leave it at ship review 2026-09-24.
 
 **Context:** `startBusinessTeam` in `src/renderer/src/hooks/useHive.ts`.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
-## Settings
-
-### Log the webhook format editor's parse error
-
-**What:** `console.error` the raw JSON parse message in `src/renderer/src/components/triggers/WebhookSchemaEditor.tsx`, and make `error` a boolean.
-
-**Why:** The owner now sees plain words, but nobody can see where the mistake was.
-
-**Context:** Third review pass, 2026-09-24.
 
 **Effort:** S
 **Priority:** P2
@@ -619,6 +625,19 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Depends on:** None
 
 ## Completed
+
+### Log the webhook format editor's parse error
+
+**What:** `console.error` the raw JSON parse message in `src/renderer/src/components/triggers/WebhookSchemaEditor.tsx`, and make `error` a boolean.
+
+**Why:** The owner now sees plain words, but nobody can see where the mistake was.
+
+**Context:** Third review pass, 2026-09-24.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+**Completed:** merged 2026-10-12, ships in 0.1.9. A failed save logs the parser's message once with `console.error`, `error` is a yes or no flag, and the owner sees the same words; the check is the pure `schemaParseError` helper with its own test (agentvivekkumar/dontbemichael#141, by piyush12kunjilwar, closes #131).
 
 ### Cap the total size of an Office file's zip entries
 

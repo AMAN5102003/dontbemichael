@@ -13,6 +13,8 @@ import type { AgentProvider } from '../../../shared/agentProvider';
 import { bridgeOf, providerPreset } from '../../../shared/agentProvider';
 import { isDurableRole, MICHAEL_ROLE, preferredAgentRole, roleForHiveSpawn } from '../../../shared/agentRole';
 import { inboxNudgeText } from '../../../shared/hiveNudge';
+import { heldByBreak } from '../../../shared/officeBreak';
+import { getOfficeBreak } from '@/components/OfficeBreakNotice';
 import { resolveGodName } from '../../../shared/godIdentity';
 import { acquireTerminal, resetTerminal, isTerminalAutomationSafe, hasTerminalDraft } from '@/components/terminalPool';
 import { canDeliverToAgent, deliverWithAcknowledgement, checkPrecondition } from './queueDelivery';
@@ -1028,6 +1030,9 @@ export function useHive(config: HarnessConfig | null): void {
       // the queue with no escape hatch at all. Idle/draft/picker safety below
       // still applies to manual messages; only the pause is bypassed.
       if (control?.autoDeliveryPaused && !next.manual) return { sent: false };
+      // The Claude plan's usage limit holds the office (issue 124): nothing is
+      // typed into a Claude terminal until the break ends. "Send now" still goes.
+      if (heldByBreak(getOfficeBreak(), target.provider) && !next.manual) return { sent: false };
       // Hold queued messages until the target finishes its boot sequence.
       if ((bootGraceUntil.current[target.id] ?? 0) >= now) return { sent: false };
       // The user owns the prompt: a draft they are writing, or a menu they

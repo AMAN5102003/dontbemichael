@@ -4,7 +4,7 @@
  * data folder (never tasks.json, which agents write), so what goes out is what
  * the owner approved. The rules are in shared/mailProposals.ts.
  */
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import {
   addSendRecord,
@@ -70,6 +70,9 @@ const STORE_UNREADABLE =
   'The saved mail approvals file could not be read, so nothing was saved over it. Try again; if it keeps failing, the file needs repair.';
 
 export class MailApprovals implements ProposalStore {
+  /** The file as last read or written, with its size and time stamp then. */
+  private cache: { mtimeMs: number; size: number; store: StoreFile } | null = null;
+
   constructor(private deps: MailApprovalDeps) {}
 
   private now(): number { return this.deps.now?.() ?? Date.now(); }
@@ -87,22 +90,29 @@ export class MailApprovals implements ProposalStore {
     return { ...raw, proposals: ok<MailProposal>(raw.proposals), standing: ok<StandingApproval>(raw.standing), sends, paused };
   }
 
-  private load(): StoreFile {
+  private stamp(): { mtimeMs: number; size: number } | null {
     try {
-      if (!existsSync(this.deps.path)) return this.empty();
-      return this.coerceStore(JSON.parse(readFileSync(this.deps.path, 'utf8'))) ?? this.empty();
-    } catch { return this.empty(); }
+      const s = statSync(this.deps.path);
+      return { mtimeMs: s.mtimeMs, size: s.size };
+    } catch { return null; }
   }
 
+  /** The store, from memory until the file changes on disk. Null when the
+   *  file is there but can't be read. */
+  private current(): StoreFile | null {
+    const st = this.stamp();
+    if (!st) { this.cache = null; return this.empty(); }
+    if (this.cache && this.cache.mtimeMs === st.mtimeMs && this.cache.size === st.size) return this.cache.store;
+    let store: StoreFile | null = null;
+    try { store = this.coerceStore(JSON.parse(readFileSync(this.deps.path, 'utf8'))); } catch { /* unreadable */ }
+    this.cache = store ? { ...st, store } : null;
+    return store;
+  }
+
+  private load(): StoreFile { return this.current() ?? this.empty(); }
+
   private loadForWrite(): StoreFile {
-    if (!existsSync(this.deps.path)) return this.empty();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(this.deps.path, 'utf8'));
-    } catch {
-      throw new Error(STORE_UNREADABLE);
-    }
-    const store = this.coerceStore(parsed);
+    const store = this.current();
     if (!store) throw new Error(STORE_UNREADABLE);
     return store;
   }
@@ -115,7 +125,12 @@ export class MailApprovals implements ProposalStore {
     const tmp = `${this.deps.path}.tmp`;
     writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
     renameSync(tmp, this.deps.path);
-    try { this.deps.changed(); } catch { /* window gone */ }
+    const st = this.stamp();
+    this.cache = st ? { ...st, store: data } : null;
+    // Paused-grant notices are only Michael's bookkeeping; nothing on screen shows them.
+    if (next.proposals || next.standing || next.sends) {
+      try { this.deps.changed(); } catch { /* window gone */ }
+    }
   }
 
   private read(): MailProposal[] { return this.load().proposals; }

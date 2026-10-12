@@ -18,6 +18,7 @@
  * Pure: no fs, no electron. The hook server supplies the paths.
  */
 
+import { existsSync } from 'node:fs';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
 
@@ -47,14 +48,14 @@ export function harnessWriteDecision(i: HarnessWriteInput): { deny: boolean; rea
 
   if (isInside(norm(i.hiveRoot), norm(target))) {
     const rel = relative(norm(resolve(i.hiveRoot)), norm(target)).split(/[\\/]/).join('/');
-    if (isPlumbing(rel, norm(i.agentId), i.isGod)) return { deny: false };
+    if (isPlumbing(rel, norm(i.agentId), i.isGod, i.tool, () => existsSync(target))) return { deny: false };
   }
 
   const workHere = i.cwd && !isInside(norm(i.harnessHome), norm(resolve(i.cwd))) ? ` (${i.cwd})` : '';
   return {
     deny: true,
     reason:
-      'The hive folder is only for coordination: your memory/inbox.md, your inbox and outbox, and tasks.json. Your memory index (memory.md) is kept by the app: add notes to memory/inbox.md instead. ' +
+      `The hive folder is only for coordination: your memory/inbox.md, your inbox and outbox, ${i.isGod ? 'tasks.json, board.md and the triage folder' : 'and one new file per filing in the triage folder; Michael alone writes tasks.json, so tell him what changed'}. Your memory index (memory.md) is kept by the app: add notes to memory/inbox.md instead. ` +
       `Save documents, drafts and other work in your own folder${workHere} instead.`
   };
 }
@@ -63,7 +64,7 @@ export function harnessWriteDecision(i: HarnessWriteInput): { deny: boolean; rea
  * The files the hive protocol tells an agent to write (PROTOCOL.md and the
  * injected prompt). Everything else in the hive is the app's to write.
  */
-function isPlumbing(rel: string, agentId: string, isGod: boolean): boolean {
+function isPlumbing(rel: string, agentId: string, isGod: boolean, tool: string, exists: () => boolean): boolean {
   const own = `agents/${agentId}/`;
   // An agent adds notes to its memory inbox; the index (memory.md) is the
   // app's to write (memoryTidy.ts).
@@ -71,8 +72,15 @@ function isPlumbing(rel: string, agentId: string, isGod: boolean): boolean {
   // The handoff it writes before its conversation is cleared (safeClearer.ts).
   if (rel === `${own}memory/handoff.md`) return true;
   if (rel.startsWith(`${own}outbox/`) || rel.startsWith(`${own}inbox/`)) return true;
-  // Every agent keeps its task's status current; Michael adds owner questions.
-  if (rel === 'tasks.json') return true;
+  // A team member files what its work needs as one new file in triage/
+  // (card-lifecycle.md section 10); Michael files them away in triage/.done/.
+  // Written once: a new JSON file named with the agent's own id, never an
+  // edit, never over a filing already there (its own or another agent's).
+  const filing = rel.startsWith('triage/') ? rel.slice('triage/'.length) : '';
+  if (tool === 'Write' && filing.endsWith(`-${agentId}.json`) && !filing.includes('/') && !filing.startsWith('.') && !exists()) return true;
+  if (isGod && rel.startsWith('triage/.done/')) return true;
+  // Michael alone writes the board (ship review D8).
+  if (isGod && rel === 'tasks.json') return true;
   // Michael is the board's sole scribe, and the only one who files spawn
   // requests, in a build that has them (ALLOW_TEMP_WORKERS).
   if (isGod && (rel === 'board.md' || (ALLOW_TEMP_WORKERS && rel.startsWith('spawn-requests/')))) return true;

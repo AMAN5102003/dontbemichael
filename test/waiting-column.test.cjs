@@ -47,7 +47,7 @@ test('the board has a Waiting column between Doing and Blocked, and each card sa
 
 test('Michael is told: waiting names who, doing means working now, and back to doing on the answer', () => {
   const hive = read('src/main/hive.ts');
-  assert.match(hive, /status: 'todo' \| 'doing' \| 'waiting' \| 'blocked' \| 'done';\n\s+\/\*\* Who a Waiting card waits on/);
+  assert.match(hive, /status: 'triage' \| 'todo' \| 'doing' \| 'waiting' \| 'blocked' \| 'done';\n\s+\/\*\* Who a Waiting card waits on/);
   const rules = hive.match(/is "waiting", with "waitingOn" naming who in a few words/g) || [];
   assert.equal(rules.length, 2, 'both the house rules and Michael\'s own instructions say it');
   assert.doesNotMatch(hive, /waiting on someone outside the office[^.]*is "doing"/);

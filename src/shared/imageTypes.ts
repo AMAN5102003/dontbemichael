@@ -54,7 +54,8 @@ export function urlExtensionOf(p: string): string {
 
 /** The image mime for `p`, or null when the extension isn't a known image. */
 export function imageMimeForPath(p: string): string | null {
-  return MIME_BY_EXT[urlExtensionOf(p)] ?? null;
+  const ext = urlExtensionOf(p);
+  return Object.prototype.hasOwnProperty.call(MIME_BY_EXT, ext) ? MIME_BY_EXT[ext] : null;
 }
 
 /** True when `p` names a raster or vector image we can render. */

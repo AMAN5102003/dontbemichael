@@ -52,7 +52,8 @@ src/
     memory.ts                semantic memory layer (CLI wrapper, degrade-to-noop)
     config.ts                harness config persistence + home setup; Claude Code's ~/.claude.json (folder trust,
                              the first-run welcome, an approved API key), written to a copy and swapped in;
-                             folder trust is keyed as Claude Code looks it up (forward slashes on Windows, claudeProjectKey)
+                             folder trust is keyed as Claude Code looks it up (forward slashes on Windows, claudeProjectKey);
+                             a config.json it cannot read is copied beside it before the next save (damagedConfigCopy)
     engineSetup.ts           Get Michael ready: finds Claude without a shell, Claude's standalone install script,
                              sign in state (`claude auth status`), the Anthropic API key check
                              (docs/designs/get-michael-ready.md; status types in shared/engineSetup.ts)
@@ -75,11 +76,15 @@ src/
     integrations.ts          the secret store: every saved password and key in one safeStorage-encrypted file
                              (integration-secrets.json in userData, 0600); refuses to save over a file it can't read
     atomicFile.ts            crash-safe file write (temp file, fsync, rename); the secret store's writer
+    officeBreak.ts           the office break when the Claude plan reaches its usage limit: hooks.ts reports the
+                             StopFailure `rate_limit` and the status line's reset time; Claude terminals are held,
+                             schedules never are (the view and who it holds are in shared/officeBreak.ts)
     closingTime.ts           Closing Time shutdown protocol (the office reopens on next launch, shared/officeOpen.ts)
                              The closing time bar (ClosingTimeBar) lists who is still working (hook `detail` from hooks.ts toolDetail),
                              with Remind and Close without them (never pty:kill: that archives the agent).
                              start({relaunch}) reopens the app once closed (a Claude Code update, shared/cliUpdate.ts)
-    fs.ts / git.ts           sandboxed filesystem + git bridges
+    fs.ts / git.ts           sandboxed filesystem + git bridges; fs.ts also checks a file Michael names
+                             (askFileVerdict) and reads it for a file tab (readAskFile), office and team folders only
     packs.ts                 loads and validates the bundled Office Packs (resources/packs/)
     agentFolders.ts          each agent's folder under ~/Documents/<Business> (Michael's), plus the Office folder
     homeFolder.ts            office (harness home) folder checks behind the "can't find your office" screen
@@ -131,6 +136,9 @@ src/
     agentAccess.ts           what an agent can really reach, for its profile's Uses row
     submitConfirm.ts         confirms a line typed into an agent's terminal was submitted, pressing Enter again if not
     terminalOverflow.ts      the office log line for a terminal still drawn past its box after a fit (sizes only)
+    askFiles.ts              which text names a file (a code span or a full path with a known ending), and which
+                             files open in a tab or in their own app (docs/designs/open-file-tab.md)
+    officeBreak.ts           the office break's view for the renderer, and heldByBreak (Claude agents only)
   preload/                   contextBridge → typed window.cth API
   renderer/src/
     App.tsx                  top-level layout + wiring
@@ -173,13 +181,18 @@ src/
                              with relaunch, "later" waits for a newer version (localStorage cth.cliUpdateLaterFor)
     ToolWaterfall,           per-agent tool-span waterfall for the observability view
     TasksKanban,             dependency-aware kanban board (the Tasks view); the owner closes a card as Done,
-                             never deletes it (hiveTasks.ts holds the card types and parser)
+                             never deletes it, and a Done card shows Michael's result (hiveTasks.ts holds the card
+                             types and parser)
+    FileChip,                a file named in a reply, an Ask me card or a task, as a chip in place of its path
+                             (markdown/remarkFileChips.ts finds them); FileTabView shows an opened file in its tab
+                             (store/fileTabs.ts keeps the tabs; docs/designs/open-file-tab.md)
+    OfficeBreakNotice,       the office break's card on Ask me and its chip in the top bar
     ThreadsPanel,            hive message conversation viewer (Messages tab)
     MessageQueueComposer,    park messages for a busy agent; on Michael's panel a question goes to his dock (shell/ownerSend.ts)
     scene/studio/            the office studio: isometric SVG stage, pods, Michael's office, life layer (branding/DESIGN.md 8)
     scene/office/            the cast, the idle lines, and each character's prop and department icon (props.tsx,
                              PersonAvatar)
-    shell/                   top bar (view tabs: Office, Tasks, Who talks to whom), bottom bar, Needs you board,
+    shell/                   top bar (view tabs: Office, Tasks, Who talks to whom, then file tabs), bottom bar, Needs you board,
                              panel chrome, dialogs; releaseBindings.ts gives a leaving hire's work back to teammates,
                              typedFirstTask.ts sends a First task the owner typed to Michael as a card,
                              MichaelDock.tsx is Michael's conversation dock above the Talk to Michael box, and

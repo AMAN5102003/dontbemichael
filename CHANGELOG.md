@@ -6,6 +6,76 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.1.9] (2026-10-11)
+
+### Added
+
+- **A parked step wakes on time.** A To do card can carry the time its next step is due, shown on the card in your local time. At that time the person on the card gets one reminder, even if the app was closed when it came due; if the card is still in To do four hours later, Michael hears about it once.
+- **Closing time takes you to the office floor**, and the still working count opens the list of who is still busy.
+
+### Changed
+
+- **Michael alone writes the task board.** Team members file what their work needs once, in a queue only Michael sees, and tell him when their work moves. He works the queue in the order it was filed: answers it, folds it into a card, drops a duplicate or puts it on Ask me or in Waiting.
+- **A card is one activity's needs.** One activity's questions for you arrive as one numbered ask, answered together; a part you leave unanswered comes back on its own. Questions for you and for someone outside the office go on separate cards.
+- **Done is final.** Only you take a card out of Done, into To do, with a short reason. A card an agent reopens or deletes is put back as it was, and a question asked on it meanwhile stays on Ask me.
+- **Cards carry no running notes.** Where a card stands shows in its status, who it waits on, its next step time, its question and its result. Routines that repeat on a schedule get no card; their reports still reach Ask me.
+- **A card never waits on its own person.** Waiting names who else it waits on.
+- **Team members hear when the house rules change**, once, when they resume their conversation.
+- **Reports and files you read are in plain business words**, with sources named the way you know them.
+- A Markdown report fills its tab, and a file link sits in its sentence without stray brackets.
+- The way back to your conversation with Michael stays beside the message box once every reply is read.
+
+### Fixed
+
+- The list of who is still working at closing time has one scrollbar.
+- A webhook body that cannot be read is logged with the reason (contributed in #141).
+
+## [0.1.8] (2026-10-11)
+
+### Added
+
+- **The office takes a break when your Claude plan reaches its limit.** Ask me, the top bar and the floor say the office is on a break and when work starts again. Nothing is typed into a Claude terminal while it lasts, so no message is lost into a session that cannot answer. Scheduled jobs still go out on time and wait in the inbox. At the reset Michael hears that the limit should be over, and when the plan answers again the team members who stopped mid task are told to carry on, Michael first. Claude Code itself is told to continue its turn by itself at the reset.
+- **Open a file Michael names, inside the office.** A file path in Michael's replies, an Ask me card or a task shows as a chip. Markdown, text, JSON, CSV and pictures open in a tab next to Who talks to whom and refresh when the file changes; PDF and Office files open in their own app; anything else shows in Finder (in its folder on Windows). Only files inside the office folder or a team member's folder open, checked each time.
+- **A Done card shows what came of it.** The first line of Michael's result shows on the card, and the whole result leads the task's details.
+- **Your message to Michael flies to him as a paper plane** on the studio floor.
+- **Setup says why it starts again** when your settings file was damaged, and where a copy of it was kept.
+- **Skills search** has a Clear button and a label screen readers announce.
+- **Every mail tool call is written to the app's log**, so a mail problem can be traced.
+
+### Changed
+
+- Setup screens use 14 px text or larger on the Business and Team steps.
+- The Claude connectors and mailboxes folds in Settings open and close with a short animation, and a closed fold hides its rows from the keyboard and screen readers.
+- Open at login is hidden on Linux, where it cannot work.
+- Windows owners read "this computer" where the app said "this Mac".
+- The mouse wheel scrolls a tab row that does not fit, and a hidden edge fades.
+- The default model line in Settings no longer says it applies to Michael.
+- The README calls Windows 11 a supported platform.
+
+### Fixed
+
+- **A damaged settings file is never written over.** If config.json cannot be read, the app keeps a copy beside it before the next save, and a save that fails leaves the old file in place.
+- **An email that may have gone out is never sent again.** When the connection drops in the middle of a send, the email is held as maybe sent and its card stays sending until Sent shows what happened. A plain email the app stopped sending is not sent twice either.
+- **A damaged approvals file is not emptied.** Mail approvals that cannot be read are refused instead of treated as none and overwritten.
+- **No team member can change its own sandbox.** Each team member's Claude settings now live outside every folder an agent can write, and the hook program's folder is write protected. An agent's mail connector key and the owner's sent mail moved out of the shared office folder too, and your own Claude Code plugins are switched off for team members.
+- **The webhook and Slack listeners answer this computer only**, not other machines on your network.
+- **A connector that cannot be reached says so**, instead of a vague failure.
+- **A connector check that hangs stops everything it started.**
+- **A team member that failed its first start is tried again** at the next launch.
+- **Messages are not typed twice** into a terminal that already took them or is asking for permission.
+- **The standup does not run at launch outside its times** when it uses timing lines.
+- **One webhook flooding its limit no longer blocks the others.**
+- **A mailbox password this computer cannot keep safe** is explained in plain words.
+- **A mailbox's Needs you card closes** whenever a fix succeeds.
+- **Deleting a secret that did nothing says so**, and temp files a crash left beside the secret store are cleared.
+- **QuickBooks access is saved only for a real team member** or a hire in progress.
+- **Memory notes are dated with your local day**, not UTC.
+- **Moving the office onto a folder that already holds one is refused.**
+- **The closing time list** shows its focus ring, clips long details and cuts runs of combining marks.
+- **The scheduled jobs list no longer draws over the work style** in a team member's settings.
+- On Windows, removing a work copy no longer follows its linked dependency folders.
+- Malformed connection IDs are refused, and mail tools named like built in JavaScript names are refused as unknown.
+
 ## [0.1.7] (2026-10-09)
 
 ### Fixed

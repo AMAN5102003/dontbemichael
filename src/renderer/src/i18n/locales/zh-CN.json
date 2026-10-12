@@ -58,7 +58,8 @@
     "ghost": "已退出",
     "compacting": "压缩中",
     "looping": "循环中",
-    "typing": "你的草稿"
+    "typing": "你的草稿",
+    "onBreak": "休息中"
   },
   "agentControl": {
     "deliveryPaused": "队列消息已暂停投递（整个楼层）",
@@ -277,7 +278,7 @@
     },
     "agentsModels": {
       "defaultModel": "默认智能体模型",
-      "defaultModelDesc": "每个新生成的 Claude 智能体（含 {{godName}}）默认使用此模型，除非按智能体单独选择。在模型选择器中标记为「· 默认」。",
+      "defaultModelDesc": "每个新生成的 Claude 团队成员默认使用此模型，除非为该成员单独选择。{{godName}} 有自己的模型设置。在模型选择器中标记为「· 默认」。",
       "advanced": "高级",
       "maxTurns": "每次运行最大轮数",
       "unlimited": "无限制",
@@ -687,6 +688,7 @@
     "engineNote": "新的引擎或模型会在该成员下次启动时生效。"
   },
   "onboarding": {
+    "damagedConfig": "无法读取你保存的设置，因此需要重新设置。旧文件保存在",
     "resume": {
       "headline": "我们找到了你的办公室",
       "desc": "这台电脑上已有一个办公室，位于 {{folder}}：{{business}}，共有 {{count}} 位团队成员。继续使用它，可以保留你的团队、他们的文件夹、记忆和工作。",
@@ -1311,6 +1313,7 @@
     "noHandoffs": "还没有交接，目前只有办公室通知。",
     "today": "今天",
     "yesterday": "昨天",
+    "undated": "无日期",
     "verb": {
       "request": "{{from}} 请 {{to}} 帮忙",
       "query": "{{from}} 问 {{to}}",
@@ -1485,6 +1488,9 @@
     "colWaiting": "等待中",
     "waitingOn": "等待 {{who}}",
     "waitingOnUnknown": "等待他人",
+    "nextAt": "下一步：{{when}}",
+    "reopenWhy": "为什么重新打开？",
+    "reopen": "重新打开",
     "waitingOnTitle": "在等待办公室外的人或同事。对方回复后，{{godName}} 会把它移回进行中。",
     "colBlocked": "已阻塞",
     "colDone": "已完成",
@@ -1510,7 +1516,7 @@
     "priorityLabel": "优先级",
     "created": "创建时间",
     "description": "描述",
-    "notes": "备注",
+    "result": "结果",
     "question": "问题",
     "answer": "回答",
     "assignHint": "交给 {{godName}} 分派",
@@ -1664,6 +1670,16 @@
     "graph": "谁在和谁交流",
     "tasksIntro": "团队的每项工作按阶段排列：待办、进行中、已阻塞、已完成。每张卡片显示负责人；带 ? 的卡片在等你处理（请在“问我”标签页回答）。点击卡片查看详情。",
     "graphIntroShort": "每个圆圈是一位成员，每条线是他们之间的消息。点击成员可打开其记忆；拖动可固定位置。"
+  },
+  "fileTab": {
+    "close": "关闭 {{name}}",
+    "office": "办公室",
+    "openInApp": "在应用中打开",
+    "reading": "正在读取…",
+    "empty": "空文件",
+    "tooLarge": "文件太大，无法在此显示",
+    "unreadable": "无法在此显示此文件",
+    "rows": "显示 {{total}} 行中的 {{shown}} 行"
   },
   "companyProfile": {
     "intro": "关于您公司的关键信息。每位成员，包括 {{godName}}，都会以此为依据工作。只填简短的答案，较长的内容请放进“记忆与知识”。",
@@ -2043,7 +2059,14 @@
   },
   "workTab": {
     "live": "实时",
-    "focus": "专注"
+    "focus": "专注",
+    "exitFocus": "退出专注模式（Esc）",
+    "zoomOut": "缩小（{{mod}} 和减号）",
+    "zoomOutLabel": "缩小",
+    "zoomIn": "放大（{{mod}} 和加号）",
+    "zoomInLabel": "放大",
+    "zoomReset": "重置缩放（{{mod}} 和 0）",
+    "zoomResetLabel": "重置缩放"
   },
   "quit": {
     "killing": "正在退出…",
@@ -2191,5 +2214,13 @@
     },
     "signInUnknown": "无法检查登录状态。如果 Claude 提示，请登录。",
     "cardTitleTeam": "你的部分团队成员还无法启动"
+  },
+  "officeBreak": {
+    "title": "办公室正在休息",
+    "body": "你的 Claude 套餐已达到用量上限。大约 {{time}} 恢复工作。",
+    "bodyUnknown": "你的 Claude 套餐已达到用量上限。额度重置后恢复工作。",
+    "info": "你的 Claude 套餐已达到用量上限，团队暂时无法工作。定时任务仍按时发出，并在收件箱中等待，直到休息结束。团队会自动恢复工作。更大的 Claude 套餐意味着更少的休息。",
+    "chip": "休息至 {{time}}",
+    "chipUnknown": "休息中"
   }
 }

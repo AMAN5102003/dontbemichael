@@ -38,6 +38,12 @@ export interface FolderLayout {
    *  mail tokens and the owner's sent questions. No agent, Michael included,
    *  opens or changes it. */
   appPrivate?: string;
+  /** The app's own program and settings folders: the hook program
+   *  (`<harnessHome>/hive/bin`), which Claude Code runs outside the sandbox on
+   *  every tool call, and each agent's Claude settings
+   *  (`<harnessHome>/agent-settings`), which set its sandbox at its next start
+   *  (issue 100). Any agent may read them; none, Michael included, changes them. */
+  appLocked?: string[];
 }
 
 export interface AgentFolderPolicy {
@@ -73,6 +79,10 @@ export function folderPolicy(agent: FolderAgent, layout: FolderLayout, caseInsen
     policy.sandbox.denyRead.push(layout.appPrivate);
     policy.sandbox.denyWrite.push(layout.appPrivate);
     policy.deny.push(rule('Read', layout.appPrivate), rule('Edit', layout.appPrivate));
+  }
+  for (const f of layout.appLocked ?? []) {
+    policy.sandbox.denyWrite.push(f);
+    policy.deny.push(rule('Edit', f));
   }
 
   if (agent.isGod) {
@@ -121,6 +131,9 @@ export function folderDecision(
 
   if (layout.appPrivate && inside(layout.appPrivate, target)) {
     return { deny: true, reason: 'That folder is the app\'s own and holds private settings. Nobody on the team opens it.' };
+  }
+  if (writes && (layout.appLocked ?? []).some((f) => inside(f, target))) {
+    return { deny: true, reason: 'That folder holds the app\'s own program and settings. You can read it, but nobody on the team changes it.' };
   }
 
   if (agent.isGod) {

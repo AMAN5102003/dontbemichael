@@ -85,6 +85,12 @@ npm run dev        # live-reloading Electron build
 > re-run `npm install` (which re-triggers `postinstall`) after confirming your
 > C/C++ toolchain is installed.
 
+On Ubuntu 23.10 and later, `npm run dev` stops at start with a "SUID sandbox
+helper" error: the system blocks the Chromium sandbox for apps without an
+AppArmor profile. For development only, start it with
+`ELECTRON_DISABLE_SANDBOX=1 npm run dev`. The Linux AppImage does not start on
+stock Ubuntu 24.04 yet (#35).
+
 ## Screenshots help
 
 A before and an after make a change quick to review: screenshots, or a short
@@ -160,6 +166,8 @@ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the data-flow overview,
 the module by module layout, and the design system.
 
 ## Good first areas
+
+Issues labelled [good first issue](https://github.com/agentvivekkumar/dontbemichael/labels/good%20first%20issue) are small and ready to pick up: comment on one before you start, so two people do not take the same one. Beyond those:
 
 - **More life from real events.** Real Claude Code hook events drive the studio
   (`src/renderer/src/scene/studio/life.tsx`); the synthetic loop in

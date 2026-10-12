@@ -27,7 +27,10 @@ export interface ThreadRow<M extends HistoryItem = HistoryItem> {
 }
 
 export interface MessageView<M extends HistoryItem = HistoryItem> {
-  /** Newest day first; each day's conversations newest first. `day` is local YYYY-MM-DD. */
+  /**
+   * Newest day first; each day's conversations newest first. `day` is local YYYY-MM-DD,
+   * or '' for one last group of conversations whose time does not parse.
+   */
   days: Array<{ day: string; threads: ThreadRow<M>[] }>;
   notices: { scheduled: number; closing: number; other: number; messages: M[] };
 }
@@ -73,12 +76,17 @@ export function messageView<M extends HistoryItem>(msgs: M[]): MessageView<M> {
   }).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
 
   const days: MessageView<M>['days'] = [];
+  // A time that does not parse sorts as text, so it can land above or below
+  // every real day; keep those conversations together, after the dated ones.
+  const undated: ThreadRow<M>[] = [];
   for (const t of threads) {
     const day = localDay(t.lastAt);
+    if (!day) { undated.push(t); continue; }
     const bucket = days[days.length - 1];
     if (bucket && bucket.day === day) bucket.threads.push(t);
     else days.push({ day, threads: [t] });
   }
+  if (undated.length) days.push({ day: '', threads: undated });
   return { days, notices };
 }
 

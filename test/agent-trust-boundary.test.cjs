@@ -85,5 +85,34 @@ test('no agent reads or changes the app private folder, with or without a busine
   assert.match(main, /: privateOnlyFolderPolicy\(!!opts\.hive\.isGod, opts\.cwd\),/, 'an office without a business folder still closes private/');
   assert.match(main, /return \{ \.\.\.folderPolicy\(\{ isGod, cwd \}, layout, process\.platform !== 'linux'\), sandboxOnly: false \};/, 'and keeps its shell rules as before');
   assert.match(read('src/main/officeFile.ts'), /appPrivate: join\(app, 'private'\)/);
+});
+
+test('no agent changes the hook program or any agent settings, through the shell or the file tools', () => {
+  // Value: protects=an agent cannot rewrite the hook that runs outside its sandbox, or its next start settings, with Write or Edit; fails_when=the locked folders drop out of the policy or the hook decision; why_new=issue 100 locked only the shell (adversarial review); seam=none
+  const loadTs = require('./load-ts.cjs');
+  const { folderPolicy, folderDecision } = loadTs('src/shared/folderAccess.ts');
+  const P = (p) => path.resolve(p);
+  const bin = P('/w/home/hive/bin');
+  const settings = P('/w/home/agent-settings');
+  const locked = [bin, settings];
+  const withBiz = { business: P('/w/Biz'), teamFolders: [P('/w/Biz/Ops')], appPrivate: P('/w/home/private'), appLocked: locked };
+  const bare = { teamFolders: [], appPrivate: P('/w/home/private'), appLocked: locked };
+  for (const layout of [withBiz, bare]) {
+    for (const agent of [{ isGod: false, cwd: P('/w/Biz/Ops') }, { isGod: true, cwd: P('/w/Biz') }]) {
+      const who = agent.isGod ? 'Michael' : 'team member';
+      const pol = folderPolicy(agent, layout, true);
+      for (const f of locked) {
+        assert.ok(pol.sandbox.denyWrite.includes(f), `shell writes ${f} (${who})`);
+        assert.ok(pol.deny.includes(`Edit(/${f.replace(/\\/g, '/').replace(/^(?!\/)/, '/')}/**)`), `Edit tool ${f} (${who})`);
+      }
+      for (const target of [path.join(bin, 'cth-hook.cjs'), path.join(settings, 'ada.json')]) {
+        for (const tool of ['Write', 'Edit', 'MultiEdit']) {
+          assert.equal(folderDecision(agent, layout, tool, target, true).deny, true, `${tool} ${target} (${who})`);
+        }
+        assert.equal(folderDecision(agent, layout, 'Read', target, true).deny, false, `reading stays open (${who})`);
+      }
+    }
+  }
+  assert.match(read('src/main/officeFile.ts'), /appLocked: \[join\(app, 'hive', 'bin'\), join\(app, 'agent-settings'\)\]/);
   assert.match(read('src/main/hooks.ts'), /const layout = folderLayoutFor\(cfg\.businessFolder, folders, home\);/);
 });

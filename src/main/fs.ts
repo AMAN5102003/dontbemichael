@@ -4,7 +4,7 @@ import { constants } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { imageMimeForPath } from '../shared/imageTypes';
-import { OPEN_EXTENSIONS, extensionOf, type AskFileVerdict } from '../shared/askFiles';
+import { OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, kindOf, type AskFileVerdict } from '../shared/askFiles';
 
 /**
  * Lexical containment — pure string math, no filesystem access.
@@ -434,12 +434,12 @@ export async function resolveAskFileRoots(roots: readonly string[]): Promise<Ask
 export async function askFileVerdict(
   pathText: string,
   roots: readonly string[] | readonly AskFileRoot[]
-): Promise<{ verdict: AskFileVerdict; path: string }> {
+): Promise<{ verdict: AskFileVerdict; path: string; tab: boolean; root?: string; real?: string }> {
   const resolved = roots.length && typeof roots[0] === 'string'
     ? await resolveAskFileRoots(roots as readonly string[])
     : roots as readonly AskFileRoot[];
   const p = expandTilde(pathText.trim());
-  if (!p || p.includes('\0')) return { verdict: 'missing', path: pathText };
+  if (!p || p.includes('\0')) return { verdict: 'missing', path: pathText, tab: false };
   for (const { root, real } of resolved) {
     if (!root || !isAbsolute(root)) continue;
     let rel = p;
@@ -461,12 +461,50 @@ export async function askFileVerdict(
     if (!abs) continue;
     let st;
     try { st = await stat(abs); } catch { continue; }
-    return { verdict: st.isFile() && OPEN_EXTENSIONS.has(extensionOf(abs)) ? 'open' : 'reveal', path: abs };
+    const file = st.isFile();
+    return {
+      verdict: file && OPEN_EXTENSIONS.has(extensionOf(abs)) ? 'open' : 'reveal',
+      path: abs,
+      // The office can show it in a tab (docs/designs/open-file-tab.md, R3),
+      // judged on the canonical path like the verdict.
+      tab: file && TAB_EXTENSIONS.has(extensionOf(abs)),
+      root,
+      real
+    };
   }
   // Outside every root, or behind a link that leaves it: agent text never
   // opens or shows anything there (Codex adversarial review, 2026-10-05).
   const first = resolved.find(({ root }) => root && isAbsolute(root));
-  return { verdict: 'missing', path: isAbsolute(p) || !first ? p : resolve(first.root, p) };
+  return { verdict: 'missing', path: isAbsolute(p) || !first ? p : resolve(first.root, p), tab: false };
+}
+
+/** What a file tab gets back (docs/designs/open-file-tab.md). */
+export type AskFileRead =
+  | { ok: true; path: string; root: string; real: string; kind: 'markdown' | 'text' | 'json' | 'csv' | 'image'; text?: string; bytes?: Uint8Array<ArrayBuffer>; mime?: string; size: number }
+  | { ok: false; error: 'not found' | 'too large' | 'unreadable' };
+
+/**
+ * Read a file an Ask me question or a reply names, for its tab. The same check
+ * as Open runs first (`askFileVerdict`: inside the office or a team member's
+ * folder, canonical path, no link leaving it), and only kinds a tab can show
+ * are read: text up to 2 MB, images up to 10 MB, through the root-confined
+ * readers. Anything outside the folders reads as not found, like the chip.
+ */
+export async function readAskFile(pathText: string, roots: readonly string[] | readonly AskFileRoot[]): Promise<AskFileRead> {
+  const v = await askFileVerdict(pathText, roots);
+  if (v.verdict === 'missing' || !v.tab || !v.real) return { ok: false, error: 'not found' };
+  const rel = relative(v.real, v.path);
+  const kind = kindOf(v.path);
+  const root = v.root ?? v.real;
+  if (kind === 'image') {
+    const r = await readFileBinary(v.real, rel);
+    if (!r.ok) return { ok: false, error: /too large|grew past/.test(r.error) ? 'too large' : 'unreadable' };
+    return { ok: true, path: r.path, root, real: v.real, kind, bytes: r.bytes, mime: r.mime, size: r.size };
+  }
+  const r = await readFileText(v.real, rel);
+  if (!r.ok) return { ok: false, error: /too large/.test(r.error) ? 'too large' : /ENOENT|escapes/.test(r.error) ? 'not found' : 'unreadable' };
+  const tabKind = kind === 'markdown' || kind === 'json' || kind === 'csv' ? kind : 'text';
+  return { ok: true, path: r.path, root, real: v.real, kind: tabKind, text: r.content, size: r.size };
 }
 
 /** macOS package endings: directories Finder treats as an app or a document. */

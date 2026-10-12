@@ -13,12 +13,13 @@
  * opener; relative *.md links surface through onOpenMarkdownLink so the host
  * (IDE tab / overlay) opens them in context; everything else is inert.
  */
-import { memo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { memo, useState, type ReactNode } from 'react';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkspaceImage } from '@/hooks/useWorkspaceImage';
 import { isExternal, isRelativeMd, resolveLocalImageRel, resolveRel } from './mdLinks';
 import { remarkSoftBreaks } from './remarkSoftBreaks';
+import { remarkFileChips } from './remarkFileChips';
 import { rehypeAutoDir } from './rehypeAutoDir';
 import { useRtl } from '@/i18n/useDirection';
 
@@ -33,6 +34,10 @@ export type MarkdownVariant = 'document' | 'card';
 // whole pipeline even when nothing about the source changed.
 const DOC_PLUGINS = [remarkGfm];
 const CARD_PLUGINS = [remarkGfm, remarkSoftBreaks];
+// With file chips (docs/designs/open-file-tab.md): before the soft breaks, whose
+// split text nodes have no source position.
+const DOC_FILE_PLUGINS = [remarkGfm, remarkFileChips];
+const CARD_FILE_PLUGINS = [remarkGfm, remarkFileChips, remarkSoftBreaks];
 
 /** Per-block `dir="auto"`, for an RTL app language only — see the note at the
  *  `useRtl()` call site below. Frozen module constants so the prop identity is
@@ -52,10 +57,13 @@ export interface MarkdownPreviewProps {
   onOpenMarkdownLink?: (rel: string) => void;
   /** Page vs in-card rendering. Defaults to `document`. */
   variant?: MarkdownVariant;
+  /** Draw each file the text names as this chip, in place of its path
+   *  (open-file-tab.md, R2). Keep its identity stable: it is a memo input. */
+  fileChip?: (path: string) => ReactNode;
 }
 
 export const MarkdownPreview = memo(function MarkdownPreview({
-  source, baseRel, root, onOpenMarkdownLink, variant = 'document'
+  source, baseRel, root, onOpenMarkdownLink, variant = 'document', fileChip
 }: MarkdownPreviewProps) {
   const card = variant === 'card';
   // Per-block direction, gated on the APP LANGUAGE rather than on the text.
@@ -70,9 +78,12 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   return (
     <div className={card ? 'cth-md-preview cth-md-card' : 'cth-md-preview'}>
       <ReactMarkdown
-        remarkPlugins={card ? CARD_PLUGINS : DOC_PLUGINS}
+        remarkPlugins={fileChip ? (card ? CARD_FILE_PLUGINS : DOC_FILE_PLUGINS) : (card ? CARD_PLUGINS : DOC_PLUGINS)}
         rehypePlugins={rtl ? AUTO_DIR_PLUGINS : NO_PLUGINS}
         components={{
+          ...(fileChip ? {
+            'cth-file': ({ node }: { node?: { properties?: Record<string, unknown> } }) => fileChip(String(node?.properties?.dataPath ?? ''))
+          } as Components : {}),
           a: ({ href, children }) => {
             const h = href ?? '';
             const onClick = (e: React.MouseEvent) => {

@@ -107,14 +107,28 @@ function TalkToMichael() {
         pointerEvents: 'auto', position: 'relative',
         // The buttons stay on the bottom row while the message grows upward.
         // It gives up to 120 px before anything else (owner check at 1280 x 800:
-        // squeezed, the placeholder wrapped onto two lines).
-        flex: '0 1 420px', minWidth: 300, minHeight: 50, display: 'flex', alignItems: 'flex-end', gap: 10, padding: '7px 7px 7px 8px',
+        // squeezed, the placeholder wrapped onto two lines). The conversation
+        // button takes its 34 px plus a gap out of the same row, so it adds both.
+        flex: `0 1 ${dock.items.length > 0 ? 464 : 420}px`, minWidth: dock.items.length > 0 ? 344 : 300, minHeight: 50, display: 'flex', alignItems: 'flex-end', gap: 10, padding: '7px 7px 7px 8px',
         background: 'var(--cth-card)', borderRadius: 'var(--cth-r-2xl)'
       }}
     >
       <MichaelDock dock={dock} refresh={refresh} godId={godId} composerRef={composerRef}
         onFillComposer={(v) => { setDraft(godId, v); composerRef.current?.querySelector('textarea')?.focus(); }}
         onReply={(target) => { setReplyTo(target); composerRef.current?.querySelector('textarea')?.focus(); }} />
+      {/* The way back to the saved conversation once every reply is read (21A: the owner's action). */}
+      {dock.items.length > 0 && (
+        <button onClick={() => (dockOpen ? setDock(false) : openAt())} aria-expanded={dockOpen}
+          aria-label={t('dock.label', { godName })} title={t('dock.label', { godName })} style={{
+            width: 34, height: 34, flexShrink: 0, border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
+            display: 'grid', placeItems: 'center',
+            background: dockOpen ? 'var(--cth-ink)' : 'var(--cth-neutral-soft)', color: dockOpen ? 'var(--cth-bg)' : 'var(--cth-ink-2)'
+          }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z" />
+          </svg>
+        </button>
+      )}
       <button onClick={() => void pick()} aria-label={t('shell.attach')} title={t('shell.attach')} style={{
         width: 34, height: 34, flexShrink: 0, border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
         display: 'grid', placeItems: 'center', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-2)'

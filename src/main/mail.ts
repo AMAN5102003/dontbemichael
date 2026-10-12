@@ -69,7 +69,26 @@ const REFERENCE_TOO_LARGE = 'That email is too large to forward or attach from (
 export type MailErrorKind = 'auth' | 'provider-blocked' | 'network' | 'not-found' | 'bad-request' | 'refused' | 'unsupported' | 'timeout' | 'unknown';
 
 export class MailError extends Error {
-  constructor(readonly kind: MailErrorKind, message: string) { super(message); }
+  /** `uncertain`: the server may have taken the email though the send failed
+   *  (issue 101), so it must not be sent again until Sent shows otherwise. */
+  constructor(readonly kind: MailErrorKind, message: string, readonly uncertain = false) { super(message); }
+}
+
+/** A connection that dropped or timed out after it was made: the server may
+ *  have taken the email. A server that was never reached is not uncertain
+ *  (neverReachedServer). ECONNECTION is the SMTP library's "Connection closed
+ *  unexpectedly", which can come after the server took the email. */
+const MID_SEND_DROP = new Set(['ETIMEDOUT', 'ECONNRESET', 'EPIPE', 'ESOCKET', 'ECONNECTION']);
+
+/** A failure before the mail server took anything: the connection was never
+ *  made (refused, no such host, timed out connecting) or the server never said
+ *  hello. The SMTP library tags every socket error and timeout as the
+ *  connection phase, so the original connect error and its own messages for
+ *  these two timeouts are what tell them apart. */
+export function neverReachedServer(e: unknown): boolean {
+  const err = e as { syscall?: unknown; message?: unknown } | null;
+  if (err?.syscall === 'connect' || err?.syscall === 'getaddrinfo') return true;
+  return typeof err?.message === 'string' && /^(Connection timeout|Greeting never received)\b/.test(err.message);
 }
 
 /** The slice of ImapFlow this module uses (so tests can inject a fake). */
@@ -709,13 +728,13 @@ export class MailService {
    *  Sent, it may still have gone out (only Gmail files sent mail itself; for
    *  the rest the app adds the copy after the server answers), so it is refused. */
   private async settleInterrupted(key: string, id: string, left: { at: number; messageId: string }): Promise<{ sent: boolean; messageId: string }> {
-    const mayHaveGone = 'This email may already have gone out: the app stopped while sending it, and it is not in Sent yet. Do not send it again; tell Michael, so the owner can check with the recipient.';
+    const mayHaveGone = 'This email may already have gone out: sending it was interrupted, and it is not in Sent yet. Do not send it again; tell Michael, so the owner can check with the recipient.';
     let found: boolean;
     try { found = await this.inSent(id, left.messageId); } catch (e) {
       const err = classifyMailError(e);
       // Only a passing problem is worth another try; any other leaves it unknown.
       if (err.kind === 'network' || err.kind === 'timeout') {
-        throw new MailError(err.kind, `Not sent now. The app stopped while sending this email before, and Sent could not be checked for it: ${err.message} Try again in a moment.`);
+        throw new MailError(err.kind, `Not sent now. Sending this email was interrupted before, and Sent could not be checked for it: ${err.message} Try again in a moment.`);
       }
       throw new MailError('refused', mayHaveGone);
     }
@@ -744,6 +763,14 @@ export class MailService {
         // The server may have accepted it before the line dropped: look in Sent.
         const found = await this.inSent(id, messageId).catch(() => false);
         if (found) { this.recordSent(key, now, messageId); return { sent: true, messageId }; }
+        // Not in Sent yet, but a drop mid-send may still have delivered it
+        // (issue 101): it stays recorded as pending, so a repeat is checked in
+        // Sent instead of sent, and an approved card stays sending.
+        const code = (e as { code?: unknown } | null)?.code;
+        if ((err.kind === 'timeout' || (typeof code === 'string' && MID_SEND_DROP.has(code))) && !neverReachedServer(e)) {
+          this.note(id, err);
+          throw new MailError(err.kind, 'This email may already have gone out: the connection dropped before the mail server answered, and it is not in Sent yet. Do not send it again; tell Michael, so the owner can check Sent.', true);
+        }
       }
       // Reported as not sent, so a retry may send it.
       this.pending.delete(key);
@@ -1044,7 +1071,11 @@ async function runMailRequest(
         return a.ok ? null : a.reason;
       };
       try { out = await svc.send(agentId, mailbox!, approved, stillSendable); } catch (e) {
-        try { deps.proposals.unmarkSending(p!.id); } catch { /* stays sending: never resent */ }
+        // A send that may have gone out keeps the card sending, so it is never
+        // sent a second time (issue 101); any other failure returns it to approved.
+        if (!(e instanceof MailError && e.uncertain)) {
+          try { deps.proposals.unmarkSending(p!.id); } catch { /* stays sending: never resent */ }
+        }
         throw e;
       } finally { sendingProposals.delete(p!.id); }
       // The email is out: bookkeeping that fails is logged, never reported as a failed send.

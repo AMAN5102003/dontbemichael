@@ -71,3 +71,15 @@ test('Edit agent takes the window\'s full height, and the work style box fills w
   assert.match(dialog, /\? \{ position: 'fixed', left: box\.left, top: box\.top, width: box\.width, height: box\.height \}/, 'over: the panel\'s exact box');
   assert.match(dialog, /maxHeight: fill \? 'calc\(100vh - 32px\)' : '88vh', \.\.\.\(fill \? \{ height: 'calc\(100vh - 32px\)' \} : \{\}\)/);
 });
+
+test('nothing draws over the work style box: the grow chain keeps each box its content height (owner, 2026-10-10)', () => {
+  // Value: protects=the scheduled jobs under the work style never overlap it; fails_when=minHeight 0 returns on the column, the briefing fields or the work style row; why_new=a shrunken row let the 320 px box spill under the jobs list; seam=none
+  assert.match(src, /<div style=\{\{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 \}\}>/, 'the body column');
+  assert.match(src, /gap: 12, \.\.\.\(grow \? \{ flex: 1 \} : \{\}\) \}\}>\{children\}<\/div>;/, 'Fields');
+  assert.match(src, /gap: 5, \.\.\.\(grow \? \{ flex: 1 \} : \{\}\) \}\}>/, 'Row');
+  assert.doesNotMatch(src, /grow \? \{ flex: 1, minHeight: 0 \}/);
+  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} compact \/>/, 'the jobs list still sits under the work style');
+  // The body scrolls instead: Dialog's body is the scroller.
+  const dialog = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/shell/Dialog.tsx'), 'utf8');
+  assert.match(dialog, /overflowY: 'auto', minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column'/);
+});

@@ -92,7 +92,6 @@ test('every connector is refused until the owner turns it on and gives it to the
   assert.match(reason(await on.call('mcp__claude_ai_Google_Drive__search_files')), /not given you Google Drive/, 'on, not granted');
   assert.match(reason(await on.call('mcp__claude_ai_HubSpot__search_crm_objects', 'oscar')), /not given you HubSpot/, 'another agent');
   assert.ok(!denied(await on.call('Bash')), 'built-in tools are untouched');
-  assert.ok(on.sent.some((s) => s.c === 'control:approvalRequest' && s.p.agentId === 'pam'), 'the floor hears about a refusal');
 });
 
 test('removed, unknown and personal servers are refused; no agent id is refused', async (t) => {

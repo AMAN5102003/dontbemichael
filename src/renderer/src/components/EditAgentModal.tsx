@@ -209,8 +209,11 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
     >
       {/* The whole window's height (owner, 2026-10-02): the work style box
           takes whatever the other fields leave, and the body scrolls only on
-          a window too short for its minimum. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1, minHeight: 0 }}>
+          a window too short for its minimum. No `minHeight: 0` on this column,
+          the briefing fields or the work style row: each must keep its content's
+          height, or the work style box (min 320) spills out of its row and the
+          scheduled jobs under it draw on top of it (owner, 2026-10-10). */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
         <Fields id="name">
           <Row label={t('editAgent.name')}>
             <input
@@ -382,14 +385,14 @@ const inputStyle: CSSProperties = {
 /** A group of fields with no heading (D3: field labels only). `id` names the
  *  group for tests and the reader; nothing shows it. */
 function Fields({ id, grow, children }: { id: 'name' | 'briefing' | 'engine'; grow?: boolean; children: React.ReactNode }) {
-  return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12, ...(grow ? { flex: 1, minHeight: 0 } : {}) }}>{children}</div>;
+  return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12, ...(grow ? { flex: 1 } : {}) }}>{children}</div>;
 }
 
 /** A field with its label; `info` puts the explanation behind an info icon
  *  (owner, 2026-09-27: less verbose everywhere). */
 function Row({ label, info, grow, children }: { label: string; info?: string; grow?: boolean; children: React.ReactNode }) {
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(grow ? { flex: 1, minHeight: 0 } : {}) }}>
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(grow ? { flex: 1 } : {}) }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
         {info && <InfoTip text={info} label={label} />}

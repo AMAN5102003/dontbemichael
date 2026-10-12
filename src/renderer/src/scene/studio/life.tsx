@@ -17,11 +17,13 @@
  *   lands on the Needs you button, which bumps.
  * - Two people messaging back and forth get a conversation arc between their
  *   pods, with a count, until they go quiet for a minute.
- * - Something the owner sends Michael comes up from the composer below.
+ * - Something the owner sends Michael rises from the composer below as a paper
+ *   plane in the owner's indigo (owner, 2026-10-10).
  * - A new hire's pod drops in with confetti and a welcome.
  * - Idle banter (DESIGN.md 8.8): two quiet people trade lines as paper planes
- *   (`throwNote`); the stage shows each line where it lands. Envelopes are only
- *   ever real messages (owner, 2026-10-04).
+ *   (`throwNote`); the stage shows each line where it lands. An envelope is only
+ *   ever a real message between the team (owner, 2026-10-04); a plane is what
+ *   passes between the owner and Michael, or banter.
  *
  * Apart from the banter, nothing here is invented: every effect starts from a
  * hive message, a hook event or the task ledger. Effects stop while the stage is paused, and with
@@ -186,7 +188,8 @@ export function useStudioLife({ seatOf, godId, paused, T, posts, accentOf, done,
       for (const to of targets) {
         const dest = node(to);
         if (!from || !dest) continue;
-        // The owner's message rises from the composer under the stage. The
+        // The owner's message rises from the composer under the stage as a
+        // paper plane, like the one Michael throws to Ask me (owner, 2026-10-10). The
         // owner only talks to Michael: app notices sent in the owner's name to
         // the team (closing time, office open) fly nothing (owner, 2026-10-04).
         if (fromOwner) {
@@ -403,7 +406,7 @@ function Token({ f, T, still }: { f: Flight; T: SceneTokens; still: boolean }) {
   const head = <TokenHead kind={f.kind} color={color} T={T} />;
   // A paper plane turns with its path (rotate="auto" below); flying left it
   // is mirrored so it stays right side up instead of rolling over.
-  const plane = f.kind === 'you' || f.kind === 'note-plane';
+  const plane = f.kind === 'you' || f.kind === 'owner' || f.kind === 'note-plane';
   if (still) return <g transform={`translate(${f.end[0]},${f.end[1] - 12})${plane ? ' rotate(-50)' : ''}`}>{head}</g>;
   const ping = (at: Pt, delay: number, r: number): ReactNode => (
     <ellipse cx={at[0]} cy={at[1]} rx={r} ry={r / 2} fill="none" stroke={color} strokeWidth={2}
@@ -431,9 +434,10 @@ function TokenHead({ kind, color, T }: { kind: FlightKind; color: string; T: Sce
   return (
     <g>
       <circle r={14} fill={color} opacity={0.16} />
-      {kind === 'you' || kind === 'note-plane' ? (
-        // A paper plane: Michael folded the question and threw it to you, or
-        // two idle people pass a line across the office. Nose along +x, the
+      {kind === 'you' || kind === 'owner' || kind === 'note-plane' ? (
+        // A paper plane: Michael folded the question and threw it to you, you
+        // sent Michael something, or two idle people pass a line across the
+        // office. Nose along +x, the
         // way animateMotion rotate="auto" points a shape down its path.
         <g transform="rotate(32)">
           <path d="M-11,1 L11,-7 L3,9 L0,3 Z" fill="#FFFFFF" stroke={color} strokeWidth={1.6} strokeLinejoin="round" />

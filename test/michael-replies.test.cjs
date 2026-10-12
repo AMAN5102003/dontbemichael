@@ -212,6 +212,10 @@ test('the dock and its count follow the design', () => {
   const bar = read('src/renderer/src/shell/BottomBar.tsx');
   assert.match(bar, /background: waiting \? 'var\(--cth-coral-strong\)' : 'var\(--cth-indigo\)'/);
   assert.doesNotMatch(bar, /shell\.queued/, 'the queue chip is gone (2A)');
+  assert.match(bar, /\{dock\.items\.length > 0 && \(\n\s*<button onClick=\{\(\) => \(dockOpen \? setDock\(false\) : openAt\(\)\)\} aria-expanded=\{dockOpen\}/,
+    'with every reply read (after a restart, say) the conversation still opens from its own button');
+  // Value (extension): protects=the message box keeps its width when the conversation button joins its row; fails_when=the button squeezes the placeholder onto two lines; why_new=review D10; seam=source pin (no layout harness)
+  assert.match(bar, /flex: `0 1 \$\{dock\.items\.length > 0 \? 464 : 420\}px`, minWidth: dock\.items\.length > 0 \? 344 : 300,/);
   const main = read('src/main/index.ts');
   assert.match(main, /n\.on\('click', \(\) => \{/);
   assert.match(main, /if \(inFront \|\| !hive\.ownerNotify\(msg\.in_reply_to, msg\.id\)\) return;/);
@@ -324,7 +328,7 @@ test('Couldn\'t finish without a reason reads "No reason given", and the dock sl
   // Value: protects=a refusal never shows an empty bubble (10A) and the dock opens with the 180 ms slide, snapping for reduced motion (21A); fails_when=the fallback or the motion rule is removed; why_new=neither was built or pinned; seam=none
   const dock = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/shell/MichaelDock.tsx'), 'utf8');
   assert.match(dock, /const text = r\.act === 'refuse' && !r\.text\.trim\(\) \? t\('dock\.noReason'\) : r\.text;/);
-  assert.match(dock, /<MarkdownPreview source=\{boldFirst\(text\)\} variant="card" \/>/);
+  assert.match(dock, /<FileText source=\{boldFirst\(text\)\} who=\{\{ raisedBy: 'god' \}\} \/>/, 'files named in it are chips (open-file-tab.md)');
   assert.match(dock, /className="cth-dock"/);
   const css = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/design/global.css'), 'utf8');
   assert.match(css, /\.cth-dock \{ animation: cth-dock-in 180ms ease-out; \}/);

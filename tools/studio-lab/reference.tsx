@@ -9,6 +9,7 @@
  *   ?shot=michael-office-schedule Michael's panel, Office schedule tab
  *   ?shot=tasks-detail            Tasks, one task open
  *   ?shot=who-talks-to-whom       Who talks to whom
+ *   ?shot=file-tab                A report a teammate wrote, open in its own office tab
  *   ?shot=onboarding-team         Setup, the Team step
  *   ?shot=onboarding-business     Setup, step 1 (your business)
  *   ?shot=onboarding-meet         Setup, the Meet step (Michael shows you around)
@@ -35,6 +36,7 @@ import { AgentDetailPanel } from '@/components/AgentDetailPanel';
 import { TasksKanban } from '@/components/TasksKanban';
 import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
 import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
+import { FileTabView } from '@/components/FileTabView';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
 import { AddAgentModal } from '@/components/AddAgentModal';
 import { SettingsModal } from '@/components/SettingsModal';
@@ -84,8 +86,41 @@ Object.assign(w.cth, {
     { id: 'm5', kind: 'reference', text: 'Invoices live in Support/Invoices, one PDF per invoice number.', source: 'task', date: '2026-09-20' },
     { id: 'm6', kind: 'procedure', text: 'Double charge: steps in memory/procedures/double-charge.md', source: 'task', date: '2026-09-29' }
   ]) }),
-  onPtyRelaunch: () => () => {}
+  onPtyRelaunch: () => () => {},
+  // The file tab shot: Dwight's weekly pipeline report, read as the app reads it.
+  readAskFile: async () => ({ ok: true, path: REPORT_PATH, kind: 'markdown', text: REPORT, size: REPORT.length, place: 'dwight', folder: ['Sales'] }),
+  watchAskFile: async () => ({ ok: true }),
+  unwatchAskFile: async () => undefined,
+  onAskFileChanged: () => () => {},
+  openAskFile: async () => ({ ok: true, action: 'opened' }),
+  revealPath: async () => ({ ok: true })
 });
+
+const REPORT_PATH = '/Users/owner/Harbor & Pine/Dwight/Sales/Pipeline report 2026-10-09.md';
+const REPORT = [
+  '# Pipeline report, week of 5 Oct',
+  '',
+  'Prepared by Dwight on Friday 9 Oct. Three deals moved forward and one closed.',
+  '',
+  '## Where each deal stands',
+  '',
+  '| Client | Work | Value | Stage | Next step |',
+  '| --- | --- | ---: | --- | --- |',
+  '| Lakeview Dental | Website refresh | $10,000 | Proposal sent | Call with Dr. Park, Tue 13 Oct |',
+  '| Bayside Books | Staff training | $8,000 | Waiting on budget | Owner to approve a 10% discount |',
+  '| Northwind Cafe | Bookkeeping, one year | $13,200 | Won | Oscar sends the first invoice |',
+  '| Cedar & Co | Brand refresh | $14,400 | First meeting held | Send scope by Thu 15 Oct |',
+  '',
+  '## This month',
+  '',
+  '- **Likely by 31 Oct:** $24,400 (Lakeview Dental and Cedar & Co).',
+  '- **Upside:** $8,000 if Bayside Books approves its budget.',
+  '- **Won so far:** $13,200 (Northwind Cafe, one year of bookkeeping).',
+  '',
+  '## What I need from you',
+  '',
+  'Bayside Books asked for 10% off to fit their budget. Yes or no is on your Ask me board.'
+].join('\n');
 
 const dim = (s: string) => `\x1b[2m${s}\x1b[22m`;
 const dot = (s: string) => `\x1b[32m●\x1b[39m ${s}`;
@@ -119,6 +154,7 @@ const SHOTS: Record<string, Record<string, unknown>> = {
   'michael-office-schedule': { selectedId: 'god', needsYouOpen: false, ccTabRequest: { tab: 'triggers', seq: 1 } },
   'tasks-detail': { floorView: 'tasks', taskDetailId: 'T112' },
   'who-talks-to-whom': { floorView: 'graph' },
+  'file-tab': { floorView: 'file', needsYouOpen: true, fileTabs: [{ id: REPORT_PATH, title: 'Pipeline report 2026-10-09', kind: 'markdown', who: { assignee: 'dwight' }, openedAt: 0 }], activeFileTab: REPORT_PATH },
   'kelly-memory': { selectedId: 'kelly', needsYouOpen: false, sidebarTab: 'memory' },
   hire: {},
   'settings-autonomy': {}
@@ -169,13 +205,14 @@ function Shell() {
             <div style={{ position: 'absolute', inset: 0, zIndex: 50, display: 'flex', flexDirection: 'column', paddingBottom: 96, background: 'var(--cth-bg)' }}>
               {floorView === 'tasks' && <TasksKanban />}
               {floorView === 'graph' && <MemoryGraphPanel godId="god" onJumpToMemory={() => {}} />}
+              {floorView === 'file' && <FileTabView />}
             </div>
           )}
           <BottomBar />
         </div>
         {/* As in the app: Tasks and Who talks to whom take the whole window. */}
-        {floorView === 'office' && <SidebarSplitter width={SIDEBAR} onChange={() => {}} viewportWidth={1440} />}
-        <div style={{ width: SIDEBAR, flexShrink: 0, minHeight: 0, position: 'relative', zIndex: 60, display: floorView === 'office' ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden', margin: '4px 6px 0 0' }}>
+        {(floorView === 'office' || floorView === 'file') && <SidebarSplitter width={SIDEBAR} onChange={() => {}} viewportWidth={1440} />}
+        <div style={{ width: SIDEBAR, flexShrink: 0, minHeight: 0, position: 'relative', zIndex: 60, display: floorView === 'office' || floorView === 'file' ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden', margin: '4px 6px 0 0' }}>
           {needsYouOpen || !agent ? <NeedsYouBoard config={config} /> : (
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 12px 0' }}>
               <NeedsYouStrip />

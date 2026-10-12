@@ -3,9 +3,19 @@
 ## Scope
 
 Don't Be Michael is a **local-first desktop app**. It spawns local processes in PTYs and
-reads/writes files under directories you register. It opens **no network listeners
-beyond a local Unix domain socket** used for the in-app hook server, and has no auth or
-remote surface by design.
+reads/writes files under directories you register. What it listens on:
+
+- **The hook server**: a Unix domain socket in the hive folder (on Windows, a named
+  pipe with a random name for each launch), for agents' hook events.
+- **The integration broker**: an HTTP server bound to `127.0.0.1` that agents call to
+  reach connected apps. Each call needs the agent's own capability token.
+- **The telemetry receiver**: an HTTP server bound to `127.0.0.1` for usage data from
+  the agents.
+- **The webhook server**, only while a webhook is turned on: an HTTP server bound to
+  `127.0.0.1`, reached from the internet through a public tunnel. Every request needs
+  the webhook's secret. The tunnel's address is public for as long as it is open.
+
+Nothing else on the local network can reach these listeners.
 
 ## Supported versions
 

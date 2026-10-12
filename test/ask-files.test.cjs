@@ -123,23 +123,25 @@ test('revealing a directory never opens an app bundle, and the IPC re-checks bef
   assert.match(main, /ipcMain\.handle\('fs:askFiles'[\s\S]*?const roots = await resolveAskFileRoots\(askFileRoots\(who\)\);/, 'one realpath per root per card');
 });
 
-test('the open card and Task detail show the rows; strings exist in every language', () => {
+test('the open card, Task detail and Michael\'s replies show chips in place of paths; strings exist in every language', () => {
+  // Value: protects=a named file opens from where it is mentioned, on every card; fails_when=a surface goes back to rows or drops the chip; why_new=rows were replaced by chips (open-file-tab.md, R2); seam=none
   const tab = read('src/renderer/src/components/AskMeTab.tsx');
-  assert.match(tab, /<MarkdownPreview source=\{open\.q\} variant="card" \/>\n\s+<\/div>\n\s+\{\/\* The files the question names[^\n]*\*\/\}\n\s+<AskFileRows question=\{open\.q\}/, 'between the question and the reply (design D2)');
+  assert.match(tab, /<FileText source=\{open\.q\} who=\{\{ raisedBy: open\.raisedBy, assignee:/, 'the open card');
   const kanban = read('src/renderer/src/components/TasksKanban.tsx');
-  assert.match(kanban, /<AskFileRows question=\{e\.q\}[^\n]*verdicts=\{qaFiles\[[^\n]*endRule=\{!isAnswered\(e\)\}/, 'Task detail too (design D8), one check per card, no doubled hairline above an answer');
-  assert.match(kanban, /const qaFiles = useAskFileVerdicts\(task\.humanQA, qaAssignee\);/);
-  const rows = read('src/renderer/src/components/AskFileRows.tsx');
-  assert.match(rows, /variant="secondary" size="sm"/, '28 px target (design D6)');
-  assert.match(rows, /\{missing \? \(\n\s+<span[^>]*>\{t\('askMe\.fileNotFound'\)\}<\/span>/, 'Not found is text, not a button (design D3)');
-  assert.doesNotMatch(rows, /background: 'var\(--cth-card-2\)'/, 'plain rows, no box in the card (design D5)');
-  assert.match(rows, /const win = window\.cth\.platform === 'win32';/, 'Windows says folder, not Finder');
-  assert.match(rows, /catch \{\n\s+for \(const p of chunk\) out\[p\] = 'reveal';/, 'a failed check leaves a working button');
+  assert.match(kanban, /<FileText source=\{e\.q\} who=\{\{ raisedBy: e\.raisedBy, assignee: qaAssignee \}\} checks=\{qaFiles\[e\.raisedBy \?\? ''\] \?\? \{\}\} \/>/, 'Task detail, one check per card');
+  assert.match(kanban, /const qaFiles = useAskFileChecks\(task\.humanQA, qaAssignee\);/);
+  const dock = read('src/renderer/src/shell/MichaelDock.tsx');
+  assert.match(dock, /<FileText source=\{boldFirst\(text\)\} who=\{\{ raisedBy: 'god' \}\} \/>/, 'replies, notes included');
+  assert.equal(fs.existsSync(path.resolve(__dirname, '..', 'src/renderer/src/components/AskFileRows.tsx')), false, 'no rows left');
+  const chip = read('src/renderer/src/components/FileChip.tsx');
+  assert.match(chip, /background: 'var\(--cth-neutral-soft\)'/, 'soft chip (DD1)');
+  assert.match(chip, /if \(missing\) \{\n\s+return \(\n\s+<span/, 'Not found is text, not a button');
+  assert.match(chip, /const win = window\.cth\.platform === 'win32';/, 'Windows says folder, not Finder');
+  assert.match(chip, /catch \{\n\s+for \(const p of chunk\) out\[p\] = \{ verdict: 'reveal', tab: false, path: p \};/, 'a failed check leaves a working chip');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const a = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).askMe;
-    for (const k of ['fileFiles', 'fileOpen', 'fileReveal', 'fileRevealWindows', 'fileNotFound']) assert.ok(a[k], `${loc} ${k}`);
+    for (const k of ['fileOpen', 'fileReveal', 'fileRevealWindows', 'fileNotFound']) assert.ok(a[k], `${loc} ${k}`);
     for (const k of ['fileOpenLabel', 'fileRevealLabel', 'fileRevealLabelWindows']) assert.match(a[k], /\{\{name\}\}/, `${loc} ${k}`);
-    for (const kind of ['markdown', 'text', 'csv', 'excel', 'word', 'powerpoint', 'pdf', 'image', 'file']) assert.ok(a.fileKind[kind], `${loc} ${kind}`);
     assert.doesNotMatch(JSON.stringify(a), /[–—]/, `${loc}: no dashes`);
   }
 });

@@ -65,9 +65,12 @@ export function ThreadsPanel({ agentId }: ThreadsPanelProps) {
   /** "Dwight asked Pam", "Pam let Oscar know", "Pam finished". */
   const said = (m: HistoryMessage) => t(`threads.verb.${verbKey(m.act)}`, { from: nameOf(m.from), to: nameOf(m.to) });
   const time = (iso: string) => {
-    try { return new Date(iso).toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' }); } catch { return ''; }
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    try { return d.toLocaleTimeString(i18n.language, { hour: 'numeric', minute: '2-digit' }); } catch { return ''; }
   };
   const dayLabel = (day: string) => {
+    if (!day) return t('threads.undated');
     const today = localDay(new Date().toISOString());
     const yesterday = localDay(new Date(Date.now() - 86_400_000).toISOString());
     if (day === today) return t('threads.today');
@@ -112,7 +115,7 @@ export function ThreadsPanel({ agentId }: ThreadsPanelProps) {
           <ol style={{ listStyle: 'none', margin: '8px 0 0', padding: '0 0 0 12px', boxShadow: `inset 2px 0 0 var(--cth-ink-100)`, display: 'flex', flexDirection: 'column', gap: 10 }}>
             {thread.messages.map((m) => (
               <li key={m.id}>
-                <div style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{said(m)} · {time(m.created_at)}</div>
+                <div style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{[said(m), time(m.created_at)].filter(Boolean).join(' · ')}</div>
                 <div dir={rtl ? 'auto' : undefined} style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-900)', whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginTop: 2 }}>
                   {m.body || m.subject}
                 </div>

@@ -53,6 +53,14 @@ test('non-images are not images', () => {
   }
 });
 
+test('Object prototype names are not image extensions', () => {
+  for (const p of ['notes.constructor', 'notes.__proto__', 'notes.CONSTRUCTOR?v=2']) {
+    assert.equal(imageMimeForPath(p), null, `${p} must not inherit a mime type`);
+    assert.equal(isImagePath(p), false);
+    assert.equal(resolveLocalImageRel('docs/report.md', p), null);
+  }
+});
+
 test('query strings and hashes do not hide the extension', () => {
   // Agent-written markdown carries cache-busters; treating `png?v=2` as the
   // extension would silently drop exactly the screenshots we want to render.
@@ -236,6 +244,20 @@ test('unknown binary types still read, labelled octet-stream', async () => {
     const res = await readFileBinary(root, 'blob.bin');
     assert.equal(res.ok, true);
     assert.equal(res.mime, 'application/octet-stream', 'never guess an image mime for an unknown extension');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('binary files with prototype-named extensions use octet-stream', async () => {
+  const { dir, root } = makeWorkspace();
+  try {
+    for (const rel of ['blob.constructor', 'blob.__proto__']) {
+      fs.writeFileSync(path.join(root, rel), Buffer.from([0, 1, 2, 3]));
+      const res = await readFileBinary(root, rel);
+      assert.equal(res.ok, true);
+      assert.equal(res.mime, 'application/octet-stream');
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

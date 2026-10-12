@@ -21,6 +21,7 @@ import { refocusAfterRemoval, focusOnLoad, restoreFocus } from './focusMode';
 import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
 import { canOpen } from '../shell/closingFloor';
+import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
 
 export type ToolKind =
   | 'Read' | 'Edit' | 'Write' | 'Bash' | 'WebFetch' | 'WebSearch'
@@ -223,6 +224,13 @@ interface State {
    *  is doing what, what is blocked, what is done), or the GRAPH of who talks
    *  to whom. Remembered per Mac. */
   floorView: FloorView;
+  /** Files opened from a reply or an Ask me card, as tabs after Who talks to
+   *  whom (docs/designs/open-file-tab.md). Never saved. */
+  fileTabs: FileTab[];
+  /** The file tab shown while `floorView` is 'file'. */
+  activeFileTab: string | null;
+  /** The fixed view the owner was on, to go back to when the last file tab closes. */
+  lastFixedView: FixedView;
   /** Does the user work in focus mode by default? Persisted as a boolean, and
    *  written ONLY by an explicit toggle. Kept in the store rather than read once
    *  at construction because the roster arrives after the store does. */
@@ -398,6 +406,10 @@ interface State {
   clearPendingHires: () => void;
   setFullscreen: (id: string | null) => void;
   setFloorView: (view: FloorView) => void;
+  /** Open a file's tab, or select it if it is open (keyed by main's real path). */
+  openFileTab: (tab: Omit<FileTab, 'openedAt'>) => void;
+  selectFileTab: (id: string) => void;
+  closeFileTab: (id: string) => void;
   /** Move focus mode WITHOUT touching the preference. For the paths that re-home
    *  a focused agent that went away: the app is following the user, not being
    *  told what the user wants. `setFullscreen` is the explicit toggle. */
@@ -439,14 +451,15 @@ const LS_FLOOR_VIEW = 'cth.floorView';
 
 /** Opening the right column on purpose (Needs you, a person, Michael's tabs)
  *  goes back to the office: Tasks and Who talks to whom hide the column
- *  (owner, 2026-10-03). */
+ *  (owner, 2026-10-03). A file tab keeps it beside the file, so an Ask me card
+ *  stays answerable while its file is read (open-file-tab.md, F1). */
 function officeView(view: FloorView): { floorView?: FloorView } {
-  if (view === 'office') return {};
+  if (view === 'office' || view === 'file') return {};
   try { window.localStorage.setItem(LS_FLOOR_VIEW, 'office'); } catch { /* per-Mac nicety only */ }
   return { floorView: 'office' };
 }
 
-export type FloorView = 'office' | 'tasks' | 'graph';
+export type FloorView = 'office' | 'tasks' | 'graph' | 'file';
 const initialFloorView: FloorView = (() => {
   try {
     const v = window.localStorage.getItem(LS_FLOOR_VIEW);
@@ -920,6 +933,9 @@ export const useStore = create<State>((set, get) => ({
   fullscreenAgentId: SHOW_FOCUS_MODE ? focusOnLoad(initialPrefersFocusMode, initialSelectedId) : null,
   prefersFocusMode: initialPrefersFocusMode,
   floorView: initialFloorView,
+  fileTabs: [],
+  activeFileTab: null,
+  lastFixedView: initialFloorView === 'tasks' || initialFloorView === 'graph' ? initialFloorView : 'office',
   ideInitialFile: null,
   ideOpen: false,
   ideAgentId: null,
@@ -1308,9 +1324,19 @@ export const useStore = create<State>((set, get) => ({
     hireQueue: clearHireQueue(s.hireQueue)
   })),
   setFloorView: (view) => {
+    // A file tab is never saved: after a restart the app opens on the last
+    // fixed view (open-file-tab.md, R4).
+    if (view === 'file') { set({ floorView: view }); return; }
     try { window.localStorage.setItem(LS_FLOOR_VIEW, view); } catch { /* per-Mac nicety only */ }
-    set({ floorView: view });
+    set({ floorView: view, lastFixedView: view });
   },
+  openFileTab: (tab) => set((s) => ({ ...openTab(s, { ...tab, openedAt: Date.now() }), floorView: 'file' })),
+  selectFileTab: (id) => set((s) => (s.fileTabs.some((f) => f.id === id) ? { activeFileTab: id, floorView: 'file' } : {})),
+  closeFileTab: (id) => set((s) => {
+    const r = closeTab(s, id);
+    const floorView: FloorView = s.floorView !== 'file' ? s.floorView : r.select ?? s.lastFixedView;
+    return { fileTabs: r.fileTabs, activeFileTab: r.activeFileTab, floorView };
+  }),
   setFullscreen: (id) => {
     // Focus mode is hidden in this build: nothing opens it (buildFeatures.ts).
     if (id && !SHOW_FOCUS_MODE) return;

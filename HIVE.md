@@ -70,7 +70,9 @@ hive/
   PROTOCOL.md            # the agent-facing contract (how to remember + message)
   registry.json          # roster: every agent, role, capabilities, status, seat
   board.md               # shared blackboard / co-authored plans
-  tasks.json             # task ledger (id, assignee, spec, status, result ref)
+  tasks.json             # task ledger (id, assignee, spec, status, result ref); god writes it alone
+  triage/                # one file per team member filing, written once; god works them oldest first
+  .office-id             # random id the app's board guard keys its private state on
   log.jsonl              # append-only event feed (drives the UI activity stream)
   agents/<agentId>/
     identity.md          # who am I, my role, my capabilities  (read at start)
@@ -157,7 +159,9 @@ michael`, flagged `isGod`. It is an ordinary `claude` process — the *intellige
   task spec), escalate only critical ones. This is "god mode."
 - **Blackboard scribe**: the single writer of `board.md`, so shared plans never
   conflict.
-- **Task ledger** (`tasks.json`): assign, track, retry, checkpoint.
+- **Task ledger** (`tasks.json`): assign, track, retry, checkpoint. The single
+  writer of `tasks.json` too: team members file what they need in `triage/` and
+  tell god when their work moves (docs/designs/card-lifecycle.md section 10).
 
 Its escalation policy (what counts as "critical") lives in its system prompt and
 is the primary control surface — tune the prompt, not the code.
@@ -203,7 +207,8 @@ is the primary control surface — tune the prompt, not the code.
 | Two agents ping-ponging | Only request/query/propose obligate replies; hop cap → god escalates |
 | Reprocessing messages | Per-agent `cursor.json`; processed messages move to `inbox/.done/` |
 | `memory.md` unbounded growth | App kept index with a size budget, tidied in the background (`memoryTidy.ts`) |
-| Modifying the user's repo with hooks | Write hooks to `<cwd>/.claude/settings.local.json` (gitignored convention) |
+| Modifying the user's repo with hooks | Hooks ride in a per-agent settings file passed with `--settings`, kept at `<harnessHome>/agent-settings/<id>.json`; nothing is written into the user's repo or `~/.claude` |
+| An agent rewriting its own hooks or sandbox | The hook program (`<harnessHome>/hive/bin`) and `agent-settings` are locked for every agent, Michael included: shell deny-write, an `Edit` deny rule, and the hook's own folder check. Reading stays open (issue 100). Windows has no shell sandbox, so there only the file tool rules hold |
 
 ---
 

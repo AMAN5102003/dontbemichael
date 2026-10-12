@@ -1,4 +1,4 @@
-- **Microsoft 365 on your own domain:** a clear message.
-- **Large Office files** are refused, not unpacked.
-- **No repeat emails** after a restart.
-- **Web links** open in your browser.
+- **Michael alone** keeps the task board.
+- **Done is final**: only you reopen a card.
+- **A parked step wakes** at its time.
+- **One numbered ask** per activity.
