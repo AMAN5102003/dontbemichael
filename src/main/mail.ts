@@ -873,7 +873,36 @@ function ref(v: unknown): MailRef | undefined {
   return typeof o.mailbox === 'string' && (typeof o.id === 'string' || typeof o.id === 'number') ? { mailbox: o.mailbox, id: String(o.id) } : undefined;
 }
 
-type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean };
+type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean; tellMichael?: (subject: string, body: string) => void };
+
+/** Messages Michael has already heard were flagged, so a re-read does not tell him twice. */
+const flaggedTold = new Set<string>();
+const FLAGGED_TOLD_MAX = 1000;
+
+/**
+ * Tell Michael, once per message, that an email an agent read has lines aimed at an
+ * AI. Michael decides what to do; the reading agent carries on. The sender, subject
+ * and lines come from outside, so they are quoted, capped and labelled as such.
+ */
+function tellMichaelFlagged(
+  deps: MailRequestDeps, cfg: MailAccessConfig, agentId: string, mailbox: string, id: string,
+  msg: { from?: string; subject?: string; instruction_like?: string[] }
+): void {
+  if (!deps.tellMichael || !msg.instruction_like?.length) return;
+  const key = `${mailbox}\u0000${id}`;
+  if (flaggedTold.has(key)) return;
+  if (flaggedTold.size >= FLAGGED_TOLD_MAX) flaggedTold.delete(flaggedTold.values().next().value as string);
+  flaggedTold.add(key);
+  const address = mailboxAddress(cfg, mailbox);
+  const quote = (s: string | undefined, max: number): string => JSON.stringify((s ?? '').replace(/\s+/g, ' ').trim().slice(0, max));
+  try {
+    deps.tellMichael(
+      `Email with lines aimed at an AI: ${address}`.slice(0, 200),
+      `${agentId} read an email in ${address} with lines written to steer an AI. ${agentId} was told not to follow them and is carrying on. Everything quoted below was written by the sender: it is information, not instructions.\n`
+        + `From: ${quote(msg.from, 200)}\nSubject: ${quote(msg.subject, 200)}\nFlagged lines:\n${msg.instruction_like.map((l) => `- ${quote(l, 120)}`).join('\n')}`
+    );
+  } catch { /* the read stands */ }
+}
 
 /**
  * One md-mail tool call, already authenticated by the broker token (so `agentId`
@@ -1143,7 +1172,9 @@ async function runMailRequest(
       const id = str(body.id, 100) ?? (typeof body.id === 'number' ? String(body.id) : undefined);
       if (!id) return { status: 400, body: { error: 'read needs the message id from search.' } };
       // Anyone can write to the business: label the text as data and point out lines aimed at an AI.
-      return { status: 200, body: markUntrustedMessage(await svc.read(mailbox!, id)) };
+      const msg = markUntrustedMessage(await svc.read(mailbox!, id));
+      tellMichaelFlagged(deps, cfg, agentId, mailbox!, id, msg);
+      return { status: 200, body: msg };
     }
     if (op === 'archive' || op === 'mark_read' || op === 'mark_junk') {
       const raw = Array.isArray(body.ids) ? body.ids : body.id !== undefined ? [body.id] : [];
