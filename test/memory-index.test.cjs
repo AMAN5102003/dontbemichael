@@ -43,7 +43,7 @@ test('notes: each bullet or paragraph is one; the old header is not a note', () 
 
 test('the model\'s ops are checked: unknown ids, kinds and ops are dropped, text stays one line', () => {
   const entries = [e('m1', 'fact', 'a')];
-  const ops = mi.validateOps({ ops: [
+  const { ops, dropped } = mi.validateOps({ ops: [
     { op: 'add', kind: 'fact', text: 'x | y\nz', source: 'owner' },
     { op: 'add', kind: 'secret', text: 'no' },
     { op: 'update', id: 'm9', text: 'no' },
@@ -53,6 +53,20 @@ test('the model\'s ops are checked: unknown ids, kinds and ops are dropped, text
   ] }, entries);
   assert.deepEqual(ops.map((o) => o.op), ['add', 'delete', 'procedure']);
   assert.equal(ops[0].text, 'x / y z');
+  assert.deepEqual(dropped, { 'bad-kind': 1, 'unknown-id': 1, 'unknown-op': 1 });
+});
+
+test('dropped ops are counted by reason, and an all-clean reply reports none', () => {
+  const entries = [e('m1', 'fact', 'a')];
+  const { ops, dropped } = mi.validateOps({ ops: [
+    { op: 'add', kind: 'fact', text: '', source: 'task' },
+    { op: 'add', kind: 'fact', text: 'ok', source: 'task' },
+    { op: 'delete', id: 'm9', reason: 'no' },
+    null
+  ] }, entries);
+  assert.deepEqual(ops.map((o) => o.op), ['add']);
+  assert.deepEqual(dropped, { 'missing-text': 1, 'unknown-id': 1, malformed: 1 });
+  assert.deepEqual(mi.validateOps({ ops: [{ op: 'add', kind: 'fact', text: 'fine', source: 'task' }] }, entries).dropped, {});
 });
 
 test('changes are itemised: add, update, delete, procedure; replaced entries are archived', () => {
@@ -68,10 +82,23 @@ test('changes are itemised: add, update, delete, procedure; replaced entries are
   assert.deepEqual(out.archived.map((a) => a.entry.text), ['Price list is v1'], 'the replaced fact is kept in the archive');
   assert.equal(out.procedures[0].slug, 'weekly-money-summary');
   assert.equal(out.entries[3].text, 'Weekly money summary: steps in memory/procedures/weekly-money-summary.md');
-  assert.deepEqual(out.stats, { added: 1, updated: 2, deleted: 0, procedures: 1, repeats: 1 });
+  assert.deepEqual(out.stats, { added: 1, updated: 2, deleted: 0, procedures: 1, repeats: 1, dupes: 0 });
   const del = mi.applyOps(out.entries, [{ op: 'delete', id: 'm3', reason: 'moved' }], '2026-09-26');
   assert.equal(del.entries.length, 3);
   assert.match(mi.archiveLines(del.archived, '2026-09-26'), /archived 2026-09-26: moved$/);
+});
+
+test('duplicate adds are skipped and counted, by normalized text and within one batch', () => {
+  const entries = [e('m1', 'fact', 'Supplier cutoff is Thursday noon')];
+  const out = mi.applyOps(entries, [
+    { op: 'add', kind: 'fact', text: 'Weekly payroll runs Friday', source: 'task' },
+    { op: 'add', kind: 'fact', text: 'weekly payroll runs friday', source: 'task' },
+    { op: 'add', kind: 'fact', text: '  Weekly   payroll runs Friday ', source: 'task' }
+  ], '2026-10-13');
+  assert.equal(out.stats.added, 1);
+  assert.equal(out.stats.dupes, 2);
+  assert.equal(out.entries.length, 2, 'the existing entry plus one add');
+  assert.equal(out.entries[1].text, 'Weekly payroll runs Friday');
 });
 
 function office(t) {
