@@ -9,7 +9,8 @@
  *
  * Replaces the rows under the question (docs/designs/ask-me-open-file.md, D2).
  */
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { askFilePaths, fileTitle, kindOf, type AskFileCheck } from '@shared/askFiles';
 import { MarkdownPreview, type MarkdownVariant } from '@/markdown/MarkdownPreview';
@@ -76,7 +77,7 @@ export function useAskFileChecks(
   return byRaiser;
 }
 
-/** The chip itself (DD1): soft, one button; Not found is text, not a button. */
+/** The chip itself (DD1): soft, with a separate actions menu; Not found is text. */
 export function FileChip({ path, check, who, onGone }: {
   path: string;
   check?: AskFileCheck;
@@ -118,28 +119,119 @@ export function FileChip({ path, check, who, onGone }: {
   };
   const labels = [t('askMe.fileOpen'), t(win ? 'askMe.fileRevealWindows' : 'askMe.fileReveal')];
   return (
-    <button
-      type="button"
-      className="cth-file-chip"
-      onClick={open}
-      disabled={!check}
-      title={`⁨${path}⁩`}
-      aria-label={reveal
-        ? t(win ? 'askMe.fileRevealLabelWindows' : 'askMe.fileRevealLabel', { name })
-        : t('askMe.fileOpenLabel', { name })}
-      style={{ ...chip, background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink)', cursor: check ? 'pointer' : 'default' }}
-    >
-      <span aria-hidden style={{ color: 'var(--cth-ink-3)', display: 'grid', placeItems: 'center' }}><Icon name={icon} size={0.875} /></span>
-      {nameEl}
-      {/* Both labels share one cell, so the chip is as wide as the longer one
-          whichever shows: nothing jumps when the check lands. */}
-      <span aria-hidden style={{ display: 'inline-grid', color: 'var(--cth-indigo-text)', fontWeight: 600 }}>
-        {labels.map((l, j) => (
-          <span key={j} style={{ gridArea: '1 / 1', visibility: check && (j === 1) === reveal ? 'visible' : 'hidden' }}>{l}</span>
-        ))}
-      </span>
-    </button>
+    <span style={{ display: 'inline-flex', maxWidth: '100%', verticalAlign: 'middle' }}>
+      <button
+        type="button"
+        className="cth-file-chip"
+        onClick={open}
+        disabled={!check}
+        title={`⁨${path}⁩`}
+        aria-label={reveal
+          ? t(win ? 'askMe.fileRevealLabelWindows' : 'askMe.fileRevealLabel', { name })
+          : t('askMe.fileOpenLabel', { name })}
+        style={{ ...chip, minWidth: 0, background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink)', cursor: check ? 'pointer' : 'default' }}
+      >
+        <span aria-hidden style={{ color: 'var(--cth-ink-3)', display: 'grid', placeItems: 'center' }}><Icon name={icon} size={0.875} /></span>
+        {nameEl}
+        {/* Both labels share one cell, so the chip is as wide as the longer one
+            whichever shows: nothing jumps when the check lands. */}
+        <span aria-hidden style={{ display: 'inline-grid', color: 'var(--cth-indigo-text)', fontWeight: 600 }}>
+          {labels.map((l, j) => (
+            <span key={j} style={{ gridArea: '1 / 1', visibility: check && (j === 1) === reveal ? 'visible' : 'hidden' }}>{l}</span>
+          ))}
+        </span>
+      </button>
+      {check && <FileActions path={path} who={who} name={name} label={labels[reveal ? 1 : 0]} onOpen={open} onGone={onGone} />}
+    </span>
   );
+}
+
+/** A portal keeps actions visible inside scrolling replies and Task detail. */
+function FileActions({ path, who, name, label, onOpen, onGone }: {
+  path: string; who: Who; name: string; label: string;
+  onOpen: () => void; onGone: (path: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [copy, setCopy] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const close = () => { setOpen(false); trigger.current?.focus(); };
+
+  useLayoutEffect(() => {
+    if (!open || !trigger.current || !menu.current) return;
+    const a = trigger.current.getBoundingClientRect();
+    const b = menu.current.getBoundingClientRect();
+    setPosition({
+      left: Math.max(8, Math.min(a.right - b.width, window.innerWidth - b.width - 8)),
+      top: a.bottom + b.height + 6 <= window.innerHeight - 8 ? a.bottom + 6 : Math.max(8, a.top - b.height - 6)
+    });
+  }, [open, copy]);
+
+  useEffect(() => { if (open) menu.current?.querySelector('button')?.focus(); }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: MouseEvent) => {
+      if (!trigger.current?.contains(e.target as Node) && !menu.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const moved = (e: Event) => { if (!menu.current?.contains(e.target as Node)) setOpen(false); };
+    window.addEventListener('mousedown', outside);
+    window.addEventListener('resize', moved);
+    window.addEventListener('scroll', moved, true);
+    return () => {
+      window.removeEventListener('mousedown', outside);
+      window.removeEventListener('resize', moved);
+      window.removeEventListener('scroll', moved, true);
+    };
+  }, [open]);
+
+  const copyPath = async () => {
+    if (copy === 'busy') return;
+    setCopy('busy');
+    try {
+      // Recheck: a failed initial check may contain only the relative path.
+      const [fresh] = await window.cth.askFiles([path], who);
+      if (!fresh || fresh.verdict === 'missing') { close(); onGone(path); return; }
+      const result = await window.cth.copyToClipboard(fresh.path);
+      setCopy(result.ok ? 'done' : 'error');
+    } catch { setCopy('error'); }
+  };
+
+  return <>
+    <button
+      ref={trigger} type="button" className="cth-file-chip"
+      aria-label={t('askMe.fileActionsLabel', { name })}
+      aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
+      onClick={() => { setCopy('idle'); setOpen((v) => !v); }}
+      onKeyDown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); setCopy('idle'); setOpen(true); } }}
+      style={{ height: 24, flexShrink: 0, padding: '0 6px', margin: '1px 0', border: 0, borderRadius: 'var(--cth-r-sm)', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-ui)', cursor: 'pointer' }}
+    ><span aria-hidden>⋯</span></button>
+    {open && createPortal(
+      <div ref={menu} id={id} role="menu" aria-label={t('askMe.fileActionsLabel', { name })}
+        onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+          if (e.key === 'Tab') close();
+          if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) {
+            e.preventDefault();
+            const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+            const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+            buttons[e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (i + (e.key === 'ArrowUp' ? -1 : 1) + buttons.length) % buttons.length]?.focus();
+          }
+        }}
+        style={{ position: 'fixed', ...position, zIndex: 400, minWidth: 190, maxWidth: 'calc(100vw - 16px)', padding: 6, display: 'flex', flexDirection: 'column', background: 'var(--cth-card)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-lg)', fontFamily: 'var(--cth-font-ui)' }}
+      >
+        <button type="button" role="menuitem" tabIndex={-1} className="cth-file-action" onClick={() => { close(); onOpen(); }}>{label}</button>
+        <button type="button" role="menuitem" tabIndex={-1} className="cth-file-action" aria-disabled={copy === 'busy'} onClick={() => void copyPath()}>
+          {t(copy === 'done' ? 'askMe.filePathCopied' : 'askMe.fileCopyPath')}
+        </button>
+        {copy === 'error' && <span role="status" style={{ padding: '0 10px', fontSize: 12, color: 'var(--cth-coral-text)' }}>{t('askMe.fileCopyFailed')}</span>}
+      </div>, document.body
+    )}
+  </>;
 }
 
 /**

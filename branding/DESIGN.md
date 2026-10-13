@@ -620,7 +620,14 @@ stands on its own.
   (12 / 500 `ink`, ellipsis at 200 px, the full path as its tooltip); then the action in
   `indigo-text` 600: "Open" for a file the office can show (it opens as a file tab, §7.2)
   or a document inside the office folders (its own app), "Show in Finder" ("Show in
-  folder" on Windows) for anything else. The whole chip is one button; hover
+  folder" on Windows and Linux) for anything else. The main chip button keeps this
+  action. A separate actions button beside it opens a small menu with that same
+  action and "Copy path", which copies the checked full path through the app's
+  clipboard bridge. The menu uses `card`, `line`, `r-lg`, `shadow-lg` and
+  `neutral-soft` for hover, opens outside clipping cards, and stays inside the
+  window. Keyboard users can open it, choose an action and dismiss it with Escape;
+  focus returns to its button. Copy shows "Copied" only after success, or a short
+  retry message on failure. Loading and Not found chips have no actions. Hover
   `indigo-soft`, focus ring 2 px `indigo`. The action cell is as wide as its longer label
   from the start, so nothing jumps when the check lands; if the check fails it offers
   Show in Finder. A file that is gone, or outside every office folder, is a chip with no
