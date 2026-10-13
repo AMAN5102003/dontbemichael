@@ -1303,10 +1303,22 @@ function ActivityTab({ embedded = false }: { embedded?: boolean }) {
   const [log, setLog] = useState<LogEntry[]>([]);
   const [board, setBoard] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     const refresh = async () => {
-      try { setLog((await window.cth.hiveLog(60)) as LogEntry[]); } catch { /* noop */ }
+      try {
+        const next = (await window.cth.hiveLog(60)) as LogEntry[];
+        // Same log as last poll (same length, same first entry): keep the prev
+        // reference so React skips the re-render. IPC returns fresh objects each
+        // time, so compare the first entry by `ts`, not by reference.
+        setLog((prev) => {
+          if (prev.length !== next.length) return next;
+          if (next.length === 0) return prev;
+          const a = prev[0];
+          const b = next[0];
+          const same = a.ts !== undefined || b.ts !== undefined ? a.ts === b.ts : JSON.stringify(a) === JSON.stringify(b);
+          return same ? prev : next;
+        });
+      } catch { /* noop */ }
       try { setBoard(await window.cth.hiveBoard()); } catch { /* noop */ }
     };
     refresh();
