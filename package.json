@@ -1,6 +1,6 @@
 {
   "name": "dontbemichael",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "private": true,
   "description": "An AI office for small business owners: Michael, your office manager, runs a team of AI agents on your own computer.",
   "main": "out/main/index.js",

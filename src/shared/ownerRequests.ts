@@ -1,4 +1,5 @@
 import { isNextAt } from './cardGuards';
+import { ownValue } from './ownValue';
 import { answerMessages, cardOfConversation, cardText, isAnswered, isWithdrawn, MICHAEL_ID, openAskIndexes, raiserOf, type AnswerMessage } from './askMeRouting';
 
 /**
@@ -241,8 +242,8 @@ export function ownerChangeNote(task: { id: string; title?: string }, change: Ow
     };
   }
   return {
-    subject: `OWNER MOVED card ${cardText(task.id, 60)} to ${STATUS_WORDS[change.to] ?? change.to}`,
-    body: `The owner moved ${card} from ${STATUS_WORDS[change.from] ?? change.from} to ${STATUS_WORDS[change.to] ?? change.to}.${change.reason ? ` Reason: ${cardText(change.reason, 500)}` : ''} Take it from there: check who has it and route the work to match.`
+    subject: `OWNER MOVED card ${cardText(task.id, 60)} to ${ownValue(STATUS_WORDS, change.to) ?? change.to}`,
+    body: `The owner moved ${card} from ${ownValue(STATUS_WORDS, change.from) ?? change.from} to ${ownValue(STATUS_WORDS, change.to) ?? change.to}.${change.reason ? ` Reason: ${cardText(change.reason, 500)}` : ''} Take it from there: check who has it and route the work to match.`
   };
 }
 
@@ -254,7 +255,7 @@ export function reopenedNote(task: { id: string; title?: string }, to: string, o
   return {
     subject: `DONE CARD PUT BACK: card ${cardText(task.id, 60)}`,
     body: [
-      `${card} was moved out of Done to ${STATUS_WORDS[to] ?? cardText(to, 20)} by an agent, so the app put it back to Done: only the owner takes a card out of Done. If the work needs more, make a new card for it, and tell whoever moved it.`,
+      `${card} was moved out of Done to ${ownValue(STATUS_WORDS, to) ?? cardText(to, 20)} by an agent, so the app put it back to Done: only the owner takes a card out of Done. If the work needs more, make a new card for it, and tell whoever moved it.`,
       ...(openAsk ? ['It has a question open on Ask me. Withdraw it on this card ("dismissedAt" and a short "dismissedReason"), and when the work still needs the answer, ask it on the new card.'] : [])
     ].join('\n')
   };
@@ -276,7 +277,7 @@ export function untriagedNote(task: { id: string; title?: string }, to: string):
   const card = `card ${cardText(task.id, 60)}${task.title ? ` "${cardText(task.title)}"` : ''}`;
   return {
     subject: `CARD MOVED BACK FROM TRIAGE: card ${cardText(task.id, 60)}`,
-    body: `${card} was moved into Triage after it was on the board, so the app moved it back to ${STATUS_WORDS[to] ?? cardText(to, 20)}. Triage is only for new filings; move the card to where its work stands.`
+    body: `${card} was moved into Triage after it was on the board, so the app moved it back to ${ownValue(STATUS_WORDS, to) ?? cardText(to, 20)}. Triage is only for new filings; move the card to where its work stands.`
   };
 }
 

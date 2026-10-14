@@ -6,6 +6,69 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [Unreleased]
+
+## [0.2.0] (2026-10-13)
+
+### Added
+
+- **Pete, the one team member on the internet.** In every office, whatever its business pack, only the Research team member, called Pete unless you rename them in Edit agent, opens web pages, searches the web or reaches the internet from their shell; everyone else, Michael included, asks them. They are off until you turn them on in Settings, Research & privacy, or pick them in the setup Team step. No other team member can take their name. They have a face of their own on the office floor. They see nothing of your office: not your files, the task board, the team's memory or your company's knowledge, and they run only on Claude. A search tool you give a team member yourself, through a connector, still works. On Windows, the Research team member can still reach your office files, and team members' shells still reach the internet.
+- **A trust layer between Pete and your team.** Every message to Pete, from a teammate, Michael, the app or one of your answers, is checked first against the kinds of data you keep private. It goes as written, goes cleaned or made more general so the research still helps, or comes back to its sender saying what private detail it depends on. Pete's answers are checked on the way back too: instructions aimed at AI agents are removed, the answer is labelled as information from the internet, and one that tries to steer its reader is flagged to Michael. When the check can't run, nothing goes through.
+- **Choose what stays private.** In Settings, Research & privacy, mark which kinds of data never go to Pete. Passwords and keys never do.
+- **Links name what they open.** A link in an agent's reply shows the site or app it goes to, with an icon for web and mail links, and the real site beside it when the words name a different one.
+- **The office stops when your Claude account can't work**, out of credit or with a sign in or key that stopped working, and says why, with Add credit, Sign in or Change key. A new key restarts the team where it left off.
+- **Michael hears when the safety brake holds a team member back**, so the work is picked up instead of left waiting.
+- **Search the task board and filter it by team member.**
+- A build can leave the mailbox feature out (contributed in #276).
+- Webhook Copy buttons show a check mark once copied (contributed in #268).
+
+### Changed
+
+- **Upgrade note:** in every office, team members and Michael lose web pages, web search and, on a Mac, internet from their shell when you update. Each of them gets a one time note that the house rules changed, naming Pete. Turn Pete on in Settings, Research & privacy, to look things up again. The fetch and summarize skill now goes to Pete alone.
+- Michael's commands stay in their sandbox like everyone else's. Each team member's scratch files live in a folder of their own that no other team member opens, never the computer's shared temporary folder; if that folder can't be made, the team member doesn't start and says why. While Pete is on, team members save scratch work there too.
+- A task's questions show newest first, each with how long ago it was asked.
+- Setup's Welcome and Permissions text and the company profile's field labels are 14px (contributed in #157 and #219).
+- The terminal toolbar is translated and shows the right shortcut key (contributed in #116).
+- Mail is quicker: approvals stay in memory, a search turns pages without searching the folder again, and a big email is read without downloading its attachments (contributed in #162, #163 and #266).
+- The office floor redraws less often as team members update (contributed in #186).
+- Michael, search and the voice assistant see Pete's messages only as the trust layer delivered them, never files Pete wrote on their own. Changing what stays private applies at once, also to messages already checked and to Pete's notes in the team's memory.
+- A team member's Open folder button opens only the work folder set for them in Settings; any other folder is shown in Finder.
+
+### Fixed
+
+- A crash in the app window shows a recovery screen instead of a blank window.
+- A step the app refused no longer shows on a team member as if it ran (contributed in #261).
+- A file path in quotes, spaces and all, opens from the terminal with a click, and only the path itself is underlined (contributed in #280).
+- Clicking a path an agent printed shows it in its folder and never opens it, so nothing an agent made can be launched from its text.
+- A web or mail link in a reply opens when clicked; before, only secure web links did.
+- A message from an agent can no longer write outside the hive, and a Gemini team member can write in its own hive folder (contributed in #152 and #184).
+- On Windows: the checkout guard sees nested folders, the Claude settings file is read again when Windows holds it, the version check never stops a start, an agent's PATH is the app's own, and paths written with forward slashes are recognized (contributed in #159, #168, #203, #258 and #274).
+- When a key or connector secret can't be stored safely on this computer, or clearing an engine key fails, the app says so (contributed in #161, #211 and #269).
+- Michael's mug avatar is centered in setup and shows its handle (contributed in #166).
+- A conversation with no date is headed Undated, and one broken time no longer moves a conversation there (contributed in #167 and #235).
+- Your questions to Michael stay when the office folder moves (contributed in #172).
+- A file that is not a picture is never given a picture's type (contributed in #185).
+- Closing time quotes the team member's own words, tells Michael not to wait for someone archived mid close, and says closing, not Reopening, when a development build won't relaunch (contributed in #164, #267 and #247).
+- Status colors read in dark mode, buttons never submit a form by accident, an info bubble opens toward the side with room, and Linux says Show in folder (contributed in #194, #197, #236 and #243).
+- A failed update download no longer leaves the chip on downloading (contributed in #201).
+- Usage counts each reply once (contributed in #202).
+- Taking a new job description keeps a mailbox binding whole, and the quick rewrite adds an s only to a verb after "you" (contributed in #204 and #260).
+- Mail: a refused address is no longer called a wrong password, one unreadable date no longer fails a whole search, a replaced connection survives a late disconnect, broken saved send records are skipped, and a refused mailbox call is logged (contributed in #205, #240, #213, #283 and #217).
+- The safety brake ends a run that makes no progress on an idle beat (contributed in #206).
+- The restart and continue tooltip names the team member (contributed in #207).
+- A program path in quotes, and a quoted flag value with spaces, are read as one (contributed in #210 and #244).
+- Pasted screenshots are kept in the app's folder (contributed in #228).
+- A failed engine install is reported as failed and stays on screen (contributed in #233).
+- The app and its window agree on when a terminal prompt is stuck (contributed in #241).
+- Names keep their underscores in Ask me headlines and Done results, a name starting with two dots counts as inside its folder, and a word that starts like a month keeps its bracket in a card title (contributed in #249, #255, #251, #254 and #285).
+- Procedures named with no Latin letters each keep their own file (contributed in #256).
+- A CSV saved by Excel keeps its quoted header in one column, a picture whose name has a space loads, and a file opened from Task detail shows in front (contributed in #257, #259 and #263).
+- Ask me says so when a reply could not be saved (contributed in #265).
+- A watch only terminal ignores mouse and focus reports, and tool calls made at the same time keep their own detail (contributed in #270 and #271).
+- A hidden check gives up early when its prompt never reaches the session (contributed in #272).
+- A new team member's id never starts with a hyphen (contributed in #281).
+- Tests, docs and an unused dependency removed (contributed in #160, #192 and #273).
+
 ## [0.1.9] (2026-10-11)
 
 ### Added

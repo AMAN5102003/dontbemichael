@@ -416,6 +416,14 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   overflow-wrap: anywhere;
 }
 .cth-md-card > :first-child { margin-top: 0; }
+/* A named link in agent text (docs/designs/named-links.md): the name, an arrow
+   or mail icon, and the real site in grey when the words name another one. */
+.cth-md-card a.cth-md-named {
+  font-weight: 500; text-decoration-thickness: 1px; text-underline-offset: 2px; border-radius: 3px;
+}
+.cth-md-card a.cth-md-named:hover { text-decoration-thickness: 2px; }
+.cth-md-card a.cth-md-named:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 2px; }
+.cth-md-card .cth-md-linkhost { color: var(--cth-ink-3); font-weight: 400; }
 .cth-md-card > :last-child { margin-bottom: 0; }
 .cth-md-card p { margin: 1.1em 0; }
 .cth-md-card h1, .cth-md-card h2, .cth-md-card h3,

@@ -281,6 +281,25 @@ export function jobFor(job: HireJob, name: string): { title: string; routing: st
 }
 
 /**
+ * A new team member's id: their name as lowercase letters, digits and hyphens,
+ * then a time stamp so two hires with one name never collide. Accents are
+ * dropped first ("Óscar" becomes "oscar", not "-scar"), and a name with no
+ * Latin letters or digits left (小王, سارة) falls back to "agent". The id never
+ * starts with a hyphen: it is passed to command line tools as an argument
+ * (`mempalace mine ... --wing <id> --agent <id>`), and an argument that starts
+ * with a hyphen is read as an option, so that agent's memory never got indexed.
+ */
+export function hireAgentId(name: string, now: number = Date.now()): string {
+  const base = name
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return `${base || 'agent'}-${now.toString(36)}`;
+}
+
+/**
  * The folder a new hire gets (point 2): the job's folder name if nothing uses
  * it yet, else `<Folder>_<Name>`, then `<Folder>_<Name>_2`, ... `taken` answers
  * whether a folder name is already on disk or in use by a teammate.

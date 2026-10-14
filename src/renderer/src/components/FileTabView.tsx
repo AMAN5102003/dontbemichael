@@ -32,7 +32,8 @@ function FileTabBody({ tab }: { tab: FileTab }) {
   const seq = useRef(0);
   const blobUrl = useRef<string | null>(null);
   const agents = useStore((s) => s.agents);
-  const win = window.cth.platform === 'win32';
+  // Finder is the Mac's; Windows and Linux both say folder.
+  const win = window.cth.platform !== 'darwin';
 
   useEffect(() => {
     let alive = true;

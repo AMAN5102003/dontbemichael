@@ -17,6 +17,7 @@
  */
 
 import { swapName } from './hireTemplates';
+import { ownValue } from './ownValue';
 
 export interface WorkStyleContext {
   /** The team member's name. */
@@ -181,7 +182,7 @@ export function plainFallback(instructions: string, label?: string): string {
     if (/^the owner set this work style/i.test(line)) continue;
     const h = line.match(/^#{1,6}\s*(.+?)\s*$/);
     if (h) {
-      const label = HEADING_LABEL[h[1].toLowerCase()] ?? `${h[1].replace(/[:.]+$/, '')}:`;
+      const label = ownValue(HEADING_LABEL, h[1].toLowerCase()) ?? `${h[1].replace(/[:.]+$/, '')}:`;
       if (out.length && out[out.length - 1] !== '') out.push('');
       out.push(label);
       continue;
@@ -200,8 +201,12 @@ export function thirdPerson(text: string, label: string): string {
   // "you sort" becomes "This role sorts": the verb after "you" gets its s, the few
   // helper verbs that don't take one are left as they are.
   const keep = new Set(['can', 'could', 'will', 'would', 'should', 'must', 'may', 'might', 'shall', 'did', 'also', 'always', 'never', 'only', 'then', 'still', 'just', 'often', 'usually', 'first']);
+  // Words that only ever follow "you" as an object ("asks you to", "between you
+  // and a customer", "tells you what"), never a verb to give an s.
+  const object = new Set(['to', 'and', 'or', 'but', 'in', 'on', 'at', 'for', 'with', 'about', 'from', 'as', 'if', 'so', 'than', 'too', 'both', 'all', 'a', 'an', 'the', 'what', 'when', 'where', 'how', 'why', 'whether']);
+  const negated: Record<string, string> = { do: 'does', have: 'has', are: 'is' };
   const third = (verb: string): string => {
-    if (keep.has(verb)) return verb;
+    if (keep.has(verb) || object.has(verb)) return verb;
     if (verb === 'do') return 'does';
     if (verb === 'go') return 'goes';
     if (/(s|sh|ch|x|z)$/.test(verb)) return `${verb}es`;
@@ -214,7 +219,9 @@ export function thirdPerson(text: string, label: string): string {
     .replace(/\b[Yy]ou have\b/g, `${label} has`)
     .replace(/\b[Yy]ourself\b/g, label)
     .replace(/\b[Yy]our\b/g, `${label}'s`)
-    .replace(/\b[Yy]ou ([a-z]+)\b/g, (_m, verb: string) => `${label} ${third(verb)}`)
+    // "you don't" is "doesn't"; "you won't" and "you can't" stay as they are.
+    .replace(/\b[Yy]ou (do|have|are)n(['’])t\b/g, (_m, verb: string, q: string) => `${label} ${negated[verb]}n${q}t`)
+    .replace(/\b[Yy]ou ([a-z]+)\b(?!['’])/g, (_m, verb: string) => `${label} ${third(verb)}`)
     .replace(/\b[Yy]ou\b/g, label);
 }
 

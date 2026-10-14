@@ -1,3 +1,4 @@
+import { RESEARCH_ID } from '@shared/research';
 /**
  * The Office view: the studio (branding/DESIGN.md 8), the v2 replacement for the
  * pixel floor. The SVG art is drawn on a fixed 1060 x 816 stage and scaled to
@@ -31,6 +32,7 @@ import { P, STAGE_H, STAGE_W, type Pt } from './iso';
 import { family, sceneTokens, type Family } from './theme';
 import { HUB, HUB_CARD, POST_GY, cardRect, departmentOf, planStudio, postGx, roleOf, type PodPlan } from './layout';
 import { FLIGHT_MS, bendFor, useStudioLife } from './life';
+import { SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { DECOR, Decor, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
 
 
@@ -242,8 +244,9 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
     return m;
   }, [plan]);
 
-  // Mailbox posts: every connected mailbox, and who watches it.
-  const mailboxes = config.mailboxes ?? [];
+  // Mailbox posts: every connected mailbox, and who watches it. None while
+  // SHOW_MAILBOXES is off, which also drops their tags and wires.
+  const mailboxes = SHOW_MAILBOXES ? config.mailboxes ?? [] : [];
   const ownerOf = (mailboxId: string): Agent | undefined => {
     const entry = Object.entries(config.agentCapabilities ?? {})
       .find(([, c]) => c.email?.enabled && c.email.mailboxes?.[0] === mailboxId);
@@ -1076,7 +1079,9 @@ function useIdleQuote(
     // Someone idle and in (not clocking in, not gone home at closing time), in
     // a pod where nobody still at work is busy, so a bubble never sits on an
     // open card or a dark office.
-    const quietPeople = () => chatCandidates(live.current.pods, live.current.gone, ACTIVE, ACTION_CLOCKING_IN);
+    // The Research member borrows Ryan's character, so it takes no part in the in character
+    // lines and banter that would call him Ryan (ship review).
+    const quietPeople = () => chatCandidates(live.current.pods, live.current.gone, ACTIVE, ACTION_CLOCKING_IN).filter((p) => p.id !== RESEARCH_ID);
     const podOfId = (id: string) => live.current.pods.find((p) => p.members.some((m) => m.id === id));
     const pickOne = (people: Agent[]) => {
       const others = people.length > 1 ? people.filter((x) => x.id !== lastSpeaker.current) : people;

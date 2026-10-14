@@ -56,7 +56,8 @@ const MIME_BY_EXT = {
 // ─── Small helpers ───────────────────────────────────────────────────────────
 function genId() { return crypto.randomBytes(8).toString('hex'); }
 function extOf(p) { return path.extname(String(p || '')).replace(/^\./, '').toLowerCase(); }
-function mimeFor(p) { return MIME_BY_EXT[extOf(p)] || 'application/octet-stream'; }
+// Own keys only: an extension such as "constructor" must not find Object.prototype.
+function mimeFor(p) { const e = extOf(p); return Object.prototype.hasOwnProperty.call(MIME_BY_EXT, e) ? MIME_BY_EXT[e] : 'application/octet-stream'; }
 function ensureDir(d) { fs.mkdirSync(d, { recursive: true }); }
 function nowIso() { return new Date().toISOString(); }
 

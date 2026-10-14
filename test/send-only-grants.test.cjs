@@ -366,6 +366,32 @@ test('a damaged approvals file is not replaced with a new empty store', (t) => {
   assert.equal(fs.existsSync(`${file}.tmp`), false, 'no replacement temp file is left behind');
 });
 
+test('list_mailboxes ignores malformed saved send records instead of crashing', async (t) => {
+  // Value: protects=a damaged send record cannot break every mail tool for its member; fails_when=coerceStore accepts a non-date sentAt or malformed thread fields; why_new=list_mailboxes formats sentAt with toISOString; seam=none
+  const { call, dir } = setup(t);
+  fs.writeFileSync(path.join(dir, 'mail-proposals.json'), JSON.stringify({
+    proposals: [],
+    standing: [],
+    paused: {},
+    sends: [
+      { agentId: 'dwight', mailbox: 'ceo', messageId: '<good@x.com>', references: [], to: 'lead@client.com', subject: 'Intro', sentAt: 1_000 },
+      { agentId: 'dwight', mailbox: 'ceo', messageId: '<bad-date@x.com>', references: [], to: 'lead@client.com', subject: 'Intro', sentAt: 'yesterday' },
+      { agentId: 'dwight', mailbox: 'ceo', messageId: '<out-of-range-date@x.com>', references: [], to: 'lead@client.com', subject: 'Intro', sentAt: 1e20 },
+      { agentId: 'dwight', mailbox: 'ceo', messageId: '<bad-thread@x.com>', references: '<good@x.com>', to: 'lead@client.com', subject: 'Re: Intro', sentAt: 2_000 }
+    ]
+  }), 'utf8');
+
+  const listed = await call('dwight', 'list_mailboxes', {});
+  assert.equal(listed.status, 200);
+  const grant = listed.body.mailboxes.find((m) => m.mailbox === 'ceo');
+  assert.deepEqual(grant.your_recent_sends, [{
+    message_id: '<good@x.com>',
+    to: 'lead@client.com',
+    subject: 'Intro',
+    sent_at: new Date(1_000).toISOString()
+  }]);
+});
+
 test('ending a grant withdraws its emails and revokes its standing approvals in one message; Draft only withdraws', async (t) => {
   // Value: protects=no dead errands and no silently revived trust (D13, OV6); fails_when=cancel or revoke is skipped, or one message per rule; why_new=no grant lifecycle existed; seam=none
   const { call, approvals, admin, out, cfg } = setup(t, office('approval'));

@@ -56,14 +56,14 @@ export const TAB_EXTENSIONS: ReadonlySet<string> = new Set([
  *  `/`, `~/` or a drive letter, and is not the tail of a URL, a word or a
  *  relative path (nothing path-like or word-like right before it). It stops at
  *  the first space, quote or bracket, so a path with spaces needs backticks. */
-const PLAIN_PATH = /(?<![\w:/.~\\$@-])(?:~[\\/]|\/|[A-Za-z]:\\)[^\s`'"<>()[\]{}|*]+/g;
+const PLAIN_PATH = /(?<![\w:/.~\\$@-])(?:~[\\/]|\/|[A-Za-z]:[\\/])[^\s`'"<>()[\]{}|*]+/g;
 
 /** Sentence punctuation after a path belongs to the sentence. */
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
 /** Whether text is a full path (not one relative to a folder). */
 export function isAbsolutePathText(s: string): boolean {
-  return /^(?:~[\\/]|\/|[A-Za-z]:\\)/.test(s);
+  return /^(?:~[\\/]|\/|[A-Za-z]:[\\/])/.test(s);
 }
 
 /** The full paths with a known file ending that plain text names, with where

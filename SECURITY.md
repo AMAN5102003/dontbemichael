@@ -45,3 +45,18 @@ credit you (unless you prefer to stay anonymous).
   rooted at an agent's working directory.
 - The hive commits to a local git repo from a **single committer** (the main process);
   agents only write plain files.
+- **The internet boundary** (every office; `docs/designs/research-agent-privacy.md`):
+  only the Research team member (agent id `research`, named Pete unless the owner renames
+  it; every rule checks the id) may use web tools or a shell
+  network. Everyone else, Michael included, is refused WebFetch and WebSearch by the
+  PreToolUse hook and gets an empty strict `sandbox.network` list, with commands kept
+  inside the sandbox. Every message to Pete passes an inbound trust layer (pass, clean or
+  deny against the owner's data classes, fixed patterns before and after) and every
+  message from him an outbound one (instructions aimed at agents removed, likely
+  injection flagged to Michael); anything unsure, slow or failing is denied. Pete's own
+  walls: no reads of the home folder, the business folder or the hive; his file tools
+  open no temp folder but his own, and his shell only /tmp, which Claude Code needs;
+  writes to his own folders only, no settings files but the app's, no keys or tokens in
+  his commands' environment, Claude only. Known limits: Windows has no shell sandbox
+  (#187); members on other engines keep their own web tools; another member's shell
+  command can still write to /tmp, which Pete's shell can read.

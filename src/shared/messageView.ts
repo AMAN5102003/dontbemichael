@@ -51,6 +51,11 @@ export function localDay(iso: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
+const timeOf = (iso: string): number => new Date(iso).getTime();
+/** Oldest first, with times that do not parse after every real one, in their own order. */
+const byTime = (a: number, b: number): number =>
+  Number.isNaN(a) ? (Number.isNaN(b) ? 0 : 1) : Number.isNaN(b) ? -1 : a - b;
+
 export function messageView<M extends HistoryItem>(msgs: M[]): MessageView<M> {
   const notices: MessageView<M>['notices'] = { scheduled: 0, closing: 0, other: 0, messages: [] };
   const by = new Map<string, M[]>();
@@ -70,10 +75,14 @@ export function messageView<M extends HistoryItem>(msgs: M[]): MessageView<M> {
   notices.messages.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
 
   const threads: ThreadRow<M>[] = [...by.entries()].map(([conversation, list]) => {
-    const sorted = [...list].sort((a, b) => (a.created_at < b.created_at ? -1 : 1));
-    const last = sorted[sorted.length - 1];
-    return { conversation, first: sorted[0], ...(sorted.length > 1 ? { latest: last } : {}), messages: sorted, lastAt: last.created_at };
-  }).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+    // Real times in order, then any message whose time does not parse, in the
+    // order it was written, so one broken time cannot move the whole thread.
+    const sorted = [...list].sort((a, b) => byTime(timeOf(a.created_at), timeOf(b.created_at)));
+    const timed = sorted.filter((m) => !Number.isNaN(timeOf(m.created_at)));
+    // The row shows the newest real message beside its time, so both come from it.
+    const last = timed.length ? timed[timed.length - 1] : sorted[sorted.length - 1];
+    return { conversation, first: sorted[0], ...(last !== sorted[0] ? { latest: last } : {}), messages: sorted, lastAt: last.created_at };
+  }).sort((a, b) => byTime(timeOf(b.lastAt), timeOf(a.lastAt)));
 
   const days: MessageView<M>['days'] = [];
   // A time that does not parse sorts as text, so it can land above or below

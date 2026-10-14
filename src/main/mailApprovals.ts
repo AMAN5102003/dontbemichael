@@ -85,7 +85,20 @@ export class MailApprovals implements ProposalStore {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
     const raw = v as Record<string, unknown>;
     const ok = <T extends { id?: unknown }>(a: unknown): T[] => (Array.isArray(a) ? (a as T[]).filter((x) => x && typeof x.id === 'string') : []);
-    const sends = Array.isArray(raw.sends) ? (raw.sends as SendRecord[]).filter((r) => r && typeof r.messageId === 'string' && typeof r.agentId === 'string') : [];
+    const sends = Array.isArray(raw.sends) ? (raw.sends as unknown[]).filter((r): r is SendRecord => {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
+      const rec = r as Record<string, unknown>;
+      return typeof rec.agentId === 'string'
+        && typeof rec.mailbox === 'string'
+        && typeof rec.messageId === 'string'
+        && Array.isArray(rec.references)
+        && rec.references.every((ref) => typeof ref === 'string')
+        && typeof rec.to === 'string'
+        && typeof rec.subject === 'string'
+        && typeof rec.sentAt === 'number'
+        && Number.isFinite(rec.sentAt)
+        && Number.isFinite(new Date(rec.sentAt).getTime());
+    }) : [];
     const paused = raw.paused && typeof raw.paused === 'object' && !Array.isArray(raw.paused) ? (raw.paused as Record<string, PausedNotice>) : {};
     return { ...raw, proposals: ok<MailProposal>(raw.proposals), standing: ok<StandingApproval>(raw.standing), sends, paused };
   }

@@ -248,7 +248,8 @@ export function useStudioLife({ seatOf, godId, paused, T, posts, accentOf, done,
 
   // Tool calls: mail moves an envelope on the mail wire; anything else pops a glyph.
   useEffect(() => {
-    const onHook = (e: { agentId?: string; event: string; tool?: string }) => {
+    const onHook = (e: { agentId?: string; event: string; tool?: string; blocked?: boolean }) => {
+      if (e.blocked) return;
       if (live.current.paused || e.event !== 'PreToolUse' || !e.agentId || !e.tool) return;
       const agentId = e.agentId;
       const mail = /^mcp__md-mail__([a-z_]+)$/.exec(e.tool);

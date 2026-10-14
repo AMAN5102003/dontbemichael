@@ -70,6 +70,7 @@ const BY_CHARACTER: Record<OfficeCharacterName, readonly string[]> = {
   andy:     ['Cornell, ever heard of it?', 'rit-dit-dit, coffee break!', 'Big Tuna, grab a chair', 'I sang a cappella, you know', 'Nard Dog needs caffeine'],
   kelly:    ['did you HEAR what happened??', 'so. much. to tell you.', 'I am the GOSSIP queen', 'Ryan texted me back!!', 'okay who is dating who'],
   ryan:     ['I’m kind of a big deal', 'the temp needs caffeine', 'starting a coffee startup, actually', 'this could be an app', 'I pitched this idea in business school'],
+  pete:     ['let me look that up', 'I found a source for that', 'checking two more sites', 'the internet says otherwise'],
   toby:     ['I should write that up…', 'HR-wise this break is fine', 'no one ever sits with me', 'please don’t tell Michael I’m in here', 'I miss Costa Rica'],
   creed:    ['which one of you is the new guy?', 'I’ve eaten worse out of that fridge', 'mung beans. under my desk.', 'nobody steals from Creed', 'I sprout my beans on a damp towel'],
   meredith: ['is it 5 o’clock yet?', 'someone spike the coffee?', 'I brought my own mug. don’t ask.', 'my kid says hi'],

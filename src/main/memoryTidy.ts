@@ -107,6 +107,10 @@ export class MemoryTidy {
     let ids: string[] = [];
     try { if (existsSync(agentsDir)) ids = readdirSync(agentsDir); } catch { return []; }
     if (onlyId) ids = ids.filter((id) => id === onlyId);
+    // Never Research: its notes are web text in a folder its shell writes, read
+    // with the owner's rights and backed up where every agent reads. They reach
+    // the team only through the trust layer (red team, third ship).
+    ids = ids.filter((id) => id !== 'research');
     this.running = true;
     const results: TidyResult[] = [];
     try {

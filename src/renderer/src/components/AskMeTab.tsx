@@ -19,8 +19,9 @@ import { MailProposalCards } from './MailProposalCards';
 import { EngineSetupCard } from './EngineSetupCard';
 import { OfficeBreakCard, useOfficeBreak } from './OfficeBreakNotice';
 import { FileText } from './FileChip';
-import { refreshNeedsYou, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
+import { refreshNeedsYou, setupCardShown, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
+import { useResearchName } from '@/shell/research';
 
 /**
  * ASK ME — first-class human feedback through the task system.
@@ -66,8 +67,9 @@ export function AskMeTab() {
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   // One shared read with the pill, the strip and the chips (D3, eng R4).
-  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup } = useNeedsYou();
-  const engineCard = !!(engineSetup?.applies && engineSetup.needed);
+  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice } = useNeedsYou();
+  // A sign in stop already asks the owner to sign in: one card (eng R3).
+  const engineCard = setupCardShown({ engineSetup, stop });
   const onBreak = !!useOfficeBreak();
   const refreshScheduleRequests = refreshNeedsYou;
   // Drafts live in the STORE (keyed by row) — switching tabs unmounts this
@@ -76,6 +78,8 @@ export function AskMeTab() {
   const setAnswerDraft = useStore((s) => s.setAnswerDraft);
   const openTaskDetail = useStore((s) => s.openTaskDetail);
   const [sending, setSending] = useState<string | null>(null);
+  // The row whose last Reply did not save, so its card can say so.
+  const [failed, setFailed] = useState<string | null>(null);
   // The open row: undefined means the newest, null means none.
   const [openId, setOpenId] = useState<string | null | undefined>(undefined);
   // Which cards have their "holding up" list open.
@@ -153,6 +157,7 @@ export function AskMeTab() {
     const text = (drafts[row.key] ?? '').trim();
     if (!text || sending) return;
     setSending(row.key);
+    setFailed(null);
     try {
       // 1) Document the answer ON the card, on this question only.
       const next = tasks.map((t) => {
@@ -188,7 +193,12 @@ export function AskMeTab() {
       setAnswerDraft(row.key, '');
       setAnsweredHere((list) => [{ id: row.key, title: task.title, a: text, who: nameFor(typeof task.assignee === 'string' ? task.assignee : undefined), whoId: typeof task.assignee === 'string' ? task.assignee : undefined }, ...list.filter((x) => x.id !== row.key)]);
       refreshNeedsYou();
-    } catch { /* leave the draft so the user can retry */ }
+    } catch {
+      // Keep the draft so the owner can try again, and reload the board in
+      // case the question changed or was withdrawn meanwhile.
+      setFailed(row.key);
+      refreshNeedsYou();
+    }
     setSending(null);
   };
 
@@ -198,13 +208,13 @@ export function AskMeTab() {
     // board heading stays put.
     <div ref={rootRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '2px 2px 10px', margin: '-2px -2px 0' }}>
       <OfficeBreakCard />
-      <EngineSetupCard status={engineSetup} />
+      <EngineSetupCard status={engineCard ? engineSetup : null} />
       <ScheduleRequestCards requests={scheduleRequests} refresh={refreshScheduleRequests} />
       <WorkStyleUpdateCards offers={offers} />
       <MailProposalCards proposals={proposals} refresh={refreshNeedsYou} />
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
-      {!engineCard && !onBreak && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
+      {!engineCard && !onBreak && !researchNotice && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
         <div style={{ padding: '4px 2px 2px' }}>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)' }}>{translate('shell.allClear')}</div>
           <div style={{ marginTop: 4, fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink-3)' }}>{translate(`shell.allClearLine${line}`, { godName })}</div>
@@ -226,6 +236,12 @@ export function AskMeTab() {
         const who = nameFor(typeof t.assignee === 'string' ? t.assignee : undefined);
         const fam = owner && !owner.isGod ? family(departmentOf(owner), dark) : null;
         const answered = t.humanQA?.filter((e) => e.a).length ?? 0;
+        // See full context only when it leads somewhere new: the card's background,
+        // its result, or other questions and answers (owner, 2026-10-12: it opened
+        // to a repeat of the question). Agents write tasks.json, so check types.
+        const moreContext = (typeof t.description === 'string' && t.description.trim() !== '')
+          || (typeof t.result === 'string' && t.result.trim() !== '')
+          || (t.humanQA?.length ?? 0) > 1;
         const draft = drafts[row.key] ?? '';
         const showStuck = openStuck[row.key] ?? false;
         // One card open at a time; the newest is open until the owner picks another.
@@ -330,6 +346,9 @@ export function AskMeTab() {
                 {sending === row.key ? translate('askMe.sending') : translate('askMe.respond')}
               </PixelButton>
             </div>
+            {failed === row.key && (
+              <div role="alert" style={{ marginTop: 6, fontSize: 11, lineHeight: '15px', color: 'var(--cth-coral-text)' }}>{translate('askMe.mailFailed')}</div>
+            )}
             {/* The cascade: what is stuck behind this answer, folded to one line. */}
             {stuck.length > 0 && (
               <div style={{ marginTop: 9 }}>
@@ -361,6 +380,7 @@ export function AskMeTab() {
               </div>
             )}
             {/* The full task, and any earlier answers, are one click away. */}
+            {moreContext && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10, paddingTop: 9, borderTop: '1px solid var(--cth-line)' }}>
               <button onClick={() => openTaskDetail(t.id)} title={translate('askMe.openDetail')} style={{ ...quietLink, color: 'var(--cth-indigo-text)', fontWeight: 600 }}>
                 {translate('askMe.openTask')}
@@ -373,10 +393,13 @@ export function AskMeTab() {
                 </button>
               )}
             </div>
+            )}
             </>}
           </section>
         );
       })}
+      {/* A report, after the questions like every Report card (DESIGN.md 7.8). */}
+      {researchNotice && <ResearchNoticeCard />}
     </div>
   );
 }
@@ -402,6 +425,31 @@ const quietLink: CSSProperties = {
   padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
   fontFamily: 'var(--cth-font-ui)', fontSize: 11, color: 'var(--cth-ink-3)'
 };
+
+/** The one time card after the update that took the internet from the team
+ *  (issue #230, design review D9 and D20): a report, so it never turns the
+ *  Needs you pill coral; either button clears it for good. */
+function ResearchNoticeCard() {
+  const { t } = useTranslation();
+  const researchName = useResearchName();
+  const seen = (): void => { void window.cth.researchNoticeSeen().then(() => refreshNeedsYou()).catch(() => undefined); };
+  return (
+    <section aria-label={t('research.noticeTitle')} style={card}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--cth-ink)' }}>{t('research.noticeTitle')}</span>
+        <span style={reportTag}>{t('askMe.report')}</span>
+      </div>
+      <p style={{ margin: '8px 0 12px', fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)' }}>{t('research.noticeBody', { name: researchName })}</p>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <PixelButton variant="secondary" size="sm" onClick={seen}>{t('askMe.gotIt')}</PixelButton>
+        <PixelButton variant="primary" size="sm" onClick={() => {
+          seen();
+          window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Research & privacy' } }));
+        }}>{t('research.noticeOpen')}</PixelButton>
+      </div>
+    </section>
+  );
+}
 
 const reportTag: CSSProperties = {
   fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 'var(--cth-r-pill)',

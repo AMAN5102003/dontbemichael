@@ -12,12 +12,19 @@
  * Links never navigate the window: http(s)/mailto go through the main-process
  * opener; relative *.md links surface through onOpenMarkdownLink so the host
  * (IDE tab / overlay) opens them in context; everything else is inert.
+ *
+ * In a card, a web or email link is named (docs/designs/named-links.md): a
+ * pasted URL shows the app or site it opens ("HubSpot"), an arrow or a mail
+ * icon says where the click goes, and words that name another site get the
+ * real one after the link. Documents (file tabs, the IDE) show links as written.
  */
 import { memo, useState, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useWorkspaceImage } from '@/hooks/useWorkspaceImage';
-import { isExternal, isRelativeMd, resolveLocalImageRel, resolveRel } from './mdLinks';
+import { isBareLink, isExternal, isRelativeMd, labelMismatch, linkName, resolveLocalImageRel, resolveRel } from './mdLinks';
+import { Icon } from '@/components/Icon';
 import { remarkSoftBreaks } from './remarkSoftBreaks';
 import { remarkFileChips } from './remarkFileChips';
 import { rehypeAutoDir } from './rehypeAutoDir';
@@ -75,6 +82,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
   // means an English user's markdown renders through exactly the pipeline it
   // rendered through before this existed, whatever the agent writes into it.
   const rtl = useRtl();
+  const { t } = useTranslation();
   return (
     <div className={card ? 'cth-md-preview cth-md-card' : 'cth-md-preview'}>
       <ReactMarkdown
@@ -84,7 +92,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
           ...(fileChip ? {
             'cth-file': ({ node }: { node?: { properties?: Record<string, unknown> } }) => fileChip(String(node?.properties?.dataPath ?? ''))
           } as Components : {}),
-          a: ({ href, children }) => {
+          a: ({ href, children, node }) => {
             const h = href ?? '';
             const onClick = (e: React.MouseEvent) => {
               e.preventDefault();
@@ -95,6 +103,28 @@ export const MarkdownPreview = memo(function MarkdownPreview({
               // anything else (file:, anchors into self, unknown schemes): inert
             };
             const clickable = isExternal(h) || (isRelativeMd(h) && !!onOpenMarkdownLink);
+            if (card && isExternal(h)) {
+              const text = hastText(node);
+              const bare = isBareLink(text, h);
+              const name = bare ? linkName(h) : null;
+              // A pasted URL that does not parse keeps its raw text, as before.
+              if (!bare || name) {
+                const mail = /^mailto:/i.test(h);
+                const real = bare ? null : labelMismatch(text, h);
+                return (
+                  <>
+                    <a href={h} onClick={onClick} title={h} className="cth-md-named">
+                      {bare ? name : children}
+                      {/* A word joiner keeps the icon on the last word's line. */}
+                      {'\u2060'}
+                      <Icon name={mail ? 'mail' : 'external'} size={0.75} style={{ verticalAlign: -1, marginInlineStart: 3 }} />
+                      <span className="cth-sr-only"> {t(mail ? 'markdown.opensInEmail' : 'markdown.opensInBrowser')}</span>
+                    </a>
+                    {real && <span className="cth-md-linkhost"> ({real})</span>}
+                  </>
+                );
+              }
+            }
             return (
               <a
                 href={h || undefined}
@@ -124,6 +154,14 @@ export const MarkdownPreview = memo(function MarkdownPreview({
     </div>
   );
 });
+
+/** The plain text of a rendered element (a link's words), however nested. */
+function hastText(node: unknown): string {
+  const n = node as { type?: string; value?: unknown; children?: unknown[] } | undefined;
+  if (!n) return '';
+  if (n.type === 'text') return typeof n.value === 'string' ? n.value : '';
+  return (n.children ?? []).map(hastText).join('');
+}
 
 /** Fallback for anything we won't (or can't) load: remote URLs, non-images,
  *  and local files that turned out to be missing or undecodable. */

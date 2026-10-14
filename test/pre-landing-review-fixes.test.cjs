@@ -19,6 +19,7 @@ const { stuckCardsContext, ownerChangeNote } = loadTs('src/shared/ownerRequests.
 const M = loadTs('src/shared/missions.ts');
 const { confirmSubmit } = loadTs('src/shared/submitConfirm.ts');
 const { workStyleOffers } = loadTs('src/shared/workStyleUpdates.ts');
+const { bindingLines } = loadTs('src/shared/hireTemplates.ts');
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 
 async function office(t) {
@@ -105,6 +106,22 @@ test('taking the new job description keeps the hire binding lines Michael routes
   assert.match(offer.description, /^Executive Admin: Runs the business inbox to zero/);
   assert.match(offer.description, /Only the owner@ inbox\./);
   assert.match(offer.description, /Not for the support@ inbox; that goes to Kelly\./);
+});
+
+test('taking the new job description keeps a binding whose scope holds a period or a semicolon', () => {
+  // Value: protects=a member bound to a real mailbox keeps the whole line Michael routes by; fails_when=the binding is cut at the first period ("Only the owner@sunrise.") or dropped; why_new=the test above uses "owner@ inbox", and every real mailbox address has a dot; seam=none
+  const pack = JSON.parse(read('resources/packs/saas-consulting.json'));
+  const cards = new Map([['saas-consulting/pam', pack.agents.find((a) => a.id === 'pam')]]);
+  // The lines exactly as the hire binding writes them (the wizard's scope is "the {{address}} mailbox").
+  const lines = [
+    bindingLines('the owner@sunrise.com mailbox', 'Erin').own,
+    bindingLines('the support@sunrise.com mailbox', 'Kelly').others,
+    bindingLines('orders over $1.5k', 'Dwight').others,
+    bindingLines('refunds; returns', 'Kevin').others
+  ];
+  const [offer] = workStyleOffers([{ id: 'erin', name: 'Erin', goal: 'old', sourceCard: 'saas-consulting/pam', description: `Executive Admin: Sorts mail. ${lines.join(' ')}` }], cards, 'saas-consulting', {}, {});
+  for (const line of lines) assert.ok(offer.description.includes(line), `kept whole: ${line}`);
+  assert.doesNotMatch(offer.description, /Only the owner@sunrise\.(?!com)/, 'never cut at the first period');
 });
 
 test('the review fixes hold in the renderer and voice paths', () => {

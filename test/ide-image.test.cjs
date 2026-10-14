@@ -97,6 +97,18 @@ test('local markdown images resolve against the document directory', () => {
   assert.equal(resolveLocalImageRel('report.md', 'out/shot.png?v=3'), 'out/shot.png');
 });
 
+test('the percent-encoded src react-markdown hands over names the file as written', () => {
+  // ![shot](<img/My shot.png>) reaches the img component as img/My%20shot.png.
+  assert.equal(resolveLocalImageRel('docs/report.md', 'img/My%20shot.png'), 'docs/img/My shot.png');
+  assert.equal(resolveLocalImageRel('docs/report.md', '%D8%AA%D9%82%D8%B1%D9%8A%D8%B1.png'), 'docs/تقرير.png');
+  assert.equal(resolveLocalImageRel('docs/report.md', '100%25.png'), 'docs/100%.png');
+  assert.equal(resolveLocalImageRel('docs/report.md', '100%.png'), 'docs/100%.png', 'a stray % does not throw');
+  // Decoding never lets a scheme or a non-image file through.
+  assert.equal(resolveLocalImageRel('docs/report.md', 'file%3A///etc/x.png'), null);
+  assert.equal(resolveLocalImageRel('docs/report.md', 'secrets.env%23.png'), null);
+  assert.equal(resolveLocalImageRel('docs/deep/report.md', '%2e%2e/%2e%2e/%2e%2e/x.png'), 'x.png', 'never above the root');
+});
+
 test('a leading slash means the WORKSPACE root, not the filesystem root', () => {
   assert.equal(resolveLocalImageRel('docs/report.md', '/assets/shot.png'), 'assets/shot.png');
   // Worst case it names a path that simply does not exist inside the workspace.

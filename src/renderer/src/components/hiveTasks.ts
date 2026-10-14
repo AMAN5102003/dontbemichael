@@ -165,59 +165,53 @@ export function resultHeadline(result: string | undefined): string {
   return line
     .replace(/^#{1,6}\s+/, '')
     .replace(/^(?:[-*+]|\d+[.)])\s+/, '')
-    .replace(/(\*\*|__|\*|_|`)(.+?)\1/g, '$2')
+    // Underscores are emphasis only at a word's edges, so q3_sales_report.md
+    // and first_last@acme.com keep theirs.
+    .replace(
+      /(\*\*|\*|`)(.+?)\1|(?<![\p{L}\p{N}])(__?)(.+?)\3(?![\p{L}\p{N}])/gu,
+      (_m, _mark?: string, inner?: string, _under?: string, emph?: string) => inner ?? emph ?? ''
+    )
     .trim();
 }
 
-export interface TaskFilterCriteria {
-  query?: string;
-  q?: string;
-  status?: TaskStatus | 'all';
-  member?: string;
+/** The Tasks board's filter (issue 158): what the owner typed and one team
+ *  member ('' for everyone, 'unassigned' for cards with no assignee). */
+export interface TaskFilter {
+  query: string;
+  assignee: string;
+  nameFor?: (id?: string) => string | undefined;
 }
 
-/** Filter tasks by search query, status, and assigned team member.
- *  Searches title, description, id, waitingOn, and assignee.
- *  Cards carry no running notes (owner, 2026-10-11). */
-export function filterTasks(
-  tasks: HiveTask[],
-  criteria: TaskFilterCriteria = {},
-  nameFor?: (id: string | undefined) => string | undefined
-): HiveTask[] {
-  const rawQ = criteria.query ?? criteria.q ?? '';
-  const q = rawQ.trim().toLowerCase();
-  const cleanQ = q.replace(/^#/, '');
-  const status = criteria.status ?? 'all';
-  const member = criteria.member ?? 'all';
-
-  return tasks.filter((task) => {
-    if (status !== 'all' && task.status !== status) {
-      return false;
-    }
-    if (member !== 'all') {
-      if (member === 'unassigned') {
-        if (task.assignee) return false;
-      } else if (task.assignee !== member) {
-        return false;
-      }
-    }
-    if (q) {
-      const title = (task.title ?? '').toLowerCase();
-      const desc = (task.description ?? '').toLowerCase();
-      const id = (task.id ?? '').toLowerCase().replace(/^#/, '');
-      const waiting = (task.waitingOn ?? '').toLowerCase();
-      const rawAssignee = (task.assignee ?? '').toLowerCase();
-      const resolvedAssignee = nameFor ? (nameFor(task.assignee) ?? '').toLowerCase() : '';
-      const matches =
-        title.includes(q) ||
-        desc.includes(q) ||
-        id.includes(cleanQ) ||
-        waiting.includes(q) ||
-        rawAssignee.includes(q) ||
-        (resolvedAssignee ? resolvedAssignee.includes(q) : false);
-      if (!matches) return false;
-    }
-    return true;
-  });
+/** Is either part of the filter set? While it is, the board unfolds Done. */
+export function filterActive(f: TaskFilter): boolean {
+  return f.query.trim() !== '' || f.assignee !== '';
 }
 
+/** Does a card pass the filter? Every typed word must appear, in any case, in
+ *  the card's id, title, description, result, waiting on, or assignee; a member
+ *  must be its assignee (or unassigned). */
+export function taskMatches(
+  task: HiveTask,
+  f: TaskFilter,
+  nameFor?: (id?: string) => string | undefined
+): boolean {
+  if (f.assignee === 'unassigned') {
+    if (task.assignee) return false;
+  } else if (f.assignee && task.assignee !== f.assignee) {
+    return false;
+  }
+  const words = f.query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const resolve = f.nameFor ?? nameFor;
+  const memberName = resolve ? resolve(task.assignee) : undefined;
+  const text = [
+    task.id,
+    task.title,
+    task.description,
+    task.result,
+    task.waitingOn,
+    task.assignee,
+    memberName
+  ].filter(Boolean).join(' ').toLowerCase();
+  return words.every((w) => text.includes(w));
+}

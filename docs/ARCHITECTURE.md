@@ -76,9 +76,16 @@ src/
     integrations.ts          the secret store: every saved password and key in one safeStorage-encrypted file
                              (integration-secrets.json in userData, 0600); refuses to save over a file it can't read
     atomicFile.ts            crash-safe file write (temp file, fsync, rename); the secret store's writer
-    officeBreak.ts           the office break when the Claude plan reaches its usage limit: hooks.ts reports the
-                             StopFailure `rate_limit` and the status line's reset time; Claude terminals are held,
-                             schedules never are (the view and who it holds are in shared/officeBreak.ts)
+    officeBreak.ts           the office break when Claude can't work: the plan's usage limit (hooks.ts reports the
+                             StopFailure `rate_limit` and the status line's reset time), no credit left, or a sign in or
+                             API key that stopped working (docs/designs/office-stopped-account.md); Claude terminals
+                             are held, schedules never are (the view and who it holds are in shared/officeBreak.ts)
+    trustLayer.ts            the trust layer around Pete, the Research team member (docs/designs/research-agent-privacy.md):
+                             inbound it passes, cleans or denies anything for him; outbound it strips instructions aimed
+                             at agents and flags a steering answer to Michael; fixed patterns mark and recheck what
+                             goes in to him; anything unsure, slow or failing is refused
+    researchGoal.ts          Pete's Work style and jobs, as the trust layer passed them (his built in text until then)
+    researchNotes.ts         Pete's notes for the shared memory: plain files inside his own folder only
     closingTime.ts           Closing Time shutdown protocol (the office reopens on next launch, shared/officeOpen.ts)
                              The closing time bar (ClosingTimeBar) lists who is still working (hook `detail` from hooks.ts toolDetail),
                              with Remind and Close without them (never pty:kill: that archives the agent).
@@ -111,7 +118,10 @@ src/
     officeOpen.ts            the Office open message each agent gets after closing time
     cliUpdate.ts             whether live Claude agents run an older Claude Code than the one installed
                              (cliUpdate:status push, cliUpdate:current pull)
-    folderAccess.ts          who may open and change which folder: sandbox, permission rules, hook checks
+    folderAccess.ts          who may open and change which folder: sandbox, permission rules, hook checks;
+                             Pete's walls (his own folders only; his file tools open no temp folder, his shell
+                             only /tmp) and everyone's wall around his
+    ownValue.ts              reads a lookup table by its own keys only, never one inherited from Object
     appName.ts               app name, data folder name, dontbemichael:// URL scheme
     missions.ts              schedules: ownership, next run, the scheduler's arm plan, one-schedule edits,
                              and agent schedule requests: Michael decides them, the owner only those he passes on
@@ -138,7 +148,14 @@ src/
     terminalOverflow.ts      the office log line for a terminal still drawn past its box after a fit (sizes only)
     askFiles.ts              which text names a file (a code span or a full path with a known ending), and which
                              files open in a tab or in their own app (docs/designs/open-file-tab.md)
-    officeBreak.ts           the office break's view for the renderer, and heldByBreak (Claude agents only)
+    officeBreak.ts           the office break's view for the renderer (usage limit, credit or sign in), and
+                             heldByBreak (Claude agents only)
+    research.ts              the Research team member: its id, default name (Pete; the owner may rename it, and
+                             researchText shows the current one), house rule 9, refusal reasons and the reply label
+    dataClasses.ts           the kinds of data the owner keeps private (Settings, Research & privacy) and the fixed
+                             patterns the trust layer marks them with
+    webAccess.ts             who may use web pages and search (the Research agent alone, in every office), and the empty
+                             shell network list everyone else's sandbox gets, Michael included
   preload/                   contextBridge → typed window.cth API
   renderer/src/
     App.tsx                  top-level layout + wiring
@@ -173,6 +190,9 @@ src/
     WorkStyleUpdateCards,    Ask me cards offering a newer default job description (Use the new one / Keep mine)
     ScheduledJobs,           an agent's scheduled jobs and their focus areas, shown with its Work style
     AddAgentModal,           the hire wizard (Who, Job, Role, Finalize); EditAgentModal edits the plain work style
+    ResearchPrivacySettings, Settings > Research & privacy: Pete's on and off row and what the team may send him;
+                             shell/research.ts starts and stops it, in every office, and gives its current name
+    ErrorBoundary,           a crash in the window shows a recovery screen with Reload, not a blank window
     ProfileTab,              the first tab on every agent: job, folder (Open folder), full instructions
     MemoryNotes,             an agent's Memory tab as grouped notes; "Show the file" keeps the raw text
     OwnerViaMichaelBar,      replaces a team member's message box outside 1:1 (Message Michael / Talk 1:1)

@@ -825,7 +825,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
                   disabled={restarting === a.id}
                   onClick={() => restartWithModel(a, a.model, { resume: true })}
                 >
-                  <span title={t('commandCenter.restartContinueTitle')}>
+                  <span title={t('commandCenter.restartContinueTitle', { name: a.name })}>
                     {t('commandCenter.restartContinue')}
                   </span>
                 </PixelButton>

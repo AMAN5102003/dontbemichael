@@ -1,3 +1,4 @@
+import { RESEARCH_ID } from '../../../shared/research';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { FIRST_TASK_EDITED_MAX } from '@shared/firstTask';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +24,7 @@ import { firstTaskSection, roleLabel, plainFallback } from '@shared/workStyleTex
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { ScheduledJobsList } from './ScheduledJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
+import { useResearchName } from '@/shell/research';
 
 export interface EditAgentModalProps {
   agent: Agent;
@@ -39,6 +41,7 @@ export interface EditAgentModalProps {
  */
 export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
   const { t } = useTranslation();
+  const researchName = useResearchName();
   const updateAgent = useStore((s) => s.updateAgent);
   const godName = useResolvedGodName();
   const renameAgent = useStore((s) => s.renameAgent);
@@ -47,9 +50,15 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
   const [config, setConfig] = useState<HarnessConfig | null>(null);
 
   const [name, setName] = useState(agent.name);
+  const isResearch = agent.id === RESEARCH_ID;
   const [provider, setProvider] = useState<AgentProvider>(
     inferAgentProvider(agent.command, agent.provider)
   );
+  // On Claude, Research's engine is fixed; on anything else only Claude is offered.
+  // Judged on the saved engine, so picking Claude for a Research on an old
+  // engine never locks the list under the owner's hand before Save.
+  const researchLocked = isResearch && isClaudeProvider(inferAgentProvider(agent.command, agent.provider))
+    && AGENT_PROVIDER_PRESETS.filter((p) => BUILD_ENGINES.includes(p.id) && isClaudeProvider(p.id)).length <= 1;
   const [model, setModel] = useState<string | undefined>(agent.model);
   // Folded by default: the engine rarely changes after hiring.
   const [engineOpen, setEngineOpen] = useState(false);
@@ -215,7 +224,9 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
           scheduled jobs under it draw on top of it (owner, 2026-10-10). */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
         <Fields id="name">
-          <Row label={t('editAgent.name')}>
+          {/* The owner names the Research member (owner, ship 2 D17); whatever its
+              name, the app knows it as Research, the one on the internet. */}
+          <Row label={t('editAgent.name')} info={isResearch ? t('editAgent.researchName', { name: researchName }) : undefined}>
             <input
               value={name}
               onChange={(e) => { setName(e.target.value); setNameError(undefined); }}
@@ -306,20 +317,29 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
         </button>
         {engineOpen && (
         <Fields id="engine">
-          <Row label={t('editAgent.provider')}>
+          {/* Research's walls are Claude Code's, so its engine is locked
+              (ship review D6.2). */}
+          <Row label={t('editAgent.provider')} info={isResearch ? t('editAgent.researchEngine', { name: researchName }) : undefined}>
             {/* A list, not a grid of buttons. Only the engines this build
                 offers (BUILD_ENGINES, like setup), plus the agent's own if it
                 runs on another, so a list never hides what it is on. */}
+            {researchLocked ? (
+              // Nothing to choose: the engine as plain text, with its reason
+              // behind the info icon.
+              <input readOnly value={providerLabel} aria-label={t('editAgent.provider')} style={lockedValueStyle} />
+            ) : (
             <select
               value={provider}
               onChange={(e) => pickProvider(e.target.value as AgentProvider)}
+              aria-label={t('editAgent.provider')}
               className="cth-input"
               style={inputStyle}
             >
               {AGENT_PROVIDER_PRESETS
-                .filter((p) => BUILD_ENGINES.includes(p.id) || p.id === provider)
+                .filter((p) => (BUILD_ENGINES.includes(p.id) && (!isResearch || isClaudeProvider(p.id))) || p.id === provider)
                 .map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
+            )}
           </Row>
 
           {preset.supportsModel && (
@@ -380,6 +400,13 @@ const inputStyle: CSSProperties = {
   color: 'var(--cth-ink)',
   outline: 'none',
   boxSizing: 'border-box'
+};
+
+/** A value that can't be changed here, shown as text but still a labelled,
+ *  read only field for screen readers (the Research member's engine). */
+const lockedValueStyle: CSSProperties = {
+  border: 'none', background: 'transparent', padding: 0,
+  fontSize: 13, color: 'var(--cth-ink)', fontFamily: 'var(--cth-font-ui)'
 };
 
 /** A group of fields with no heading (D3: field labels only). `id` names the

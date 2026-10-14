@@ -193,7 +193,7 @@ test('a hire can be bound to one connection, and starts with only that connector
   assert.match(modal, /const bindConnectors = \(config\.claudeConnectors\?\.list \?\? \[\]\)\s*\.map\(\(c\) => \(\{ key: c\.key, on: connectorOn\(config, c\.key\), signIn: c\.status === 'needs-sign-in' \}\)\)/, 'every connector on the account is listed');
   assert.match(modal, /setConnectionScope\(key \? tr\('addAgent\.wizard\.connectionScope', \{ name: key \}\) : ''\);/, 'the scope starts as "the data in <connector>", editable');
   assert.match(modal, /onBindConnection=\{\(\) => \{ if \(bindConnector && bindConnectors\.some\(\(c\) => c\.key === bindConnector && c\.on\)\) applyBinding\(connectionScope, undefined, bindConnector\); \}\}/);
-  const submit = modal.slice(modal.indexOf('const id = uniqueId(name);'), modal.indexOf('const spawnRes = await window.cth.spawnPty'));
+  const submit = modal.slice(modal.indexOf('const id = hireAgentId(name);'), modal.indexOf('const spawnRes = await window.cth.spawnPty'));
   assert.match(submit, /if \(binding\?\.connectorKey\) \{\s*const res = await \(isQuickBooksKey\(binding\.connectorKey\)[\s\S]*?: window\.cth\.connectorsSetGrant\(id, binding\.connectorKey, true\)\)/, 'granted before the spawn');
   assert.match(submit, /if \(!res\?\.ok\) \{[\s\S]*?setError\(tr\('capabilities\.saveFailed'\)\); return;/, 'a failed grant stops the hire');
   assert.match(submit, /: window\.cth\.connectorsSetGrant\(id, binding\.connectorKey, false\)\)\.catch/, 'a failed spawn takes it back');

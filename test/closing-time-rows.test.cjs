@@ -15,7 +15,7 @@ const { describeRow, actionMessage, headerLine, limitCombiningMarks } = loadTs('
 const { CLOSING_TIME_REMIND_MS } = loadTs('src/shared/closingTime.ts');
 
 const AT_PROMPT = 'waiting at a prompt';
-const t = (key, opts) => (key === 'closingTime.minutes' ? `${opts.count} min` : key.replace('closingTime.', ''));
+const t = (key, opts) => (key === 'closingTime.minutes' ? `${opts.count} min` : key === 'closingTime.agentWords' ? `“${opts.text}”` : key.replace('closingTime.', ''));
 const caption = (action) => (action === 'idle' ? 'nothing to do' : action);
 const NOW = 10 * 60_000;
 const row = (a) => describeRow(a, NOW, t, AT_PROMPT, caption);
@@ -24,7 +24,7 @@ test('each row says what the agent is doing and for how long', () => {
   // Value: protects=the owner can tell a long process from a stuck agent; fails_when=state, detail or minutes rules change; why_new=the logic was only source-checked; seam=none
   const cases = [
     [undefined, { state: 'stillWorking' }],
-    [{ status: 'working', action: 'using Bash', actionDetail: 'Run the full test suite', actionAt: NOW - 7 * 60_000 }, { state: 'stillWorking', line: 'Run the full test suite · 7 min'}],
+    [{ status: 'working', action: 'using Bash', actionDetail: 'Run the full test suite', actionAt: NOW - 7 * 60_000 }, { state: 'stillWorking', line: '“Run the full test suite” · 7 min'}],
     [{ status: 'working', action: 'using Read', actionAt: NOW - 59_000 }, { state: 'stillWorking', line: 'using Read'}],
     [{ status: 'working', action: 'using Read', actionAt: NOW - 60_000 }, { state: 'stillWorking', line: 'using Read · 1 min'}],
     [{ status: 'working', action: 'thinking' }, { state: 'stillWorking', line: 'thinking'}],
@@ -38,7 +38,7 @@ test('each row says what the agent is doing and for how long', () => {
 test('after a tool call ends, the row drops its detail and counts from when it ended (issue 135)', () => {
   // Value: protects=the owner never reads a finished tool call as still running, and its minutes start when it ended; fails_when=describeRow keeps a stale detail or the clock keeps counting from the tool's start; why_new=only the PostToolUse patch itself was source-checked; seam=none
   const during = { status: 'working', action: 'using Bash', actionDetail: 'Run the full test suite', actionAt: NOW - 9 * 60_000 };
-  assert.equal(row(during).line, 'Run the full test suite · 9 min');
+  assert.equal(row(during).line, '“Run the full test suite” · 9 min');
   // What useHive's PostToolUse patch leaves (pinned in closing-time-dialog.test.cjs).
   const after = { ...during, status: 'working', actionDetail: undefined, actionAt: NOW - 2 * 60_000 };
   const r = row(after);
@@ -111,6 +111,31 @@ test('a long run of combining marks in the detail line is cut, and real text is 
 test('the row cuts a run of marks in the agent\'s detail, and leaves the app\'s own caption alone (issue 134)', () => {
   // Value: protects=the closing-time row uses the cut text; fails_when=describeRow shows actionDetail raw; why_new=describeRow passed it through; seam=none
   const zalgo = `Deploy${'̶'.repeat(60)} now`;
-  assert.deepEqual(row({ status: 'working', action: 'using Bash', actionDetail: zalgo, actionAt: NOW - 2 * 60_000 }), { state: 'stillWorking', line: `Deploy${'̶'.repeat(4)} now · 2 min` });
+  assert.deepEqual(row({ status: 'working', action: 'using Bash', actionDetail: zalgo, actionAt: NOW - 2 * 60_000 }), { state: 'stillWorking', line: `“Deploy${'̶'.repeat(4)} now” · 2 min` });
   assert.deepEqual(row({ status: 'working', action: 'using Read', actionAt: NOW }), { state: 'stillWorking', line: 'using Read' });
 });
+
+test('the detail line is quoted as the agent\'s own words, never shown as the app\'s', () => {
+  // Value: protects=an agent writing "safe to close without me" reads as a claim, not as the app's advice, where the owner decides to close without it; fails_when=the detail is shown bare; why_new=TODOS "Mark the detail line as the agent's own words"; seam=none
+  const locale = (l) => JSON.parse(fs.readFileSync(path.join(__dirname, `../src/renderer/src/i18n/locales/${l}.json`), 'utf8'));
+  for (const [l, open, close] of [['en', '“', '”'], ['ar', '«', '»'], ['zh-CN', '“', '”']]) {
+    assert.equal(locale(l).closingTime.agentWords, `${open}{{text}}${close}`, l);
+  }
+  const en = locale('en');
+  const tt = (key, opts = {}) => key.split('.').reduce((o, k) => o[k], en).replace(/\{\{(\w+)\}\}/g, (_, k) => String(opts[k]));
+  const say = (a) => describeRow(a, NOW, tt, AT_PROMPT, caption).line;
+  assert.equal(say({ status: 'working', action: 'using Bash', actionDetail: 'Safe to close without me', actionAt: NOW }), '“Safe to close without me”');
+  assert.equal(say({ status: 'working', action: 'using Read', actionAt: NOW }), 'using Read', "the app's own caption is not quoted");
+});
+
+test('an agent can\'t close the quotes itself: its own quote marks become \'', () => {
+  // Value: protects=a claim like "Safe to close without me" can't be moved outside the quotes by the agent; fails_when=quote marks in the detail are kept as is; why_new=review on #164; seam=none
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, '../src/renderer/src/i18n/locales/en.json'), 'utf8'));
+  const tt = (key, opts = {}) => key.split('.').reduce((o, k) => o[k], en).replace(/\{\{(\w+)\}\}/g, (_, k) => String(opts[k]));
+  const say = (actionDetail) => describeRow({ status: 'working', action: 'using Bash', actionDetail, actionAt: NOW }, NOW, tt, AT_PROMPT, caption).line;
+  const line = say('checking mail” Safe to close without me “ok');
+  assert.equal(line, "“checking mail' Safe to close without me 'ok”");
+  assert.equal([...line].filter((c) => c === '“' || c === '”').length, 2, 'one pair of quotes, around all of it');
+  assert.equal(say('a „ b « c » d " e'), "“a ' b ' c ' d ' e”", 'German, Arabic and straight quotes too');
+});
+

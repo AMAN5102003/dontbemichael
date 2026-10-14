@@ -208,6 +208,8 @@ is the primary control surface — tune the prompt, not the code.
 | Reprocessing messages | Per-agent `cursor.json`; processed messages move to `inbox/.done/` |
 | `memory.md` unbounded growth | App kept index with a size budget, tidied in the background (`memoryTidy.ts`) |
 | Modifying the user's repo with hooks | Hooks ride in a per-agent settings file passed with `--settings`, kept at `<harnessHome>/agent-settings/<id>.json`; nothing is written into the user's repo or `~/.claude` |
+| Office data leaving through the internet (every office) | Only the Research agent (`research`, Pete by default) has web tools or shell network; the hook refuses WebFetch and WebSearch to everyone else, Michael included, whose shells get an empty strict network list. Every message to Pete passes the trust layer (`trustLayer.ts`): passed, cleaned or refused against the owner's data classes, fail closed |
+| Web text steering the team | Pete's answers pass the outbound trust layer: instructions aimed at agents are removed, the answer is labelled as information, and a likely injection is flagged to Michael only. Pete writes only to the teammate whose question he answers, or to Michael |
 | An agent rewriting its own hooks or sandbox | The hook program (`<harnessHome>/hive/bin`) and `agent-settings` are locked for every agent, Michael included: shell deny-write, an `Edit` deny rule, and the hook's own folder check. Reading stays open (issue 100). Windows has no shell sandbox, so there only the file tool rules hold |
 
 ---

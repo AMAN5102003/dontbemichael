@@ -96,8 +96,9 @@ test('a resumed agent is told the house rules that changed, once; a fresh one is
   const inbox = (id) => fs.readdirSync(path.join(hive.root(), 'agents', id, 'inbox')).filter((f) => f.endsWith('.json'))
     .map((f) => JSON.parse(fs.readFileSync(path.join(hive.root(), 'agents', id, 'inbox', f), 'utf8')))
     .filter((m) => m.subject === N.HOUSE_RULES_CHANGED_SUBJECT);
-  const all = N.houseRuleLines(HOUSE_RULES);
-  assert.equal(all.length, 8);
+  // Every office's rules, rule 9 included (owner, ship 2 D16).
+  const all = N.houseRuleLines(hive.houseRules());
+  assert.equal(all.length, 9);
 
   assert.deepEqual(hive.tellHouseRules('oscar', false), [], 'a fresh conversation reads them in its instructions');
   assert.equal(inbox('oscar').length, 0);

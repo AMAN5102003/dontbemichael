@@ -1,3 +1,5 @@
+import type { ResearchConfig } from '../shared/research';
+import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { OfficeRecord } from '../shared/officeRecord';
 import type { MailboxRecord, AgentCapabilities, MailProvider, MailServer } from '../shared/mailboxes';
@@ -287,6 +289,11 @@ export interface HarnessConfig {
   businessTeam?: Array<{ agentId: string; folder: string }>;
   /** Set once the onboarding team has been started, so it is started once. */
   businessTeamStarted?: boolean;
+  /** Research, the one team member on the internet (shared/research.ts). */
+  research?: ResearchConfig;
+  /** The owner's data classes that differ from the seeded defaults
+   *  (shared/dataClasses.ts): what the team may send to Research. */
+  dataClasses?: Partial<Record<DataClassId, DataClassSetting>>;
   /** Team members that failed their first start, tried again (and only they)
    *  on each later launch until they start. */
   businessTeamRetry?: string[];
@@ -852,6 +859,10 @@ const api = {
    *  agent output. */
   revealPath: (p: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('fs:revealPath', p),
+  /** The Profile tab's Open folder: the agent's work folder as the app has it
+   *  on record, opened. Main looks the folder up itself. */
+  openAgentFolder: (id: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('fs:openAgentFolder', id),
   /** The files an Ask me question names: whether each opens in its default
    *  app, is only shown in Finder, or is missing. Main decides
    *  (docs/designs/ask-me-open-file.md). */
@@ -982,6 +993,11 @@ const api = {
   connectorsClear: (key: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('connectors:clear', key),
   /** The owner saw the list: nothing in it is new any more. */
   connectorsSeen: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('connectors:seen'),
+  /** Research, the one team member on the internet (shared/research.ts). */
+  researchStatus: (): Promise<{ on: boolean; live: boolean; waiting: number; notice: boolean }> => ipcRenderer.invoke('research:status'),
+  researchPrepare: (): Promise<{ ok: true; cwd: string } | { ok: false }> => ipcRenderer.invoke('research:prepare'),
+  researchOff: (): Promise<{ ok: boolean; returned: number }> => ipcRenderer.invoke('research:off'),
+  researchNoticeSeen: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('research:noticeSeen'),
   /** Agents whose connectors changed since they started (missed pushes). */
   connectorsPendingRestarts: (): Promise<string[]> => ipcRenderer.invoke('connectors:pendingRestarts'),
   /** An agent's connectors changed since it started: restart it when idle. */
@@ -1586,6 +1602,8 @@ const api = {
     ipcRenderer.invoke('integrations:templates'),
   integrationsUpsert: (record: IntegrationRecord): Promise<{ ok: true; record: IntegrationRecord } | { ok: false; error: string }> =>
     ipcRenderer.invoke('integrations:upsert', record),
+  integrationsCanStoreSecrets: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('integrations:canStoreSecrets'),
   integrationsSetSecret: (req: { id: string; secret: string }): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('integrations:setSecret', req),
   integrationsRemove: (req: { id: string }): Promise<{ ok: boolean }> =>
@@ -1717,6 +1735,16 @@ const api = {
   cliUpdateCurrent: (): Promise<CliUpdateStatus | null> => ipcRenderer.invoke('cliUpdate:current'),
   /** The office break (issue 124): null while the office works. */
   officeBreakView: (): Promise<OfficeBreakView | null> => ipcRenderer.invoke('office:breakView'),
+  /** Try again on a stop card (office-stopped-account.md): check now. */
+  officeRetry: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('office:retry'),
+  /** Add credit: main opens the Anthropic billing page (a fixed address). */
+  officeAddCredit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('office:addCredit'),
+  /** A new key replaced one that stopped working: these Claude terminals restart, resumed. */
+  onOfficeRestartClaude: (cb: (ptyIds: string[]) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, ids: unknown): void => cb(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
+    ipcRenderer.on('office:restartClaude', listener);
+    return () => ipcRenderer.removeListener('office:restartClaude', listener);
+  },
   onOfficeBreak: (cb: (view: OfficeBreakView | null) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, payload: OfficeBreakView | null) => cb(payload);
     ipcRenderer.on('office:break', listener);

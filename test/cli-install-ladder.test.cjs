@@ -9,9 +9,14 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const loadTs = require('./load-ts.cjs');
+const { posixOnly, windowsOnly } = require('./platform.cjs');
 
-const { chooseInstallRung, buildMissingCliScript } = loadTs('src/main/cliInstall.ts');
+const { chooseInstallRung, buildMissingCliScript, installSucceeded } = loadTs('src/main/cliInstall.ts');
 const { installInfoForProvider } = loadTs('src/shared/agentProvider.ts');
 
 // The POSIX shell script unless a test names the platform: the Windows form is
@@ -104,4 +109,72 @@ test('a hostile binary name cannot inject a command into the banner', () => {
     assert.ok(evil.some((l) => l.includes('xrm-rf')), `${platform}: sanitized to a bare identifier`);
     assert.ok(!evil.some((l) => /rm -rf \//.test(l)), platform);
   }
+});
+
+// Run the generated npm-rung script the way PtyManager.spawn runs a shellScript,
+// with a fake `npm` first on PATH that exits with `code`. Nothing is installed.
+function runWithFakeNpm(platform, shell, code) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-cli-install-'));
+  try {
+    const script = buildMissingCliScript('codex', 'codex', true, platform);
+    if (platform === 'win32') {
+      fs.writeFileSync(path.join(dir, 'npm.cmd'), `@echo off\r\necho FAKE-NPM-RAN\r\nexit /b ${code}\r\n`);
+      const r = spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${script}"`], {
+        encoding: 'utf8',
+        windowsVerbatimArguments: true,
+        env: { ...process.env, PATH: `${dir};${process.env.PATH}` }
+      });
+      return { code: r.status, out: r.stdout + r.stderr };
+    }
+    fs.writeFileSync(path.join(dir, 'npm'), `#!/bin/sh\necho FAKE-NPM-RAN\nexit ${code}\n`, { mode: 0o755 });
+    const r = spawnSync(shell, ['-c', script], { encoding: 'utf8', env: { PATH: `${dir}:/usr/bin:/bin`, HOME: dir } });
+    return { code: r.status, out: r.stdout + r.stderr };
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('a relaunch needs a clean installer exit AND the CLI found afterwards', () => {
+  // Value: protects=a failed or half-done install never wipes the terminal and respawns a CLI that is not there; fails_when=the exit handler trusts the exit code alone, or probes the CLI before the exit code says it is worth it; why_new=the relaunch rule had no test; seam=none (pure function)
+  let probes = 0;
+  const found = () => { probes++; return true; };
+  assert.equal(installSucceeded(0, found), true);
+  assert.equal(installSucceeded(0, () => false), false, 'exit 0 but the CLI is still missing');
+  assert.equal(installSucceeded(7, found), false);
+  assert.equal(installSucceeded(undefined, found), false, 'killed, no exit code');
+  assert.equal(probes, 1, 'the CLI is only looked up after a clean exit');
+});
+
+test('the generated script returns the installer exit code in a plain shell', posixOnly('runs the sh script'), () => {
+  // Value: protects=a failed npm install is reported as failed, so its "[x] Install exited" message stays on screen; fails_when=the script ends on an echo again and exits 0 whatever npm did; why_new=the existing checks only match the script text, nothing ran it; seam=none (fake npm on PATH, no network)
+  const shells = ['/bin/sh', '/bin/bash', '/bin/zsh'].filter((s) => fs.existsSync(s));
+  assert.ok(shells.length > 0);
+  for (const shell of shells) {
+    const failed = runWithFakeNpm('darwin', shell, 7);
+    assert.match(failed.out, /FAKE-NPM-RAN/, `${shell}: the installer runs`);
+    assert.match(failed.out, /Install exited with code 7/, `${shell}: the failure is explained`);
+    assert.equal(failed.code, 7, `${shell}: the installer's failure comes back`);
+    const ok = runWithFakeNpm('darwin', shell, 0);
+    assert.match(ok.out, /Installed\. Launching the agent/, shell);
+    assert.equal(ok.code, 0, `${shell}: a good install ends cleanly`);
+  }
+});
+
+test('the Windows script returns the installer exit code through cmd.exe', windowsOnly('runs the cmd.exe script'), () => {
+  // Value: protects=same as the POSIX test, for the one-line cmd.exe form; fails_when=the line ends on an echo again and cmd /c exits 0 whatever npm did; why_new=nothing ran the Windows script; seam=none (fake npm.cmd on PATH, no network)
+  const failed = runWithFakeNpm('win32', null, 7);
+  assert.match(failed.out, /FAKE-NPM-RAN/, 'the installer runs');
+  assert.equal(failed.code, 7, "the installer's failure comes back");
+  const ok = runWithFakeNpm('win32', null, 0);
+  assert.equal(ok.code, 0, 'a good install ends cleanly');
+});
+
+test('the install exit handler relaunches only on installSucceeded', () => {
+  // Value: protects=the relaunch decision stays wired to the tested rule; fails_when=index.ts goes back to `exitCode === 0`, or checks a different binary than the one it relaunches; why_new=the exit handler had no test; seam=source pin, main has no Electron harness
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.ts'), 'utf8');
+  const start = src.indexOf('const pending = pendingInstallRelaunch.get(id);');
+  assert.ok(start > 0, 'the install exit branch exists');
+  const branch = src.slice(start, src.indexOf('teardownPty(id);', start));
+  assert.match(branch, /if \(installSucceeded\(exitCode, \(\) => ptyManager\.isCommandAvailable\(pending\.bin\)\)\)/);
+  assert.doesNotMatch(branch, /if \(exitCode === 0\)/);
 });

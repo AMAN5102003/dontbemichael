@@ -1,4 +1,4 @@
-- **Michael alone** keeps the task board.
-- **Done is final**: only you reopen a card.
-- **A parked step wakes** at its time.
-- **One numbered ask** per activity.
+- **Pete** is the one teammate on the internet.
+- **A trust layer** checks what reaches Pete.
+- **The office stops** when your account can't run.
+- **Links name** the site they open.

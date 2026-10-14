@@ -1,3 +1,10 @@
+/** Whether app.relaunch() brings up a working window: not under `npm run dev`
+ *  (see restartApp). Closing time asks too, so it only says "Reopening" when
+ *  the app will. */
+export function canRelaunch(env: NodeJS.ProcessEnv = process.env): boolean {
+  return !env.ELECTRON_RENDERER_URL;
+}
+
 /** Restart the app after a reset or a home change.
  *
  *  Packaged (and `electron-vite preview`) builds load the renderer from disk, so
@@ -11,7 +18,7 @@ export function restartApp(
   env: NodeJS.ProcessEnv = process.env,
   log: (line: string) => void = console.log
 ): 'relaunched' | 'exited-dev' {
-  if (env.ELECTRON_RENDERER_URL) {
+  if (!canRelaunch(env)) {
     log('[restart] dev mode: the dev server stops with this process, so not relaunching. Run npm run dev again.');
     app.exit(0);
     return 'exited-dev';

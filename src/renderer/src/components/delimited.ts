@@ -6,6 +6,9 @@ export const CSV_ROW_LIMIT = 1000;
 /** CSV or TSV into rows, quotes and doubled quotes honored. Null when the
  *  quoting never closes: the view then shows the text as it is. */
 export function parseDelimited(text: string, sep: string): string[][] | null {
+  // Excel's "CSV UTF-8" starts the file with a byte order mark; left in, the
+  // first cell is not empty when its opening quote arrives.
+  if (text.charCodeAt(0) === 0xfeff) text = text.slice(1);
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = '';

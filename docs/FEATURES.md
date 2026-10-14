@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.1.9). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.0). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -91,6 +91,10 @@ moving, and brings you only the decisions that need you.
   tools, but shell commands are not limited yet.
 - House rules for every agent: say where a fact came from, say when it doesn't know, never make up
   people, customers or quotes. A looping agent is steered, then held, then stopped.
+- One team member on the internet: Pete, the Research team member, is the only one who opens web
+  pages or searches, in every office. A trust layer checks every message to Pete against the kinds
+  of data you keep private and cleans Pete's answers. Pete is off until you turn them on, and sees
+  none of your files. On a Mac nobody else's commands reach the internet.
 
 ### 7. An office you can watch
 - A pod for each department around Michael's glass office, each with its painted floor sign, and
@@ -117,6 +121,23 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.0 (2026-10-13)
+- Pete, the Research team member, is the one way to the internet in every office: nobody else
+  opens web pages, searches or, on a Mac, reaches the internet from a command. Off until you turn
+  them on in Settings, Research & privacy, or in the setup Team step; renamable; their own face.
+- A trust layer checks every message to Pete against the kinds of data you mark private (passwords
+  and keys never go), cleans Pete's answers of instructions, and flags a steering answer to
+  Michael. A change to your privacy settings applies at once.
+- Pete sees none of your files, the task board, memory or company knowledge, and the app treats
+  what Pete writes in their own folders as untrusted.
+- The office stops when your Claude account runs out of credit or its sign in or key stops
+  working, and says why, with Add credit, Sign in or Change key.
+- Links name the site or app they open; web and mail links in replies open with a click. Search
+  the task board and filter it by team member; a task's questions show newest first.
+- Michael hears when the safety brake holds a team member back; a crash shows a recovery screen.
+- About sixty contributor fixes: Windows paths and starts, mail speed and errors, closing time,
+  dark mode colors, file tabs, names with underscores or two dots, and more (CHANGELOG).
 
 ### 0.1.9 (2026-10-11)
 - Michael alone writes the task board. Team members file what their work needs once, in a queue

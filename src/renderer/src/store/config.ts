@@ -1,5 +1,7 @@
 // Mirrors src/main/config.ts. Kept as a renderer-side type-only module
 // so we don't have to reach into the preload package to type-check.
+import type { ResearchConfig } from '@shared/research';
+import type { DataClassId, DataClassSetting } from '@shared/dataClasses';
 import type { ClaudeConnectorsState } from '@shared/claudeConnectors';
 import type { MailboxRecord, AgentCapabilities } from '@shared/mailboxes';
 import type { CompanyProfile } from '@shared/companyProfile';
@@ -84,6 +86,11 @@ export interface HarnessConfig {
   businessTeam?: Array<{ agentId: string; folder: string }>;
   /** Set once the onboarding team has been started, so it is started once. */
   businessTeamStarted?: boolean;
+  /** Research, the one team member on the internet (shared/research.ts). */
+  research?: ResearchConfig;
+  /** The owner's data classes that differ from the seeded defaults
+   *  (shared/dataClasses.ts): what the team may send to Research. */
+  dataClasses?: Partial<Record<DataClassId, DataClassSetting>>;
   /** Team members that failed their first start, tried again (and only they)
    *  on each later launch until they start. */
   businessTeamRetry?: string[];

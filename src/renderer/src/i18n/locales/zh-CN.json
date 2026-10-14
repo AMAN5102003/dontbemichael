@@ -234,7 +234,8 @@
       "connections": "连接",
       "voice": "语音",
       "memoryKnowledge": "记忆与知识",
-      "companyProfile": "公司资料"
+      "companyProfile": "公司资料",
+      "research": "研究与隐私"
     },
     "changeHome": {
       "newHome": "新的办公室文件夹",
@@ -685,7 +686,9 @@
     "provider": "提供方",
     "model": "模型",
     "modelCurrent": "{{model}}（当前）",
-    "engineNote": "新的引擎或模型会在该成员下次启动时生效。"
+    "engineNote": "新的引擎或模型会在该成员下次启动时生效。",
+    "researchEngine": "{{name}} 只在 Claude 上运行，隐私防护只在那里有效。",
+    "researchName": "名字随你取。无论叫什么，它都是你团队的研究成员，也是唯一使用互联网的成员。"
   },
   "onboarding": {
     "damagedConfig": "无法读取你保存的设置，因此需要重新设置。旧文件保存在",
@@ -1481,6 +1484,9 @@
     "edit": "编辑"
   },
   "kanban": {
+    "search": "搜索任务",
+    "everyone": "所有人",
+    "member": "团队成员",
     "count": "{{count}} 项任务",
     "newWorkHint": "新工作交由 {{godName}} 分派",
     "colTodo": "待办",
@@ -1529,11 +1535,6 @@
     "closedByOwner": "由负责人关闭",
     "nothingAsked": "没有提问",
     "nothingAskedTitle": "已阻塞，但没有等待你回答的问题。{{godName}} 会被提醒向你提问或移动它。",
-    "searchPlaceholder": "按标题或关键词搜索任务...",
-    "searchAria": "搜索任务",
-    "filterMember": "按团队成员筛选",
-    "allMembers": "全部团队成员",
-    "clearFilters": "清除筛选",
     "showingFiltered": "显示 {{total}} 项任务中的 {{count}} 项",
     "noMatchingTasks": "没有匹配搜索或筛选条件的任务"
   },
@@ -1954,7 +1955,9 @@
     "connectorsPending": "{{name}} 空闲时会重启以生效。",
     "restartNow": "立即重启",
     "restarting": "正在重启 {{name}} 以生效…",
-    "restartFailed": "无法重启 {{name}}。稍后会自动重试，也可以点「立即重启」。"
+    "restartFailed": "无法重启 {{name}}。稍后会自动重试，也可以点「立即重启」。",
+    "research": "{{name}} 使用互联网，不持有任何办公室数据：没有邮箱、连接器或日程。",
+    "researchSettings": "研究与隐私设置"
   },
   "closingTime": {
     "listLabel": "谁还在工作",
@@ -1971,6 +1974,7 @@
     "michaelWaiting": "正在等团队",
     "michaelBoard": "正在更新看板",
     "minutes": "{{count}} 分钟",
+    "agentWords": "“{{text}}”",
     "sendFailed": "没有发送成功。请重试。",
     "michaelEnded": "终端已结束：请点“取消，回去工作”，或点“立即强制退出”",
     "confirmedCount": "{{acked}} / {{total}} 名成员已确认",
@@ -2220,5 +2224,112 @@
     "info": "你的 Claude 套餐已达到用量上限，团队暂时无法工作。定时任务仍按时发出，并在收件箱中等待，直到休息结束。团队会自动恢复工作。更大的 Claude 套餐意味着更少的休息。",
     "chip": "休息至 {{time}}",
     "chipUnknown": "休息中"
+  },
+  "officeStop": {
+    "title": "办公室已停止",
+    "credit": "你的 Anthropic 账户余额已用完。",
+    "creditAgain": "余额仍不足。充值可能需要几分钟才会显示。",
+    "signIn": "你的 Claude 账户需要重新登录。",
+    "keyStopped": "Anthropic API 密钥已失效。",
+    "checking": "正在确认能否开始工作",
+    "addCredit": "充值",
+    "tryAgain": "重试",
+    "signInAction": "登录",
+    "changeKey": "更换密钥",
+    "chip": "办公室已停止",
+    "creditInfo": "由于 Anthropic 账户余额已用完，Claude 停止了整个团队。请在 Anthropic 网站充值，然后点击重试。办公室也会每 15 分钟自动检查一次。在此之前，定时任务会留在收件箱中等待。",
+    "signInInfo": "由于 Claude 登录已过期，Claude 停止了整个团队。重新登录后，团队会从停下的地方继续。在此之前，定时任务会留在收件箱中等待。",
+    "keyInfo": "由于 Anthropic API 密钥已失效，Claude 停止了整个团队。粘贴新的密钥后，团队会重新启动并继续工作。在此之前，定时任务会留在收件箱中等待。"
+  },
+  "markdown": {
+    "opensInBrowser": "在浏览器中打开",
+    "opensInEmail": "打开邮件应用"
+  },
+  "crash": {
+    "line": "此页面出了点问题。",
+    "reload": "重新加载"
+  },
+  "research": {
+    "title": "研究",
+    "tip": "{{name}}，团队中唯一可以使用互联网的成员。看不到任何办公室数据，只能看到你的团队经隐私检查后发来的内容。",
+    "off": "已关闭。{{name}} 无法为你的团队在网上查找信息。",
+    "on": "已开启。{{name}} 为团队查找信息。",
+    "starting": "正在雇用 {{name}}…",
+    "stopping": "正在关闭 {{name}}…",
+    "failed": "{{name}} 无法启动。",
+    "turnOn": "开启",
+    "turnOff": "关闭",
+    "tryAgain": "重试",
+    "cancel": "取消",
+    "waitingOne": "有 1 个请求在等待。它会退回给发送者。",
+    "waitingMany": "有 {{count}} 个请求在等待。它们会退回给发送者。",
+    "windows": "在 Windows 上，{{name}} 仍可访问你的办公室文件。",
+    "windowsTip": "Windows 目前还无法限制 {{name}} 的命令，因此隐私检查在那里不能完全生效。",
+    "sendTitle": "你的团队可以发给 {{name}} 的内容",
+    "sendTip": "发给 {{name}} 的每条消息都会被检查。任何隐私内容都会退回给发送者，不会外泄。",
+    "count": "{{allowed}} 项允许，{{private}} 项隐私",
+    "usedWhenOn": "{{name}} 开启时生效。",
+    "allowed": "允许",
+    "private": "隐私",
+    "alwaysPrivate": "始终隐私",
+    "teamSummary": "为团队在互联网上查找信息，看不到任何办公室数据。",
+    "teamTag": "使用互联网",
+    "privacyCheck": "隐私检查",
+    "noticeTitle": "你的团队不再使用互联网",
+    "noticeBody": "这样可以把你的隐私数据留在内部。团队中的一位成员 {{name}} 可以在隐私检查后为他们查找信息。在你开启之前 {{name}} 保持关闭。",
+    "noticeOpen": "打开研究与隐私设置",
+    "class": {
+      "places": {
+        "name": "地点",
+        "tip": "国家、地区、城市、时区。"
+      },
+      "industry": {
+        "name": "行业与市场话题",
+        "tip": "产品类型、趋势、法规、标准。"
+      },
+      "dates": {
+        "name": "日期与一般时间",
+        "tip": "下季度、节假日、一般性的截止日期。"
+      },
+      "general": {
+        "name": "一般问题",
+        "tip": "操作方法、定义、参考事实。"
+      },
+      "names": {
+        "name": "人名",
+        "tip": "客户、员工、联系人。"
+      },
+      "contact": {
+        "name": "联系方式",
+        "tip": "电子邮件、电话号码、街道地址。"
+      },
+      "companies": {
+        "name": "公司与品牌名称",
+        "tip": "客户、供应商、竞争对手，以及任何有名称的企业。"
+      },
+      "money": {
+        "name": "金钱",
+        "tip": "你的价格、发票、收入、银行和卡信息。"
+      },
+      "accounts": {
+        "name": "账号与编号",
+        "tip": "客户编号、订单号、政府证件号。"
+      },
+      "health": {
+        "name": "健康与个人生活",
+        "tip": "医疗、家庭、个人情况。"
+      },
+      "quoted": {
+        "name": "来自你的文件和邮件的文字",
+        "tip": "从文档或消息中引用的段落。"
+      },
+      "secrets": {
+        "name": "密码与密钥",
+        "tip": "密码、API 密钥、令牌。无论你如何选择，都不会发送。"
+      }
+    },
+    "otherEngines": "{{names}} 使用其他引擎，因此这些规则暂时无法约束他们。",
+    "otherEnginesLabel": "使用其他引擎的成员",
+    "otherEnginesTip": "应用只能约束 Claude 代理。使用其他引擎的成员仍保留自己的网页工具和终端。"
   }
 }

@@ -28,7 +28,8 @@ const business = { name: 'Taco Shop', city: 'Austin' };
 
 test('every character but Michael has a job family whose card exists in some pack', () => {
   const cards = H.cardJobs(packs, core, 'restaurant-food', business);
-  for (const c of OFFICE_CAST.filter((n) => n !== 'michael')) {
+  // Pete is the Research member's own face, never a hire's (owner, third ship D4).
+  for (const c of OFFICE_CAST.filter((n) => n !== 'michael' && n !== 'pete')) {
     const job = H.ownJob(c, [], cards);
     assert.ok(job, `${c} has a job`);
   }

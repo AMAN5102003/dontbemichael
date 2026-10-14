@@ -125,15 +125,18 @@ export function Toggle({ on, onClick, onLabel, offLabel, label, disabled }: {
 
 /** `destructive` is the DESIGN.md 7.2 variant (coral fill, on-accent text): the
  *  committing step of a delete, never the first click (design 11A). */
-export function MiniButton({ children, onClick, tone = 'plain', disabled, autoFocus, buttonRef }: {
+export function MiniButton({ children, onClick, tone = 'plain', disabled, autoFocus, buttonRef, label }: {
   children: ReactNode; onClick: () => void; tone?: 'plain' | 'danger' | 'good' | 'destructive'; disabled?: boolean;
   autoFocus?: boolean; buttonRef?: Ref<HTMLButtonElement>;
+  /** A spoken name when the visible word is not enough ("Remove example.com"). */
+  label?: string;
 }) {
   const destructive = tone === 'destructive';
   return (
     <button
       type="button"
       ref={buttonRef}
+      aria-label={label}
       autoFocus={autoFocus}
       onClick={onClick}
       disabled={disabled}

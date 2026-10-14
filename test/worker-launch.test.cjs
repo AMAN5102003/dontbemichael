@@ -77,6 +77,23 @@ test('an explicit stance wins for non-claude providers too (no doubled flag)', (
   assert.deepEqual(l.args, ['--dangerously-bypass-approvals-and-sandbox']);
 });
 
+test('a quoted Codex path gets Codex auto flags and preserves its executable and model', () => {
+  const l = launch({
+    requestCommand: '"C:\\Program Files\\Codex\\codex.exe" --model "example model"',
+    autoMode: true
+  });
+  assert.equal(l.bin, 'C:\\Program Files\\Codex\\codex.exe');
+  assert.deepEqual(l.args, ['--model', 'example model', '-a', 'never', '-s', 'workspace-write']);
+});
+
+test('a quoted Codex path preserves an explicit permission stance', () => {
+  const l = launch({
+    requestCommand: '"C:\\Program Files\\Codex\\codex.exe" --dangerously-bypass-approvals-and-sandbox',
+    autoMode: true
+  });
+  assert.deepEqual(l.args, ['--dangerously-bypass-approvals-and-sandbox']);
+});
+
 test('a provider whose preset declares no auto flag gets nothing appended', () => {
   assert.deepEqual(launch({ requestCommand: 'opencode', autoMode: true }).args, []);
   assert.deepEqual(launch({ requestCommand: 'my-own-tool', autoMode: true }).args, []);

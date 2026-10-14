@@ -35,6 +35,7 @@ import type { WebContents } from 'electron';
 import type { HiveManager, HiveMessage } from './hive';
 import type { ControlRegistry } from './control';
 import { CLOSING_COMPLETE_RE, CLOSING_TIME_REMIND_MS } from '../shared/closingTime';
+import { RESEARCH_ID } from '../shared/research';
 
 export type ClosingTimePhase =
   | 'started' | 'progress' | 'complete' | 'timeout' | 'cancelled';
@@ -153,7 +154,9 @@ export class ClosingTimeController {
     this.workers = new Set(
       [...live].filter((id) => {
         const a = reg.agents[id];
-        return id !== this.godId && !!a && !a.isGod;
+        // Research holds no cards and reaches nobody's turn unchecked, so
+        // closing time neither waits on it nor steers it (ship review pass 3).
+        return id !== this.godId && id !== RESEARCH_ID && !!a && !a.isGod;
       })
     );
     this.acked = new Set();
@@ -301,9 +304,10 @@ export class ClosingTimeController {
     return { ok: true };
   }
 
-  /** Re-send the rows when a terminal ended mid-close, so its row goes. Only
-   *  for Michael or a team member being waited on: ephemeral workers end all
-   *  the time and are not part of closing time. */
+  /** Re-send the rows when a terminal ended or a team member was archived
+   *  mid-close, so its row goes. Only for Michael or a team member being
+   *  waited on: ephemeral workers end all the time and are not part of
+   *  closing time. */
   refresh(agentId?: string): void {
     if (!this.active || this.concluded) return;
     if (agentId !== undefined && agentId !== this.godId && !this.workers.has(agentId)) return;
@@ -318,9 +322,10 @@ export class ClosingTimeController {
   }
 
   /**
-   * A waited-on team member whose terminal ended can never ACK. Michael was
-   * told to wait for everyone, so he is told to stop waiting for this one, or
-   * he waits until the timeout while the rows look done (owner, 2026-09-29).
+   * A waited-on team member whose terminal ended, or who was archived, is off
+   * the list. Michael was told to wait for everyone, so he is told to stop
+   * waiting for this one, or he waits until the timeout while the rows look
+   * done (owner, 2026-09-29).
    * Marked told only once the note went out, so a failed note is retried on
    * the next row update.
    */
@@ -330,19 +335,19 @@ export class ClosingTimeController {
 
   private tellMichaelAboutEndedUnsafe(): void {
     const live = new Set(this.getLiveAgentIds());
-    const ended = [...this.workers].filter(
-      (id) => !this.acked.has(id) && !this.excused.has(id) && !this.toldEnded.has(id) && !live.has(id)
-    );
-    if (ended.length === 0) return;
     const reg = this.hive.registry();
+    const ended = [...this.workers].filter(
+      (id) => !this.acked.has(id) && !this.excused.has(id) && !this.toldEnded.has(id) && (!live.has(id) || reg.agents[id]?.archived)
+    );
     for (const id of ended) {
       const name = reg.agents[id]?.name ?? id;
+      const archived = live.has(id);
       try {
         this.hive.send({
           to: this.godId,
           act: 'inform',
-          subject: `Closing time: ${name}'s terminal ended`,
-          body: `${name} (${id}) is no longer running, so no CLOSING-TIME-ACK will come from them. Do not wait for it; send CLOSING-TIME-COMPLETE once everyone else has acknowledged.`
+          subject: archived ? `Closing time: ${name} was archived` : `Closing time: ${name}'s terminal ended`,
+          body: `${name} (${id}) ${archived ? 'was archived' : 'is no longer running'}, so no CLOSING-TIME-ACK will come from them. Do not wait for it; send CLOSING-TIME-COMPLETE once everyone else has acknowledged.`
         }, 'human');
         this.toldEnded.add(id);
       } catch (e) { console.error('[closing-time] ended mail:', e); }

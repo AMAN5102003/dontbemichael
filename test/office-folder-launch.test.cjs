@@ -141,3 +141,19 @@ test('a move copies only what is there', (t) => {
   assert.equal(homeFolderStatus(newHome).hasOffice, true);
   assert.equal(fs.existsSync(path.join(newHome, 'private')), false);
 });
+
+test('a move carries Research\'s stamp key, threads and raw originals', (t) => {
+  // Value: protects=asks waiting for Research are not swept as forged after a move, answers find their threads, and raw originals stay private; fails_when=copyOfficeData leaves them behind; why_new=api review pass 3; seam=none
+  const oldHome = tmp(t);
+  const newHome = path.join(tmp(t), 'moved');
+  const priv = path.join(oldHome, 'private');
+  fs.mkdirSync(path.join(priv, 'research-outbox', 'sent'), { recursive: true });
+  fs.writeFileSync(path.join(priv, 'research-stamp.key'), 'ab'.repeat(32));
+  fs.writeFileSync(path.join(priv, 'research-threads.json'), '[]');
+  fs.writeFileSync(path.join(priv, 'research-outbox', 'sent', 'r1.json'), '{}');
+  fs.mkdirSync(newHome, { recursive: true });
+  copyOfficeData(oldHome, newHome);
+  for (const f of ['research-stamp.key', 'research-threads.json', path.join('research-outbox', 'sent', 'r1.json')]) {
+    assert.ok(fs.existsSync(path.join(newHome, 'private', f)), f);
+  }
+});

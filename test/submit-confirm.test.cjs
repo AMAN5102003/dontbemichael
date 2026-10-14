@@ -16,7 +16,9 @@ const ts = require('typescript');
 const loadTs = require('./load-ts.cjs');
 
 const { confirmSubmit, PromptSubmits } = loadTs('src/shared/submitConfirm.ts');
+const { RunningToolCalls } = loadTs('src/renderer/src/hooks/runningToolCalls.ts');
 const { isClaudeProvider } = loadTs('src/shared/agentProvider.ts');
+const { isTerminalPrompt } = loadTs('src/shared/hookEvents.ts');
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 const instant = () => Promise.resolve();
 
@@ -49,12 +51,14 @@ function rendererSubmission(onPoll, breaker = 'healthy') {
     isClaudeProvider,
     useStore: { getState: () => ({ agents, updateAgent: (id, update) => Object.assign(agents.find((a) => a.id === id), update) }) },
     promptSubmits,
+    runningCalls: new RunningToolCalls(),
     confirmSubmit: (opts) => confirmSubmit({ ...opts, confirmMs: 100, sleep: async () => onPoll(runtime) }),
     isTerminalAutomationSafe: () => true,
     hasTerminalDraft: () => false,
     setTimeout: (callback) => { callback(); return 0; },
     breakerLevel: { current: { alice: breaker } },
     ACTION_AT_PROMPT: 'at prompt',
+    isTerminalPrompt,
     console: { warn: () => {} }
   };
   runtime = new Function('deps', `const { ${Object.keys(deps).join(', ')} } = deps;\n${compiled}\nreturn { submitToPty, onHook };`)(deps);
@@ -153,7 +157,7 @@ test('renderer sends slash commands without waiting for a prompt hook', async ()
 test('both typing paths wait for the agent to accept, Claude agents only', () => {
   // Value: protects=the renderer queue and the main wake watchdog both confirm; fails_when=either path goes back to fire and forget; why_new=new; seam=source pins
   const hive = read('src/renderer/src/hooks/useHive.ts');
-  assert.match(hive, /if \(e\.event === 'UserPromptSubmit'\) promptSubmits\.note\(e\.agentId\);/);
+  assert.match(hive, /if \(e\.event === 'UserPromptSubmit'\) \{ promptSubmits\.note\(e\.agentId\);/);
   assert.match(hive, /const agentId = isClaudeProvider\(provider\) && !text\.trimStart\(\)\.startsWith\('\/'\) \? useStore\.getState\(\)\.agents\.find\(\(a\) => a\.ptyId === ptyId\)\?\.id : undefined;/, 'slash commands fire no prompt hook, so they are not confirmed');
   assert.match(hive, /stillSafe: \(\) => isTerminalAutomationSafe\(ptyId\) && !hasTerminalDraft\(ptyId\)/, 'an extra Enter never lands on the owner typing or an open menu');
   const main = read('src/main/index.ts');

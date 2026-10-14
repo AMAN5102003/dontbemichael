@@ -234,7 +234,8 @@
       "connections": "Connections",
       "voice": "Voice",
       "memoryKnowledge": "Memory & Knowledge",
-      "companyProfile": "Company profile"
+      "companyProfile": "Company profile",
+      "research": "Research & privacy"
     },
     "changeHome": {
       "newHome": "New office folder",
@@ -685,7 +686,9 @@
     "provider": "Provider",
     "model": "Model",
     "modelCurrent": "{{model}} (current)",
-    "engineNote": "A new engine or model takes effect the next time this team member starts."
+    "engineNote": "A new engine or model takes effect the next time this team member starts.",
+    "researchEngine": "{{name}} runs only on Claude, where the privacy protection works.",
+    "researchName": "Name them anything. Whatever you call them, they stay your Research team member, the one who uses the internet."
   },
   "onboarding": {
     "damagedConfig": "Your saved settings could not be read, so setup starts again. The old file is kept at",
@@ -1481,6 +1484,9 @@
     "edit": "edit"
   },
   "kanban": {
+    "search": "Search tasks",
+    "everyone": "Everyone",
+    "member": "Team member",
     "count": "{{count}} tasks",
     "newWorkHint": "New work goes through {{godName}}",
     "colTodo": "To do",
@@ -1529,11 +1535,6 @@
     "closedByOwner": "Closed by owner",
     "nothingAsked": "Nothing asked",
     "nothingAskedTitle": "Blocked, but nothing on it waits on you. {{godName}} is told to ask you or move it.",
-    "searchPlaceholder": "Search tasks by title or keyword...",
-    "searchAria": "Search tasks",
-    "filterMember": "Filter by team member",
-    "allMembers": "All team members",
-    "clearFilters": "Clear filters",
     "showingFiltered": "Showing {{count}} of {{total}} tasks",
     "noMatchingTasks": "No tasks match your search or filters"
   },
@@ -1954,7 +1955,9 @@
     "connectorsPending": "Restarts when {{name}} is idle to apply.",
     "restartNow": "Restart now",
     "restarting": "Restarting {{name}} to apply…",
-    "restartFailed": "Couldn't restart {{name}}. It tries again shortly, or press Restart now."
+    "restartFailed": "Couldn't restart {{name}}. It tries again shortly, or press Restart now.",
+    "research": "{{name}} uses the internet and holds no office data: no mailboxes, connectors or schedules.",
+    "researchSettings": "Research & privacy settings"
   },
   "closingTime": {
     "listLabel": "Who is still working",
@@ -1971,6 +1974,7 @@
     "michaelWaiting": "waiting for the team",
     "michaelBoard": "updating the board",
     "minutes": "{{count}} min",
+    "agentWords": "“{{text}}”",
     "sendFailed": "Didn't send. Try again.",
     "michaelEnded": "terminal ended: Cancel and go back to work, or Force quit now",
     "confirmedCount": "{{acked}} / {{total}} workers confirmed",
@@ -2220,5 +2224,112 @@
     "info": "Your Claude plan reached its usage limit, so the team cannot work. Scheduled jobs still go out on time and wait in the inbox until the break ends. The team starts again on its own. A bigger Claude plan means fewer breaks.",
     "chip": "On a break until {{time}}",
     "chipUnknown": "On a break"
+  },
+  "officeStop": {
+    "title": "The office stopped",
+    "credit": "Your Anthropic account is out of credit.",
+    "creditAgain": "Still out of credit. Credit can take a few minutes to show.",
+    "signIn": "Your Claude account needs you to sign in again.",
+    "keyStopped": "The Anthropic API key stopped working.",
+    "checking": "Checking that work can start",
+    "addCredit": "Add credit",
+    "tryAgain": "Try again",
+    "signInAction": "Sign in",
+    "changeKey": "Change key",
+    "chip": "Office stopped",
+    "creditInfo": "Claude stopped the whole team because the Anthropic account has no credit left. Add credit on the Anthropic website, then press Try again. The office also checks again on its own every 15 minutes. Scheduled jobs wait in the inbox until then.",
+    "signInInfo": "Claude stopped the whole team because the Claude sign in expired. Sign in again and the team carries on where it stopped. Scheduled jobs wait in the inbox until then.",
+    "keyInfo": "Claude stopped the whole team because the Anthropic API key stopped working. Paste a new key and the team restarts and carries on. Scheduled jobs wait in the inbox until then."
+  },
+  "markdown": {
+    "opensInBrowser": "opens in your browser",
+    "opensInEmail": "opens your email app"
+  },
+  "crash": {
+    "line": "Something went wrong on this screen.",
+    "reload": "Reload"
+  },
+  "research": {
+    "title": "Research",
+    "tip": "{{name}}, the one team member who can use the internet. Sees no office data, only what your team sends, after the privacy check.",
+    "off": "Off. {{name}} can't look things up for your team.",
+    "on": "On. {{name}} looks things up for the team.",
+    "starting": "Hiring {{name}}…",
+    "stopping": "Turning off {{name}}…",
+    "failed": "{{name}} couldn't start.",
+    "turnOn": "Turn on",
+    "turnOff": "Turn off",
+    "tryAgain": "Try again",
+    "cancel": "Cancel",
+    "waitingOne": "1 ask is waiting. It goes back to the sender.",
+    "waitingMany": "{{count}} asks are waiting. They go back to the sender.",
+    "windows": "On Windows, {{name}} can still reach your office files.",
+    "windowsTip": "Windows can't fence in {{name}}'s commands yet, so the privacy check doesn't fully hold there.",
+    "sendTitle": "What your team may send to {{name}}",
+    "sendTip": "Every message to {{name}} is checked. Anything private goes back to the sender, and nothing leaves.",
+    "count": "{{allowed}} allowed, {{private}} private",
+    "usedWhenOn": "Used when {{name}} is on.",
+    "allowed": "Allowed",
+    "private": "Private",
+    "alwaysPrivate": "Always private",
+    "teamSummary": "Looks things up on the internet for the team, and sees no office data.",
+    "teamTag": "uses the internet",
+    "privacyCheck": "Privacy check",
+    "noticeTitle": "Your team no longer uses the internet",
+    "noticeBody": "This keeps your private data in. One team member, {{name}}, can look things up for them, after a privacy check. {{name}} is off until you turn them on.",
+    "noticeOpen": "Open Research & privacy",
+    "class": {
+      "places": {
+        "name": "Places",
+        "tip": "Countries, regions, cities, time zones."
+      },
+      "industry": {
+        "name": "Industry and market topics",
+        "tip": "Product types, trends, regulations, standards."
+      },
+      "dates": {
+        "name": "Dates and general timing",
+        "tip": "Next quarter, holidays, deadlines in general."
+      },
+      "general": {
+        "name": "General questions",
+        "tip": "How to, definitions, reference facts."
+      },
+      "names": {
+        "name": "People's names",
+        "tip": "Customers, staff, contacts."
+      },
+      "contact": {
+        "name": "Contact details",
+        "tip": "Emails, phone numbers, street addresses."
+      },
+      "companies": {
+        "name": "Company and brand names",
+        "tip": "Customers, suppliers, competitors, any named business."
+      },
+      "money": {
+        "name": "Money",
+        "tip": "Your prices, invoices, revenue, bank and card details."
+      },
+      "accounts": {
+        "name": "Account numbers and IDs",
+        "tip": "Customer IDs, order numbers, government IDs."
+      },
+      "health": {
+        "name": "Health and personal life",
+        "tip": "Medical, family, personal circumstances."
+      },
+      "quoted": {
+        "name": "Text from your files and email",
+        "tip": "Quoted passages from documents or messages."
+      },
+      "secrets": {
+        "name": "Passwords and keys",
+        "tip": "Passwords, API keys, tokens. Never sent, whatever you choose."
+      }
+    },
+    "otherEngines": "{{names}} run on another engine, so these rules don't reach them yet.",
+    "otherEnginesLabel": "Members on other engines",
+    "otherEnginesTip": "The app can fence in Claude agents only. A member on another engine keeps its own web tools and shell."
   }
 }

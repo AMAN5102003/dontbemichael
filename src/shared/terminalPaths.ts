@@ -75,11 +75,39 @@ export type PathAction = 'preview' | 'edit' | 'reveal';
  * `C:\Users\x\a.ts` starts at the backslash, and a drive-less `\Users\x\a.ts`
  * then looks RELATIVE and gets joined onto the agent's cwd.
  */
-const PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/])?[A-Za-z0-9_@.~/\\+-]*[A-Za-z0-9_@~/\\+-]\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?/g;
+// Only explicit path prefixes qualify for a whole quoted match; otherwise prose
+// such as "Update README.md" must fall through to the filename inside it.
+const PATH_TOKEN_RE = /"(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^"\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?"|'(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^'\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?'|`(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^`\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?`|(?:[A-Za-z]:[\\/])?[A-Za-z0-9_@.~/\\+-]*[A-Za-z0-9_@~/\\+-]\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?/g;
 
 /** A fresh matcher. The regex is stateful (`g`), so callers must never share one. */
 export function pathTokenMatcher(): RegExp {
   return new RegExp(PATH_TOKEN_RE.source, 'g');
+}
+
+/**
+ * The cell columns (1 based, first and last) a match covers on a terminal
+ * line, from its string offsets. A wide character (Chinese, Japanese) takes
+ * two cells but one character, so string offsets alone land on the wrong
+ * cells (ship review of #280). `cells` is the line as the terminal holds it:
+ * each cell's characters and width, width 0 for the second half of a wide one.
+ * A quoted match covers only what is inside its quotes.
+ */
+export function linkCellRange(
+  cells: ReadonlyArray<{ chars: string; width: number }>, start: number, end: number, raw: string
+): { startX: number; endX: number } | null {
+  let s = start;
+  let e = end;
+  const q = raw[0];
+  if ((q === '"' || q === "'" || q === '`') && raw.length > 2 && raw[raw.length - 1] === q) { s += 1; e -= 1; }
+  const colOf: number[] = [];
+  const widthOf: number[] = [];
+  cells.forEach((c, x) => {
+    if (c.width === 0) return;
+    const chars = c.chars || ' ';
+    for (let i = 0; i < chars.length; i++) { colOf.push(x + 1); widthOf.push(c.width); }
+  });
+  if (s >= e || e > colOf.length) return null;
+  return { startX: colOf[s], endX: colOf[e - 1] + widthOf[e - 1] - 1 };
 }
 
 /** Strip shell/prose wrapping and any trailing `:line` from a raw match. */

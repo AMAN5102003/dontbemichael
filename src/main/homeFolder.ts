@@ -59,7 +59,7 @@ export function homeReadyAtLaunch(cfg: { onboardingComplete?: boolean; harnessHo
  */
 export function copyOfficeData(oldHome: string, newHome: string): void {
   const pairs = ['hive', 'palace', 'roster.json', 'roster-backups'].map((sub): [string, string] => [join(oldHome, sub), join(newHome, sub)]);
-  for (const f of ['card-guard.json', 'house-rules-seen.json']) pairs.push([join(privateRoot(oldHome), f), join(privateRoot(newHome), f)]);
+  for (const f of ['card-guard.json', 'house-rules-seen.json', 'research-stamp.key', 'research-threads.json', 'research-outbox']) pairs.push([join(privateRoot(oldHome), f), join(privateRoot(newHome), f)]);
   pairs.push([privateOwnerDir(oldHome), privateOwnerDir(newHome)]);
   for (const [src, dest] of pairs) {
     if (!existsSync(src)) continue;

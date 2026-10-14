@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
-const { CostLedgerTotals } = loadTs('src/main/costLifetime.ts');
+const { CostLedgerTotals, lifetimeUsdFromLedger } = loadTs('src/main/costLifetime.ts');
 
 /** One ledger row in the exact shape appendCostLedger writes. */
 function row(agent, session, usd) {
@@ -166,3 +166,12 @@ test('a non-numeric usd is treated as 0 rather than NaN-poisoning the total', as
   assert.equal(Number.isFinite(t.usdFor('a')), true);
   assert.equal(t.usdFor('a'), 5);
 });
+
+test('lifetimeUsdFromLedger gives the same totals with or without a trailing newline', () => {
+  const lines = [row('a', 's1', 10), row('a', 's1', 0), row('a', 's1', 4)];
+  const withNewline = lifetimeUsdFromLedger(`${lines.join('\n')}\n`);
+  const withoutNewline = lifetimeUsdFromLedger(lines.join('\n'));
+  assert.equal(withNewline.get('a'), 14);
+  assert.equal(withoutNewline.get('a'), 14);
+});
+

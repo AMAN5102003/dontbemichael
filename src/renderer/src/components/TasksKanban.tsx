@@ -1,5 +1,5 @@
-import { askTitle } from './askHeadline';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { askTitle, askedAgo } from './askHeadline';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
@@ -11,9 +11,9 @@ import { useRtl } from '@/i18n/useDirection';
 import { useDialog } from '@/shell/useDialog';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
 
-export { openQuestion, openQuestions, waitsOnHuman, parseTasks, filterTasks, type HiveTask, type HumanQA } from './hiveTasks';
+export { openQuestion, openQuestions, waitsOnHuman, parseTasks, type HiveTask, type HumanQA } from './hiveTasks';
 import { refreshNeedsYou, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
-import { resultHeadline, waitsOnHuman, filterTasks, type HiveTask, type TaskStatus, nextAtLabel } from './hiveTasks';
+import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches } from './hiveTasks';
 import { FileText, useAskFileChecks } from './FileChip';
 import { blockedWithNothingAsked, michaelCardState, type WorkHours } from '@shared/ownerRequests';
 import { isAnswered, isWithdrawn } from '@shared/askMeRouting';
@@ -124,46 +124,19 @@ export function TasksKanban() {
       : undefined, [agents, restorableAgents, godName]);
 
   const [showAllDone, setShowAllDone] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<Status | 'all'>('all');
-  const [memberFilter, setMemberFilter] = useState<string>('all');
-
-  const assignees = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const a of agents) {
-      if (a.id && a.name) map.set(a.id, a.name);
-    }
-    for (const a of restorableAgents) {
-      if (a.id && a.name && !map.has(a.id)) map.set(a.id, a.name);
-    }
-    for (const t of tasks) {
-      if (t.assignee && !map.has(t.assignee)) {
-        map.set(t.assignee, nameFor(t.assignee) ?? t.assignee);
-      }
-    }
-    return Array.from(map.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [agents, restorableAgents, tasks, nameFor]);
-
-  const filteredTasks = useMemo(() => {
-    return filterTasks(
-      tasks,
-      { query: searchQuery, status: statusFilter, member: memberFilter },
-      nameFor
-    );
-  }, [tasks, searchQuery, statusFilter, memberFilter, nameFor]);
-
-  const hasActiveFilter = Boolean(searchQuery.trim() || statusFilter !== 'all' || memberFilter !== 'all');
-
-  const handleClearFilters = useCallback(() => {
-    setSearchQuery('');
-    setStatusFilter('all');
-    setMemberFilter('all');
-  }, []);
-
-  const visibleColumns = statusFilter === 'all' ? COLUMNS : COLUMNS.filter((c) => c.key === statusFilter);
-
+  // Search and one team member (issue 158). While either is set every match
+  // shows, Done included, and the counts are of the matches.
+  const [query, setQuery] = useState('');
+  const [member, setMember] = useState('');
+  const [status, setStatus] = useState<Status | ''>('');
+  const filter = { query, assignee: member, nameFor };
+  const filtering = filterActive(filter);
+  const shown = filtering ? tasks.filter((x) => taskMatches(x, filter)) : tasks;
+  const isFiltered = filtering || Boolean(status);
+  const visibleColumns = status ? COLUMNS.filter((c) => c.key === status) : COLUMNS;
+  const members = [...new Set(tasks.map((x) => x.assignee).filter((a): a is string => !!a))]
+    .map((id) => ({ id, name: nameFor(id) ?? id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative', padding: '18px 24px 0' }}>
       {/* Header (DESIGN.md 7.20): the board's counts, and why there is no add
@@ -172,13 +145,13 @@ export function TasksKanban() {
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--cth-ink)' }}>{t('floorView.tasks')}</h1>
         <InfoTip text={t('floorView.tasksIntro')} />
         {COLUMNS.map((col) => {
-          const isSelected = statusFilter === col.key;
+          const isSelected = status === col.key;
           return (
             <button
               key={col.key}
               type="button"
               aria-pressed={isSelected}
-              onClick={() => setStatusFilter((curr) => curr === col.key ? 'all' : col.key)}
+              onClick={() => setStatus((curr) => curr === col.key ? '' : col.key)}
               title={t(col.labelKey)}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: '0 10px', borderRadius: 999,
@@ -192,7 +165,7 @@ export function TasksKanban() {
             >
               <i style={{ width: 6, height: 6, borderRadius: 2, background: col.accent, display: 'block' }} />
               {t(col.labelKey)}
-              <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600 }}>{tasks.filter((x) => x.status === col.key).length}</b>
+              <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600 }}>{shown.filter((x) => x.status === col.key).length}</b>
             </button>
           );
         })}
@@ -204,86 +177,58 @@ export function TasksKanban() {
         </span>
       </div>
 
-      {/* Search and filters toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', minWidth: 200, maxWidth: 300, flex: '1 1 auto' }}>
-          <svg style={{ position: 'absolute', insetInlineStart: 9, pointerEvents: 'none', color: 'var(--cth-ink-3)' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-          </svg>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('kanban.searchPlaceholder')}
-            aria-label={t('kanban.searchAria')}
-            style={{
-              width: '100%', height: 30, paddingInlineStart: 28, paddingInlineEnd: searchQuery ? 28 : 10,
-              borderRadius: 'var(--cth-r-md)', border: 'none', background: 'var(--cth-card)',
-              boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', color: 'var(--cth-ink)',
-              fontFamily: 'var(--cth-font-ui)', fontSize: 12, outline: 'none'
-            }}
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              aria-label={t('common.clear')}
-              title={t('common.clear')}
-              style={{
-                position: 'absolute', insetInlineEnd: 6, width: 18, height: 18, borderRadius: '50%',
-                border: 'none', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)',
-                cursor: 'pointer', fontSize: 10, display: 'grid', placeItems: 'center', padding: 0
-              }}
-            >
-              ✕
-            </button>
-          )}
-        </div>
-
-        <select
-          value={memberFilter}
-          onChange={(e) => setMemberFilter(e.target.value)}
-          aria-label={t('kanban.filterMember')}
-          title={t('kanban.filterMember')}
+      {/* Find a card: search and one team member (issue 158). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap', marginBottom: 12 }}>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('kanban.search')}
+          aria-label={t('kanban.search')}
+          className="cth-input"
           style={{
-            height: 30, padding: '0 8px', borderRadius: 'var(--cth-r-md)', border: 'none', cursor: 'pointer',
-            background: memberFilter !== 'all' ? 'var(--cth-neutral-soft)' : 'var(--cth-card)',
-            color: 'var(--cth-ink)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
-            fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: memberFilter !== 'all' ? 600 : 400
+            borderRadius: 'var(--cth-r-md)', flex: '0 1 260px', minWidth: 140, height: 30, padding: '0 10px',
+            background: 'var(--cth-card)', color: 'var(--cth-ink)', border: 'none', outline: 'none',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 12.5
+          }}
+        />
+        <select
+          value={member}
+          onChange={(e) => setMember(e.target.value)}
+          aria-label={t('kanban.member')}
+          style={{
+            borderRadius: 'var(--cth-r-md)', height: 30, padding: '0 8px', maxWidth: 220,
+            background: 'var(--cth-card)', color: 'var(--cth-ink)', border: 'none',
+            boxShadow: 'inset 0 0 0 1px var(--cth-line-input)', fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, cursor: 'pointer'
           }}
         >
-          <option value="all">{t('kanban.allMembers')}</option>
+          <option value="">{t('kanban.everyone')}</option>
           <option value="unassigned">{t('kanban.unassigned')}</option>
-          {assignees.map((a) => (
-            <option key={a.id} value={a.id}>{a.name}</option>
-          ))}
+          {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
-
-        {hasActiveFilter && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginInlineStart: 'auto' }}>
-            <span style={{ fontSize: 11.5, color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-mono)' }}>
-              {t('kanban.showingFiltered', { count: filteredTasks.length, total: tasks.length })}
+        {isFiltered && (
+          <>
+            <button type="button" onClick={() => { setQuery(''); setMember(''); setStatus(''); }} style={{
+              minHeight: 28, padding: '0 8px', border: 'none', borderRadius: 'var(--cth-r-md)', background: 'transparent', cursor: 'pointer',
+              fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)'
+            }}>{t('common.clear')}</button>
+            <span style={{ marginInlineStart: 'auto', fontSize: 11.5, color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-ui)' }}>
+              {t('kanban.showingFiltered', { count: (status ? shown.filter((x) => x.status === status) : shown).length, total: tasks.length })}
             </span>
-            <PixelButton
-              variant="ghost"
-              size="sm"
-              onClick={handleClearFilters}
-            >
-              {t('kanban.clearFilters')}
-            </PixelButton>
-          </div>
+          </>
         )}
       </div>
 
       {/* Columns */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
         {visibleColumns.map((col) => {
-          const all = filteredTasks.filter((x) => x.status === col.key);
+          const all = shown.filter((x) => x.status === col.key);
           // Done reads newest first, folded or not (it is kept in creation order).
-          const cards = col.key === 'done' ? (showAllDone ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : all;
+          // A filter shows every match, so an old Done card can be found.
+          const cards = col.key === 'done' ? (showAllDone || filtering ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : all;
           return (
             <div key={col.key} style={{
-              flex: statusFilter === 'all' ? '1 1 0' : '0 0 360px', minWidth: 200, maxWidth: statusFilter === 'all' ? undefined : 480, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
+              flex: status ? '0 0 360px' : '1 1 0', minWidth: 200, maxWidth: status ? 480 : undefined, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
               background: col.key === 'blocked' ? 'var(--cth-coral-soft)' : 'color-mix(in srgb, var(--cth-floor) 55%, transparent)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '12px 14px 8px', fontSize: 13, fontWeight: 600, color: col.key === 'blocked' ? col.text : 'var(--cth-ink)' }}>
@@ -294,7 +239,7 @@ export function TasksKanban() {
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '2px 10px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {all.length === 0 && (
                   <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>
-                    {hasActiveFilter ? t('kanban.noMatchingTasks') : t('kanban.empty')}
+                    {isFiltered ? t('kanban.noMatchingTasks') : t('kanban.empty')}
                   </div>
                 )}
                 {cards.map((x) => (
@@ -311,7 +256,7 @@ export function TasksKanban() {
                     onDismiss={() => dismissTask(x.id)}
                   />
                 ))}
-                {col.key === 'done' && all.length > DONE_SHOWN && (
+                {col.key === 'done' && !filtering && all.length > DONE_SHOWN && (
                   <button onClick={() => setShowAllDone((v) => !v)} style={{
                     alignSelf: 'flex-start', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
                     fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, color: 'var(--cth-ink-3)'
@@ -605,12 +550,16 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
             <div data-next-at style={{ fontSize: 12.5, color: 'var(--cth-ink)' }}>{t('kanban.nextAt', { when: next })}</div>
           )}
 
-          {/* The owner Q&A trail: every decision documented on the card. */}
+          {/* The owner Q&A trail: every decision documented on the card, newest
+              first like Ask me (owner, 2026-10-12), each with when it was asked.
+              The key stays the entry's place in the ledger, so a new ask does not
+              shift the others. Agents write tasks.json, so check the time's type. */}
           {(task.humanQA?.length ?? 0) > 0 && (
             <div>{label(t('kanban.humanQA'))}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {task.humanQA!.map((e, i) => {
+                {task.humanQA!.map((e, i) => [e, i] as const).reverse().map(([e, i]) => {
                   const open = !isAnswered(e) && !isWithdrawn(e);
+                  const ago = askedAgo(typeof e.askedAt === 'string' ? e.askedAt : undefined, Date.now(), i18n.language, t('askMe.justNow'));
                   return (
                     <div key={i} style={{
                       padding: '10px 12px', borderRadius: 'var(--cth-r-lg)',
@@ -620,6 +569,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{t('kanban.question')}</span>
+                        {ago && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{ago}</span>}
                         {open && <span style={{ marginInlineStart: 'auto', padding: '1px 8px', borderRadius: 999, background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)', fontSize: 10.5, fontWeight: 600 }}>{t('kanban.awaitingAnswer')}</span>}
                       </div>
                       <FileText source={e.q} who={{ raisedBy: e.raisedBy, assignee: qaAssignee }} checks={qaFiles[e.raisedBy ?? ''] ?? {}} />
