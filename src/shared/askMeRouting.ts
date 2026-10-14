@@ -54,6 +54,9 @@ export function cardText(s: string | undefined, max = 120): string {
   return one.length > max ? `${one.slice(0, max - 1)}…` : one;
 }
 
+/** Most of a question kept in Michael's request; the card has all of it. */
+const QUESTION_MAX = 2000;
+
 /**
  * The messages an answer sends (docs/designs/card-lifecycle.md): one, a REQUEST
  * to Michael about the card, so the answer is his open work until he closes it
@@ -74,7 +77,9 @@ export function answerMessages(p: {
   const title = cardText(p.title);
   // The card id comes from the ledger agents write, so it is cleaned like the title.
   const id = cardText(p.taskId, 60);
-  const qa = [`Q: ${p.q}`, `A: ${p.a}`];
+  // The question is the raiser's text, so it is folded to one labelled line
+  // like the title. The answer is the owner's own words and stays as written.
+  const qa = [`Q (as written on the card): ${cardText(p.q, QUESTION_MAX)}`, `A: ${p.a}`];
   const forMichael: AnswerMessage = {
     to: MICHAEL_ID,
     act: 'request',
