@@ -10,8 +10,10 @@ const read = (p) => fs.readFileSync(path.join(__dirname, '..', p), 'utf8');
 const source = read('src/renderer/src/components/FileChip.tsx');
 const tree = ts.createSourceFile('FileChip.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 let handler;
+const menuHandlers = {};
 function visit(node) {
   if (ts.isVariableDeclaration(node) && node.name.getText(tree) === 'copyPath') handler = node.getText(tree);
+  if (ts.isVariableDeclaration(node) && ['showMenu', 'menuKeyDown'].includes(node.name.getText(tree))) menuHandlers[node.name.getText(tree)] = node.getText(tree);
   ts.forEachChild(node, visit);
 }
 visit(tree);
@@ -91,12 +93,56 @@ test('another click while copying cannot send another clipboard request', async 
   assert.deepEqual(state.copied, []);
 });
 
+function setupMenu(check) {
+  const state = { open: false, copy: 'done', prevented: 0, stopped: 0 };
+  const code = ts.transpileModule(`const ${menuHandlers.showMenu}; const ${menuHandlers.menuKeyDown};`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 }
+  }).outputText;
+  const handlers = new Function('check', 'missing', 'setCopy', 'setOpen', `${code}\nreturn { showMenu, menuKeyDown };`)(
+    check, check?.verdict === 'missing', (v) => { state.copy = v; }, (v) => { state.open = v; }
+  );
+  const event = (key = '', shiftKey = false) => ({
+    key, shiftKey,
+    preventDefault: () => { state.prevented++; },
+    stopPropagation: () => { state.stopped++; }
+  });
+  return { ...handlers, state, event };
+}
+
+test('right-click, Shift+F10 and the context menu key open the same menu without activating Open', () => {
+  for (const request of ['right-click', 'Shift+F10', 'ContextMenu']) {
+    const { showMenu, menuKeyDown, state, event } = setupMenu({ verdict: 'open' });
+    if (request === 'right-click') showMenu(event());
+    else menuKeyDown(event(request === 'Shift+F10' ? 'F10' : request, request === 'Shift+F10'));
+    assert.deepEqual(state, { open: true, copy: 'idle', prevented: 1, stopped: 1 }, request);
+  }
+  for (const key of ['Enter', ' ', 'F10', 'ArrowDown']) {
+    const { menuKeyDown, state, event } = setupMenu({ verdict: 'open' });
+    menuKeyDown(event(key));
+    assert.deepEqual(state, { open: false, copy: 'done', prevented: 0, stopped: 0 }, `${key} keeps its normal behavior`);
+  }
+});
+
+test('Loading and Not found chips never intercept requests for a file menu', () => {
+  for (const check of [undefined, { verdict: 'missing' }]) {
+    const { showMenu, menuKeyDown, state, event } = setupMenu(check);
+    showMenu(event());
+    menuKeyDown(event('F10', true));
+    menuKeyDown(event('ContextMenu'));
+    assert.deepEqual(state, { open: false, copy: 'done', prevented: 0, stopped: 0 });
+  }
+});
+
 test('file actions use an accessible menu outside clipping cards and translated owner text', () => {
   assert.match(source, /createPortal\([\s\S]*document\.body/);
-  assert.match(source, /aria-haspopup="menu" aria-expanded=\{open\}/);
+  assert.match(source, /onContextMenu=\{showMenu\}/);
+  assert.match(source, /onKeyDown=\{menuKeyDown\}/);
+  assert.match(source, /aria-haspopup=\{check \? 'menu' : undefined\}/);
   assert.match(source, /e\.key === 'Escape'[\s\S]*e\.stopPropagation\(\); close\(\);/);
   assert.match(source, /if \(missing\) \{[\s\S]*?<span[\s\S]*?\n  \}/);
-  assert.match(source, /\{check && <FileActions/);
+  assert.match(source, /\{check && open && createPortal/);
+  assert.equal((source.match(/className="cth-file-chip"/g) ?? []).length, 1, 'one chip button, with no separate actions button');
+  assert.doesNotMatch(source, /⋯|<FileActions/);
   for (const locale of ['en', 'zh-CN', 'ar']) {
     const strings = JSON.parse(read(`src/renderer/src/i18n/locales/${locale}.json`)).askMe;
     for (const key of ['fileActionsLabel', 'fileCopyPath', 'filePathCopied', 'fileCopyFailed']) assert.ok(strings[key], `${locale}: ${key}`);

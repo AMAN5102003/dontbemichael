@@ -77,7 +77,7 @@ export function useAskFileChecks(
   return byRaiser;
 }
 
-/** The chip itself (DD1): soft, with a separate actions menu; Not found is text. */
+/** The chip itself (DD1): one button with a context menu; Not found is text. */
 export function FileChip({ path, check, who, onGone }: {
   path: string;
   check?: AskFileCheck;
@@ -100,14 +100,7 @@ export function FileChip({ path, check, who, onGone }: {
   const nameEl = (
     <span dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200, unicodeBidi: 'isolate' }}>{name}</span>
   );
-  if (missing) {
-    return (
-      <span title={`⁨${path}⁩`} style={{ ...chip, background: 'transparent', boxShadow: 'inset 0 0 0 1px var(--cth-line)', color: 'var(--cth-ink-3)' }}>
-        <Icon name={icon} size={0.875} />{nameEl}<span style={{ fontWeight: 400 }}>{t('askMe.fileNotFound')}</span>
-      </span>
-    );
-  }
-  const open = () => {
+  const openFile = () => {
     if (!check) return;
     if (check.tab) {
       useStore.getState().openFileTab({ id: check.path, title: fileTitle(check.path), kind: kindOf(check.path), who });
@@ -118,40 +111,6 @@ export function FileChip({ path, check, who, onGone }: {
       .catch(() => undefined);
   };
   const labels = [t('askMe.fileOpen'), t(win ? 'askMe.fileRevealWindows' : 'askMe.fileReveal')];
-  return (
-    <span style={{ display: 'inline-flex', maxWidth: '100%', verticalAlign: 'middle' }}>
-      <button
-        type="button"
-        className="cth-file-chip"
-        onClick={open}
-        disabled={!check}
-        title={`⁨${path}⁩`}
-        aria-label={reveal
-          ? t(win ? 'askMe.fileRevealLabelWindows' : 'askMe.fileRevealLabel', { name })
-          : t('askMe.fileOpenLabel', { name })}
-        style={{ ...chip, minWidth: 0, background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink)', cursor: check ? 'pointer' : 'default' }}
-      >
-        <span aria-hidden style={{ color: 'var(--cth-ink-3)', display: 'grid', placeItems: 'center' }}><Icon name={icon} size={0.875} /></span>
-        {nameEl}
-        {/* Both labels share one cell, so the chip is as wide as the longer one
-            whichever shows: nothing jumps when the check lands. */}
-        <span aria-hidden style={{ display: 'inline-grid', color: 'var(--cth-indigo-text)', fontWeight: 600 }}>
-          {labels.map((l, j) => (
-            <span key={j} style={{ gridArea: '1 / 1', visibility: check && (j === 1) === reveal ? 'visible' : 'hidden' }}>{l}</span>
-          ))}
-        </span>
-      </button>
-      {check && <FileActions path={path} who={who} name={name} label={labels[reveal ? 1 : 0]} onOpen={open} onGone={onGone} />}
-    </span>
-  );
-}
-
-/** A portal keeps actions visible inside scrolling replies and Task detail. */
-function FileActions({ path, who, name, label, onOpen, onGone }: {
-  path: string; who: Who; name: string; label: string;
-  onOpen: () => void; onGone: (path: string) => void;
-}) {
-  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [copy, setCopy] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
   const [position, setPosition] = useState({ top: 0, left: 0 });
@@ -159,6 +118,8 @@ function FileActions({ path, who, name, label, onOpen, onGone }: {
   const menu = useRef<HTMLDivElement>(null);
   const id = useId();
   const close = () => { setOpen(false); trigger.current?.focus(); };
+
+  useEffect(() => { if (!check || missing) setOpen(false); }, [!!check, missing]);
 
   useLayoutEffect(() => {
     if (!open || !trigger.current || !menu.current) return;
@@ -200,16 +161,52 @@ function FileActions({ path, who, name, label, onOpen, onGone }: {
     } catch { setCopy('error'); }
   };
 
+  const showMenu = (e: { preventDefault: () => void; stopPropagation: () => void }) => {
+    if (!check || missing) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setCopy('idle');
+    setOpen(true);
+  };
+  const menuKeyDown = (e: { key: string; shiftKey: boolean; preventDefault: () => void; stopPropagation: () => void }) => {
+    if ((e.shiftKey && e.key === 'F10') || e.key === 'ContextMenu') showMenu(e);
+  };
+
+  if (missing) {
+    return (
+      <span title={`⁨${path}⁩`} style={{ ...chip, background: 'transparent', boxShadow: 'inset 0 0 0 1px var(--cth-line)', color: 'var(--cth-ink-3)' }}>
+        <Icon name={icon} size={0.875} />{nameEl}<span style={{ fontWeight: 400 }}>{t('askMe.fileNotFound')}</span>
+      </span>
+    );
+  }
   return <>
     <button
-      ref={trigger} type="button" className="cth-file-chip"
-      aria-label={t('askMe.fileActionsLabel', { name })}
-      aria-haspopup="menu" aria-expanded={open} aria-controls={open ? id : undefined}
-      onClick={() => { setCopy('idle'); setOpen((v) => !v); }}
-      onKeyDown={(e) => { if (e.key === 'ArrowDown') { e.preventDefault(); setCopy('idle'); setOpen(true); } }}
-      style={{ height: 24, flexShrink: 0, padding: '0 6px', margin: '1px 0', border: 0, borderRadius: 'var(--cth-r-sm)', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-ui)', cursor: 'pointer' }}
-    ><span aria-hidden>⋯</span></button>
-    {open && createPortal(
+      ref={trigger} type="button"
+      className="cth-file-chip"
+      onClick={openFile}
+      onContextMenu={showMenu}
+      onKeyDown={menuKeyDown}
+      aria-haspopup={check ? 'menu' : undefined}
+      aria-expanded={check ? open : undefined}
+      aria-controls={open ? id : undefined}
+      disabled={!check}
+      title={`⁨${path}⁩`}
+      aria-label={reveal
+        ? t(win ? 'askMe.fileRevealLabelWindows' : 'askMe.fileRevealLabel', { name })
+        : t('askMe.fileOpenLabel', { name })}
+      style={{ ...chip, minWidth: 0, background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink)', cursor: check ? 'pointer' : 'default' }}
+    >
+      <span aria-hidden style={{ color: 'var(--cth-ink-3)', display: 'grid', placeItems: 'center' }}><Icon name={icon} size={0.875} /></span>
+      {nameEl}
+      {/* Both labels share one cell, so the chip is as wide as the longer one
+          whichever shows: nothing jumps when the check lands. */}
+      <span aria-hidden style={{ display: 'inline-grid', color: 'var(--cth-indigo-text)', fontWeight: 600 }}>
+        {labels.map((l, j) => (
+          <span key={j} style={{ gridArea: '1 / 1', visibility: check && (j === 1) === reveal ? 'visible' : 'hidden' }}>{l}</span>
+        ))}
+      </span>
+    </button>
+    {check && open && createPortal(
       <div ref={menu} id={id} role="menu" aria-label={t('askMe.fileActionsLabel', { name })}
         onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOpen(false); }}
         onKeyDown={(e) => {
@@ -224,7 +221,7 @@ function FileActions({ path, who, name, label, onOpen, onGone }: {
         }}
         style={{ position: 'fixed', ...position, zIndex: 400, minWidth: 190, maxWidth: 'calc(100vw - 16px)', padding: 6, display: 'flex', flexDirection: 'column', background: 'var(--cth-card)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-lg)', fontFamily: 'var(--cth-font-ui)' }}
       >
-        <button type="button" role="menuitem" tabIndex={-1} className="cth-file-action" onClick={() => { close(); onOpen(); }}>{label}</button>
+        <button type="button" role="menuitem" tabIndex={-1} className="cth-file-action" onClick={() => { close(); openFile(); }}>{labels[reveal ? 1 : 0]}</button>
         <button type="button" role="menuitem" tabIndex={-1} className="cth-file-action" aria-disabled={copy === 'busy'} onClick={() => void copyPath()}>
           {t(copy === 'done' ? 'askMe.filePathCopied' : 'askMe.fileCopyPath')}
         </button>
