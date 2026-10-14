@@ -175,6 +175,13 @@ export function ResearchPrivacySettings({ config, classes, onClassesChange }: {
             <InfoTip label={t('research.otherEnginesLabel')} text={t('research.otherEnginesTip')} />
           </div>
         )}
+        {/* Windows has no sandbox: only the team's web tools are refused there. */}
+        {win && (
+          <div style={{ ...hint, marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            {t('research.windowsTeam')}
+            <InfoTip label={t('research.windowsTeam')} text={t('research.windowsTeamTip', { name: researchName })} />
+          </div>
+        )}
       </div>
     </>
   );

@@ -2322,6 +2322,8 @@
     "waitingMany": "有 {{count}} 个请求在等待。它们会退回给发送者。",
     "windows": "在 Windows 上，{{name}} 仍可访问你的办公室文件。",
     "windowsTip": "Windows 目前还无法限制 {{name}} 的命令，因此隐私检查在那里不能完全生效。",
+    "windowsTeam": "在 Windows 上，团队的命令仍可访问互联网。",
+    "windowsTeamTip": "Windows 目前还无法阻止团队的命令访问互联网：那里只会拒绝他们的网页工具。在 Mac 上，只有 {{name}} 使用互联网。",
     "sendTitle": "你的团队可以发给 {{name}} 的内容",
     "sendTip": "发给 {{name}} 的每条消息都会被检查。任何隐私内容都会退回给发送者，不会外泄。",
     "count": "{{allowed}} 项允许，{{private}} 项隐私",
