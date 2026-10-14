@@ -1175,6 +1175,8 @@
     "labelHint": "Names the job. How it is done comes from the Work style; the focus area says what each run looks at.",
     "officeEmpty": "No one on the team has a job on a clock turned on.",
     "emptyAgent": "{{name}} has no jobs on a clock yet.",
+    "suggestedJob": "Suggested: {{title}}, {{schedule}}",
+    "addSuggestedJob": "Add {{title}} paused",
     "addFor": "add a schedule for {{name}}",
     "agentSummary": "{{name}} runs {{count}} job on a clock.",
     "agentSummaryPlural": "{{name}} runs {{count}} jobs on a clock.",

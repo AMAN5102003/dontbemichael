@@ -1175,6 +1175,8 @@
     "labelHint": "اسم المهمة. طريقة العمل من أسلوب العمل؛ ومحور التركيز يحدد ما تنظر فيه كل مرة.",
     "officeEmpty": "لا أحد في الفريق لديه عمل مجدول مفعّل.",
     "emptyAgent": "ليس لدى {{name}} أعمال مجدولة بعد.",
+    "suggestedJob": "مقترح: {{title}}، {{schedule}}",
+    "addSuggestedJob": "إضافة {{title}} بحالة الإيقاف المؤقت",
     "addFor": "أضف موعدًا لـ {{name}}",
     "agentSummary": "لدى {{name}} عمل مجدول واحد ({{count}}).",
     "agentSummaryPlural": "لدى {{name}} {{count}} أعمال مجدولة.",

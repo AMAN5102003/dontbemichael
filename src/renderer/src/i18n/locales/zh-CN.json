@@ -1175,6 +1175,8 @@
     "labelHint": "任务名称。做法来自工作方式；重点说明每次运行关注什么。",
     "officeEmpty": "团队里还没有人开启定时工作。",
     "emptyAgent": "{{name}} 还没有定时工作。",
+    "suggestedJob": "建议：{{title}}，{{schedule}}",
+    "addSuggestedJob": "添加已暂停的 {{title}}",
     "addFor": "为 {{name}} 添加定时任务",
     "agentSummary": "{{name}} 有 {{count}} 项定时工作。",
     "agentSummaryPlural": "{{name}} 有 {{count}} 项定时工作。",

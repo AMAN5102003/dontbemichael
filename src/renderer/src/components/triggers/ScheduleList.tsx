@@ -14,6 +14,7 @@ import { formatTimes, normalizeTimes } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
 import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
+import { pausedStarterMission, starterSuggestionsFor, type StarterSuggestion } from '@shared/starterJobs';
 import { useRtl } from '@/i18n/useDirection';
 
 /**
@@ -528,7 +529,9 @@ function useNameOf(): (id: string) => string {
 }
 
 /** One agent's own schedules, editable. `agentId` is its floor id. */
-export function AgentSchedules({ agentId, agentName }: { agentId: string; agentName: string }) {
+export function AgentSchedules({ agentId, agentName, businessType, sourceCard }: {
+  agentId: string; agentName: string; businessType?: string; sourceCard?: string;
+}) {
   const { t } = useTranslation();
   const { missions, status, retry } = useMissions();
   const godId = useGodId();
@@ -538,6 +541,37 @@ export function AgentSchedules({ agentId, agentName }: { agentId: string; agentN
   const isGod = agentId === godId;
   // Michael's schedules keep the 'god' alias the router understands.
   const to = isGod ? GOD_ALIAS : agentId;
+  const [suggestionData, setSuggestionData] = useState<{ key: string; items: StarterSuggestion[] } | null>(null);
+  const { busy: suggestionBusy, failed: suggestionFailed, run: saveSuggestion } = useSaveOp();
+  const suggestionKey = `${agentId}:${businessType ?? ''}:${sourceCard ?? ''}`;
+  const suggestions = suggestionData?.key === suggestionKey ? suggestionData.items : [];
+
+  useEffect(() => {
+    let alive = true;
+    setSuggestionData(null);
+    if (status !== 'ready' || mine.length !== 0 || isGod) return;
+    void window.cth.packsList()
+      .then(({ packs, core }) => {
+        if (alive) setSuggestionData({
+          key: suggestionKey,
+          items: starterSuggestionsFor([...packs.map((p) => p.pack), core], businessType, agentId, sourceCard)
+        });
+      })
+      .catch(() => { /* The manual add button still works if packs cannot load. */ });
+    return () => { alive = false; };
+  }, [agentId, businessType, sourceCard, suggestionKey, status, mine.length, isGod]);
+
+  const addSuggestion = (suggestion: StarterSuggestion): void => {
+    if (suggestionBusy || mine.length !== 0) return;
+    const mission = pausedStarterMission(
+      suggestion, to, missions, godId, (i) => `m_${Date.now().toString(36)}_${agentId}_${i}`
+    );
+    if (!mission) return;
+    void saveSuggestion(() => window.cth.upsertMission(mission), () => {
+      setSuggestionData(null);
+      refreshMissions();
+    });
+  };
 
   const waiting = loadState(status, missions.length === 0, t('schedulesSection.loadError', { name: agentName }), retry, t);
   if (waiting) return waiting;
@@ -572,6 +606,28 @@ export function AgentSchedules({ agentId, agentName }: { agentId: string; agentN
           />
         ))}
       </div>
+      {mine.length === 0 && suggestions.length > 0 && (
+        <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
+          {suggestions.map((suggestion, i) => (
+            <li key={`${suggestion.job.agentId}:${suggestion.job.title}:${i}`} style={{
+              display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+              padding: '8px 0', borderTop: '1px solid var(--cth-ink-100)'
+            }}>
+              <span style={{ flex: '1 1 200px', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
+                {t('schedulesSection.suggestedJob', { title: suggestion.job.title, schedule: suggestion.job.schedule })}
+              </span>
+              <PixelButton
+                variant="secondary"
+                size="sm"
+                disabled={suggestionBusy}
+                ariaLabel={t('schedulesSection.addSuggestedJob', { title: suggestion.job.title })}
+                onClick={() => addSuggestion(suggestion)}
+              >{t('common.add')}</PixelButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {mine.length === 0 && suggestionFailed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
       <AddSchedule to={to} ownerName={agentName} focusOwner={focusOwner} />
     </div>
   );
