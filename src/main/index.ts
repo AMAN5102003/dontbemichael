@@ -1,23 +1,29 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
+import { ownerLedger } from '../shared/taskLedger';
+import { ownValue } from '../shared/ownValue';
 import { execFile, spawn } from 'node:child_process';
 import {
-  rmSync, existsSync, readFileSync, readdirSync, statSync, cpSync, writeFileSync,
+  rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
   unlinkSync, mkdirSync, renameSync, createWriteStream, copyFileSync, lstatSync,
-  readlinkSync, symlinkSync, watch as watchFs
+  readlinkSync, symlinkSync, realpathSync, watch as watchFs
 } from 'node:fs';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { join, resolve, sep, basename, dirname, isAbsolute } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { request as httpsRequest } from 'node:https';
 import { PtyManager, type ProcessLaunch, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath } from './shellEnv';
 import { buildPtyEnv } from './ptyEnv';
+import { isSameOrInside } from './pathInside';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
   claudeAuthStatusCommand, findClaudeFast, isEngineSetupPty, makeClaudeAuthReader, makeNoticeCoalescer, readEngineSetupStatus,
   shouldStartInstall, type EngineSetupStatus, type KeyCheckFetch
 } from './engineSetup';
-import { setHiddenClaudeAuthEnv } from './hiddenClaude';
+import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
+import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
+import { dataClassSettings } from '../shared/dataClasses';
+import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_WORK_STYLE } from '../shared/research';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -25,7 +31,7 @@ import {
   modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
 } from './config';
 import { terminalLaunches } from './terminalAtFolder';
-import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileRootsFor, resolveAskFileRoots, opensAsFolder, readAskFile, type AskFileAgent } from './fs';
+import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
 import { answerMessages, cardConversation, mergeHumanQA, MICHAEL_ID, raiserOf } from '../shared/askMeRouting';
 import { FIRST_TASK_EDITED_MAX, firstTaskCard, firstTaskCardFromText } from '../shared/firstTask';
 import { answerKey, catchUpRequests, ownerWorkOrder } from '../shared/ownerRequests';
@@ -50,10 +56,10 @@ import { linkWorktreeDeps, unlinkWorktreeDeps } from './worktreeDeps';
 import { HiveManager, type AgentMeta, type HiveMessage, type HiveTask } from './hive';
 import { HookServer, type PlanSignal } from './hooks';
 import { OfficeBreak, type OfficeBreakState } from './officeBreak';
-import { heldByBreak } from '../shared/officeBreak';
+import { heldByBreak, type OfficeStopReason } from '../shared/officeBreak';
 import { loadBundledPacks, packsResourceDir } from './packs';
 import { businessFolderRoot, ensureFolder, safeFolderName } from './agentFolders';
-import { CircuitBreaker, type BreakerInput } from './breaker';
+import { CircuitBreaker, breakerMessages, type BreakerInput } from './breaker';
 import type { UsageProvider } from './usage';
 import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
@@ -62,7 +68,9 @@ import { checkDistinct, readJobProfile } from './hireCheck';
 import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readSuggestRequest, suggestWorkStyle } from './workStyleConvert';
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
-import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
+import { makeResearchGoal } from './researchGoal';
+import { ownResearchDir, readResearchNotes } from './researchNotes';
+import { claudeProjectsRoot, projectDir, readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { listIssues, listCIRuns } from './github';
 import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
 import {
@@ -89,7 +97,7 @@ import { analytics, isRendererMessageSurface } from './analytics';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
-import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, type AddMailboxInput } from './mail';
+import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, type AddMailboxInput } from './mail';
 import { MailApprovals } from './mailApprovals';
 import { standingFitCheck } from './standingCheck';
 import { terminalOverflowEvent } from '../shared/terminalOverflow';
@@ -101,12 +109,13 @@ import { quickbooksAccessToSave } from '../shared/quickbooks';
 import { emailCalendarAllowed } from '../shared/mcpCatalog';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
+import { pastesDir, savePaste, sweepOldPastes } from './pastes';
 import { buildWorkerLaunch } from './workerLaunch';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
 import { inboxNudgeText } from '../shared/hiveNudge';
 import { resolveGodName } from '../shared/godIdentity';
-import { COLLECT_USAGE_STATS, SHOW_DELIVERY_SWITCH, SHOW_VOICE, SHOW_SLACK } from '../shared/buildFeatures';
+import { COLLECT_USAGE_STATS, SHOW_DELIVERY_SWITCH, SHOW_VOICE, SHOW_SLACK, SHOW_MAILBOXES } from '../shared/buildFeatures';
 import { fetchHireManifest, readHireManifestFiles } from './hire';
 import { parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
@@ -119,7 +128,7 @@ import {
   installInfoForProvider,
   type AgentProvider
 } from '../shared/agentProvider';
-import { buildMissingCliScript, chooseInstallRung } from './cliInstall';
+import { buildMissingCliScript, chooseInstallRung, installSucceeded } from './cliInstall';
 import { detectNodeVersion, nodeIsUsable, resolveNodeInstaller } from './nodeInstall';
 import { toolCatalog, type ToolStatus } from '../shared/toolCatalog';
 import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalSkill } from './skills';
@@ -128,9 +137,11 @@ import { loadModelCatalog } from './modelCatalog';
 import { claudeCliVersion } from './claudeCliVersion';
 import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
 import { APP_NAME, APP_DATA_DIR, APP_URL_SCHEME } from '../shared/appName';
-import { homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
+import { copyOfficeData, homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
 import { backfillOfficeRecord, findOffice, folderLayoutFor, isUsableTeamFolder, syncOfficeRecord } from './officeFile';
-import { folderPolicy, type AgentFolderPolicy, type FolderLayout } from '../shared/folderAccess';
+import { folderPolicy, AGENT_TMP_DIR, agentTmpName, researchFolderPolicy, withAgentTmpWall, RESEARCH_TMP_DIR, shellTempWalls, withResearchWall, type AgentFolderPolicy, type FolderLayout } from '../shared/folderAccess';
+import { sandboxNetwork } from '../shared/webAccess';
+import { MCP_CATALOG } from '../shared/mcpCatalog';
 import { legacyBusinessFolder, touchesOffice } from '../shared/officeRecord';
 import { cleanCompanyProfile, companyProfileContext } from '../shared/companyProfile';
 import { scheduledRunBody } from '../shared/scheduleMessage';
@@ -144,7 +155,7 @@ import {
   codexRemoteSocketFits,
   withCodexRemoteArgs
 } from '../shared/codexRemote';
-import { restartApp } from './restart';
+import { canRelaunch, restartApp } from './restart';
 import { PromptSubmits, confirmSubmit } from '../shared/submitConfirm';
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
@@ -330,6 +341,13 @@ const hive = new HiveManager(
 // #7C — operator control state (pause/gate/steer/halt), read by the HookServer
 // when deciding hook returns.
 const control = new ControlRegistry();
+// A steer to Research, typed or from the voice assistant, reaches it as a
+// message from the owner through its trust layer (ship review D6.3).
+control.setSteerDivert((id, text) => {
+  if (id !== RESEARCH_ID) return false;
+  hive.rememberOwnerNote(RESEARCH_ID, text);
+  return true;
+});
 // Stage 7A — the live observability tap. Receives Claude Code's first-party OTel
 // over loopback OTLP/JSON and exposes the locked usage-provider seam. resolveCwd
 // lets the transcript fallback find an agent's cwd from the hive registry.
@@ -403,8 +421,11 @@ function standingGoalFor(agentId: string): string | null {
   let jobs: string | null = null;
   try { jobs = scheduledJobsBlock(readConfig().missions ?? [], agentId, godId); } catch { /* no config yet */ }
   const parts = [own, jobs].filter((x): x is string => !!x);
-  return parts.length ? parts.join('\n\n') : null;
+  const text = parts.length ? parts.join('\n\n') : null;
+  return agentId === RESEARCH_ID ? researchGoal(text) : text;
 }
+// Research's Work style and jobs, checked by its trust layer first (D6.4).
+const researchGoal = makeResearchGoal(() => trustLayer, RESEARCH_WORK_STYLE, (line) => console.warn(line));
 // Worker inbox-wake watchdog (#151): finds idle workers with undrained inbox mail
 // and types the same guarded nudge the renderer would have (so a throttled
 // background window can't leave a worker parked on an unread inbox forever).
@@ -607,10 +628,95 @@ const standingFit = standingFitCheck({
   log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
 });
 
+/** The trust layer around Research (main/trustLayer.ts): the standing
+ *  check's runner, in an app-only folder of its own, no tools. What it reads
+ *  is Research's raw text, so each run's transcript is removed as it ends
+ *  (red team, third ship). */
+/** Transcripts holding Research's raw text that a check left behind: from
+ *  before the trust layer had its own folder, or from a check the app or the
+ *  computer stopped mid way. Removed once a launch, before the first check
+ *  (third ship review). Only old ones, so a check under way is never cut short. */
+let oldCheckTranscriptsSwept = false;
+function sweepOldCheckTranscripts(): void {
+  if (oldCheckTranscriptsSwept) return;
+  oldCheckTranscriptsSwept = true;
+  const cutoff = Date.now() - 60 * 60_000;
+  for (const folder of ['standing-check', 'trust-check']) {
+    const dir = projectDir(join(app.getPath('userData'), folder));
+    let names: string[] = [];
+    try { names = readdirSync(dir); } catch { continue; }
+    for (const n of names) {
+      try { if (lstatSync(join(dir, n)).mtimeMs < cutoff) rmSync(join(dir, n), { recursive: true, force: true }); } catch { /* next launch */ }
+    }
+  }
+}
+
+const trustLayer = makeTrustLayer({
+  run: async (prompt) => {
+    sweepOldCheckTranscripts();
+    const dir = join(app.getPath('userData'), 'trust-check');
+    mkdirSync(dir, { recursive: true });
+    try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
+    // Always Claude, whatever engine the office runs on: the check uses
+    // Claude's flags (Codex review). No hook of the owner's runs in it, so
+    // nothing outside the app sees or adds to what it reads (verified live:
+    // disableAllHooks from --settings stops hooks from settings files).
+    const cmd = readConfig().defaultCommand;
+    const r = await runHiddenClaude(prompt, {
+      model: TRUST_MODEL,
+      cwd: dir,
+      command: cmd && isClaudeProvider(inferAgentProvider(cmd)) ? cmd : 'claude',
+      noTools: true,
+      settingSources: 'user',
+      settingsJson: JSON.stringify({ disableAllHooks: true }),
+      thinking: false,
+      timeoutMs: TRUST_TIMEOUT_MS,
+      dropTranscript: true
+    });
+    return r.ok && r.text ? r.text : null;
+  },
+  settings: () => dataClassSettings(readConfig().dataClasses),
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+});
+
+/** Research's notes reach the team's shared memory only as a copy the trust
+ *  layer cleaned of instructions aimed at agents (ship review D2.9); a note the
+ *  layer can't check is left out. Every other agent is mined as is. */
+async function researchNotesForPalace(id: string, agentDir: string): Promise<string | null | undefined> {
+  if (id !== RESEARCH_ID) return undefined;
+  const home = readConfig().harnessHome;
+  if (!home) return null;
+  const dir = join(privateRoot(expandTilde(home)), 'research-mined');
+  const text = readResearchNotes(agentDir);
+  // A copy the layer did not pass this time is not kept from last time.
+  const clear = (): null => { try { rmSync(join(dir, 'memory.md'), { force: true }); } catch { /* next time */ } return null; };
+  if (!text) return clear();
+  const v = await trustLayer.outbound({ subject: 'Research notes', body: text });
+  if (v.decision === 'deny') return clear();
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'memory.md'), `${v.body}\n`, 'utf8');
+  return dir;
+}
+
+/** Research's desk: its own working folder, in the app's home, outside the
+ *  hive and the business folder. */
+function researchDesk(): string | null {
+  const home = readConfig().harnessHome;
+  return home ? join(expandTilde(home), RESEARCH_DESK_DIR) : null;
+}
+/** Research's own folders, which nobody else writes into (eng R2). */
+function researchFolders(): string[] {
+  const root = hive.root();
+  const desk = researchDesk();
+  // Its Claude Code conversation too: raw web pages and its own output, which
+  // no one else reads (red team, third ship).
+  return [root ? join(root, 'agents', RESEARCH_ID) : '', desk ?? '', desk ? projectDir(desk) : ''].filter(Boolean);
+}
+
 const integrationBroker = new IntegrationBroker({
   getRecord: integrations.getRecord,
   getSecret: integrations.getSecret,
-  mail: (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line) }, agentId, op, body)
+  mail: SHOW_MAILBOXES ? (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line) }, agentId, op, body) : undefined
 });
 
 /** Absolute path to the bundled md-mail MCP server (same resolution as the
@@ -954,7 +1060,7 @@ ptyManager.setExitHandler((id, exitCode, info) => {
     // Activation funnel: did the auto-installer actually complete? A non-zero exit
     // is the Linux-installer-cannot-finish-unattended signal that used to be silent.
     const provider = pending.opts.provider ?? inferAgentProvider(pending.opts.command, undefined);
-    if (exitCode === 0) {
+    if (installSucceeded(exitCode, () => ptyManager.isCommandAvailable(pending.bin))) {
       analytics.track('agent_install_finished', { provider, rung: pending.rung, outcome: 'agent_launched' });
       // Re-arm the renderer's pooled terminal (clear the "process exited" line +
       // re-enable input) so the freshly-spawned CLI paints onto a clean, typeable
@@ -964,7 +1070,8 @@ ptyManager.setExitHandler((id, exitCode, info) => {
       void spawnAgentCore({ ...pending.opts, noAutoInstall: true }, pending.owner);
       return; // an install PTY has no agent/worktree to tear down
     }
-    // Non-zero exit = install failed; leave its honest manual-fix message on screen.
+    // Install failed (non-zero exit, or the CLI still can't be found); leave its
+    // honest manual-fix message on screen.
     analytics.track('agent_install_finished', { provider, rung: pending.rung, outcome: 'install_failed' });
   }
   teardownPty(id);
@@ -1298,6 +1405,7 @@ function closeAgentByOwner(id: string): { ok: boolean; paused: number } {
  * asking agent.
  */
 function receiveScheduleRequest(actor: string, payload: unknown, why = ''): string {
+  if (actor === RESEARCH_ID) return 'You have no schedules: you answer the questions teammates send you.';
   const cfg = readConfig();
   const godId = hiveGodId();
   const op = payload && typeof payload === 'object' ? (payload as { op?: unknown }).op : undefined;
@@ -1802,9 +1910,50 @@ function armOfficeBreak(): void {
   if (officeBreakTimer) clearTimeout(officeBreakTimer);
   officeBreakTimer = null;
   const s = officeBreak.current();
-  if (!s) return;
-  officeBreakTimer = setTimeout(runOfficeBreakTick, Math.max(1_000, s.due - Date.now()));
+  // A wait for the owner only (a key that stopped working) has no timer.
+  if (!s || (s.phase === 'waiting' && s.manual)) return;
+  // setTimeout takes at most 2^31 - 1 ms; a longer delay would fire at once.
+  officeBreakTimer = setTimeout(runOfficeBreakTick, Math.min(2_147_483_647, Math.max(1_000, s.due - Date.now())));
   officeBreakTimer.unref?.();
+}
+
+/** What the office says about a stop, per reason (eng R1,
+ *  docs/designs/office-stopped-account.md). Agents get today's instruction
+ *  whatever the reason: carry on, and do not repeat finished work. The owner's
+ *  desktop notes are English, like every note main sends; the card is
+ *  translated. */
+interface StopWords { start: string; subject: string; check: string; carryOn: string; over: string }
+function stopWords(reason: OfficeStopReason, until: number | null): StopWords {
+  const carry = 'Continue the task you were working on when it stopped; do not repeat work that is already done.';
+  if (reason === 'credit') return {
+    start: 'The office stopped. Your Anthropic account is out of credit.',
+    subject: 'Credit may be back',
+    check: 'The office stopped because the Anthropic account was out of credit, and work may start again now. Carry on with what was waiting.',
+    carryOn: `The Anthropic account has credit again. ${carry}`,
+    over: 'The office is back at work.'
+  };
+  if (reason === 'signin') return readConfig().claudeAuth === 'apiKey' ? {
+    start: 'The office stopped. The Anthropic API key stopped working.',
+    subject: 'New API key',
+    check: 'The office stopped because the Anthropic API key stopped working. A new key is in place, so work may start again now. Carry on with what was waiting.',
+    carryOn: `The Anthropic API key works again. ${carry}`,
+    over: 'The office is back at work.'
+  } : {
+    start: 'The office stopped. Your Claude account needs you to sign in again.',
+    subject: 'Signed in again',
+    check: 'The office stopped because the Claude sign in had expired, and work may start again now. Carry on with what was waiting.',
+    carryOn: `Claude is signed in again. ${carry}`,
+    over: 'The office is back at work.'
+  };
+  return {
+    start: until
+      ? `The office is on a break. Your Claude plan reached its limit. Work starts again around ${breakClock(until)}.`
+      : 'The office is on a break. Your Claude plan reached its limit. Work starts again when it resets.',
+    subject: 'Usage limit reset',
+    check: 'The Claude plan\'s usage limit should have reset, so the office\'s break may be over. Carry on with what was waiting.',
+    carryOn: 'The Claude plan\'s usage limit has reset. Continue the task you were working on when it was reached; do not repeat work that is already done.',
+    over: 'The break is over. The team is back at work.'
+  };
 }
 
 /** Team member names for Michael, his own id left out. */
@@ -1825,14 +1974,13 @@ function onPlanSignal(signal: PlanSignal): void {
     if (ended) endOfficeBreak(ended);
     return;
   }
-  const step = officeBreak.limitReached(signal.agentId);
+  // A key that stopped working cannot fix itself: that stop waits for the
+  // owner's new key, with no automatic recheck (eng R2).
+  const retry = !(signal.reason === 'signin' && readConfig().claudeAuth === 'apiKey');
+  const step = officeBreak.limitReached(signal.agentId, signal.reason, retry);
   const view = officeBreak.view();
-  try { hive.appendLog({ kind: 'office-break', step, agentId: signal.agentId, until: view?.until ?? null }); } catch { /* best-effort */ }
-  if (step === 'started') {
-    ownerToast(michaelName(), view?.until
-      ? `The office is on a break. Your Claude plan reached its limit. Work starts again around ${breakClock(view.until)}.`
-      : 'The office is on a break. Your Claude plan reached its limit. Work starts again when it resets.');
-  }
+  try { hive.appendLog({ kind: 'office-break', step, agentId: signal.agentId, reason: view?.reason ?? signal.reason, until: view?.until ?? null }); } catch { /* best-effort */ }
+  if (step === 'started' && view) ownerToast(michaelName(), stopWords(view.reason, view.until).start);
   armOfficeBreak();
   publishOfficeBreak();
 }
@@ -1847,20 +1995,34 @@ function runOfficeBreakTick(): void {
   const r = officeBreak.tick();
   if (!r) { armOfficeBreak(); return; }
   if (r.step === 'over') { endOfficeBreak(r.ended); return; }
-  // The reset time has passed: delivery is open again, and Michael's turn on
-  // this message shows whether the plan answers.
-  const cut = cutOffNames(officeBreak.current()?.cutOff ?? []);
+  sendOfficeCheck();
+}
+
+/** Delivery is open again (the reset time passed, the 15 minute recheck, or
+ *  the owner acted): Michael's turn on this message shows whether Claude
+ *  answers. Nothing restarts and nobody signs in again (owner, B1). */
+function sendOfficeCheck(): void {
+  const s = officeBreak.current();
+  const cut = cutOffNames(s?.cutOff ?? []);
+  const words = stopWords(s?.reason ?? 'limit', s?.until ?? null);
   try {
     if (hive.enabled()) {
       hive.send({
-        to: 'god', act: 'inform', subject: 'Usage limit reset',
-        body: `The Claude plan's usage limit should have reset, so the office's break may be over. Carry on with what was waiting.${cut ? ` ${cut} stopped mid task when the limit was reached; they are told to carry on once a turn goes through.` : ''}`
+        to: 'god', act: 'inform', subject: words.subject,
+        body: `${words.check}${cut ? ` ${cut} stopped mid task; they are told to carry on once a turn goes through.` : ''}`
       }, 'system');
     }
-    hive.appendLog({ kind: 'office-break', step: 'check' });
+    hive.appendLog({ kind: 'office-break', step: 'check', reason: s?.reason ?? 'limit' });
   } catch (e) { console.error('[office break] check', e); }
   armOfficeBreak();
   publishOfficeBreak();
+}
+
+/** The owner acted on a stop: Try again, a finished sign in, a saved key. */
+function ownerRetryOffice(): boolean {
+  if (!officeBreak.ownerRetry()) return false;
+  sendOfficeCheck();
+  return true;
 }
 
 /** The plan answers again: tell the team members who were cut off to carry on
@@ -1869,25 +2031,30 @@ function runOfficeBreakTick(): void {
 function endOfficeBreak(ended: OfficeBreakState): void {
   if (officeBreakTimer) clearTimeout(officeBreakTimer);
   officeBreakTimer = null;
+  const words = stopWords(ended.reason, null);
   try {
     const reg = hive.registry();
     const godId = reg.godId ?? 'god';
     const cutOff = [...ended.cutOff].sort((a, b) => (a === godId ? -1 : b === godId ? 1 : 0));
     if (hive.enabled()) {
       for (const id of cutOff) {
-        hive.send({
-          to: id, act: 'inform', subject: 'Usage limit reset',
-          body: 'The Claude plan\'s usage limit has reset. Continue the task you were working on when it was reached; do not repeat work that is already done.'
-        }, 'system');
+        hive.send({ to: id, act: 'inform', subject: words.subject, body: words.carryOn }, 'system');
       }
     }
-    hive.appendLog({ kind: 'office-break', step: 'over', cutOff: cutOff.length });
+    hive.appendLog({ kind: 'office-break', step: 'over', reason: ended.reason, cutOff: cutOff.length });
   } catch (e) { console.error('[office break] end', e); }
-  ownerToast(michaelName(), 'The break is over. The team is back at work.');
+  ownerToast(michaelName(), words.over);
   publishOfficeBreak();
 }
 
 ipcMain.handle('office:breakView', () => officeBreak.view());
+// Try again on the stop card: check now instead of at the next recheck.
+ipcMain.handle('office:retry', () => ({ ok: ownerRetryOffice() }));
+/** Where the owner adds Anthropic credit (checked 2026-10-12: the old
+ *  console.anthropic.com address redirects here). Fixed in main: the page
+ *  never sends an address to open. */
+const ANTHROPIC_BILLING_URL = 'https://platform.claude.com/settings/billing';
+ipcMain.handle('office:addCredit', () => { void shell.openExternal(ANTHROPIC_BILLING_URL); return { ok: true }; });
 
 /** One circuit-breaker beat: pull a fresh usage sample per active agent, append
  *  it to the durable cost ledger (the SOLE durable cost store), tick the breaker,
@@ -1952,14 +2119,11 @@ function runBreakerBeat(progressWindowMs: number): void {
     if (d.action === 'none') continue;
     const name = reg.agents[d.state.agentId]?.name ?? d.state.agentId;
     const reason = d.state.reason;
-    if (d.action === 'steer') {
-      hive.send({ to: d.state.agentId, act: 'request', subject: 'Circuit breaker: steer',
-        body: `The app noticed a problem with this task (${reason}). If you are repeating yourself or stuck, stop, and send Michael a short summary of what you tried and what you need.` }, 'breaker');
-    } else if (d.action === 'constrain') {
-      hive.send({ to: d.state.agentId, act: 'request', subject: 'Circuit breaker: constrain',
-        body: `The app paused this task (${reason}). Before running more tools, send Michael a short plan of your next step and wait for his go ahead.` }, 'breaker');
+    if (d.action === 'steer' || d.action === 'constrain') {
+      // The member hears it; on a constrain Michael does too (breakerMessages).
       // No toast: a constrain is a soft pause Michael handles (only Michael
       // notifies, docs/designs/michael-only-notifications.md).
+      for (const m of breakerMessages(d, name, reg.godId ?? 'god')) hive.send(m, 'breaker');
     } else if (d.action === 'stop') {
       const ptyId = ptyForAgent(d.state.agentId);
       if (ptyId) { try { ptyManager.kill(ptyId); } catch { /* already gone */ } teardownPty(ptyId); }
@@ -2774,7 +2938,8 @@ function lookupWebhookStatus(token: string): WebhookTaskStatus | null {
     const have = Buffer.from(h);
     // Both are fixed-length sha-256 hex; compare in constant time defensively.
     if (have.length === wanted.length && timingSafeEqual(have, wanted)) {
-      return { status: t.status, title: t.title, result: t.result };
+      // Triage is internal: to the caller the card is simply not started yet.
+      return { status: t.status === 'triage' ? 'todo' : t.status, title: t.title, result: t.result };
     }
   }
   return null;
@@ -3606,13 +3771,102 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // out once, passed to the spawn and recorded as what this agent started with,
   // so a change in between still asks for a restart. Until the hive injection
   // has applied it, the agent counts as unprotected and is stripped below.
-  const connectorPlan = opts.hive && claudeProvider ? connectorStart(readConfig(), opts.hive.id) : undefined;
+  // Research (shared/research.ts): the reserved id while the owner has it on.
+  // It runs in its desk, sees no office data and is the only one on the web.
+  const isResearch = !!opts.hive && opts.hive.id === RESEARCH_ID && !opts.hive.isGod && !!readConfig().research?.on && hive.enabled();
+  if (opts.hive?.id === RESEARCH_ID && !isResearch) {
+    return { ok: false, error: `${hive.researchName()} is off. Turn them on in Settings, Research & privacy.` };
+  }
+  // Research's walls are Claude Code's: on any other engine it does not
+  // start, and its switch goes back off (ship review D6.2).
+  if (isResearch && !claudeProvider) {
+    console.error(`[research] engine ${provider} has none of Research's walls; Research did not start`);
+    turnResearchOff();
+    return { ok: false, error: `${hive.researchName()} runs only on Claude. Turn them on again in Settings, Research & privacy.` };
+  }
+  // Research starts only inside its walls (ship review D2.8).
+  let researchWalled = false;
+  if (isResearch) {
+    const desk = researchDesk();
+    if (!desk) return { ok: false, error: 'No office folder yet' };
+    mkdirSync(desk, { recursive: true });
+    opts.cwd = desk;
+    if (opts.hive) opts.hive = { ...opts.hive, cwd: desk };
+  }
+  const connectorPlan = opts.hive && claudeProvider && !isResearch ? connectorStart(readConfig(), opts.hive.id) : undefined;
+  // An office agent's Claude session keeps its scratch files and command
+  // output in its own folder, never in the shared /tmp that Research's shell
+  // can read (ship review D6.1): Research's in its desk, everyone else's under
+  // the app's home, outside the hive.
+  const sessionTmp = (() => {
+    if (!opts.hive || !claudeProvider || !opts.hive.id) return undefined;
+    const harness = readConfig().harnessHome;
+    // Research's only as a real folder in its desk: its shell writes there and
+    // could leave a link in its place, which the prune and its session's
+    // files would follow (red team, third ship).
+    const dir = isResearch ? ownResearchDir(opts.cwd, RESEARCH_TMP_DIR) : harness ? join(expandTilde(harness), AGENT_TMP_DIR, agentTmpName(opts.hive.id)) : '';
+    if (!dir) return undefined;
+    try { mkdirSync(dir, { recursive: true }); } catch { return undefined; }
+    // Outside the system's own temp cleanup, so files over a week old go here,
+    // after the start rather than in its way (performance review). Research's
+    // before it starts, while no shell of its can swap a folder for a link
+    // (red team, third ship).
+    if (isResearch) pruneOldFiles(dir, 7 * 24 * 60 * 60_000);
+    else setTimeout(() => pruneOldFiles(dir, 7 * 24 * 60 * 60_000), 5_000).unref?.();
+    return dir;
+  })();
+  // Without its own scratch folder a Claude agent's session files would land
+  // in the shared /tmp that Research's shell reads, so it does not start
+  // (Codex review, second ship; every office, owner ship 2 D16).
+  if (opts.hive && claudeProvider && !sessionTmp) {
+    console.error(`[spawn] no session scratch folder for ${opts.hive.id}; not started`);
+    return { ok: false, error: 'This team member\'s scratch folder could not be made in the app\'s home folder, so they did not start. Check that the app\'s home folder can be written, then try again.' };
+  }
   let connectorsApplied = false;
   if (opts.hive && hive.enabled()) {
     try {
+      const home = readConfig().harnessHome ? expandTilde(readConfig().harnessHome!) : '';
+      const teamFolders = [...(readConfig().businessTeam ?? []).map((m) => m.folder),
+        ...Object.values(hive.registry().agents).filter((a) => a.id !== RESEARCH_ID && a.cwd).map((a) => a.cwd)];
+      const memberPolicy = (): AgentFolderPolicy | undefined => {
+        const base = businessFolder
+          ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd }, businessFolderLayout(businessFolder), process.platform !== 'linux')
+          : privateOnlyFolderPolicy(!!opts.hive!.isGod, opts.cwd);
+        if (!base) return undefined;
+        const walled = withAgentTmpWall(withResearchWall(base, researchFolders()), home, opts.hive!.id, !!opts.hive!.isGod);
+        // Michael's commands stay in their sandbox too, where his shell
+        // reaches no host and Research's folders are walled (owner, D7.1,
+        // D9.1; every office, ship 2 D16).
+        return { ...walled, sandboxOnly: true };
+      };
       const inj = await hive.ensureAgent(
-        { ...opts.hive, cwd: opts.cwd, provider },
-        {
+        { ...opts.hive, cwd: opts.cwd, provider, isResearch },
+        isResearch ? {
+          // Research's walls (eng review R1): no shared memory, no company
+          // knowledge, no business folder, no default servers, no connectors;
+          // the business's name, type and city only.
+          semanticMemory: false,
+          knowledgeGraph: false,
+          theme: readConfig().terminalTheme ?? 'light',
+          mcpDefaults: Object.fromEntries(MCP_CATALOG.map((m) => [m.id, { enabled: false }])),
+          skillsDir: skillsResourceDir(),
+          extraWritableDirs: [],
+          business: (() => {
+            const cfg = readConfig();
+            const pack = businessPackInfo(cfg.businessType);
+            return { name: cfg.businessName, city: cfg.businessCity, typeName: pack.displayName };
+          })(),
+          // The whole home folder is walled; only its own folders open (D2.5).
+          // So is every temporary folder but /tmp, which Claude Code's shell
+          // needs; no office agent keeps its session files there (D6.1).
+          folderPolicy: researchFolderPolicy(
+            // Claude Code's projects folder too, wherever CLAUDE_CONFIG_DIR puts it.
+            [homedir(), home, businessFolder ?? '', knowledge.env().KG_ROOT ?? '', memory.env().MEMPALACE_PALACE_PATH ?? '', claudeProjectsRoot(), ...teamFolders,
+              ...shellTempWalls(process.platform, tmpdir())],
+            researchFolders(),
+            homedir()
+          )
+        } : {
           semanticMemory: memory.active(),
           knowledgeGraph: knowledge.active(),
           // Bake the ABSOLUTE KG CLI path into the agent's prompt. The prompt used
@@ -3628,7 +3882,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           skillsDir: skillsResourceDir(),
           // The shared palace is mutated by the agent's own `mempalace` calls, so
           // the OS sandbox must let it through (empty when memory is off).
-          extraWritableDirs: [memory.env().MEMPALACE_PALACE_PATH].filter((p): p is string => !!p),
+          extraWritableDirs: [memory.env().MEMPALACE_PALACE_PATH, sessionTmp].filter((p): p is string => !!p),
           businessFolder,
           business: (() => {
             const cfg = readConfig();
@@ -3641,19 +3895,26 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
               briefing: pack.briefing
             };
           })(),
-          folderPolicy: businessFolder
-            ? folderPolicy(
-              { isGod: !!opts.hive.isGod, cwd: opts.cwd },
-              businessFolderLayout(businessFolder),
-              process.platform !== 'linux'
-            )
-            : privateOnlyFolderPolicy(!!opts.hive.isGod, opts.cwd),
+          folderPolicy: memberPolicy(),
           docTextCliPath: docTextCliPath(),
-          connectors: connectorPlan?.plan
+          connectors: connectorPlan?.plan,
+          // Only Research uses the internet (shared/webAccess.ts): every other
+          // team member's shell reaches no host, Michael included (D9.1), in
+          // every office (owner, ship 2 D16: the Research agent is the app's one way
+          // to the open internet, whatever the pack).
+          network: sandboxNetwork()
         }
       );
       opts.args = [...(opts.args ?? []), ...inj.args];
+      // Research loads no settings or CLAUDE.md but the app's: not the owner's
+      // (their hooks run outside the sandbox), and not its desk's, which it
+      // writes itself (verified live: a planted desk CLAUDE.md and settings
+      // file load with project and local). Everything that reaches it passes
+      // the trust layer (owner, 2026-10-13); the app's own settings come with
+      // --settings and its instructions with --append-system-prompt.
+      if (isResearch) opts.args = [...opts.args, '--setting-sources', ''];
       connectorsApplied = true;
+      researchWalled = isResearch;
       seedPrompt = inj.seedPrompt;
       // A degraded spawn (proxy bridge never bound) is told to the user the same
       // way breaker escalations are: a native toast, gated on the notifications
@@ -3661,7 +3922,8 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
       if (inj.degraded) ownerToast('Agent running degraded', inj.degraded);
       // Point the agent's mempalace CLI at the shared palace + the `kg` CLI at the
       // enterprise knowledge store (both no-ops / empty when their flags are off).
-      opts.env = { ...(opts.env ?? {}), ...inj.env, ...memory.env(), ...knowledge.env() };
+      opts.env = isResearch ? { ...(opts.env ?? {}), ...inj.env } : { ...(opts.env ?? {}), ...inj.env, ...memory.env(), ...knowledge.env() };
+      if (sessionTmp) opts.env = { ...opts.env, CLAUDE_CODE_TMPDIR: sessionTmp };
     } catch (e) {
       // Hive provisioning is best-effort; never block a spawn on it.
       console.error('[hive] ensureAgent failed:', e);
@@ -3670,6 +3932,13 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // No hive injection (it failed, or the hive is off) means no hook and no deny
   // rules: a Claude agent then starts with no connector and none of the owner's
   // own servers, whatever its grants (D8). md-mail still comes via --mcp-config.
+  if (isResearch && !researchWalled) {
+    // A Research without its walls would be a plain Claude with the owner's
+    // accounts and the web: it does not start, and the switch goes back off.
+    console.error('[research] walls not in place; Research did not start');
+    turnResearchOff();
+    return { ok: false, error: `${hive.researchName()} could not be set up safely, so they did not start. Try again.` };
+  }
   if (connectorPlan && !connectorsApplied) {
     console.warn(`[connectors] ${opts.hive?.id}: no hive settings, starting without connectors`);
     if (!(opts.args ?? []).includes('--strict-mcp-config')) opts.args = [...(opts.args ?? []), '--strict-mcp-config'];
@@ -3759,7 +4028,13 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     const explicitSid = typeof opts.resumeSessionId === 'string' ? opts.resumeSessionId.trim() : '';
     const sid = explicitSid || (opts.resume === true ? hive.lastSession(opts.hive.id) : undefined);
     if (sid && !args.includes('--resume')) {
-      if (seedSessionTranscript(opts.cwd, sid)) {
+      // Research resumes only its own conversation, never one copied from
+      // another project: the session id is in a file agents can write, and
+      // another agent's conversation holds office data (ship review).
+      const resumable = isResearch
+        ? /^[\w-]{1,128}$/.test(sid) && existsSync(join(projectDir(opts.cwd), `${sid}.jsonl`))
+        : seedSessionTranscript(opts.cwd, sid, researchDesk() ? [projectDir(researchDesk()!)] : []);
+      if (resumable) {
         args.push('--resume', sid);
         didResume = true;
       } else if (explicitSid) {
@@ -3845,6 +4120,10 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     const authEnv = claudeAuthEnv();
     try { ensureClaudePermissionsAccepted(opts.cwd, { approveKey: authEnv.ANTHROPIC_API_KEY }); } catch { /* never block spawn */ }
     if (authEnv.ANTHROPIC_API_KEY) opts.env = { ...(opts.env ?? {}), ...authEnv };
+    // Research's shell reaches the internet, so the commands it runs get no
+    // keys or tokens: Claude Code removes them from every command's
+    // environment (ship review: a web page could ask it to print them).
+    if (isResearch) opts.env = { ...(opts.env ?? {}), CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: '1' };
   }
   // Suppress first-run interactive prompts for providers that need it (e.g. Codex
   // directory-trust gate via CODEX_NON_INTERACTIVE). Merges into any env already
@@ -3871,7 +4150,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     const PREFIX_BACKEND: Record<string, string> = {
       anthropic: 'anthropic', openai: 'openai', google: 'google', gemini: 'google', groq: 'groq', openrouter: 'openrouter'
     };
-    const scoped = PREFIX_BACKEND[prefix];
+    const scoped = ownValue(PREFIX_BACKEND, prefix);
     const backends = scoped ? [scoped] : Object.keys(BACKEND_KEY_ENV);
     for (const backend of backends) {
       const key = integrations.getSecret(providerKeyRef(backend));
@@ -3915,8 +4194,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // Capabilities include email gets the md-mail MCP server, which Claude Code
   // starts outside the Bash sandbox, holding this agent's own broker token.
   // Revoked in teardownPty with the rest of this PTY's grants. `--mcp-config`
-  // takes several values, so it must stay the last argument.
-  if (claudeProvider && opts.hive?.id && opts.hive.role !== 'worker' && integrationBroker.running()) {
+  // takes several values, so it must stay the last argument. Never while
+  // SHOW_MAILBOXES is off, even with email saved earlier.
+  if (SHOW_MAILBOXES && claudeProvider && opts.hive?.id && opts.hive.role !== 'worker' && integrationBroker.running()) {
     const agentId = opts.hive.id;
     const home = readConfig().harnessHome ? expandTilde(readConfig().harnessHome!) : null;
     const root = hive.root();
@@ -3962,6 +4242,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // `cwd` echoes back the TILDE-EXPANDED absolute path so the renderer's agent
   // record matches what the registry and the PTY actually used.
   if (res.ok && opts.hive?.id) tellOfficeOpen(opts.hive.id);
+  if (res.ok && opts.hive?.id && hive.enabled()) {
+    try { hive.tellHouseRules(opts.hive.id, didResume); } catch (e) { console.error('[house-rules]', e); }
+  }
   if (res.ok && opts.hive?.isGod) { standupOnOfficeOpen(); catchUpOwnerAnswers(); }
   return { ...res, cwd: opts.cwd, ...(worktreePath ? { worktreePath } : {}), ...(resumeNotFound ? { resumeNotFound: true } : {}), ...(didResume ? { resumed: true } : {}), ...(seedPrompt ? { seedPrompt } : {}) };
 }
@@ -4095,10 +4378,13 @@ ipcMain.handle('terminal:openAtFolder', async (_evt, cwd: unknown) => {
 ipcMain.handle('integrations:list', () => integrations.listRecordsRedacted());
 ipcMain.handle('integrations:templates', () => INTEGRATION_TEMPLATES);
 ipcMain.handle('integrations:upsert', (_evt, record: unknown) => integrations.upsertRecord(record));
+ipcMain.handle('integrations:canStoreSecrets', () =>
+  integrations.canStoreSecrets() ? { ok: true as const } : { ok: false as const, error: cannotStoreReason() });
 ipcMain.handle('integrations:setSecret', (_evt, payload: unknown) => {
   const p = (payload ?? {}) as { id?: unknown; secret?: unknown };
   if (typeof p.id !== 'string' || !p.id) return { ok: false, error: 'id required' };
   if (typeof p.secret !== 'string' || !p.secret) return { ok: false, error: 'secret required' };
+  if (!integrations.canStoreSecrets()) return { ok: false, error: cannotStoreReason() };
   return integrations.setSecret(secretRefFor(p.id), p.secret);
 });
 ipcMain.handle('integrations:remove', (_evt, payload: unknown) => {
@@ -4276,18 +4562,7 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
 
   if (mode === 'move' && oldHome) {
     try {
-      // roster.json + its backups ride along with hive/palace: the roster is the
-      // renderer's half of the same state, and leaving it behind would move the
-      // agents' sessions and memory to the new home while their names, notes and
-      // worktree paths stayed at the old one.
-      for (const sub of ['hive', 'palace', 'roster.json', 'roster-backups']) {
-        const src = join(oldHome, sub);
-        if (!existsSync(src)) continue;
-        // cpSync copies the whole tree incl. .git and is cross-device safe (unlike
-        // renameSync, which throws EXDEV across volumes). We COPY, never delete —
-        // the old folder stays as a safety net the user removes manually.
-        cpSync(src, join(newHome, sub), { recursive: true, force: true, dereference: false });
-      }
+      copyOfficeData(oldHome, newHome);
     } catch (e) {
       // Copy failed: recover IN PLACE against the unchanged old home (config never
       // repointed) so the user loses nothing, and surface the error — no relaunch.
@@ -4392,10 +4667,33 @@ ipcMain.handle('fs:revealPath', async (_evt, p: unknown) => {
   if (typeof p !== 'string' || !p.length || p.length > 4096 || p.includes('\0')) {
     return { ok: false, error: 'bad request' };
   }
+  // Shown in its folder, never opened (owner, D12): a path an agent printed
+  // can name an app, or a link to one, or become one between a check and an
+  // open, and opening it would launch it outside every sandbox.
   const st = await statAbs(p);
   if (!st.exists) return { ok: false, error: 'not found' };
-  if (st.isFile || !opensAsFolder(st.path)) { shell.showItemInFolder(st.path); return { ok: true }; }
-  const err = await shell.openPath(st.path);
+  shell.showItemInFolder(st.path);
+  return { ok: true };
+});
+
+/** The Profile tab's Open folder, the owner's own button: the agent's work
+ *  folder as the registry has it, never a path from agent text. Only a real
+ *  folder opens; a link there is shown, not followed (D12). */
+ipcMain.handle('fs:openAgentFolder', async (_evt, id: unknown) => {
+  if (typeof id !== 'string' || !id.length) return { ok: false, error: 'bad request' };
+  // Only a folder the app's own settings name opens: a team member's folder
+  // chosen at setup, or Michael's business folder. The registry's path is in
+  // a file agents' shells can write, so it is only ever shown (owner, third
+  // ship D2).
+  const cfg = readConfig();
+  const reg = hive.registry();
+  const recorded = id === (reg.godId ?? 'god') ? cfg.businessFolder : (cfg.businessTeam ?? []).find((m) => m.agentId === id)?.folder;
+  const shown = recorded || reg.agents[id]?.cwd;
+  if (!shown) return { ok: false, error: 'not found' };
+  let dir = false;
+  try { dir = lstatSync(shown).isDirectory(); } catch { return { ok: false, error: 'not found' }; }
+  if (!recorded || !dir || isPackageDir(shown)) { shell.showItemInFolder(shown); return { ok: true }; }
+  const err = await shell.openPath(shown);
   return err ? { ok: false, error: err } : { ok: true };
 });
 
@@ -4605,7 +4903,7 @@ ipcMain.handle('git:checkout', async (_evt, cwd: unknown, ref: unknown, detach: 
   // checkoutRef additionally requires a clean tree, and TUIs redraw on fs
   // changes gracefully.)
   const busy = ptyManager.list().find((p) =>
-    (p.cwd === cwd || p.cwd.startsWith(cwd.endsWith('/') ? cwd : `${cwd}/`)) &&
+    isSameOrInside(cwd, p.cwd) &&
     Date.now() - p.lastOutputAt < 10_000
   );
   if (busy) {
@@ -4633,7 +4931,14 @@ ipcMain.handle('hive:renameAgent', (_evt, id: unknown, name: unknown) => {
   if (typeof id !== 'string' || typeof name !== 'string') {
     return { ok: false, error: 'Invalid rename request' };
   }
-  return hive.renameAgent(id, name);
+  // The owner may rename Research (ship 2 D17); the app knows it by its id,
+  // and keeps the name in its own settings, where the rules read it.
+  const r = hive.renameAgent(id, name);
+  if (r.ok && id === RESEARCH_ID && r.name) {
+    const cfg = readConfig();
+    writeConfig({ research: { ...(cfg.research ?? { on: false }), name: r.name } });
+  }
+  return r;
 });
 ipcMain.handle('hive:setAgentHold', (_evt, id: unknown, hold: unknown) => {
   if (typeof id !== 'string' || typeof hold !== 'boolean') {
@@ -4642,7 +4947,8 @@ ipcMain.handle('hive:setAgentHold', (_evt, id: unknown, hold: unknown) => {
   return hive.setAgentHold(id, hold);
 });
 ipcMain.handle('hive:board', () => hive.board());
-ipcMain.handle('hive:tasks', () => hive.tasks());
+// The owner's surfaces never see a card still in triage (card-lifecycle.md 10).
+ipcMain.handle('hive:tasks', () => ownerLedger(hive.tasks()));
 ipcMain.handle('hive:log', (_evt, n: unknown, kind: unknown, since: unknown) => hive.logTail(typeof n === 'number' ? n : 200, typeof kind === 'string' ? kind : undefined, typeof since === 'number' ? since : undefined));
 ipcMain.handle('hive:memory', (_evt, id: unknown) => (typeof id === 'string' ? hive.memory(id) : ''));
 ipcMain.handle('hive:memoryDetail', (_evt, id: unknown) => (typeof id === 'string' ? hive.memoryDetail(id) : { index: '', waiting: 0 }));
@@ -4672,11 +4978,13 @@ ipcMain.handle('mail:remove', (_evt, id: unknown) => {
 });
 ipcMain.handle('mail:setCapabilities', (_evt, agentId: unknown, caps: unknown) => {
   if (typeof agentId !== 'string' || !caps || typeof caps !== 'object') return { ok: false, restartNeeded: false };
+  // Research holds no office data (issue #230): no mailbox, ever.
+  if (agentId === RESEARCH_ID) return { ok: false, restartNeeded: false };
   return setAgentCapabilities(mailAdmin, agentId, caps as Parameters<typeof setAgentCapabilities>[2]);
 });
 /** A member's Send only grant (docs/designs/shared-mailboxes.md), or null to remove it. */
 ipcMain.handle('mail:setSendOnly', (_evt, agentId: unknown, grant: unknown) => {
-  if (typeof agentId !== 'string') return { ok: false, restartNeeded: false };
+  if (typeof agentId !== 'string' || agentId === RESEARCH_ID) return { ok: false, restartNeeded: false };
   if (grant !== null && (!grant || typeof grant !== 'object')) return { ok: false, restartNeeded: false };
   return setSendOnly(mailAdmin, agentId, grant as { mailbox?: unknown; sending?: unknown } | null);
 });
@@ -4687,6 +4995,7 @@ ipcMain.handle('quickbooks:roleDefaults', () => [...booksReadRoleIds()]);
  *  hire in progress (issue 132); anything else writes nothing. */
 ipcMain.handle('quickbooks:setAccess', (_evt, agentId: unknown, cap: unknown, opts: unknown) => {
   const onTeam = (id: string): boolean => { try { return Object.prototype.hasOwnProperty.call(hive.registry().agents, id); } catch { return false; } };
+  if (agentId === RESEARCH_ID) return { ok: false };
   const quickbooks = quickbooksAccessToSave(agentId, cap, onTeam, (opts as { hiring?: unknown } | undefined)?.hiring === true);
   if (!quickbooks) return { ok: false };
   const id = agentId as string;
@@ -4864,11 +5173,73 @@ ipcMain.handle('connectors:setOn', (_evt, key: unknown, on: unknown) => {
 });
 /** Give or take one connector from one agent. */
 ipcMain.handle('connectors:setGrant', (_evt, agentId: unknown, key: unknown, granted: unknown) => {
-  if (typeof agentId !== 'string' || !agentId || typeof key !== 'string' || !key || isQuickBooksKey(key)) return { ok: false };
+  if (typeof agentId !== 'string' || !agentId || agentId === RESEARCH_ID || typeof key !== 'string' || !key || isQuickBooksKey(key)) return { ok: false };
   const caps = readConfig().agentCapabilities ?? {};
   const cur = caps[agentId]?.connectors ?? [];
   const connectors = granted === true ? [...new Set([...cur, key])] : cur.filter((k) => k !== key);
   writeConfig({ agentCapabilities: { ...caps, [agentId]: { ...(caps[agentId] ?? {}), connectors } } });
+  return { ok: true };
+});
+/** Research (shared/research.ts, issue #230): is it on, and how many asks
+ *  wait for it (turning it off sends them back, design review D7). */
+ipcMain.handle('research:status', () => {
+  const cfg = readConfig();
+  return { on: !!cfg.research?.on, live: hive.researchOn(), waiting: hive.researchOn() ? hive.researchWaiting() : 0, notice: !!cfg.research?.notice };
+});
+/** Turning Research on: the owner's choice is saved first, so the spawn that
+ *  follows is allowed, and its desk is made. The renderer then hires it. */
+ipcMain.handle('research:prepare', () => {
+  const desk = researchDesk();
+  if (!desk) return { ok: false as const };
+  mkdirSync(desk, { recursive: true });
+  const cfg = readConfig();
+  writeConfig({ research: { ...(cfg.research ?? {}), on: true, notice: false } });
+  return { ok: true as const, cwd: desk };
+});
+/** Remove files under `dir` older than `maxAgeMs`, and folders they leave
+ *  empty. Best effort: a file in use is left for next time. */
+function pruneOldFiles(dir: string, maxAgeMs: number): void {
+  const cutoff = Date.now() - maxAgeMs;
+  let top = '';
+  try { top = realpathSync(dir); } catch { return; }
+  const walk = (d: string, depth: number): void => {
+    if (depth > 8) return;
+    // Each folder must still be the real one inside `dir`: a link put in
+    // its place would lead the removal somewhere else (red team, third ship).
+    try {
+      const real = realpathSync(d);
+      if (real !== top && !real.startsWith(top + sep)) return;
+    } catch { return; }
+    let names: string[];
+    try { names = readdirSync(d); } catch { return; }
+    for (const n of names) {
+      const p = join(d, n);
+      try {
+        const st = lstatSync(p);
+        if (st.isDirectory()) {
+          walk(p, depth + 1);
+          if (readdirSync(p).length === 0 && st.mtimeMs < cutoff) rmSync(p, { recursive: true, force: true });
+        } else if (st.mtimeMs < cutoff) rmSync(p, { force: true });
+      } catch { /* next start */ }
+    }
+  };
+  walk(dir, 0);
+}
+/** Research off: the switch, and every ask waiting for it goes back to its
+ *  sender (design review D7), from Settings or when it can't start safely. */
+function turnResearchOff(): number {
+  writeConfig({ research: { ...(readConfig().research ?? { on: false }), on: false } });
+  // Its session ends here, not only when the window closes its terminal, so
+  // its shell's internet ends with the switch (Codex review).
+  const ptyId = ptyForAgent(RESEARCH_ID);
+  if (ptyId) { try { ptyManager.kill(ptyId); } catch { /* already gone */ } teardownPty(ptyId); }
+  try { return hive.returnResearchInbox(); } catch (e) { console.error('[research] return inbox failed', e); return 0; }
+}
+ipcMain.handle('research:off', () => ({ ok: true, returned: turnResearchOff() }));
+/** The one time update card was read (Got it or Open Research settings). */
+ipcMain.handle('research:noticeSeen', () => {
+  const cfg = readConfig();
+  if (cfg.research?.notice) writeConfig({ research: { ...cfg.research, notice: false } });
   return { ok: true };
 });
 /** Forget a connector that left the Claude account: its switch and grants. */
@@ -5149,13 +5520,13 @@ setInterval(() => {
 // The owner's own card changes (card-lifecycle.md section 4): a move, or a
 // close that ends the card as Done by their decision. Cards are never deleted
 // from the UI; Michael is told of each change.
-ipcMain.handle('hive:moveTask', (_evt, id: unknown, status: unknown) => {
+ipcMain.handle('hive:moveTask', (_evt, id: unknown, status: unknown, reason: unknown) => {
   // Not Blocked: that is Michael's, for a question waiting on Ask me.
   if (typeof id !== 'string' || !id || !['todo', 'doing', 'done'].includes(status as string)) {
     return { ok: false, error: 'invalid task move' };
   }
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
-  return { ok: hive.ownerMoveTask(id, status as HiveTask['status']) };
+  return { ok: hive.ownerMoveTask(id, status as HiveTask['status'], typeof reason === 'string' ? reason : undefined) };
 });
 ipcMain.handle('hive:closeTask', (_evt, id: unknown, reason: unknown) => {
   if (typeof id !== 'string' || !id) return { ok: false, error: 'invalid task id' };
@@ -5166,6 +5537,8 @@ ipcMain.handle('hive:setArchived', (_evt, id: unknown, archived: unknown) => {
   if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
   hive.setArchived(id, archived === true);
+  // An archived team member leaves closing time's list, and Michael is told.
+  try { if (archived === true) closingTime.refresh(id); } catch (e) { console.error('[closing-time] refresh:', e); }
   return { ok: true };
 });
 ipcMain.handle('hive:patchAgentRole', (_evt, id: unknown, role: unknown) => {
@@ -5500,6 +5873,9 @@ ipcMain.handle('engineSetup:signIn', (e): { ok: boolean; error?: string } => {
 ipcMain.handle('engineSetup:useApiKey', async (_e, raw: unknown): Promise<{ ok: boolean; error?: 'invalid' | 'rejected' | 'refused' | 'workspace' | 'busy' | 'unreachable' | 'store'; reason?: string }> => {
   const key = typeof raw === 'string' ? raw.trim() : '';
   if (!apiKeyShapeOk(key)) return { ok: false, error: 'invalid' };
+  // A key this computer cannot encrypt is never saved, so say so (and what to do
+  // about it) before the key is sent to Anthropic or approved for Claude.
+  if (!integrations.canStoreSecrets()) return { ok: false, error: 'store', reason: integrations.secretStoreUnavailableReason() };
   // Electron's fetch follows the system proxy, so the check works wherever Claude does.
   const { verdict, reason } = await checkAnthropicKey(key, net.fetch as unknown as KeyCheckFetch);
   if (verdict !== 'ok') return { ok: false, error: verdict, ...(reason ? { reason } : {}) };
@@ -5512,8 +5888,24 @@ ipcMain.handle('engineSetup:useApiKey', async (_e, raw: unknown): Promise<{ ok: 
   if (!saved.ok) return { ok: false, error: 'store' };
   writeConfig({ claudeAuth: 'apiKey' });
   try { liveWebContents()?.send('engineSetup:changed', { id: 'api-key', exitCode: null }); } catch { /* window gone */ }
+  // A key that stopped working was replaced (office-stopped-account.md, B1).
+  // Running Claude terminals got the old key in their environment when they
+  // started (claudeAuthEnv), so they restart, resumed; the office checks again.
+  if (officeBreak.view()?.reason === 'signin') {
+    try { liveWebContents()?.send('office:restartClaude', runningClaudePtys()); } catch { /* window gone */ }
+    ownerRetryOffice();
+  }
   return { ok: true };
 });
+
+/** The terminals of agents on Claude that are running now. */
+function runningClaudePtys(): string[] {
+  const out: string[] = [];
+  for (const [ptyId, agentId] of ptyToAgent) {
+    if (onClaudePlan(agentId)) out.push(ptyId);
+  }
+  return out;
+}
 
 // ─── IPC: setup catalog (which external tools are actually here) ────────────
 /**
@@ -5651,19 +6043,15 @@ ipcMain.handle('dialog:attachFiles', async (evt) => {
   return { ok: true as const, files: res.filePaths.map((p) => ({ path: p, name: basename(p) })) };
 });
 
-// Persist the current native clipboard image to a temp PNG so a pasted
-// screenshot can be attached by PATH. Returns an error result when the
-// clipboard holds no image (e.g. a normal text paste).
+// Save the current native clipboard image as a PNG so a pasted screenshot can
+// be attached by PATH. It goes to the app's own folder, so a message still
+// queued across a restart points at a file that is there (pastes.ts). Returns
+// an error result when the clipboard holds no image (e.g. a normal text paste).
 ipcMain.handle('clipboard:saveImage', async () => {
   try {
     const img = clipboard.readImage();
     if (img.isEmpty()) return { ok: false as const, error: 'no image in clipboard' };
-    const dir = join(app.getPath('temp'), 'cth-pastes');
-    mkdirSync(dir, { recursive: true });
-    const name = `paste-${Date.now()}.png`;
-    const dest = join(dir, name);
-    writeFileSync(dest, img.toPNG());
-    return { ok: true as const, file: { path: dest, name } };
+    return { ok: true as const, file: savePaste(pastesDir(app.getPath('userData')), img.toPNG()) };
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
   }
@@ -5742,7 +6130,7 @@ const closingTime = new ClosingTimeController(
   () => liveWebContents(),
   (relaunch) => {
     // Same dev-mode caveat as restart.ts: a relaunched dev build opens blank.
-    if (relaunch && !process.env.ELECTRON_RENDERER_URL) app.relaunch();
+    if (relaunch && canRelaunch()) app.relaunch();
     teardownAndQuit();
   },
   // #7C.2 steering — the graceful interrupt that reaches deeply busy agents
@@ -5750,8 +6138,9 @@ const closingTime = new ClosingTimeController(
   control
 );
 hive.setRoutedObserver((msg, targets) => closingTime.onRouted(msg, targets));
+// A dev build quits instead of reopening, so the dialog must not say "Reopening".
 ipcMain.handle('app:startClosingTime', (_evt, opts?: { relaunch?: boolean }) =>
-  closingTime.start({ relaunch: opts?.relaunch === true }));
+  closingTime.start({ relaunch: opts?.relaunch === true && canRelaunch() }));
 ipcMain.handle('app:cancelClosingTime', () => closingTime.cancel());
 /** The closing-time dialog's Remind and Close without them (owner, 2026-09-29). */
 ipcMain.handle('app:closingTimeRemind', (_evt, id: unknown) => closingTime.remind(id));
@@ -5952,6 +6341,9 @@ const isMission = (m: unknown): m is ScheduledMission =>
 ipcMain.handle('missions:list', () => readConfig().missions ?? []);
 ipcMain.handle('missions:upsert', (_evt, mission: unknown): MissionOpResult => {
   if (!isMission(mission)) return { ok: false, error: 'invalid schedule' };
+  // Research answers asks only; a schedule's text would skip the privacy
+  // check (design review D19).
+  if (mission.to === RESEARCH_ID) return { ok: false, error: `${hive.researchName()} has no schedules` };
   // Several "when" lines are stored canonical, or the save is refused: a bad
   // line would run on a clock nobody set.
   // The focus area is stored clean (FA1); an empty one is no focus.
@@ -6022,13 +6414,17 @@ ipcMain.handle('hive:textSearch', (_evt, query: unknown) => {
   const agentsDir = join(root, 'agents');
   if (existsSync(agentsDir)) {
     for (const id of readdirSync(agentsDir)) {
+      // Research's notes are its own web text: never in the owner's search (D3).
+      if (id === RESEARCH_ID) continue;
       targets.push({ path: join(agentsDir, id, 'memory.md'), source: `${id}/memory.md` });
     }
   }
   for (const { path, source } of targets) {
     if (!existsSync(path)) continue;
     let hits = 0;
-    for (const line of readFileSync(path, 'utf8').split('\n')) {
+    // The owner's search never shows a card still in triage (card-lifecycle.md 10).
+    const text = source === 'tasks.json' ? JSON.stringify(ownerLedger(hive.tasks()), null, 2) : readFileSync(path, 'utf8');
+    for (const line of text.split('\n')) {
       if (hits >= 3) break;
       const idx = line.toLowerCase().indexOf(q);
       if (idx === -1) continue;
@@ -6055,13 +6451,14 @@ ipcMain.handle('github:ciRuns', (_evt, cwd: unknown) =>
 ipcMain.handle('app:setNotifications', (_evt, val) => writeConfig({ notifications: val === true }));
 
 // ─── IPC: onboarding reliability — open Settings deep-link + login-item toggle ─
-/** Open a System Settings deep-link (or https URL) in the OS default handler.
- *  Restricted to Settings panes / https so the renderer can't shell arbitrary
- *  schemes. macOS uses `x-apple.systempreferences:`, Windows uses `ms-settings:`
+/** Open a System Settings deep-link, a web link or a mail link in the OS
+ *  default handler. Restricted to Settings panes, http(s) and mailto so the
+ *  renderer can't shell arbitrary schemes; a link in a reply that shows as
+ *  clickable opens (Codex review, third ship). macOS uses `x-apple.systempreferences:`, Windows uses `ms-settings:`
  *  (Linux has no universal settings URI, so the renderer never sends one there).
  *  Used by the onboarding "Permissions & reliability" step. */
 ipcMain.handle('app:openExternal', async (_evt, url: unknown) => {
-  if (typeof url !== 'string' || !/^(x-apple\.systempreferences:|ms-settings:|https:\/\/)/.test(url)) {
+  if (typeof url !== 'string' || !/^(x-apple\.systempreferences:|ms-settings:|https?:\/\/|mailto:)/i.test(url)) {
     return { ok: false, error: 'blocked url' };
   }
   await shell.openExternal(url);
@@ -6463,7 +6860,7 @@ const completionWatcher = initCompletionWatcher({
 registerRealtimeActionIpc({
   hiveEnabled: () => hive.enabled(),
   hiveSend: (partial, from) => hive.send(partial, from),
-  hiveTasks: () => hive.tasks(),
+  hiveTasks: () => ownerLedger(hive.tasks()),
   hiveAddTask: (task) => hive.addTask(task as HiveTask),
   hivePatchTask: (id, patch) => hive.patchTask(id, patch as Partial<Omit<HiveTask, 'id'>>),
   hiveMoveTask: (id, status) => hive.ownerMoveTask(id, status),
@@ -6528,6 +6925,7 @@ registerRealtimeActionIpc({
     // until the owner turns them on, design 6A).
     else hive.setClosedByOwner(id, false);
     hive.setArchived(id, archived);
+    try { if (archived) closingTime.refresh(id); } catch (e) { console.error('[closing-time] refresh:', e); }
     try { liveWebContents()?.send(archived ? 'hive:agentArchived' : 'hive:agentSpawned', { id }); } catch { /* window gone */ }
     return { ok: true };
   },
@@ -6549,7 +6947,7 @@ completionWatcher.onCompletion((evt) => { try { liveWebContents()?.send('realtim
 const floorWatcher = new RealtimeFloorWatcher({
   enabled: () => hive.enabled(),
   registry: () => hive.registry(),
-  tasks: () => hive.tasks(),
+  tasks: () => ownerLedger(hive.tasks()),
   ptys: () => ptyManager.list().map((p) => ({ id: p.id, lastOutputAt: p.lastOutputAt })),
   push: (text) => { try { liveWebContents()?.send('realtime:floorDelta', { text }); } catch { /* window gone */ } }
 });
@@ -7080,8 +7478,23 @@ function bootstrapHiveServices(): void {
   // A business office gets the plain PROTOCOL.md and no COMMANDS.md.
   hive.setBusinessOffice(!!(readConfig().businessFolder || readConfig().officeFolder));
   hive.onScheduleRequest(receiveScheduleRequest);
+  hive.setTrustLayer(trustLayer);
+  memory.setNotesFilter(researchNotesForPalace);
+  // Research's cleaned copy is made again when the owner changes what stays
+  // private, not only when its notes change (Codex review, third ship).
+  memory.setMineKey((id) => (id === RESEARCH_ID ? trustLayer.policyKey?.() ?? '' : ''));
+  hive.setResearchEnabled(() => !!readConfig().research?.on);
+  hive.setResearchName(() => readConfig().research?.name);
+  // The update that took the internet from the team (issue #230): an office
+  // that was already running gets the one time card, whatever its pack (owner,
+  // ship 2 D16); a new one decides in the onboarding Team step instead.
+  {
+    const cfg = readConfig();
+    if (!cfg.research) writeConfig({ research: { on: false, notice: !!cfg.onboardingComplete } });
+  }
   hive.ensureHive();
   try { sweepOrphanAgentMcp(); } catch (e) { console.error('[mail] orphan agent-mcp sweep failed', e); }
+  sweepOldPastes(pastesDir(app.getPath('userData')));
   // Read the Claude account's connectors in the background (D11).
   void refreshClaudeConnectors('start');
   // Waiting schedule requests reach Michael, and ones he leaves undecided

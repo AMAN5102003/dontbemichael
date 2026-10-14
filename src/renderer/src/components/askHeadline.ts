@@ -9,15 +9,18 @@ export function askHeadline(q: string): string {
   const bold = /^\*\*([\s\S]+?)\*\*/.exec(text);
   const lead = bold ? bold[1] : (/^[\s\S]*?(?:[.?!](?=\s|$)|\n|$)/.exec(text)?.[0] ?? text);
   return lead
-    .replace(/`([^`]*)`/g, '$1')
-    .replace(/\*\*|__|[*_]/g, '')
+    // One pass, so a code span's text is kept as written, and an underscore
+    // inside a word (monthly_report.pdf, first_last@acme.com) is not emphasis.
+    .replace(/`([^`]*)`|\*+|(?<![\p{L}\p{N}])_+|_+(?![\p{L}\p{N}])/gu, (_m, code?: string) => code ?? '')
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/^#+\s*/, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
-const MONTH = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?';
+/** A month name or its short form, as a whole word: "marketing", "junior" and
+ *  "Decision" start like a month but are not one. */
+const MONTH = '\\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\b\\.?';
 /** A bracketed note that is metadata, not part of the name: a date, a mailbox
  *  (`support@`), "per Kelly", "via the form", a ticket number (`#4471`). */
 const META = new RegExp(`\\d{1,2}\\s+${MONTH}|${MONTH}\\s+\\d{1,2}|\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}|\\w*@|\\bper\\s|\\bvia\\s|#\\d+`, 'i');

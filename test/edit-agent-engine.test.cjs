@@ -21,7 +21,7 @@ test('provider and model are dropdowns, not button grids', () => {
 });
 
 test('the provider list is this build\'s engines, plus the one the agent runs on', () => {
-  assert.match(engine, /\.filter\(\(p\) => BUILD_ENGINES\.includes\(p\.id\) \|\| p\.id === provider\)/);
+  assert.match(engine, /\.filter\(\(p\) => \(BUILD_ENGINES\.includes\(p\.id\) && \(!isResearch \|\| isClaudeProvider\(p\.id\)\)\) \|\| p\.id === provider\)/);
   assert.match(engine, /onChange=\{\(e\) => pickProvider\(e\.target\.value as AgentProvider\)\}/);
 });
 

@@ -53,6 +53,14 @@ test('non-images are not images', () => {
   }
 });
 
+test('Object prototype names are not image extensions', () => {
+  for (const p of ['notes.constructor', 'notes.__proto__', 'notes.CONSTRUCTOR?v=2']) {
+    assert.equal(imageMimeForPath(p), null, `${p} must not inherit a mime type`);
+    assert.equal(isImagePath(p), false);
+    assert.equal(resolveLocalImageRel('docs/report.md', p), null);
+  }
+});
+
 test('query strings and hashes do not hide the extension', () => {
   // Agent-written markdown carries cache-busters; treating `png?v=2` as the
   // extension would silently drop exactly the screenshots we want to render.
@@ -87,6 +95,18 @@ test('local markdown images resolve against the document directory', () => {
   assert.equal(resolveLocalImageRel('docs/report.md', 'shot.png'), 'docs/shot.png');
   assert.equal(resolveLocalImageRel('docs/deep/report.md', '../shot.png'), 'docs/shot.png');
   assert.equal(resolveLocalImageRel('report.md', 'out/shot.png?v=3'), 'out/shot.png');
+});
+
+test('the percent-encoded src react-markdown hands over names the file as written', () => {
+  // ![shot](<img/My shot.png>) reaches the img component as img/My%20shot.png.
+  assert.equal(resolveLocalImageRel('docs/report.md', 'img/My%20shot.png'), 'docs/img/My shot.png');
+  assert.equal(resolveLocalImageRel('docs/report.md', '%D8%AA%D9%82%D8%B1%D9%8A%D8%B1.png'), 'docs/تقرير.png');
+  assert.equal(resolveLocalImageRel('docs/report.md', '100%25.png'), 'docs/100%.png');
+  assert.equal(resolveLocalImageRel('docs/report.md', '100%.png'), 'docs/100%.png', 'a stray % does not throw');
+  // Decoding never lets a scheme or a non-image file through.
+  assert.equal(resolveLocalImageRel('docs/report.md', 'file%3A///etc/x.png'), null);
+  assert.equal(resolveLocalImageRel('docs/report.md', 'secrets.env%23.png'), null);
+  assert.equal(resolveLocalImageRel('docs/deep/report.md', '%2e%2e/%2e%2e/%2e%2e/x.png'), 'x.png', 'never above the root');
 });
 
 test('a leading slash means the WORKSPACE root, not the filesystem root', () => {
@@ -236,6 +256,20 @@ test('unknown binary types still read, labelled octet-stream', async () => {
     const res = await readFileBinary(root, 'blob.bin');
     assert.equal(res.ok, true);
     assert.equal(res.mime, 'application/octet-stream', 'never guess an image mime for an unknown extension');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('binary files with prototype-named extensions use octet-stream', async () => {
+  const { dir, root } = makeWorkspace();
+  try {
+    for (const rel of ['blob.constructor', 'blob.__proto__']) {
+      fs.writeFileSync(path.join(root, rel), Buffer.from([0, 1, 2, 3]));
+      const res = await readFileBinary(root, rel);
+      assert.equal(res.ok, true);
+      assert.equal(res.mime, 'application/octet-stream');
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

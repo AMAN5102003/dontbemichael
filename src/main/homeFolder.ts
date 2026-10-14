@@ -12,8 +12,9 @@
  *
  * Plain node:fs, no electron import, so it tests as a node module.
  */
-import { existsSync, statSync } from 'node:fs';
+import { cpSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { privateOwnerDir, privateRoot } from '../shared/agentPrivatePaths';
 
 export interface HomeFolderStatus {
   path: string | null;
@@ -39,4 +40,32 @@ export function homeFolderStatus(path: string | null | undefined): HomeFolderSta
 export function homeReadyAtLaunch(cfg: { onboardingComplete?: boolean; harnessHome?: string | null }): boolean {
   if (!cfg.onboardingComplete) return true;
   return homeFolderStatus(cfg.harnessHome).hasOffice;
+}
+
+/**
+ * Copy an office into a new home folder ("Move my office here"). Throws if a
+ * copy fails, so the caller can stay on the old home.
+ *
+ * roster.json + its backups ride along with hive/palace: the roster is the
+ * renderer's half of the same state, and leaving it behind would move the
+ * agents' sessions and memory to the new home while their names, notes and
+ * worktree paths stayed at the old one. The board guard and the house rules
+ * each agent has heard ride along, so a move neither resends old reminders nor
+ * forgets a Done card. The owner's questions to Michael and their state live
+ * outside the hive, in private/owner (#63), so they are copied too: without
+ * them the conversation with Michael came up empty after a move.
+ * private/agent-mcp stays behind on purpose: it holds mail tokens, which are
+ * written again each time a team member starts.
+ */
+export function copyOfficeData(oldHome: string, newHome: string): void {
+  const pairs = ['hive', 'palace', 'roster.json', 'roster-backups'].map((sub): [string, string] => [join(oldHome, sub), join(newHome, sub)]);
+  for (const f of ['card-guard.json', 'house-rules-seen.json', 'research-stamp.key', 'research-threads.json', 'research-outbox']) pairs.push([join(privateRoot(oldHome), f), join(privateRoot(newHome), f)]);
+  pairs.push([privateOwnerDir(oldHome), privateOwnerDir(newHome)]);
+  for (const [src, dest] of pairs) {
+    if (!existsSync(src)) continue;
+    // cpSync copies the whole tree incl. .git and is cross-device safe (unlike
+    // renameSync, which throws EXDEV across volumes). We COPY, never delete —
+    // the old folder stays as a safety net the user removes manually.
+    cpSync(src, dest, { recursive: true, force: true, dereference: false });
+  }
 }

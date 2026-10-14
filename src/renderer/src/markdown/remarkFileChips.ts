@@ -50,6 +50,36 @@ function splitText(node: MdNode, source: string): MdNode[] | null {
   return out;
 }
 
+const isChip = (n: MdNode | undefined): boolean => n?.data?.hName === 'cth-file';
+
+/**
+ * Around a chip, "(" and ")" add nothing: the chip is its own frame, and in a
+ * narrow bubble it wraps to its own line and strands them (owner 2026-10-11).
+ * A matched pair right against the chip goes, and the punctuation that
+ * follows it stays glued to the chip instead of starting the next line.
+ */
+function tidyAroundChips(out: MdNode[]): MdNode[] {
+  const res: MdNode[] = [];
+  for (let k = 0; k < out.length; k++) {
+    const n = out[k];
+    if (!isChip(n)) { res.push(n); continue; }
+    const prev = res[res.length - 1];
+    let next = out[k + 1];
+    if (prev?.type === 'text' && next?.type === 'text' && /\(\s*$/.test(prev.value ?? '') && /^\s*\)/.test(next.value ?? '')) {
+      prev.value = (prev.value ?? '').replace(/\s*\(\s*$/, ' ');
+      if (!prev.value.trim() && res.length === 1) res.pop();
+      next = { ...next, value: (next.value ?? '').replace(/^\s*\)/, '') };
+      out[k + 1] = next;
+    }
+    const punct = next?.type === 'text' ? /^[.,;:!?]+/.exec(next.value ?? '') : null;
+    if (punct) {
+      out[k + 1] = { ...next, value: (next.value ?? '').slice(punct[0].length) };
+      res.push({ type: 'cthNoWrap', data: { hName: 'span', hProperties: { className: ['cth-nowrap'] } }, children: [n, { type: 'text', value: punct[0] }] });
+    } else res.push(n);
+  }
+  return res.filter((n) => n.type !== 'text' || n.value !== '');
+}
+
 function walk(node: MdNode, source: string): void {
   const children = node.children;
   if (!children) return;
@@ -70,7 +100,7 @@ function walk(node: MdNode, source: string): void {
     }
     out.push(child);
   }
-  node.children = out;
+  node.children = tidyAroundChips(out);
 }
 
 export function remarkFileChips() {

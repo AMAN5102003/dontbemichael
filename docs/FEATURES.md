@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.1.8). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.0). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -23,7 +23,12 @@ moving, and brings you only the decisions that need you.
 - Your answer to a question becomes Michael's work: he routes it and closes it, and the Tasks view
   shows which cards sit with him. Blocked always means waiting on you, Waiting shows who a card
   waits on, and a card ends only as Done. A Done card shows the first line of Michael's result,
-  and the whole result leads its details.
+  and the whole result leads its details. Only you reopen a Done card, with a short reason.
+- Michael alone keeps the task board. Team members file what their work needs once, in a queue
+  only he sees, and he works it in order: answers it, folds it into a card, or puts it on Ask me.
+  One activity's questions arrive as one numbered ask, and a part you leave open comes back.
+- A To do card shows when its next step is due, in your local time, and its person is reminded
+  then, even after the app was closed.
 - A question stays on Ask me until you answer it or Michael withdraws it, and your answer goes only
   to Michael.
 - A file Michael names in a reply, an Ask me card or a task shows as a chip. Markdown, text, JSON,
@@ -86,6 +91,10 @@ moving, and brings you only the decisions that need you.
   tools, but shell commands are not limited yet.
 - House rules for every agent: say where a fact came from, say when it doesn't know, never make up
   people, customers or quotes. A looping agent is steered, then held, then stopped.
+- One team member on the internet: Pete, the Research team member, is the only one who opens web
+  pages or searches, in every office. A trust layer checks every message to Pete against the kinds
+  of data you keep private and cleans Pete's answers. Pete is off until you turn them on, and sees
+  none of your files. On a Mac nobody else's commands reach the internet.
 
 ### 7. An office you can watch
 - A pod for each department around Michael's glass office, each with its painted floor sign, and
@@ -112,6 +121,41 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.0 (2026-10-13)
+- Pete, the Research team member, is the one way to the internet in every office: nobody else
+  opens web pages, searches or, on a Mac, reaches the internet from a command. Off until you turn
+  them on in Settings, Research & privacy, or in the setup Team step; renamable; their own face.
+- A trust layer checks every message to Pete against the kinds of data you mark private (passwords
+  and keys never go), cleans Pete's answers of instructions, and flags a steering answer to
+  Michael. A change to your privacy settings applies at once.
+- Pete sees none of your files, the task board, memory or company knowledge, and the app treats
+  what Pete writes in their own folders as untrusted.
+- The office stops when your Claude account runs out of credit or its sign in or key stops
+  working, and says why, with Add credit, Sign in or Change key.
+- Links name the site or app they open; web and mail links in replies open with a click. Search
+  the task board and filter it by team member; a task's questions show newest first.
+- Michael hears when the safety brake holds a team member back; a crash shows a recovery screen.
+- About sixty contributor fixes: Windows paths and starts, mail speed and errors, closing time,
+  dark mode colors, file tabs, names with underscores or two dots, and more (CHANGELOG).
+
+### 0.1.9 (2026-10-11)
+- Michael alone writes the task board. Team members file what their work needs once, in a queue
+  only he sees, and tell him when their work moves; he works the queue in filing order.
+- A card is one activity's needs: its questions for you are one numbered ask, answered together,
+  and a part left unanswered comes back. Questions for you and for someone outside the office go
+  on separate cards.
+- Done is final: only you take a card out of Done, into To do, with a short reason. A card an
+  agent reopens or deletes is put back as it was, and Michael is told.
+- A To do card can carry the time its next step is due. Its person is reminded at that time, also
+  after a restart, and Michael hears once if the card is still in To do four hours later.
+- Cards carry no running notes, routines on a schedule get no card, and a card never waits on its
+  own person.
+- Team members hear when the house rules change, and reports read in plain business words.
+- Closing time switches to the office floor and its still working count is a button with one
+  scrollbar; a Markdown report fills its tab; file chips sit in their sentence; the way back to
+  your conversation with Michael stays beside the message box.
+- Contributor fix: a webhook body that cannot be read is logged with the reason.
 
 ### 0.1.8 (2026-10-11)
 - Office break: when the Claude plan reaches its usage limit, Ask me, the top bar and the floor say

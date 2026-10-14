@@ -79,7 +79,7 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
               }}>
                 {t(TIER_LABEL_KEY[tier])}
               </span>
-              <span style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-400, var(--cth-ink-500))' }}>
+              <span style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)' }}>
                 {t(TIER_NOTE_KEY[tier])}
               </span>
             </div>

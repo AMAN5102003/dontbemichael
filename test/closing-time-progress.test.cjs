@@ -419,6 +419,31 @@ test('a failed "terminal ended" note is retried on the next row update, then sen
   assert.equal(f.sent.filter((m) => /Dwight's terminal ended/.test(m.subject)).length, 1);
 });
 
+test('a team member archived mid-close leaves the rows, and Michael is told once not to wait', (t) => {
+  // Value: protects=Michael stops waiting for someone the owner archived; fails_when=refresh only notes ended terminals, not an archived one still running; why_new=TODOS "Archiving a live agent during closing time"; seam=none
+  const f = floor({ t });
+  f.ct.start();
+  f.floorAgents.dwight.archived = true;
+  f.ct.refresh('dwight');
+  f.ct.refresh('dwight');
+  const notes = f.sent.filter((m) => m.to === 'god' && /Dwight was archived/.test(m.subject));
+  assert.equal(notes.length, 1, 'told once');
+  assert.match(notes[0].body, /^Dwight \(dwight\) was archived, so no CLOSING-TIME-ACK will come from them\. Do not wait for it/);
+  assert.deepEqual(last(f.events).waiting, ['pam']);
+  assert.equal(f.sent.filter((m) => /terminal ended/.test(m.subject)).length, 0);
+});
+
+test('archiving from the panel or by voice refreshes closing time', () => {
+  // Value: protects=both archive paths reach the controller; fails_when=an archive path stops calling closingTime.refresh; why_new=index.ts can't be loaded in a test; seam=source pin
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
+  const ipc = src.slice(src.indexOf("ipcMain.handle('hive:setArchived'"));
+  assert.match(ipc.slice(0, ipc.indexOf('});')), /hive\.setArchived\(id, archived === true\);\s*\/\/[^\n]*\s*try \{ if \(archived === true\) closingTime\.refresh\(id\); \}/);
+  const voice = src.slice(src.indexOf('  setArchived: (id, archived) => {'));
+  assert.match(voice.slice(0, voice.indexOf('\n  },')), /hive\.setArchived\(id, archived\);\s*try \{ if \(archived\) closingTime\.refresh\(id\); \}/);
+});
+
 test('a new closing time tells Michael again about a terminal that ends again', (t) => {
   // Value: protects=the told-about-ended list does not carry over a cancel; fails_when=start() stops resetting it; why_new=review pass 3 (owner, 2026-09-29); seam=none
   const f = floor({ t });

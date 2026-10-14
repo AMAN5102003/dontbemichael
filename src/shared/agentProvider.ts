@@ -16,6 +16,7 @@ import type { CmdGroup } from './claudeCommands';
 import { COMMAND_GROUPS as CLAUDE_COMMAND_GROUPS } from './claudeCommands';
 import { CODEX_COMMAND_GROUPS } from './codexCommands';
 import { GROK_COMMAND_GROUPS } from './grokCommands';
+import { tokenizeCommand } from './commandLine';
 
 // NOTE: 'claw' (claw-code) was removed as a selectable provider — its upstream is
 // an unmaintained "museum exhibit" repo, not a production CLI. Re-add a supported
@@ -640,7 +641,7 @@ export function canReceiveInbox(provider: AgentProvider | undefined): boolean {
 
 /** The bare executable from a command string ('agy --model x' → 'agy'). */
 function commandBinary(command: string | undefined): string {
-  const first = (command ?? '').trim().split(/\s+/)[0] ?? '';
+  const first = tokenizeCommand(command ?? '')[0] ?? '';
   // strip a path + extension so 'C:\...\agy.exe' and '/usr/bin/claude' both map
   const leaf = first.split(/[\\/]/).pop() ?? first;
   return leaf.replace(/\.(exe|cmd|bat|ps1)$/i, '').toLowerCase();

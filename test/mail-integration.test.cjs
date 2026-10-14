@@ -25,7 +25,7 @@ function listen(server, port = 0) {
   return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server.server.address().port)));
 }
 
-async function servers(t) {
+async function servers(t, configureImap = () => {}) {
   const imap = hoodiecrow({
     plugins: ['SPECIAL-USE', 'ID', 'UNSELECT', 'ENABLE', 'LITERALPLUS'],
     users: { [USER]: { password: PASS } },
@@ -40,6 +40,7 @@ async function servers(t) {
       } }
     }
   });
+  configureImap(imap);
   const imapPort = await new Promise((resolve) => { imap.listen(0, '127.0.0.1', function () { resolve(this.address().port); }); });
   t.after(() => imap.close());
 
@@ -56,6 +57,7 @@ async function servers(t) {
 
 function service(ports, password = PASS) {
   const statuses = [];
+  const clients = [];
   const config = {
     mcpDefaults: { 'email-calendar': { enabled: true } },
     mailboxes: [{ id: 'sales', address: USER, provider: 'other', imap: { host: '127.0.0.1', port: ports.imapPort, secure: false }, smtp: { host: '127.0.0.1', port: ports.smtpPort, secure: false }, status: 'connected', createdAt: 1, updatedAt: 1 }],
@@ -65,12 +67,53 @@ function service(ports, password = PASS) {
     getConfig: () => config,
     getPassword: () => password,
     markStatus: (id, status, reason) => statuses.push({ id, status, reason }),
-    createImap: (s, user, pass) => new ImapFlow({ host: s.host, port: s.port, secure: false, doSTARTTLS: false, auth: { user, pass }, logger: false }),
+    createImap: (s, user, pass) => {
+      const client = new ImapFlow({ host: s.host, port: s.port, secure: false, doSTARTTLS: false, auth: { user, pass }, logger: false });
+      clients.push(client);
+      return client;
+    },
     createSmtp: (s, user, pass) => nodemailer.createTransport({ host: s.host, port: s.port, secure: false, ignoreTLS: true, auth: { user, pass } })
   };
   const svc = new MailService(deps);
-  return { svc, statuses, call: (op, body) => handleMailRequest(svc, deps, 'dwight', op, body) };
+  return { svc, statuses, clients, call: (op, body) => handleMailRequest(svc, deps, 'dwight', op, body) };
 }
+
+test('a delayed IMAP logout leaves the replacement connection available', { timeout: 10_000 }, async (t) => {
+  let finishLogout;
+  let onLogout;
+  const logoutStarted = new Promise((resolve) => { onLogout = resolve; });
+  const ports = await servers(t, (imap) => {
+    const logout = imap.getCommandHandler('LOGOUT');
+    let first = true;
+    imap.setCommandHandler('LOGOUT', (...args) => {
+      if (!first) return logout(...args);
+      first = false;
+      // Hold only A's logout response until B has connected; no timing sleeps.
+      finishLogout = () => { finishLogout = undefined; logout(...args); };
+      onLogout();
+    });
+  });
+  const { svc, clients, call } = service(ports);
+  t.after(() => {
+    finishLogout?.();
+    svc.closeAll();
+    for (const client of clients) client.close();
+  });
+
+  assert.equal((await call('search', { mailbox: 'sales' })).status, 200);
+  const oldClosed = new Promise((resolve) => clients[0].once('close', resolve));
+  svc.close('sales');
+  await logoutStarted;
+  assert.equal((await call('search', { mailbox: 'sales' })).status, 200);
+  assert.equal(clients.length, 2);
+
+  finishLogout();
+  await oldClosed;
+
+  const result = await call('search', { mailbox: 'sales' });
+  assert.equal(result.status, 200, JSON.stringify(result.body));
+  assert.equal(clients.length, 2, 'the replacement survives the old socket closing and is reused');
+});
 
 test('search, read, draft and send against real IMAP and SMTP servers', async (t) => {
   const ports = await servers(t);

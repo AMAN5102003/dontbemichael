@@ -1,3 +1,4 @@
+import { RESEARCH_ID } from '../../../shared/research';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { SHOW_IDE, SHOW_CLOSE_AGENT, SHOW_OPEN_TERMINAL, SHOW_VOICE } from '@shared/buildFeatures';
@@ -901,6 +902,8 @@ function Header({ agent, onEdit }: { agent: Agent; onEdit: () => void }) {
   const onKill = async () => {
     if (!agent.ptyId) return;
     if (!confirm(closeConfirmText(agent.id, agent.name, t))) return;
+    // Closing Research turns it off: its waiting asks go back (issue #230).
+    if (agent.id === RESEARCH_ID) await window.cth.researchOff().catch(() => undefined);
     // Closing on purpose pauses the agent's schedules (design 6A).
     await window.cth.closeAgentByOwner(agent.id).catch(() => undefined);
     // Their bound work goes back to the teammates it was taken from.

@@ -101,10 +101,10 @@ test('setup ends on the Ready step with Claude, and Open the office waits for it
 test('Ask me holds one card, counted, until Michael can start, and Claude turning ready restarts everyone on it', () => {
   // Value: protects=the team restarts however Claude turns ready (card, setup, browser, an install outside the app) and only Claude members restart; fails_when=the restart moves back into the card, the ready edge loses its listener, or the Claude filter goes; why_new=review red team 2026-10-07; seam=none (source pin, no DOM harness)
   const feed = read('src/renderer/src/shell/useNeedsYou.ts');
-  assert.match(feed, /if \(merged\.engineSetup\?\.applies && merged\.engineSetup\.needed\) feed = \{ \.\.\.feed, count: feed\.count \+ 1 \};/);
+  assert.match(feed, /if \(setupCardShown\(merged\)\) feed = \{ \.\.\.feed, count: feed\.count \+ 1 \};/);
   assert.match(feed, /onEngineSetupChanged\?\.\(\(\) => readEngine\(\)\)/);
   const ask = read('src/renderer/src/components/AskMeTab.tsx');
-  assert.match(ask, /<EngineSetupCard status=\{engineSetup\} \/>/);
+  assert.match(ask, /<EngineSetupCard status=\{engineCard \? engineSetup : null\} \/>/);
   const card = read('src/renderer/src/components/EngineSetupCard.tsx');
   assert.doesNotMatch(card, /setPendingRestart/, 'the card no longer owns the restart');
   assert.match(card, /status\.forTeam \? t\('engineSetup\.cardTitleTeam'\)/, 'with Michael on another engine the card speaks for the team');

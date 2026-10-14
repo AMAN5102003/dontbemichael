@@ -201,6 +201,11 @@ export function App() {
     // Every field main sends reaches the bar; none is copied by hand.
     setClosing({ phase, ...rows });
     if (phase === 'started' || phase === 'progress') setClosingOpen(true);
+    // The lights going out play on the office floor, so closing time shows it,
+    // whatever tab was open (owner, 2026-10-11). Only at the start: a tab the
+    // owner picks while closing stays picked. Not saved as the remembered view,
+    // so the next launch still opens where the owner left off.
+    if (phase === 'started') useStore.setState({ floorView: 'office' });
   }), []);
 
   // Who has gone home: they leave the floor and open from nowhere until

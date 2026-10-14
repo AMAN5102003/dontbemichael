@@ -167,7 +167,8 @@ export function clampPercent(n: number): number {
 }
 
 /** How far along the update pipeline a state is. A later stage is never
- *  replaced by an earlier one for the SAME version — see `reduceStatus`. */
+ *  replaced by an earlier one for the SAME version, except that a failed
+ *  download steps back — see `reduceStatus`. */
 function rank(s: UpdateStatus): number {
   switch (s.state) {
     case 'idle': return 0;
@@ -194,6 +195,16 @@ function versionOf(s: UpdateStatus): string | null {
  * under the user — `checking` / `not-available` / a transient `error` are all
  * lower-rank and lose. A genuinely NEWER version always wins, so a long-running
  * app that sees 0.3.7 while 0.3.6 is staged moves forward rather than sticking.
+ *
+ * The one step backwards that has to land is a download that fails. The
+ * updater reports it as `error` and then, from its notify-only fallback, as
+ * `available-manual` for the same version. Both rank below `downloading`, so
+ * they used to be dropped: the chip stayed on "downloading 37%" with nothing
+ * to click, and the manual download the updater had fallen back to never
+ * showed, until the next release shipped. So an `error` ends `downloading`,
+ * and `available-manual` replaces a download that failed or never started.
+ * A staged download (`downloaded`) still survives either: it is on disk, and
+ * the restart it offers still works.
  */
 export function reduceStatus(prev: UpdateStatus | null, next: UpdateStatus): UpdateStatus {
   if (!prev) return next;
@@ -201,6 +212,8 @@ export function reduceStatus(prev: UpdateStatus | null, next: UpdateStatus): Upd
   const nv = versionOf(next);
   if (pv && nv && isNewerRelease(nv, pv)) return next;   // a newer release supersedes
   if (pv && nv && pv !== nv) return next;         // different (e.g. rolled back) release
+  if (prev.state === 'downloading' && next.state === 'error') return next;   // the download failed
+  if ((prev.state === 'available' || prev.state === 'downloading') && next.state === 'available-manual') return next;
   return rank(next) >= rank(prev) ? next : prev;
 }
 

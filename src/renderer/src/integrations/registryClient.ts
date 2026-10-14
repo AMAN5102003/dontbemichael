@@ -62,6 +62,7 @@ interface IntegrationsBridge {
   integrationsList(): Promise<IntegrationRecordView[]>;
   integrationsTemplates(): Promise<IntegrationTemplate[]>;
   integrationsUpsert(record: IntegrationRecord): Promise<UpsertResult>;
+  integrationsCanStoreSecrets(): Promise<{ ok: true } | { ok: false; error: string }>;
   integrationsSetSecret(req: { id: string; secret: string }): Promise<{ ok: boolean; error?: string }>;
   integrationsRemove(req: { id: string }): Promise<{ ok: boolean }>;
   integrationsTest(req: { id: string; path?: string }): Promise<TestResult>;
@@ -130,6 +131,10 @@ export const integrationsClient: IntegrationsClient = {
   save: async (record, secret) => {
     const b = liveBridge();
     if (!b) return mockClient.save(record, secret);
+    if (secret && secret.length > 0) {
+      const availability = await b.integrationsCanStoreSecrets();
+      if (!availability.ok) return availability;
+    }
     const up = await b.integrationsUpsert(record);
     if (!up.ok) return { ok: false, error: up.error };
     if (secret && secret.length > 0) {

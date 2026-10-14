@@ -129,7 +129,19 @@ export function legacyNotes(text: string): string[] {
 export function procedureSlug(name: string): string {
   // Normalize before lowercasing: NFKD can turn a letter like ℍ into an uppercase H.
   const s = name.normalize('NFKD').toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-');
-  return s.slice(0, 60).replace(/-$/, '') || 'procedure';
+  // A name with no Latin letters or digits (每周财务汇总, إغلاق اليوم) leaves
+  // nothing above; a hash of it keeps each such procedure in its own file.
+  return s.slice(0, 60).replace(/-$/, '') || `procedure-${nameHash(name)}`;
+}
+
+/** FNV-1a of the trimmed name, in base 36: the same name always gives the same slug. */
+function nameHash(name: string): string {
+  let h = 0x811c9dc5;
+  for (const ch of name.normalize('NFC').trim()) {
+    h ^= ch.codePointAt(0)!;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
 }
 
 const oneLine = (v: unknown): string | undefined => {

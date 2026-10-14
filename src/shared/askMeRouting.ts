@@ -89,7 +89,9 @@ export function answerMessages(p: {
       p.raiser === MICHAEL_ID
         ? 'It is on the card and in your memory notes.'
         : `It is in ${p.raiserName}'s memory notes.`,
-      'Route the follow-up: hand the card to the same team member or another, or ask the owner again. Then close this request with a "done" reply (in_reply_to this message). It stays open until you do.'
+      'Route the follow-up: hand the card to the same team member or another, or ask the owner again. Then close this request with a "done" reply (in_reply_to this message). It stays open until you do.',
+      // A bundle answered in part comes back with the rest (owner, 2026-10-11).
+      'Check each question of the ask against the answer. If any is left unanswered, first add one new ask on this card holding only those questions and keep the card Blocked, or, when this card is done, make a new card that asks them, so none is lost.'
     ].join('\n')
   };
   return [forMichael];

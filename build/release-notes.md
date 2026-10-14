@@ -1,4 +1,4 @@
-- **Office break** at your Claude plan limit.
-- **Files Michael names** open in an office tab.
-- **Done cards** show the result.
-- **No repeat sends** when a send drops.
+- **Pete** is the one teammate on the internet.
+- **A trust layer** checks what reaches Pete.
+- **The office stops** when your account can't run.
+- **Links name** the site they open.

@@ -463,6 +463,9 @@ function execUpdateTask(deps: RealtimeActionDeps, a: Record<string, unknown>): A
     return { ok: false, spoken: `Waiting names who the card waits on, so only ${godName} sets it. Tell ${godName} who it is waiting on.` };
   }
   const patch: Partial<Omit<HiveTask, 'id'>> = {};
+  // Out of Done only from the board, with a reason (card-lifecycle.md 10):
+  // refuse before anything on the card changes.
+  if (card.status === 'done' && status && status !== 'done') return { ok: false, spoken: `"${card.title}" is done. To reopen it, open the card on the board and give a short reason.` };
   if (str(a.result)) patch.result = str(a.result);
   if (str(a.assignee)) patch.assignee = str(a.assignee);
   if (Object.keys(patch).length && !deps.hivePatchTask(card.id, patch)) {

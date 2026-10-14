@@ -4,6 +4,7 @@ import type { OfficeCharacterName } from '@/scene/office/cast';
 import type { StatusKind } from '@/components/PixelBadge';
 import type { AgentProvider } from '@shared/agentProvider';
 import type { HireManifest } from '@shared/hire';
+import { ownValue } from '@shared/ownValue';
 import {
   EMPTY_HIRE_QUEUE,
   clearHireQueue,
@@ -489,7 +490,7 @@ export function actionText(action: string, t: (key: string, opts?: Record<string
   if (plain === 'idle') return t('office.activity.idle');
   // Engine words become office words (owner, 2026-09-30: "using Bash" confuses
   // a business owner). Only the words shown change; the stored action does not.
-  const said = OFFICE_WORDS[plain];
+  const said = ownValue(OFFICE_WORDS, plain);
   if (said) return t(`office.activity.${said}`);
   const tool = toolOfAction(action);
   if (tool) return toolText(tool, t);
@@ -1330,7 +1331,9 @@ export const useStore = create<State>((set, get) => ({
     try { window.localStorage.setItem(LS_FLOOR_VIEW, view); } catch { /* per-Mac nicety only */ }
     set({ floorView: view, lastFixedView: view });
   },
-  openFileTab: (tab) => set((s) => ({ ...openTab(s, { ...tab, openedAt: Date.now() }), floorView: 'file' })),
+  // A file opened from Task detail would land behind that dialog, so the
+  // dialog closes and the owner sees the file.
+  openFileTab: (tab) => set((s) => ({ ...openTab(s, { ...tab, openedAt: Date.now() }), floorView: 'file', taskDetailId: null })),
   selectFileTab: (id) => set((s) => (s.fileTabs.some((f) => f.id === id) ? { activeFileTab: id, floorView: 'file' } : {})),
   closeFileTab: (id) => set((s) => {
     const r = closeTab(s, id);

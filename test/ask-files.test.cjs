@@ -15,7 +15,7 @@ const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
 const { askFilePaths, isFileSpan, kindOf, fileTitle, OPEN_EXTENSIONS } = loadTs('src/shared/askFiles.ts');
-const { askFileVerdict, askFileRootsFor, resolveAskFileRoots, opensAsFolder } = loadTs('src/main/fs.ts');
+const { askFileVerdict, askFileRootsFor, resolveAskFileRoots } = loadTs('src/main/fs.ts');
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 
 test('only code spans with a known file ending are files; money, emails and domains never are', () => {
@@ -87,6 +87,23 @@ test('main opens only allowlisted documents inside the roots, judged on the cano
   assert.equal((await askFileVerdict('Plan.md', await resolveAskFileRoots([path.join(base, 'no such folder'), office]))).verdict, 'open', 'a missing root is skipped');
 });
 
+test('a file or folder whose name starts with two dots is inside the office, not outside it', async (t) => {
+  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-askfiles-dots-')));
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const office = path.join(base, 'office');
+  fs.mkdirSync(path.join(office, '..archive'), { recursive: true });
+  fs.writeFileSync(path.join(office, '..archive', 'Plan.md'), '# plan');
+  fs.writeFileSync(path.join(office, '..draft.md'), 'draft');
+  fs.writeFileSync(path.join(base, 'secret.md'), 'x');
+  const v = async (p) => (await askFileVerdict(p, [office])).verdict;
+
+  assert.equal(await v('..archive/Plan.md'), 'open');
+  assert.equal(await v(path.join(office, '..archive', 'Plan.md')), 'open', 'named by its absolute path');
+  assert.equal(await v('..draft.md'), 'open');
+  assert.equal(await v('../secret.md'), 'missing', 'a real step out of the office is still refused');
+  assert.equal(await v(path.join(base, 'secret.md')), 'missing');
+});
+
 test('files are looked for in the office, then the raiser, the assignee and the rest of the team', () => {
   // Value: protects=Open looks in the right folders first and never in Michael's or his assistant's; fails_when=root order, the unknown id filter or the god and assistant rule changes; why_new=roots moved into a pure helper; seam=none
   const P = (p) => path.resolve(p); // an absolute path on this platform
@@ -106,17 +123,16 @@ test('files are looked for in the office, then the raiser, the assignee and the 
   assert.deepEqual(askFileRootsFor(P('/w/office'), agents, { raisedBy: 'michael', assignee: 'helper' }),
     [P('/w/office'), P('/w/office/Sales'), P('/w/office/Marketing'), P('/w/office/Ops')], 'Michael and his assistant never add a folder');
   assert.deepEqual(askFileRootsFor(undefined, { ada: { cwd: P('/w/office') }, ben: { cwd: P('/w/office') } }, null), [P('/w/office')]);
+  // Research's desk holds raw web pages: it never widens Open (red team, third ship).
+  assert.deepEqual(askFileRootsFor(P('/w/office'), { ada: { cwd: P('/w/office/Sales') }, research: { cwd: P('/w/research-desk') } }, { raisedBy: 'research', assignee: 'research' }),
+    [P('/w/office'), P('/w/office/Sales')], 'never Research\'s desk');
   assert.deepEqual(askFileRootsFor(P('/w/office'), {}, undefined), [P('/w/office')]);
 });
 
-test('revealing a directory never opens an app bundle, and the IPC re-checks before opening', () => {
-  // Value: protects=an agent printed Tool.app is shown in Finder, not launched; fails_when=revealPath opens any directory again; why_new=fs:revealPath had no directory rule (eng R4); seam=none
-  assert.equal(opensAsFolder('/Users/x/office/Sales'), true);
-  assert.equal(opensAsFolder('/Users/x/Downloads/Tool.app'), false);
-  assert.equal(opensAsFolder('/Users/x/Report.pages'), false);
-  for (const dotted of ['/Users/x/office/acme.com', '/Users/x/office/Q3.2026', '/Users/x/office/v1.2']) assert.equal(opensAsFolder(dotted), true, dotted);
+test('revealing a path never opens it, and the IPC re-checks an Ask me file before opening', () => {
+  // Value: protects=an agent printed Tool.app is shown in Finder, not launched; fails_when=revealPath opens anything again; why_new=fs:revealPath had no directory rule (eng R4), then never opens (owner D12); seam=none
   const main = read('src/main/index.ts');
-  assert.match(main, /if \(st\.isFile \|\| !opensAsFolder\(st\.path\)\) \{ shell\.showItemInFolder\(st\.path\); return \{ ok: true \}; \}/);
+  assert.match(main, /shell\.showItemInFolder\(st\.path\);\n\s+return \{ ok: true \};/, 'test/reveal-target.test.cjs');
   // Open runs the check again in main; a document that will not open is shown instead.
   assert.match(main, /ipcMain\.handle\('fs:openAskFile'[\s\S]*?const r = await askFileVerdict\(p, askFileRoots\(who\)\);[\s\S]*?if \(r\.verdict === 'open' && !\(await shell\.openPath\(r\.path\)\)\)[\s\S]*?shell\.showItemInFolder\(r\.path\);/);
   assert.match(main, /function askFileRoots\(who: unknown\): string\[\] \{\n\s+const cfg = readConfig\(\);\n\s+const office = cfg\.businessFolder \?\? legacyBusinessFolder\(cfg\.officeFolder\);\n\s+\/\/ gstack-shortcut\(dec-150d1c26[\s\S]*?return askFileRootsFor\(office, agents, who\);/);
@@ -136,7 +152,10 @@ test('the open card, Task detail and Michael\'s replies show chips in place of p
   const chip = read('src/renderer/src/components/FileChip.tsx');
   assert.match(chip, /background: 'var\(--cth-neutral-soft\)'/, 'soft chip (DD1)');
   assert.match(chip, /if \(missing\) \{\n\s+return \(\n\s+<span/, 'Not found is text, not a button');
-  assert.match(chip, /const win = window\.cth\.platform === 'win32';/, 'Windows says folder, not Finder');
+  for (const file of ['FileChip.tsx', 'FileTabView.tsx']) {
+    // Value: protects=Linux and Windows never read "Finder", the Mac's file manager; fails_when=the folder wording is keyed to Windows alone again, so Linux reads "Show in Finder"; why_new=Linux showed the Mac wording; seam=source pin
+    assert.match(read(`src/renderer/src/components/${file}`), /const win = window\.cth\.platform !== 'darwin';/, `${file}: only a Mac says Finder`);
+  }
   assert.match(chip, /catch \{\n\s+for \(const p of chunk\) out\[p\] = \{ verdict: 'reveal', tab: false, path: p \};/, 'a failed check leaves a working chip');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const a = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).askMe;

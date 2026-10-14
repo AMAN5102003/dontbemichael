@@ -224,7 +224,7 @@ still only ever means "your turn".
   The count is a button named "N new from Michael" or "Michael is waiting for you". More,
   Ask again, Nudge, the example chips and the quoted question take the §12 focus ring.
   All text 4.5:1 or better in both themes.
-- **21. Open and close (21A).** Opens only on the owner's action: Send, the count, a
+- **21. Open and close (21A).** Opens only on the owner's action: Send, the count, the conversation button (shown whenever there is saved history), a
   notification, or focusing the composer while replies are unread. Never by itself, never
   at launch. Closes on ✕, Esc with focus inside, or a click on the office floor while the
   composer is empty. Selecting a person or opening Needs you leaves it open. The draft is

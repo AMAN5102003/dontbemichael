@@ -33,7 +33,7 @@ test('the task detail is a real dialog: Esc from a field stays in the field, foc
 
 test('the Done column reads newest first, folded or not', () => {
   // Value: protects=order stays the same when "N more" opens; fails_when=the expanded list goes back to file order; why_new=core review; seam=none
-  assert.match(read('src/renderer/src/components/TasksKanban.tsx'), /col\.key === 'done' \? \(showAllDone \? \[\.\.\.all\]\.reverse\(\) : all\.slice\(-DONE_SHOWN\)\.reverse\(\)\) : all/);
+  assert.match(read('src/renderer/src/components/TasksKanban.tsx'), /col\.key === 'done' \? \(showAllDone \|\| filtering \? \[\.\.\.all\]\.reverse\(\) : all\.slice\(-DONE_SHOWN\)\.reverse\(\)\) : all/);
 });
 
 test('a half written note never saves onto the next person', () => {

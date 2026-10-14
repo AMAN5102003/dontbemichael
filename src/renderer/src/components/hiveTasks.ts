@@ -1,4 +1,5 @@
 import { openAskIndexes } from '@shared/askMeRouting';
+import { isNextAt } from '@shared/cardGuards';
 
 /* The hive task ledger as the renderer reads it: the card types, the open
  * question rule and the one parser every reader goes through. Plain TypeScript
@@ -29,8 +30,10 @@ export interface HiveTask {
   id: string;
   title: string;
   description?: string;
-  /** The running notes agents keep on a card (Michael is told the owner reads them). */
-  notes?: string;
+  /** When a To do card's one off next step is due (ISO). Cards carry no running
+   *  notes: each agent's conversation and the office log keep its activity
+   *  (owner, 2026-10-11). */
+  nextAt?: string;
   assignee?: string;
   status: 'todo' | 'doing' | 'waiting' | 'blocked' | 'done';
   /** Who a Waiting card waits on, in a few words (Michael writes it). */
@@ -96,11 +99,11 @@ export function parseTasks(raw: unknown): HiveTask[] {
         ? t.id
         : stableId(`${typeof t.title === 'string' ? t.title : ''}|${typeof t.createdAt === 'string' ? t.createdAt : ''}|${i}`),
       title: typeof t.title === 'string' ? t.title : '(untitled)',
-      // The app writes "description" (a Slack or webhook request); agents keep
-      // their running "notes" (owner, 2026-10-01: the detail showed neither on
-      // most cards). The detail shows both.
+      // The app writes "description" (a Slack or webhook request). Agents' old
+      // running "notes" are left in the file but not read: an agent's activity
+      // lives in its conversation and the office log (owner, 2026-10-11).
       description: typeof t.description === 'string' ? t.description : undefined,
-      notes: typeof t.notes === 'string' ? t.notes : undefined,
+      nextAt: isNextAt(t.nextAt) ? t.nextAt : undefined,
       assignee: typeof t.assignee === 'string' ? t.assignee : undefined,
       status: (['todo', 'doing', 'waiting', 'blocked', 'done'] as const).includes(t.status as TaskStatus)
         ? (t.status as TaskStatus) : 'todo',
@@ -135,6 +138,25 @@ export function parseTasks(raw: unknown): HiveTask[] {
     }));
 }
 
+/** House rule 8 asks for an ISO date and time with its offset (isNextAt).
+ *  Anything looser is not shown and wakes nobody: "Mon 12 Oct 13:00" parses as
+ *  a 2001 date, and a bare date reads as midnight UTC, the evening before west
+ *  of it. */
+const nextAtFormats = new Map<string, Intl.DateTimeFormat>();
+
+/** A card's next step time in the viewer's local time and the app's language,
+ *  like "Mon, 12 Oct, 8:00 AM". */
+export function nextAtLabel(nextAt: string | undefined, lang?: string): string | undefined {
+  if (!isNextAt(nextAt)) return undefined;
+  const key = lang ?? '';
+  let f = nextAtFormats.get(key);
+  if (!f) {
+    f = new Intl.DateTimeFormat(lang || undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    nextAtFormats.set(key, f);
+  }
+  return f.format(new Date(nextAt));
+}
+
 /** The first line of a Done card's result, as plain text for the board: its
  *  markdown heading, bullet, emphasis and code marks taken off. Empty when the
  *  card has no result. */
@@ -143,6 +165,30 @@ export function resultHeadline(result: string | undefined): string {
   return line
     .replace(/^#{1,6}\s+/, '')
     .replace(/^(?:[-*+]|\d+[.)])\s+/, '')
-    .replace(/(\*\*|__|\*|_|`)(.+?)\1/g, '$2')
+    // Underscores are emphasis only at a word's edges, so q3_sales_report.md
+    // and first_last@acme.com keep theirs.
+    .replace(
+      /(\*\*|\*|`)(.+?)\1|(?<![\p{L}\p{N}])(__?)(.+?)\3(?![\p{L}\p{N}])/gu,
+      (_m, _mark?: string, inner?: string, _under?: string, emph?: string) => inner ?? emph ?? ''
+    )
     .trim();
+}
+
+/** The Tasks board's filter (issue 158): what the owner typed and one team
+ *  member ('' for everyone). */
+export interface TaskFilter { query: string; assignee: string }
+
+/** Is either part of the filter set? While it is, the board unfolds Done. */
+export function filterActive(f: TaskFilter): boolean {
+  return f.query.trim() !== '' || f.assignee !== '';
+}
+
+/** Does a card pass the filter? Every typed word must appear, in any case, in
+ *  the card's id, title, description or result; a member must be its assignee. */
+export function taskMatches(task: HiveTask, f: TaskFilter): boolean {
+  if (f.assignee && task.assignee !== f.assignee) return false;
+  const words = f.query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = [task.id, task.title, task.description, task.result].filter(Boolean).join(' ').toLowerCase();
+  return words.every((w) => text.includes(w));
 }

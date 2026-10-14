@@ -9,10 +9,10 @@
  *
  *   1. The human clicks "closing time" in the quit dialog.
  *   2. We mail the god agent a shutdown brief: broadcast closing time to the
- *      team; every worker commits/parks WIP, makes its task card say where
- *      the work stands and the next step (state goes on the board, not in
- *      memory, which keeps only lessons: owner, 2026-09-25), then replies
- *      with subject CLOSING-TIME-ACK.
+ *      team; every worker commits/parks WIP, then replies with subject
+ *      CLOSING-TIME-ACK saying where each of its cards stands (and when a
+ *      step is due at a set time). Michael alone moves the cards (ship
+ *      review D8); cards carry no running notes (owner, 2026-10-11).
  *   3. The god waits for every ACK (the harness shows live progress by
  *      watching the same inbox traffic), updates board.md, and sends a
  *      message with subject CLOSING-TIME-COMPLETE.
@@ -35,6 +35,7 @@ import type { WebContents } from 'electron';
 import type { HiveManager, HiveMessage } from './hive';
 import type { ControlRegistry } from './control';
 import { CLOSING_COMPLETE_RE, CLOSING_TIME_REMIND_MS } from '../shared/closingTime';
+import { RESEARCH_ID } from '../shared/research';
 
 export type ClosingTimePhase =
   | 'started' | 'progress' | 'complete' | 'timeout' | 'cancelled';
@@ -77,7 +78,7 @@ const TIMEOUT_MS = 6 * 60_000;
 const TEARDOWN_GRACE_MS = 2_500;
 
 /** What each team member is told when closing time starts, and on Remind. */
-const WORKER_STEER = 'Closing time: the office is closing. Finish your current step but do not start new work. Save any work in progress, make sure your task card on tasks.json says where the work stands and the next step, then send Michael ("to": "michael") a message with the subject exactly "CLOSING-TIME-ACK".';
+const WORKER_STEER = 'Closing time: the office is closing. Finish your current step but do not start new work. Save any work in progress, then send Michael ("to": "michael") a message with the subject exactly "CLOSING-TIME-ACK" saying where each of your cards stands, with the time when its next step is due at a set time.';
 /** Why closing time cannot run: no live Michael to collect the reports. */
 const NO_GOD_ERROR = 'No orchestrator is running. Closing time needs the god agent to collect the reports.';
 /** What Michael is told when closing time starts, and on Remind. */
@@ -153,7 +154,9 @@ export class ClosingTimeController {
     this.workers = new Set(
       [...live].filter((id) => {
         const a = reg.agents[id];
-        return id !== this.godId && !!a && !a.isGod;
+        // Research holds no cards and reaches nobody's turn unchecked, so
+        // closing time neither waits on it nor steers it (ship review pass 3).
+        return id !== this.godId && id !== RESEARCH_ID && !!a && !a.isGod;
       })
     );
     this.acked = new Set();
@@ -177,9 +180,9 @@ export class ClosingTimeController {
         'The owner pressed "closing time". The app closes as soon as you confirm the office is safe to close. Do this now, before anything else:',
         '',
         `1. Tell the team it is closing time (a message with "to": "broadcast"). Team members now: ${names}.`,
-        '   Ask each to save any work in progress, make sure its task card on tasks.json says where the work stands and the next step, and then reply to you with the subject exactly "CLOSING-TIME-ACK".',
+        '   Ask each to save any work in progress and then reply to you with the subject exactly "CLOSING-TIME-ACK", saying where each of its cards stands.',
         '2. Keep working your inbox until every team member above has sent CLOSING-TIME-ACK. Remind anyone slow once if needed.',
-        '3. Update board.md so it says where every piece of work stands. Session logs do not go in memory: it holds only lessons worth keeping.',
+        '3. Move each card on tasks.json to match what the team told you, with nextAt when its next step is due at a set time, and update board.md so it says where every piece of work stands. Session logs do not go in memory: it holds only lessons worth keeping.',
         '4. Then send a message with "to": "human" and the subject exactly "CLOSING-TIME-COMPLETE"; the app watches for it and closes. Send it only after every team member has acknowledged: the app checks the acknowledgements and rejects an early one.',
         '',
         this.workers.size === 0
@@ -301,9 +304,10 @@ export class ClosingTimeController {
     return { ok: true };
   }
 
-  /** Re-send the rows when a terminal ended mid-close, so its row goes. Only
-   *  for Michael or a team member being waited on: ephemeral workers end all
-   *  the time and are not part of closing time. */
+  /** Re-send the rows when a terminal ended or a team member was archived
+   *  mid-close, so its row goes. Only for Michael or a team member being
+   *  waited on: ephemeral workers end all the time and are not part of
+   *  closing time. */
   refresh(agentId?: string): void {
     if (!this.active || this.concluded) return;
     if (agentId !== undefined && agentId !== this.godId && !this.workers.has(agentId)) return;
@@ -318,9 +322,10 @@ export class ClosingTimeController {
   }
 
   /**
-   * A waited-on team member whose terminal ended can never ACK. Michael was
-   * told to wait for everyone, so he is told to stop waiting for this one, or
-   * he waits until the timeout while the rows look done (owner, 2026-09-29).
+   * A waited-on team member whose terminal ended, or who was archived, is off
+   * the list. Michael was told to wait for everyone, so he is told to stop
+   * waiting for this one, or he waits until the timeout while the rows look
+   * done (owner, 2026-09-29).
    * Marked told only once the note went out, so a failed note is retried on
    * the next row update.
    */
@@ -330,19 +335,19 @@ export class ClosingTimeController {
 
   private tellMichaelAboutEndedUnsafe(): void {
     const live = new Set(this.getLiveAgentIds());
-    const ended = [...this.workers].filter(
-      (id) => !this.acked.has(id) && !this.excused.has(id) && !this.toldEnded.has(id) && !live.has(id)
-    );
-    if (ended.length === 0) return;
     const reg = this.hive.registry();
+    const ended = [...this.workers].filter(
+      (id) => !this.acked.has(id) && !this.excused.has(id) && !this.toldEnded.has(id) && (!live.has(id) || reg.agents[id]?.archived)
+    );
     for (const id of ended) {
       const name = reg.agents[id]?.name ?? id;
+      const archived = live.has(id);
       try {
         this.hive.send({
           to: this.godId,
           act: 'inform',
-          subject: `Closing time: ${name}'s terminal ended`,
-          body: `${name} (${id}) is no longer running, so no CLOSING-TIME-ACK will come from them. Do not wait for it; send CLOSING-TIME-COMPLETE once everyone else has acknowledged.`
+          subject: archived ? `Closing time: ${name} was archived` : `Closing time: ${name}'s terminal ended`,
+          body: `${name} (${id}) ${archived ? 'was archived' : 'is no longer running'}, so no CLOSING-TIME-ACK will come from them. Do not wait for it; send CLOSING-TIME-COMPLETE once everyone else has acknowledged.`
         }, 'human');
         this.toldEnded.add(id);
       } catch (e) { console.error('[closing-time] ended mail:', e); }

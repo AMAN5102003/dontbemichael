@@ -31,7 +31,7 @@ test('the onboarding team starts once, each member in its folder, and Michael ke
   const fn = hive.slice(at, hive.indexOf('\nexport function useHive', at));
 
   // The whole team starts once; later launches try only the members that failed.
-  assert.match(fn, /const retry = config\.businessTeamStarted \? new Set\(config\.businessTeamRetry \?\? \[\]\) : undefined;\s*if \(team\.length === 0 \|\| retry\?\.size === 0\) return;/, 'runs once, then only for the members that failed');
+  assert.match(fn, /const retry = config\.businessTeamStarted \? new Set\(config\.businessTeamRetry \?\? \[\]\) : undefined;(?:\s*\/\/[^\n]*)*\s*if \(team\.length === 0 \|\| retry\?\.size === 0\) \{\s*if \(!retry\) await startPickedResearch\(config\);\s*return;\s*\}/, 'runs once, then only for the members that failed (a picked Research starts with the first run)');
   assert.match(fn, /for \(const \[index, member\] of team\.entries\(\)\) \{\s*if \(retry && !retry\.has\(member\.agentId\)\) continue;/, 'a retry skips everyone who started, even one the owner has since removed');
   // A member the floor already holds is not started twice; one the registry
   // knows but the floor lost comes back (office-record.test.cjs).

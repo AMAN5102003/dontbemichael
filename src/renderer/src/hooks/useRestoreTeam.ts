@@ -2,6 +2,8 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { useStore, type Agent, ACTION_CLOCKING_IN } from '@/store/store';
 import { buildSpawnCommand, inferAgentProvider, tokenizeCommand, type HarnessConfig } from '@/store/config';
 import { roleForHiveSpawn } from '@shared/agentRole';
+import { RESEARCH_ID } from '@shared/research';
+import { RESEARCH_CHARACTER } from '@/scene/office/cast';
 
 /** "Restore team" — respawn every worker from the previous session.
  *
@@ -156,6 +158,9 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
                 ptyId,
                 archived: false,
                 status: 'idle',
+                // Research wears Pete, its own face, also in an office that
+                // saved it in Ryan's (owner, third ship D4).
+                ...(a.id === RESEARCH_ID ? { character: RESEARCH_CHARACTER } : {}),
                 // Surface the worktree fallback on the floor card; otherwise normal.
                 action: worktreeGone ? 'worktree gone, using base repo' : ACTION_CLOCKING_IN,
                 // The worktree is no longer on disk — drop it so this agent is treated

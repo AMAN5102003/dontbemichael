@@ -1,3 +1,5 @@
+import { isReservedName, RESEARCH_ID, RESEARCH_ONLY_SKILLS } from '@shared/research';
+import { useResearchName } from '@/shell/research';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
@@ -7,7 +9,7 @@ import { ProviderLogo } from './ProviderLogo';
 import { InfoTip } from './InfoTip';
 import { Dialog } from '@/shell/Dialog';
 import { useStore, type Agent, ACTION_CLOCKING_IN } from '@/store/store';
-import { OFFICE_CAST, CAST_BY_NAME, CAST_GROUPS, DEFAULT_CHARACTER, type OfficeCharacterName } from '@/scene/office/cast';
+import { OFFICE_CAST, CAST_BY_NAME, CAST_GROUPS, DEFAULT_CHARACTER, HIREABLE_CAST, type OfficeCharacterName } from '@/scene/office/cast';
 import { type AccentColorName } from '@/design/tokens';
 import type { HireManifest } from '@shared/hire';
 import { hireQueueProgress } from '@shared/hireQueue';
@@ -39,6 +41,7 @@ import {
   appendOnce,
   bindingLines,
   cardJobs,
+  hireAgentId,
   hireFolderName,
   hireRole,
   jobFor,
@@ -54,7 +57,7 @@ import {
 import { firstTaskSection, roleLabel, plainFallback } from '@shared/workStyleText';
 import { useRtl } from '@/i18n/useDirection';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
-import { SHOW_IMPORT_HIRE, SHOW_ENGINE_PICKER } from '@shared/buildFeatures';
+import { SHOW_IMPORT_HIRE, SHOW_ENGINE_PICKER, SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { seedStarterJobs } from '@/shell/seedStarterJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
 
@@ -115,10 +118,6 @@ function safeFolder(raw: string): string {
   return raw.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').trim().slice(0, 60);
 }
 
-function uniqueId(name: string): string {
-  return `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
-}
-
 const TOPIC_MAX = 120;
 
 /** A binding that makes an overlapping job particular (D6). */
@@ -142,6 +141,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const updateAgent = useStore(s => s.updateAgent);
   const setSidebarTab = useStore(s => s.setSidebarTab);
   const agents = useStore(s => s.agents);
+  const researchName = useResearchName();
   // Deep links and file batches share one FIFO. The head alone seeds the form;
   // every item still requires an explicit hire or skip.
   const hireQueue = useStore(s => s.hireQueue);
@@ -151,7 +151,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const reviewProgress = hireQueueProgress(hireQueue);
 
   const knownCharacter = (c?: string): OfficeCharacterName =>
-    (OFFICE_CAST.some(m => m.name === c) ? (c as OfficeCharacterName) : DEFAULT_CHARACTER);
+    (HIREABLE_CAST.some(m => m.name === c) ? (c as OfficeCharacterName) : DEFAULT_CHARACTER);
   const knownAccent = (a?: string): AccentColorName | undefined =>
     (ACCENTS.includes(a as AccentColorName) ? (a as AccentColorName) : undefined);
   /** The cast member a typed name refers to, if any (typing "Meredith" picks her
@@ -159,7 +159,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const characterForName = (n: string): OfficeCharacterName | null => {
     const q = n.trim().toLowerCase();
     if (!q) return null;
-    const hit = OFFICE_CAST.find(c => c.displayName.toLowerCase() === q || c.name === q);
+    const hit = HIREABLE_CAST.find(c => c.displayName.toLowerCase() === q || c.name === q);
     return hit ? hit.name : null;
   };
 
@@ -573,7 +573,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     advanceHireReview();
   };
 
-  const nameTaken = (n: string) => agents.some((a) => a.name.trim().toLowerCase() === n.trim().toLowerCase());
+  const nameTaken = (n: string) => isReservedName(n, undefined, { [RESEARCH_ID]: { name: researchName } }) || agents.some((a) => a.name.trim().toLowerCase() === n.trim().toLowerCase());
   const whoError = !name.trim() ? tr('addAgent.errName') : nameTaken(name) ? tr('addAgent.wizard.nameTaken', { name: name.trim() }) : undefined;
 
   /** The role step's gate: a name, what they handle, and a job that is
@@ -657,7 +657,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
         return;
       }
     }
-    const id = uniqueId(name);
+    const id = hireAgentId(name);
     const ptyId = `pty-${id}`;
     const description = hireRole(title, routing);
     // Give back what a binding granted (a mailbox, a connector) when the hire fails.
@@ -855,10 +855,10 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                 {hireMeta.commandFlags.map((f, i) => <code key={`${f}-${i}`} style={codeChip('paprika')}>{f}</code>)}
               </span>
             )}
-            {hireMeta.skills && hireMeta.skills.length > 0 && (
+            {hireMeta.skills && hireMeta.skills.some((s) => !RESEARCH_ONLY_SKILLS.includes(s)) && (
               <span style={chipRow}>
                 <span style={{ fontSize: 12 }}>{tr('addAgent.hireSkills')}</span>
-                {hireMeta.skills.map((s) => <code key={s} style={codeChip('mint')}>{s}</code>)}
+                {hireMeta.skills.filter((s) => !RESEARCH_ONLY_SKILLS.includes(s)).map((s) => <code key={s} style={codeChip('mint')}>{s}</code>)}
               </span>
             )}
             {hireMeta.mcpServers && hireMeta.mcpServers.length > 0 && (() => {
@@ -1399,12 +1399,12 @@ function DistinctBox(p: DistinctBoxProps) {
           <span>{t('addAgent.wizard.makeParticular', { name: p.name })}</span>
           {p.verdict?.suggestion && <span style={helperStyle}>{t('addAgent.wizard.suggestion', { text: p.verdict.suggestion })}</span>}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button type="button" onClick={() => p.setBindMode('mailbox')} style={chip(p.bindMode === 'mailbox', p.freeMailboxes.length === 0)} disabled={p.freeMailboxes.length === 0} title={p.freeMailboxes.length === 0 ? t('addAgent.wizard.noFreeMailbox') : undefined}>{t('addAgent.wizard.bindMailbox')}</button>
+            {SHOW_MAILBOXES && <button type="button" onClick={() => p.setBindMode('mailbox')} style={chip(p.bindMode === 'mailbox', p.freeMailboxes.length === 0)} disabled={p.freeMailboxes.length === 0} title={p.freeMailboxes.length === 0 ? t('addAgent.wizard.noFreeMailbox') : undefined}>{t('addAgent.wizard.bindMailbox')}</button>}
             <button type="button" onClick={() => p.setBindMode('topic')} style={chip(p.bindMode === 'topic')}>{t('addAgent.wizard.bindTopic')}</button>
             <button type="button" onClick={() => p.setBindMode('connection')} style={chip(p.bindMode === 'connection', p.bindConnectors.length === 0)} disabled={p.bindConnectors.length === 0} title={p.bindConnectors.length === 0 ? t('addAgent.wizard.noConnection') : undefined}>{t('addAgent.wizard.bindConnection')}</button>
             <button type="button" onClick={p.onRecheck} style={chip(false)}>{t('addAgent.wizard.checkAgain')}</button>
           </div>
-          {p.bindMode === 'mailbox' && (
+          {SHOW_MAILBOXES && p.bindMode === 'mailbox' && (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <select value={p.bindMailbox} onChange={(e) => p.setBindMailbox(e.target.value)} aria-label={t('addAgent.wizard.bindMailbox')} className="cth-input" style={{ ...inputStyle, width: 'auto' }}>
                 <option value="">{t('capabilities.pickMailbox')}</option>
