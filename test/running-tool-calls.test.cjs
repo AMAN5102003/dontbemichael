@@ -30,13 +30,14 @@ test('the latest call still running is the one shown', () => {
   assert.equal(r.end('pam', 'c').detail, 'b.md');
 });
 
-test('a call that never ended (failed or refused) does not come back after the next call', () => {
+test('a long call stays on the list while other calls start and end around it', () => {
   const r = new RunningToolCalls();
-  r.start('pam', 'failed', call('Bash', 'Deploy', 1));
+  r.start('pam', 'long', call('Bash', 'Run the full suite', 1));
   r.start('pam', 'b', call('Read', 'plan.md', 2));
   r.end('pam', 'b');
   r.start('pam', 'c', call('Edit', 'plan.md', 3));
-  assert.equal(r.end('pam', 'c'), undefined);
+  assert.equal(r.end('pam', 'c').detail, 'Run the full suite', 'the long call is still running');
+  assert.equal(r.end('pam', 'long'), undefined);
 });
 
 test('a new turn or a stop clears the calls, and agents never share them', () => {
@@ -55,7 +56,21 @@ test('the panel starts a call on PreToolUse, goes back on PostToolUse, and clear
   // Value: protects=useHive wires the helper into the hook events; fails_when=a branch stops calling it; why_new=useHive can't be loaded in a test; seam=source pin
   const src = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/hooks/useHive.ts'), 'utf8');
   assert.match(src, /if \(e\.toolUseId\) runningCalls\.start\(e\.agentId, e\.toolUseId, \{ tool: e\.tool, detail: e\.detail, at: Date\.now\(\) \}\);/);
-  assert.match(src, /const running = e\.event === 'PostToolUse' \? runningCalls\.end\(e\.agentId, e\.toolUseId\) : undefined;\s*if \(running && !breakerArmed\) updateAgent\(e\.agentId, \{ action: `using \$\{running\.tool\}`, actionDetail: running\.detail, actionAt: running\.at \}\);/);
+  assert.match(src, /const toolEnded = e\.event !== 'UserPromptSubmit';\s*const running = toolEnded \? runningCalls\.end\(e\.agentId, e\.toolUseId\) : undefined;\s*if \(running && !breakerArmed\) updateAgent\(e\.agentId, \{ action: `using \$\{running\.tool\}`, actionDetail: running\.detail, actionAt: running\.at \}\);/);
   assert.match(src, /if \(e\.event === 'UserPromptSubmit'\) \{ promptSubmits\.note\(e\.agentId\); runningCalls\.clear\(e\.agentId\); \}/);
   assert.match(src, /breakerLevel\.current\[e\.agentId\] = 'healthy';\s*runningCalls\.clear\(e\.agentId\);/);
+});
+
+test('an agent reports a failed call, so the floor ends it by its id', async (t) => {
+  const os = require('node:os');
+  const electron = require.resolve('electron');
+  require.cache[electron] ??= { id: electron, filename: electron, loaded: true, exports: { Notification: class { show() {} static isSupported() { return false; } } } };
+  const { HiveManager } = loadTs('src/main/hive.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-tool-failure-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  const inj = await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const hooks = JSON.parse(fs.readFileSync(inj.args[inj.args.indexOf('--settings') + 1], 'utf8')).hooks;
+  assert.equal(hooks.PostToolUseFailure[0].matcher, '*');
+  assert.equal(hooks.PostToolUseFailure[0].hooks[0].command, hooks.PostToolUse[0].hooks[0].command, 'the same hook program');
 });
