@@ -1261,6 +1261,8 @@ const api = {
   closingTimeRemind: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:closingTimeRemind', id),
   /** Close without one team member: stop waiting on it; it is back tomorrow. */
   closingTimeExcuse: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:closingTimeExcuse', id),
+  /** The last thing each of these agents said, one safe line each. */
+  closingTimeSaid: (ids: string[]): Promise<Record<string, string>> => ipcRenderer.invoke('app:closingTimeSaid', ids),
   /** Progress events for the quit dialog: started → progress → complete (the
    *  app tears down moments later) | timeout | cancelled. Each carries the ACK
    *  counts and the rows: who confirmed, who is still waited on, who the owner
