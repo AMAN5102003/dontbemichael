@@ -11,15 +11,25 @@
  */
 import { request as httpsRequest } from 'node:https';
 
-export function getText(url: string, opts: { timeoutMs?: number } = {}): Promise<string> {
+/** Redirect hops followed before giving up. Some callers fetch URLs scraped from
+ *  third-party pages, and a redirect loop there would otherwise never settle. */
+export const MAX_REDIRECTS = 5;
+
+export function getText(url: string, opts: { timeoutMs?: number } = {}, redirects = 0): Promise<string> {
   const timeoutMs = opts.timeoutMs ?? 12000;
   return new Promise((resolve, reject) => {
     const req = httpsRequest(url, { method: 'GET', headers: { 'user-agent': 'dontbemichael' } }, (res) => {
       // Follow a redirect once per hop; raw.githubusercontent does this for
-      // branch aliases and the request just fails without it.
+      // branch aliases and the request just fails without it. A relative
+      // Location resolves against this URL; an http: one still fails, since
+      // httpsRequest refuses that protocol.
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        getText(res.headers.location, opts).then(resolve, reject);
+        if (redirects >= MAX_REDIRECTS) { reject(new Error('too many redirects')); return; }
+        let next: string;
+        try { next = new URL(res.headers.location, url).href; }
+        catch { reject(new Error('bad redirect')); return; }
+        getText(next, opts, redirects + 1).then(resolve, reject);
         return;
       }
       if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
