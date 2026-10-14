@@ -234,3 +234,47 @@ test('an agent whose folder is reached through a link still opens its own files'
   assert.equal(folderDecision({ isGod: false, cwd: realPathOf(linkedCwd) }, l, 'Read', real, true).deny, false);
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+// ── The engine's record of every session (TODOS: keep transcripts and history
+//    out of agents' reach) ─────────────────────────────────────────────────
+
+const PROJECTS = abs('/Users/me/.claude/projects');
+const HISTORY = abs('/Users/me/.claude/history.jsonl');
+const withRecords = { ...layout, engineRecords: { projects: PROJECTS, history: HISTORY } };
+
+test('every agent, Michael too, is walled from the session records in shell and file tools', () => {
+  // Value: protects=no agent reads a teammate's conversation or a hidden check's prompt; fails_when=the records drop out of the sandbox or the deny rules; why_new=TODOS "Keep Claude Code's transcripts and history out of agents' reach"; seam=none
+  for (const agent of [{ isGod: false, cwd: path.join(B, 'Finance') }, { isGod: true, cwd: B }]) {
+    const p = folderPolicy(agent, withRecords, false);
+    for (const f of [PROJECTS, HISTORY]) {
+      assert.ok(p.sandbox.denyRead.includes(f), `${agent.isGod ? 'Michael' : 'member'} shell reads ${f}`);
+      assert.ok(p.sandbox.denyWrite.includes(f));
+    }
+    assert.ok(p.deny.includes(ruleFor('Read', PROJECTS)) && p.deny.includes(ruleFor('Edit', PROJECTS)));
+    const history = `//${HISTORY.replace(/\\/g, '/').replace(/^\//, '')}`;
+    assert.ok(p.deny.includes(`Read(${history})`) && p.deny.includes(`Edit(${history})`), 'the history file by its own name');
+  }
+});
+
+test('file tools are refused on a transcript or the history, even for an agent whose folder holds them', () => {
+  // Value: protects=the hook refuses the records before the own-folder rule lets them through; fails_when=the check moves after the own folder or misses the history file; why_new=same TODO; seam=none
+  const transcript = path.join(PROJECTS, '-Users-me-Documents-Pho-Admin', 'abc.jsonl');
+  for (const agent of [{ isGod: false, cwd: path.join(B, 'Finance') }, { isGod: true, cwd: B }, { isGod: false, cwd: abs('/Users/me') }]) {
+    for (const [tool, target] of [['Read', transcript], ['Grep', PROJECTS], ['Read', HISTORY], ['Edit', HISTORY]]) {
+      const d = folderDecision(agent, withRecords, tool, target, false);
+      assert.equal(d.deny, true, `${agent.cwd} ${tool} ${target}`);
+      assert.match(d.reason, /every team member's conversations/);
+    }
+  }
+  assert.equal(folderDecision({ isGod: false, cwd: abs('/Users/me') }, withRecords, 'Read', abs('/Users/me/.claude/settings.json'), false).deny, false, 'only the records, not the rest of that folder');
+});
+
+test('the office layout carries the records, wherever CLAUDE_CONFIG_DIR puts them', (t) => {
+  const before = process.env.CLAUDE_CONFIG_DIR;
+  t.after(() => { if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before; });
+  process.env.CLAUDE_CONFIG_DIR = abs('/Volumes/work/claude-config');
+  assert.deepEqual(folderLayoutFor(undefined, []).engineRecords, {
+    projects: path.join(abs('/Volumes/work/claude-config'), 'projects'),
+    history: path.join(abs('/Volumes/work/claude-config'), 'history.jsonl')
+  });
+});

@@ -47,6 +47,11 @@ export function claudeProjectsRoot(): string {
   return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
 }
 
+/** Claude Code's prompt history, beside its projects folder. */
+export function claudeHistoryFile(): string {
+  return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'history.jsonl');
+}
+
 export function projectDir(cwd: string): string {
   const root = claudeProjectsRoot();
   const current = path.join(root, projectKey(cwd));
