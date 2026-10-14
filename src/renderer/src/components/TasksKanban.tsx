@@ -31,6 +31,17 @@ const COLUMNS: { key: Status; labelKey: string; accent: string; soft: string; te
   { key: 'blocked', labelKey: 'kanban.colBlocked', accent: 'var(--cth-coral-base)', soft: 'var(--cth-coral-soft)',   text: 'var(--cth-coral-text)' },
   { key: 'done',    labelKey: 'kanban.colDone',    accent: 'var(--cth-green)',      soft: 'var(--cth-green-soft)',   text: 'var(--cth-green-text)' }
 ];
+// What an empty column says. Each column has its own line instead of one
+// generic "Nothing here", so an empty Blocked reads as good news and an empty
+// To do points the owner at what to do next. While a search or a team member
+// filter is on, an empty column means no match, not no work, so it says that.
+const EMPTY_KEYS: Record<Status, string> = {
+  todo: 'kanban.emptyTodo',
+  doing: 'kanban.emptyDoing',
+  waiting: 'kanban.emptyWaiting',
+  blocked: 'kanban.emptyBlocked',
+  done: 'kanban.emptyDone'
+};
 /** How many done cards show before "N more" (DESIGN.md 7.20). */
 const DONE_SHOWN = 5;
 
@@ -214,7 +225,7 @@ export function TasksKanban() {
               </div>
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '2px 10px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {all.length === 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>{t('kanban.empty')}</div>
+                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>{filtering ? t('kanban.noMatches') : t(EMPTY_KEYS[col.key], { godName })}</div>
                 )}
                 {cards.map((x) => (
                   <TaskCard
