@@ -1,4 +1,4 @@
-import { closeSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
+import { closeSync, fstatSync, openSync, readSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { estimateCostUsd, normalizeModel } from './pricing';
 import type { AgentUsage } from './transcript';
@@ -166,5 +166,57 @@ export function readCodexUsage(codexHome: string, sessionId: string): AgentUsage
     return usage;
   } catch {
     return zero();
+  }
+}
+
+/** How much of the file's end a context read looks at: the last token_count
+ *  sits near the end, and rollouts grow to many MB (as readContextTokens). */
+const CONTEXT_TAIL_BYTES = 256 * 1024;
+
+/** The context size in the tail of a rollout: the LAST token_count's
+ *  `last_token_usage`, which is what the model just took in (input, cached
+ *  included) plus what it wrote, which joins the context for the next turn.
+ *  Null when no turn has been counted yet. The first line of a tail may be cut
+ *  mid-record; it fails to parse and is skipped. */
+export function contextFromRolloutTail(text: string): number | null {
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const trimmed = lines[i].trim();
+    if (!trimmed) continue;
+    let rec: { type?: unknown; payload?: { type?: unknown; info?: { last_token_usage?: Record<string, unknown> } | null } };
+    try {
+      rec = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    if (rec.type !== 'event_msg' || rec.payload?.type !== 'token_count') continue;
+    const last = rec.payload.info?.last_token_usage;
+    if (!last) continue; // a rate-limit-only update carries info: null
+    return num(last.input_tokens) + num(last.output_tokens);
+  }
+  return null;
+}
+
+/** Current context size (tokens) of a Codex session, for the context gauge:
+ *  the Codex counterpart of readContextTokens. Null when the rollout isn't
+ *  there (yet) or can't be read; 0 when it holds no counted turn, so a fresh
+ *  session zeroes the gauge instead of leaving the last one's value up. */
+export function readCodexContext(codexHome: string, sessionId: string): number | null {
+  try {
+    const file = findRollout(codexHome, sessionId);
+    if (!file) return null;
+    const fd = openSync(file, 'r');
+    try {
+      const size = fstatSync(fd).size;
+      const len = Math.min(size, CONTEXT_TAIL_BYTES);
+      if (len === 0) return 0;
+      const buf = Buffer.alloc(len);
+      const read = readSync(fd, buf, 0, len, size - len);
+      return contextFromRolloutTail(buf.subarray(0, read).toString('utf8')) ?? 0;
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return null;
   }
 }

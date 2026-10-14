@@ -13,7 +13,7 @@ const os = require('node:os');
 const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
-const { readCodexUsage, findRollout } = loadTs('src/main/codexUsage.ts');
+const { readCodexUsage, findRollout, readCodexContext, contextFromRolloutTail } = loadTs('src/main/codexUsage.ts');
 
 const SID = '019f389f-690d-7e41-9fc2-dbf46e83b18a';
 
@@ -88,4 +88,41 @@ test('a missing home or a path-like session id reads as zero', () => {
   assert.equal(readCodexUsage(path.join(os.tmpdir(), 'no-such-codex-home'), SID).inputTokens, 0);
   const { home } = makeHome([tokenCount(100, 0, 10, 0)]);
   assert.equal(findRollout(home, '../../etc'), null);
+});
+
+// Context gauge (TODOS.md, second engine gap 2): the gauge read only Claude
+// transcripts, so a Codex member's stayed empty.
+
+function lastTurn(input, output) {
+  const total = { input_tokens: 999999, cached_input_tokens: 0, output_tokens: 999999, reasoning_output_tokens: 0, total_tokens: 1999998 };
+  const last = { input_tokens: input, cached_input_tokens: Math.floor(input / 2), output_tokens: output, reasoning_output_tokens: 0, total_tokens: input + output };
+  return JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: total, last_token_usage: last } } });
+}
+const rateLimitsOnly = JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: null, rate_limits: {} } });
+
+test('the context is the last turn, not the running total', () => {
+  // Value: protects=a Codex member's gauge shows its current context; fails_when=the gauge reads the session total or an older turn; why_new=the gauge read Claude transcripts only; seam=none; no_claim=the renderer's window size
+  const { home } = makeHome([meta, turnContext('gpt-5'), lastTurn(12000, 300), lastTurn(30500, 640), rateLimitsOnly]);
+  assert.equal(readCodexContext(home, SID), 30500 + 640);
+});
+
+test('a fresh session reads 0, and no rollout reads null', () => {
+  // Value: protects=a restarted member's gauge resets and an unknown one stays blank; fails_when=a fresh session keeps the old value or a missing file reads 0; why_new=new reader; seam=none; no_claim=when the renderer polls
+  const { home } = makeHome([meta, turnContext('gpt-5'), rateLimitsOnly]);
+  assert.equal(readCodexContext(home, SID), 0);
+  assert.equal(readCodexContext(home, '019f389f-0000-0000-0000-000000000000'), null);
+  assert.equal(readCodexContext(home, '../escape'), null);
+});
+
+test('a tail cut mid record still finds the last counted turn', () => {
+  // Value: protects=the tail read survives a torn first line and trailing junk; fails_when=a partial line or a later non count record hides the value; why_new=new reader; seam=none; no_claim=files over the tail size
+  const text = lastTurn(5000, 50).slice(20) + '\n' + lastTurn(8000, 80) + '\n' + turnContext('gpt-5') + '\n{"type":"event_msg","payl';
+  assert.equal(contextFromRolloutTail(text), 8080);
+  assert.equal(contextFromRolloutTail(''), null);
+});
+
+test('the gauge handler reads a Codex member from its rollout', () => {
+  // Value: protects=the IPC handler takes the Codex path; fails_when=hive:agentContext is unhooked from readCodexContext; why_new=new branch; seam=source pin like the neighbouring tests, no IPC harness; no_claim=runtime display
+  const main = fs.readFileSync(path.resolve(__dirname, '..', 'src/main/index.ts'), 'utf8');
+  assert.match(main, /ipcMain\.handle\('hive:agentContext'[\s\S]{0,400}hive\.codexHome\(agentId\)[\s\S]{0,200}readCodexContext\(codexHome, sessionId\)/);
 });

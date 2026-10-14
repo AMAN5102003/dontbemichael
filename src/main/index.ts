@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
+import { readCodexContext } from './codexUsage';
 import { execFile, spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
@@ -6197,6 +6198,13 @@ ipcMain.handle('hive:agentUsage', (_evt, cwd: unknown) =>
 // (re)started session zeroes the gauge instead of leaving a stale value up.
 ipcMain.handle('hive:agentContext', (_evt, agentId: unknown) => {
   if (typeof agentId !== 'string') return null;
+  // A Codex agent writes rollouts, not Claude transcripts: read its session's
+  // rollout in its own CODEX_HOME, as the usage fallback does (telemetry.ts).
+  const codexHome = hive.codexHome(agentId);
+  if (codexHome) {
+    const sessionId = hive.lastSession(agentId);
+    return sessionId ? readCodexContext(codexHome, sessionId) : null;
+  }
   const tp = hookServer.transcriptPath(agentId);
   if (!tp) return null;
   return readContextTokens(tp) ?? 0;
