@@ -990,6 +990,32 @@ export class HiveManager {
     return [this.nodeLauncher() ?? 'node', script, ...args].join(' ');
   }
 
+  /** The Codex hook command on Windows: the bare name of a `.cmd` written into
+   *  `runtimeBinDir()`, which every agent's PATH ends with
+   *  (pty.ts withHiveRuntimeFallback). The paths, quoted, live inside the
+   *  `.cmd`, so the command itself has no space and no quote.
+   *
+   *  Codex runs a hook as `cmd.exe /C` plus the command. With a space in the
+   *  hive path (the default ~/HarnessAgents under a Windows user name like
+   *  "Jane Smith"), the unquoted command splits at the space and every hook
+   *  fails. Quoting it does not help on every Codex: codex-cli 0.162.1 passes
+   *  the command as an escaped argument, so cmd.exe reads its inner quotes as
+   *  `\"` and fails the same way. A bare name runs under both shapes.
+   *  Null when the file cannot be written: the caller keeps the old command. */
+  private codexHookWindows(shim: string): string | null {
+    const dir = this.runtimeBinDir();
+    if (!dir) return null;
+    try {
+      mkdirSync(dir, { recursive: true });
+      this.writeIfChanged(join(dir, 'hive-codex-hook.cmd'),
+        `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${process.execPath}" "${shim}" %*\r\n`);
+      return 'hive-codex-hook';
+    } catch (e) {
+      console.error('[hive] codexHookWindows failed:', e);
+      return null;
+    }
+  }
+
   /** One proxy sidecar per live proxy-tier agent, keyed by agentId. Spawned in
    *  ensureAgent, killed on PTY exit / removeAgent / app quit (index.ts) — so a
    *  dead agent never leaks an orphan loopback listener. */
@@ -4589,11 +4615,9 @@ export class HiveManager {
       if (shim) {
         const events = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
           'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'];
-        // Preserve the existing Windows .cmd shape: nested command quotes pass
-        // through a different shell stack there (#350). The reported Codex bug
-        // is POSIX, where ordinary shell quoting is both necessary and verified.
+        // On Windows a command with no space and no quote: see codexHookWindows.
         const command = process.platform === 'win32'
-          ? this.nodeRunUnquoted(shim)
+          ? this.codexHookWindows(shim) ?? this.nodeRunUnquoted(shim)
           : this.nodeRun(shim);
         config += '\n# --- munder-hive lifecycle hooks (auto-generated; do not edit) ---\n';
         for (const ev of events) {
