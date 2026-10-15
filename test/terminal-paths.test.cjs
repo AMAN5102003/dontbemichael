@@ -155,6 +155,19 @@ test('a link covers the cells of its path, past wide characters and inside its q
   assert.deepEqual(linkCellRange(cellsFor(plain), 4, 12, 'notes.md'), { startX: 5, endX: 12 });
 });
 
+test('a dotfile is named by its type: .gitignore, .env and .npmrc open as text', () => {
+  // Value: protects=dotfiles on the edit list open for editing instead of revealing; fails_when=the dotfile rule is dropped or extensionOf's no-extension answer wins; why_new=gitignore, dockerignore, env and npmrc never matched a real dotfile; seam=none; no_claim=a long dotfile name as a token, which waits on the longer extension fix (#190)
+  for (const p of ['.gitignore', 'src/.dockerignore', './.env', '~/.npmrc', 'C:\\proj\\.editorconfig']) {
+    assert.equal(classifyPathToken(p), 'edit', p);
+  }
+  assert.deepEqual(tokensIn('wrote ./.env and ~/.npmrc'), ['./.env', '~/.npmrc']);
+  // A dotfile that is not on a list is still only revealed, and a name with a
+  // real extension after the dot keeps it.
+  assert.equal(classifyPathToken('~/.bashrc'), 'reveal');
+  assert.equal(classifyPathToken('.env.local'), 'reveal');
+  assert.equal(classifyPathToken('src/.eslintrc.json'), 'edit');
+});
+
 test('extensions longer than 8 characters match without truncation and classify correctly', () => {
   // Bare properties file (10-char extension in EDIT_EXTS)
   assert.deepEqual(tokensIn('check application.properties for db config'), ['application.properties']);

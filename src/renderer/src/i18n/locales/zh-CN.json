@@ -218,14 +218,14 @@
   "settings": {
     "title": "设置",
     "changeHomeTitle": "更改办公室文件夹",
-    "resetTitle": "重置一切？",
+    "resetTitle": "抹除这个办公室？",
     "close": "关闭",
     "change": "更改…",
     "apply": "应用中…",
     "moveAndRestart": "迁移并重启",
     "switchAndRestart": "切换并重启",
     "resetting": "重置中…",
-    "eraseEverything": "抹除一切并重启",
+    "eraseEverything": "抹除办公室并重启",
     "nav": {
       "general": "通用",
       "prerequisites": "前置条件",
@@ -248,7 +248,7 @@
       "couldNotOpen": "无法打开那个办公室。"
     },
     "resetConfirm": {
-      "body": "这将永久抹除 {{godName}} 的所有记忆和整个 hive，且无法撤销。任何运行中的会话都会被终止，应用将重启进入新手引导。你确定吗？"
+      "body": "这会永久抹除你的办公室：团队、所有人的记忆、你的设置、“记忆与知识”、保存的密钥和历史记录。团队的文件夹及其中的文件会保留，你的 Claude 登录也会保留。所有人停止工作，应用将重新打开设置。此操作无法撤销。"
     },
     "general": {
       "homeFolder": "办公室文件夹",
@@ -271,7 +271,7 @@
       "language": "语言",
       "languageDesc": "选择应用界面的语言。默认英文。",
       "dangerZone": "危险区",
-      "dangerDesc": "重置会抹掉 {{godName}} 的记忆、整个 hive（每个智能体、消息、任务和看板）、语义记忆宫殿以及所有设置，然后带你回到新手引导。",
+      "dangerDesc": "抹除这个办公室并重新打开设置。团队的文件夹和你的 Claude 登录会保留。",
       "resetStartOver": "重置并重新开始",
       "arabicTerminal": "终端中的阿拉伯语 / RTL 文本",
       "arabicTerminalDesc": "用浏览器的文本引擎渲染终端，让阿拉伯语正确连写并从右向左阅读（xterm 自身没有双向文本支持）。关闭则使用 GPU 渲染器：更快，但无法处理从右向左的文本。对已打开和新开的终端同时生效。",
@@ -2234,6 +2234,7 @@
     "claude": "Claude Code",
     "account": "你的 Claude 账户",
     "checking": "正在检查…",
+    "checkFailed": "无法检查 Claude Code。",
     "installing": "正在安装，大约需要一分钟。",
     "installed": "已安装",
     "installFailed": "无法安装。请检查网络连接，然后重试。",

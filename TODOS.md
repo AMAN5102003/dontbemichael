@@ -40,6 +40,15 @@
 
 ## Research agent (deferred from the third ship of mit/named-links, 2026-10-13)
 
+### A checked message for Pete is never dropped when delivery fails
+
+**What:** `queueForResearch()` in `src/main/hive.ts` removes the message's row from `research-pending.json` before `deliverToResearch()` and the commit succeed, and a delivery error is only logged. Keep the row until delivery succeeds, requeue it on failure, and tell Michael when it can't be delivered.
+
+**Why:** Found by the Codex adversarial review of the mit/named-links ship (2026-10-14). A disk or git error drops an owner or app message for Pete with no trace, and the record that would have recovered it is already gone.
+
+**Effort:** S
+**Priority:** P2
+
 ### Give Pete mail folders it can only read
 
 **What:** Keep the Research team member's inbox and the outbox the app reads in folders only the app writes, and give Pete a way to mark a message handled and to hand in an answer that does not need its shell to write there.
@@ -136,6 +145,17 @@
 **Priority:** P3
 **Depends on:** None
 
+## Reset (deferred from the ship of mit/named-links, 2026-10-14)
+
+### Clear what a reset could not remove on the next launch
+
+**What:** Reset & start over retries each delete for about a second, then logs what is left. Save what still could not be removed and erase it early on the next launch, telling the owner if it still cannot go.
+
+**Why:** The reset erases right after it stops the team without waiting for them to exit; a slow agent can write a file back, and on Windows a file still open can't be deleted, so a few leftovers can stay while setup looks fresh. A saved list of paths to delete at startup needs checks that it only names the app's own folders.
+
+**Effort:** M
+**Priority:** P3
+
 ## Attachments (from the Codex adversarial review of design/studio-v2, 2026-10-01)
 
 ### Keep pasted screenshots somewhere durable
@@ -209,15 +229,6 @@
 
 ## Update notices (deferred from ship of feat/claude-code-update-notice, 2026-09-30)
 
-### Translate the update surfaces
-
-**What:** Move the Claude Code update toast and chip (`CliUpdateNotice.tsx`), the app-update toast and badge, and the quit dialog's closing-time wording into en/zh-CN/ar.
-
-**Why:** All of them are English only today, while most screens are translated; owner chose to translate them together rather than one notice at a time.
-
-**Effort:** M
-**Priority:** P3
-
 ## Secret store (deferred from ship of fix/atomic-secret-store, 2026-09-30)
 
 ## QuickBooks through the Claude account (deferred from ship of feat/qbo-claude-channel, 2026-09-30)
@@ -227,6 +238,8 @@
 **What:** Keep agents from starting their own `claude` (for example `claude -p`) outside the app's hooks, or turn off the Claude account's connectors for such runs.
 
 **Update 2026-10-02 (docs/designs/claude-connectors.md):** once that plan ships, an agent with no connector grants starts with `ENABLE_CLAUDEAI_MCP_SERVERS=false`, which a nested `claude` inherits, so this is closed for them. It stays open for agents with at least one grant (explicit or the QuickBooks role default): a nested `claude` loads every connector with no deny rules. Options: a separate Claude config folder per agent, or blocking `claude` in agent shells.
+
+**Update 2026-10-14 (#325):** a `claude` started from an agent's bash shell now gets `ENABLE_CLAUDEAI_MCP_SERVERS=false` through `CLAUDE_ENV_FILE`, so the everyday case is closed on Mac, Linux and Git Bash. Still open: PowerShell agents on Windows, and an agent that unsets the variable on purpose; the hard guarantee is a separate Claude config folder per agent.
 
 **Why:** The QuickBooks switch and Capabilities are enforced by the app's PreToolUse hook, which reaches an agent only through `--settings` (`src/main/hive.ts`). A nested Claude started from Bash has no hook but inherits the account's QuickBooks (and email), so the switch off is not a hard guarantee. Stated in CHANGELOG 0.0.11.
 
@@ -279,16 +292,6 @@
 
 **Effort:** S
 **Priority:** P3
-
-### Row still names a finished tool
-
-**What:** After PostToolUse the row falls back to the action caption ("using Bash") and keeps counting minutes.
-
-**Why:** The owner can read a finished step as still running.
-
-**Effort:** S
-**Priority:** P3
-
 
 ### Parallel tool calls clear each other's detail
 
@@ -556,18 +559,6 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 **Depends on:** None
 
 ## Documents and security (review items skipped for v0.0.1)
-
-### Parse documents off the main thread
-
-**What:** Run PDF and OOXML extraction in a worker thread or utility process, with a time and page limit.
-
-**Why:** Large or crafted files block every window while they parse.
-
-**Context:** `src/main/docText.ts`; `docTextCli.ts` already runs the same code as a separate entry.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None
 
 ### Gate web tools for members on other engines (issue #230 follow-up)
 
@@ -995,3 +986,15 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 - **Cons:** One more choice in an already full wizard step.
 - **Context:** docs/designs/shared-mailboxes.md (E4, owner deferred in the CEO review). Send only grants live on the Access tab first.
 - **Depends on / blocked by:** Send only grants (shared-mailboxes.md accepted scope) shipping first.
+
+### Translate the update surfaces
+
+**Completed:** next release after 0.2.0 (2026-10-14), contributed in #290.
+
+### Row still names a finished tool
+
+**Completed:** next release after 0.2.0 (2026-10-14), contributed in #288.
+
+### Parse documents off the main thread
+
+**Completed:** next release after 0.2.0 (2026-10-14), documents are read in a process of their own, src/main/docTextProcess.ts.

@@ -170,6 +170,22 @@ test('spawn: stripped agents get the env and strict mode; others get deny rules 
   assert.match(hidden, /\['--strict-mcp-config', '--disallowedTools', \.\.\.disallowed\]/);
 });
 
+test('a claude an agent starts from its shell loads no connector, even when the agent has grants', { skip: process.platform === 'win32' ? 'bash shell env file' : false }, async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md conn shell-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  const granted = await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home }, { connectors: { strip: false, deny: [] } });
+  // The agent keeps its connectors; only its shell commands get the switch.
+  assert.equal(granted.env.ENABLE_CLAUDEAI_MCP_SERVERS, undefined);
+  const file = granted.env.CLAUDE_ENV_FILE;
+  assert.ok(file && fs.existsSync(file), 'shell env file written');
+  // Beside the settings file, outside the hive, so no agent's shell rewrites it.
+  const settings = granted.args[granted.args.indexOf('--settings') + 1];
+  assert.equal(path.dirname(file), path.dirname(settings));
+  const out = spawnSync('bash', ['-c', `source "$1"; printf %s "$ENABLE_CLAUDEAI_MCP_SERVERS"`, 'x', file], { encoding: 'utf8' });
+  assert.equal(out.stdout, 'false');
+});
+
 test('the hook shim refuses MCP calls when it cannot reach the app, and leaves other tools alone (D8)', { skip: process.platform === 'win32' ? 'unix socket paths' : false }, async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-conn-shim-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));

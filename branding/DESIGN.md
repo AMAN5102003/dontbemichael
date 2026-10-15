@@ -1218,6 +1218,18 @@ each side (Michael lands "that's what she said", Andy went to Cornell), and the 
 picked to fit; a break-room line never names its own speaker (owner, 2026-10-03). A
 conversation ends early if either person gets work.
 
+**Pete.** The Research member takes part like everyone else, in his own character (owner,
+2026-10-13). His lines come from his season 9 story, written in his voice: Andy calls him
+Plop, he is the New Jim with nothing in common with Jim, he recites Die Hard for Erin, Poor
+Richard's after work, Kelly's old customer service desk, and the office sizing up the new
+guys. No line says "Pete", since the owner may rename him. The one exception to the deck:
+**his first day welcome.** After the owner turns Research on, the first conversation that
+can be one of Pete's is, with someone in another pod, under the same pod rules. It plays
+once per turn on, kept per office; once played, a restart or a restore does not replay it
+(an office with no record of it yet, such as one that had Research on before it existed,
+plays it once), turning him on again does, and demo or lab banter never uses it up. Idle talk, his included, does not
+run in the compact grid (§8.9).
+
 The first line or conversation comes 8 to 15 s after the office opens, then every 15 to
 30 s. A single line is visible 8 s. Never from a pod with someone at work, and never from
 someone still clocking in.
@@ -1439,9 +1451,10 @@ right column's Ask me card, Michael's question for Oscar, asks whether that paym
 question names the file as a chip (`sheet` icon, the name without extension, "Open"), an
 answer is being typed, and it holds up 2 tasks. Under the frame, three plain notes that add
 what the lead leaves out: named files are buttons (Open, or Show in Finder, "Show in folder"
-on Windows, for anything else, §7.8); the question stays beside it (§7.2); up to five at once,
-a sixth closing the one opened longest ago, with PDF and Office files opening in their own
-app. The frame is one `role="img"` with a full text label; nothing in it
+on Windows, for anything else, §7.8, with PDF and Office files opening in their own app); the
+question stays beside it (§7.2); and it reads what your business already has: Excel exports
+from accounting and payroll software, long PDFs and PowerPoint decks (owner, 2026-10-15; the
+five tab limit is left to the app). The frame is one `role="img"` with a full text label; nothing in it
 can be clicked. File view and card side by side at 980 px and up; under that the card comes
 first (no wider than the app's 520 px right column), then the file, and the tab bar drops Who talks to whom and the Markdown tab, then the
 Needs you pill under 600 px and Tasks under 480 px, so the selected file tab keeps its whole
@@ -1487,11 +1500,13 @@ sideways.
 `/security`, a page to read, not to sell (owner, 2026-10-14): the site nav and footer, no
 hero, no cards, Download the only call to action. One column at about 70 characters: h1
 "Privacy and security", a one line summary, a link back to the home page's privacy section,
-then five sections under h2s: Who reaches what (one table: your team, Michael and Pete
+then six sections under h2s: Who reaches what (one table: your team, Michael and Pete
 against web pages and search, your files and mailboxes, and connectors), The trust layer
 (out: as written, cleaned or not sent; in: instructions removed, the answer labelled, an answer
 that tries to steer flagged to Michael; nothing goes through when the check can't run), What
-stays private (the twelve kinds with their defaults), What goes to Claude, and Where your data
+stays private (the twelve kinds with their defaults), Links in the app (every link in a reply
+names the site it opens, and shows the real one when the words name a different site, §7.8;
+owner, 2026-10-15), What goes to Claude, and Where your data
 lives. Every sentence holds on Mac and Windows; the page states no limit notes. Headings sit
 closer to their text than to the section above; the page never scrolls sideways at 320 px.
 ---
@@ -1704,6 +1719,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-12 | Ask me: the See full context footer shows only when the card has a background, a result or other questions and answers (§7.8). |
 | 2026-10-12 | Task detail: QUESTIONS newest first, each with how long ago it was asked (§7.21). |
 | 2026-10-12 | Office stops: out of credit and a sign in that stopped working join the plan limit break, as a counted owner to do with a coral chip; the plan limit stays the quiet amber break (§7.6a). |
+| 2026-10-13 | Pete joins the idle talk (§8.8): his own lines and bits from his season 9 story, and a first day welcome once per turn on, per office (owner, D1, D5, D7, D9). |
 | 2026-10-13 | Research & privacy (issue #230): a Settings section with the Research row and the data classes (§7.26), Research in the onboarding Team step (§7.25), the one time Research report card (§7.8); the Sites group is gone from the Access tab (§7.12). |
 | 2026-10-13 | The Research team member is called Pete (owner): the Settings copy, the Team step row and the report card name him (§7.8, §7.25, §7.26); his name and engine show as plain text in Edit agent. |
 | 2026-10-13 | The Research member is renamable, Pete by default, and the copy takes its current name; Research & privacy shows in every office (owner, ship 2 D16, ship 2 D17). |
@@ -1725,6 +1741,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-09-28 | (v1) Web: Pro offering removed; nav cut to four links plus Download. |
 | 2026-09-24 | (v1) One spec for app and web, moved into `branding/` with the brand kit. |
 | 2026-10-14 | Web: the privacy section after the Sending block, a Privacy first badge, a three position trust layer switch with the app's Privacy check notes and Pete's labelled answer, and Settings, Research & privacy as a read only picture; Pete's globe avatar; the /security page to read (§9.15, §9.16). |
+| 2026-10-15 | Web: the Files notes swap the five tab limit for what the office reads (Excel exports from accounting and payroll software, long PDFs, PowerPoint decks), PDF and Office opening joins the first note (§9.14); `/security` gains a Links in the app section (§9.16) (owner, 2026-10-15). |
 
 ---
 

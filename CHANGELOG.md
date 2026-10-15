@@ -6,7 +6,39 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
-## [Unreleased]
+## [0.2.1] (2026-10-14)
+
+### Added
+
+- **Pete joins the office's idle time fun.** When he is on and free, Pete says lines of his own and trades paper plane conversations with the rest of the office: Andy calling him Plop, being the New Jim, reciting Die Hard for Erin, Poor Richard's after work, Kelly's old desk, and the office sizing up the new guys. The lines are written in his voice from his story in the show, the way the other running gags are, not quoted from scripts, and none of them uses his name, so they still fit if you rename him. The first conversation after you turn him on is one of his, once each time you turn him on.
+- Search the Skills list by meaning, and find a skill despite a typo (contributed in #177).
+
+### Changed
+
+- Pete's old idle lines about looking things up are gone; his lines come from the show like everyone else's.
+- **Michael hears every message the privacy check keeps from Pete:** who sent it, its subject, why, and what to do next (for a privacy refusal, that what stays private is set in Settings, Research & privacy), so his ask can tell you exactly what was stopped. Before, only the sender was told. When the check itself could not run, the sender is told it is not about the wording and Michael that it is an app problem, instead of "ask again in plainer words". (Agent behavior: what the team and Michael are told.)
+- **An Ask me card that needs you to do something on a website links straight to it.** When you need to sign in, accept terms or pay, the team member who found it now passes on the email's own link for it, and Michael puts it in the ask as a named link, so you no longer dig the email out of your mailbox. Only a link on the sender's own site, never a tracking or shortened one; when there is none, the ask says where to go. (Agent behavior: team members and Michael.)
+- **A new, retimed or turned on schedule waits for its next time** instead of running at once for a time that already passed today (contributed in #316). A time missed while the app was closed still runs once.
+- A click outside Settings asks before it drops unsaved changes (contributed in #292).
+- The update toasts and chips are translated (contributed in #290).
+- A `claude` a team member starts from its own shell loads none of your Claude account's connectors (contributed in #325).
+
+### Fixed
+
+- **The privacy check no longer stops everything going to Pete.** Its answer was thrown away as unreadable whenever it added a sentence after its verdict, so every question to Pete, and the app's closing and office open notices, came back refused.
+- **Reset & start over now starts truly fresh.** It used to erase only the team's memory and the office's work, so Pete's research desk and threads, Memory & Knowledge, saved keys, the history and mail and Slack files carried into the next office. Now everything the app made for the office goes, and setup opens as a new owner sees it. Your team's folders and the files in them, your Claude sign in and the saved copies of your team list stay, and so do your own files in the office folder. The confirm screen says what is erased and what is kept.
+- **In the communication only mode, only a plain status question skips your approval.** A webhook message goes straight through only when it is one short question that names no address, link or amount and asks nobody to act, like "Is the test suite green?". Anything else waits for you, however politely it is worded ("Can you pay the invoice?", contributed in #180, "Any chance you could...", "Is it ok to..."), and the sender can no longer skip that by labelling the message as chatter or by putting the request in its title.
+- Clicking a dotfile an agent names in its terminal, such as `.gitignore`, `.env` or `.npmrc`, opens it for editing instead of only showing it in Finder.
+- Pete's card on the office floor shows the name the app gave him, also in an office that saved him as Research.
+- Uploaded documents are read in a process of their own, so a big or broken file can't freeze the window (contributed in #287), and a PDF is read a page at a time, up to 500 pages (contributed in #289).
+- Installing a skill keeps its PDFs, fonts and images intact (contributed in #323).
+- An Excel file exported from accounting, payroll or other business systems is read instead of refused as empty (contributed in #324), and PowerPoint text keeps slide order (contributed in #171).
+- When the Claude Code check fails during setup, it says so with Try again instead of checking forever (contributed in #314).
+- An Ask me headline is no longer cut at abbreviations like Mr. or Inc. (contributed in #312).
+- A finished tool is no longer shown as running (contributed in #288), and a blocked tool call shows no detail (contributed in #234).
+- Out of range mail send times are rejected (contributed in #286); a pi team member starts with the office's rules (contributed in #309).
+- A hook judges a link to a file that isn't there yet by where it leads (contributed in #238), and the app's helper scripts are rewritten only when they changed (contributed in #297).
+- Settings warnings read in dark mode (contributed in #306); a Markdown link to a path with spaces becomes a file chip (contributed in #307); release notes keep inline code (contributed in #308); a count just under a million reads 1M (contributed in #293); flying paper planes stay hidden until they move (contributed in #310).
 
 ## [0.2.0] (2026-10-13)
 

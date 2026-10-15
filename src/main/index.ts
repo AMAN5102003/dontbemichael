@@ -41,7 +41,7 @@ import {
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
 import { normalizeTimes, timesDelayMs } from '../shared/scheduleTimes';
 import {
-  armPlan, firePayload, upsertMission, deleteMission, setMissionEnabled, pauseMissionsOf,
+  armPlan, catchUpFloor, firePayload, upsertMission, deleteMission, setMissionEnabled, pauseMissionsOf,
   migrateMissions, clampIntervals, buildScheduleRequest, applyScheduleRequest, missionsFor, fileScheduleRequest, foldScheduleRequests,
   requestSummary, whenWords, cleanFocus, scheduledJobsBlock,
   type ScheduleRequest
@@ -70,7 +70,7 @@ import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { makeResearchGoal } from './researchGoal';
 import { ownResearchDir, readResearchNotes } from './researchNotes';
-import { claudeProjectsRoot, projectDir, readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
+import { claudeProjectsRoot, projectDir, projectDirs, readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { listIssues, listCIRuns } from './github';
 import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
 import {
@@ -110,6 +110,7 @@ import { emailCalendarAllowed } from '../shared/mcpCatalog';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
 import { pastesDir, savePaste, sweepOldPastes } from './pastes';
+import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
 import { buildWorkerLaunch } from './workerLaunch';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
@@ -616,7 +617,7 @@ const standingFit = standingFitCheck({
   // An empty folder only the app writes, never the office folder agents work
   // in, so no CLAUDE.md or project settings an agent left can sway the check.
   cwd: () => {
-    const dir = join(app.getPath('userData'), 'standing-check');
+    const dir = join(app.getPath('userData'), STANDING_CHECK_DIR);
     mkdirSync(dir, { recursive: true });
     // Trusted up front, as agent folders are at spawn, so the check never
     // stops on Claude Code's "trust this folder" question.
@@ -641,7 +642,7 @@ function sweepOldCheckTranscripts(): void {
   if (oldCheckTranscriptsSwept) return;
   oldCheckTranscriptsSwept = true;
   const cutoff = Date.now() - 60 * 60_000;
-  for (const folder of ['standing-check', 'trust-check']) {
+  for (const folder of CHECK_FOLDERS) {
     const dir = projectDir(join(app.getPath('userData'), folder));
     let names: string[] = [];
     try { names = readdirSync(dir); } catch { continue; }
@@ -654,7 +655,7 @@ function sweepOldCheckTranscripts(): void {
 const trustLayer = makeTrustLayer({
   run: async (prompt) => {
     sweepOldCheckTranscripts();
-    const dir = join(app.getPath('userData'), 'trust-check');
+    const dir = join(app.getPath('userData'), TRUST_CHECK_DIR);
     mkdirSync(dir, { recursive: true });
     try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
     // Always Claude, whatever engine the office runs on: the check uses
@@ -1196,7 +1197,9 @@ function syncMissions(): void {
       // the worst case is a lost stamp rather than a hot loop.
       const rearm = (justFired: boolean): void => {
         const now = Date.now();
-        const persisted = (readConfig().missions ?? []).find((x) => x.id === m.id)?.lastFiredAt ?? 0;
+        // The later of the last run and when its times took effect (catchUpFloor).
+        const stored = (readConfig().missions ?? []).find((x) => x.id === m.id);
+        const persisted = stored ? catchUpFloor(stored) : 0;
         const floor = justFired ? Math.max(persisted, now) : persisted;
         // Several "when" lines re-arm the same way (src/shared/scheduleTimes.ts).
         const delay = plan.type === 'times' ? timesDelayMs(plan.times, now, floor) : weeklyDelayMs(plan.weekly, now, floor);
@@ -1427,7 +1430,7 @@ function receiveScheduleRequest(actor: string, payload: unknown, why = ''): stri
   if (actor === godId) {
     let refused = '';
     const res = applyMissions((list) => {
-      const applied = applyScheduleRequest(built.request, list, `m_${Date.now().toString(36)}`);
+      const applied = applyScheduleRequest(built.request, list, `m_${Date.now().toString(36)}`, Date.now());
       if (!applied.ok) { refused = applied.error; return null; }
       return applied.missions.map((m) => (m.id === applied.missionId ? { ...m, approvedBy: 'michael' as const } : m));
     });
@@ -1547,7 +1550,7 @@ function decideScheduleRequest(id: string, approve: boolean, by: 'owner' | 'mich
     let refused = '';
     // Apply against the list as it is when written (applyMissions reads it fresh).
     const res = applyMissions((list) => {
-      const applied = applyScheduleRequest(req, list, `m_${Date.now().toString(36)}`);
+      const applied = applyScheduleRequest(req, list, `m_${Date.now().toString(36)}`, Date.now());
       if (!applied.ok) { refused = applied.error; return null; }
       return applied.missions.map((m) => (m.id === applied.missionId ? { ...m, approvedBy: by } : m));
     });
@@ -2862,16 +2865,20 @@ function handleWebhookMessage(msg: WebhookInbound, endpoint: WebhookEndpointRef)
   // 192-bit unguessable token, returned once; only its hash is stored.
   const token = randomBytes(24).toString('hex');
   const tokenHash = hashWebhookToken(token);
-  const full = msg.title ?? msg.message;
-  const title = full.length > 80 ? `${full.slice(0, 79)}…` : full;
-
   const trigger = (readConfig().webhookTriggers ?? []).find((t) => t.id === endpoint.id);
   // An endpoint that vanished between the request and this lookup falls back to
   // the STRICTEST mode, never the most permissive one.
   const mode: TriggerMode = trigger?.mode ?? DEFAULT_TRIGGER_MODE;
-  // The caller's own declaration wins; `classifyInboundKind` is the conservative
-  // guess for callers that don't declare (it leans 'directive' on purpose).
-  const kind: InboundKind = msg.kind ?? classifyInboundKind(msg.message);
+  // A caller may only make a message stricter: 'directive' is honored, but a
+  // 'communication' label is checked like an unlabeled message, so a label can't
+  // skip the approval hold (ship review, 2026-10-14). `classifyInboundKind`
+  // leans 'directive' on purpose.
+  const kind: InboundKind = msg.kind === 'directive' ? 'directive' : classifyInboundKind(msg.message);
+  // Only the message is checked, so a message let through as chatter in
+  // communication only mode takes its title from the message: a caller's title
+  // could otherwise carry the instruction to Michael (ship review, 2026-10-14).
+  const full = mode === 'communication-only' && isAutoAllowed(mode, kind) ? msg.message : (msg.title ?? msg.message);
+  const title = full.length > 80 ? `${full.slice(0, 79)}…` : full;
   const peer = msg.from?.trim() || endpoint.name || endpoint.id;
   // Minted here, not derived from the task id, because a HELD message has no task
   // id yet and must still be pairable with the reply it eventually earns.
@@ -3562,7 +3569,7 @@ ipcMain.handle('pty:spawn', async (evt, opts: AgentSpawnOptions) => {
  *  it can ALSO be invoked by the god-triggered ephemeral-worker watcher (which has
  *  no renderer `evt`). `owner` is the window that should receive this PTY's output
  *  (null → the primary window). Behavior-identical to the prior inline handler. */
-async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebContents | null): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string }> {
+async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebContents | null): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string; name?: string }> {
   // A team member never starts without the hook channel (S1,
   // docs/designs/windows-11-installer.md): it would run unwatched, or report to
   // whatever holds the channel's name.
@@ -4246,7 +4253,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     try { hive.tellHouseRules(opts.hive.id, didResume); } catch (e) { console.error('[house-rules]', e); }
   }
   if (res.ok && opts.hive?.isGod) { standupOnOfficeOpen(); catchUpOwnerAnswers(); }
-  return { ...res, cwd: opts.cwd, ...(worktreePath ? { worktreePath } : {}), ...(resumeNotFound ? { resumeNotFound: true } : {}), ...(didResume ? { resumed: true } : {}), ...(seedPrompt ? { seedPrompt } : {}) };
+  // Research's name is the app's, from its settings (ship 2 D17): the floor
+  // takes it from here, so a card saved under an older name follows it.
+  return { ...res, cwd: opts.cwd, ...(worktreePath ? { worktreePath } : {}), ...(resumeNotFound ? { resumeNotFound: true } : {}), ...(didResume ? { resumed: true } : {}), ...(seedPrompt ? { seedPrompt } : {}), ...(isResearch ? { name: hive.researchName() } : {}) };
 }
 ipcMain.handle('pty:write', (_evt, id: string, data: string) => {
   if (typeof id !== 'string' || typeof data !== 'string') return { ok: false, error: 'invalid args' };
@@ -6163,22 +6172,39 @@ ipcMain.handle('app:resetAll', () => {
   try { memory.stop(); } catch (e) { console.error('[reset] memory.stop:', e); }
   try { memoryTidy.stop(); } catch (e) { console.error('[reset] memoryTidy.stop:', e); }
   try { persist.close(); } catch (e) { console.error('[reset] persist.close:', e); }
+  // The same stops as quitting (teardownAndQuit): proxy sidecars and the
+  // webhook server would otherwise outlive the relaunch.
+  try { hive.stopAllProxyBridges(); } catch (e) { console.error('[reset] stopAllProxyBridges:', e); }
+  try { stopWebhookServer(); } catch (e) { console.error('[reset] webhook.stop:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[reset] killAll:', e); }
   try { hive.removeExposedCodexData(); } catch (e) { console.error('[reset] removeExposedCodexData:', e); }
-  // Erase the hive (Michael's + every agent's memory, inboxes, tasks, board,
-  // git history) and the semantic-memory palace. Only these harness-created
-  // subdirs are removed — never the user's whole harnessHome folder.
-  for (const dir of [hive.root(), memory.palacePath()]) {
-    if (!dir) continue;
-    try { rmSync(dir, { recursive: true, force: true }); }
-    catch (e) { console.error('[reset] rm', dir, e); }
-  }
   // The roster is the renderer's half of the same state, so it retires with the
   // hive — archived into roster-backups/ rather than deleted, and cleared as the
   // active file so re-selecting this folder later doesn't resurrect agents whose
   // sessions and memory are gone.
   try { roster.archive(); }
   catch (e) { console.error('[reset] roster.archive:', e); }
+  // Erase everything else the app made for this office (factoryReset.ts): the
+  // hive (every agent's memory, inboxes, tasks, board, git history), the
+  // palace, Research's desk and threads, Company knowledge, saved keys and
+  // history, so setup starts as a new owner sees it. Only app-made entries
+  // go, never the whole office folder. Read before resetConfig() forgets it.
+  const resetHome = readConfig().harnessHome;
+  const userData = app.getPath('userData');
+  const kgRoot = knowledge.root();
+  const failed = eraseOfficeData({
+    home: resetHome ? expandTilde(resetHome) : null,
+    userData,
+    // Only folders outside the office folder: the hive, palace and Research's
+    // desk are in its own entries, removed only when it really is an office.
+    extra: [
+      ...(researchDesk() ? projectDirs(researchDesk()!) : []),
+      ...CHECK_FOLDERS.flatMap((f) => projectDirs(join(userData, f)))
+    ],
+    // Company knowledge the owner moved out of the app's data folder.
+    knowledgeRoot: resolve(kgRoot) !== resolve(join(userData, 'knowledge')) ? kgRoot : null
+  });
+  if (failed.length) console.error('[reset] could not remove:', failed);
   // Back to first-run defaults, then relaunch clean so all in-memory services
   // re-bootstrap from scratch and the renderer lands on onboarding.
   resetConfig();
@@ -6355,12 +6381,12 @@ ipcMain.handle('missions:upsert', (_evt, mission: unknown): MissionOpResult => {
     if (!times) return { ok: false, error: 'invalid schedule times' };
     clean = { ...clean, times };
   }
-  return applyMissions((list) => upsertMission(list, clean));
+  return applyMissions((list) => upsertMission(list, clean, Date.now()));
 });
 ipcMain.handle('missions:delete', (_evt, id: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => deleteMission(list, id)) : { ok: false, error: 'invalid id' });
 ipcMain.handle('missions:setEnabled', (_evt, id: unknown, on: unknown): MissionOpResult =>
-  typeof id === 'string' ? applyMissions((list) => setMissionEnabled(list, id, on === true)) : { ok: false, error: 'invalid id' });
+  typeof id === 'string' ? applyMissions((list) => setMissionEnabled(list, id, on === true, Date.now())) : { ok: false, error: 'invalid id' });
 
 // ─── IPC: schedule requests (an agent asked, the owner decides in ASK ME) ────
 ipcMain.handle('scheduleRequests:list', () => {

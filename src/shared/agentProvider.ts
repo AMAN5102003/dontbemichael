@@ -509,7 +509,15 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // or we lean on the renderer idle nudge) is UNVERIFIED pending keys. Renderer nudge
     // is the guaranteed drain fallback either way.
     canReceiveInbox: true,
-    initialPromptFlag: undefined, // positional, like codex: pi "<prompt>"
+    // pi's own usage is `pi [options] [--] [@files...] [messages...]`, where a
+    // `message` provides the initial prompt. We spawn in a PTY, so pi opens its TUI
+    // after that turn instead of running once and exiting. Declaring the positional
+    // is what makes hive.ensureAgent put the identity and the protocol on argv; with
+    // it unset the same branch spawned pi BARE, so the bridge, HIVE_SOCK and
+    // canReceiveInbox above were all live for an agent that had never been told the
+    // hive exists. test/hive-protocol-on-spawn.test.cjs holds that line.
+    initialPromptFlag: undefined,
+    positionalInitialPrompt: true,
     resumeFlag: '--session',
     // --ignore-scripts: don't run the package's postinstall on the user's machine.
     installCommand: 'npm install -g --ignore-scripts @earendil-works/pi-coding-agent',

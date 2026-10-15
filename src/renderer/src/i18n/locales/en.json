@@ -218,14 +218,14 @@
   "settings": {
     "title": "Settings",
     "changeHomeTitle": "Change office folder",
-    "resetTitle": "Reset everything?",
+    "resetTitle": "Erase this office?",
     "close": "Close",
     "change": "Change…",
     "apply": "Applying…",
     "moveAndRestart": "Move & restart",
     "switchAndRestart": "Switch & restart",
     "resetting": "Resetting…",
-    "eraseEverything": "Erase everything & restart",
+    "eraseEverything": "Erase office & restart",
     "nav": {
       "general": "General",
       "prerequisites": "Prerequisites",
@@ -248,7 +248,7 @@
       "couldNotOpen": "Couldn't open that office."
     },
     "resetConfirm": {
-      "body": "This permanently erases all of {{godName}}'s memories and the entire hive, and cannot be undone. Any running sessions will be terminated and the app will relaunch into onboarding. Are you sure?"
+      "body": "This erases your office for good: the team, everyone's memory, your settings, Memory & Knowledge, saved keys and history. Your team's folders and the files in them stay, and so does your Claude sign in. Everyone stops working and the app opens setup again. This cannot be undone."
     },
     "general": {
       "homeFolder": "Office folder",
@@ -271,7 +271,7 @@
       "language": "Language",
       "languageDesc": "Choose the language for the app interface. English is the default.",
       "dangerZone": "Danger zone",
-      "dangerDesc": "Reset wipes {{godName}}'s memories, the entire hive (every agent, message, task, and the board), the semantic memory palace, and all settings, then takes you back to onboarding.",
+      "dangerDesc": "Erases this office and opens setup again. Your team's folders and your Claude sign in stay.",
       "resetStartOver": "Reset & start over",
       "arabicTerminal": "Arabic / RTL text in terminals",
       "arabicTerminalDesc": "Renders terminals with the browser's text engine so Arabic joins and reads right to left (xterm has no bidi of its own). Off is the GPU renderer: faster, but it can't lay out right to left text. Applies to open terminals and new ones alike.",
@@ -2234,6 +2234,7 @@
     "claude": "Claude Code",
     "account": "Your Claude account",
     "checking": "Checking…",
+    "checkFailed": "Could not check Claude Code.",
     "installing": "Installing. This takes about a minute.",
     "installed": "Installed",
     "installFailed": "Could not install. Check your internet connection, then try again.",

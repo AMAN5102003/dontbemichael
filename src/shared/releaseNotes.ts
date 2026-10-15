@@ -118,13 +118,17 @@ function bulletPrefix(line: string): string | null {
  * class of bug lives, and it is far easier to pin here than through the digest.
  */
 export function stripMarkdown(md: string): string {
+  // Inline code is literal: `<id>`, `__init__` and `*.md` must come out as
+  // written, so each span is set aside before the rules below and put back
+  // after them, backticks dropped.
+  const code: string[] = [];
   return String(md ?? '')
+    .replace(/`([^`]*)`/g, (_, inner: string) => `\uE000${code.push(inner) - 1}\uE001`)
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')            // images/badges: gone entirely
     .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')         // inline links → their label
     .replace(/\[([^\]]*)\]\[[^\]]*\]/g, '$1')        // reference links → their label
     .replace(/<https?:\/\/[^>]*>/g, '')              // autolinks: the URL is noise here
     .replace(/<[^>\s][^>]*>/g, '')                   // stray inline HTML
-    .replace(/`([^`]*)`/g, '$1')                     // inline code, backticks only
     .replace(/\*\*\*([^*]+)\*\*\*/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     // Struck-through text is retracted, not emphasised — "on ~~Windows~~ macOS"
@@ -139,6 +143,9 @@ export function stripMarkdown(md: string): string {
     .replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^[\s—–:.,;·-]+/, '')         // leading orphan punctuation from a stripped link
+    // Code goes back last, so a span that opens the line keeps its own
+    // punctuation: `.env` and `--verbose` are not orphans.
+    .replace(/\uE000(\d+)\uE001/g, (_, i: string) => (code[Number(i)] ?? '').replace(/\s+/g, ' '))
     .trim();
 }
 

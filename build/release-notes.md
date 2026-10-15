@@ -1,4 +1,4 @@
-- **Pete** is the one teammate on the internet.
-- **A trust layer** checks what reaches Pete.
-- **The office stops** when your account can't run.
-- **Links name** the site they open.
+- **Pete joins** the office's idle chatter.
+- **Reset & start over** starts truly fresh.
+- **Webhooks** hold all but a plain status question.
+- **Michael hears** what the privacy check stops.

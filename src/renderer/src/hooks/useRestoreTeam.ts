@@ -159,8 +159,9 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
                 archived: false,
                 status: 'idle',
                 // Research wears Pete, its own face, also in an office that
-                // saved it in Ryan's (owner, third ship D4).
-                ...(a.id === RESEARCH_ID ? { character: RESEARCH_CHARACTER } : {}),
+                // saved it in Ryan's (owner, third ship D4), and the name the
+                // app gave it, also in one that saved it as Research.
+                ...(a.id === RESEARCH_ID ? { character: RESEARCH_CHARACTER, ...(res.name ? { name: res.name } : {}) } : {}),
                 // Surface the worktree fallback on the floor card; otherwise normal.
                 action: worktreeGone ? 'worktree gone, using base repo' : ACTION_CLOCKING_IN,
                 // The worktree is no longer on disk — drop it so this agent is treated

@@ -88,6 +88,17 @@ test('emphasis markers go, snake_case identifiers stay', () => {
   assert.equal(stripMarkdown('![shield](https://img.shields.io/v.svg)'), '');
 });
 
+test('inline code comes out as written: no HTML, emphasis or link rule reaches inside it', () => {
+  assert.equal(stripMarkdown("Python's `__init__` files"), "Python's __init__ files");
+  assert.equal(stripMarkdown('Run `claude --model <id>` to pick'), 'Run claude --model <id> to pick');
+  assert.equal(stripMarkdown('`*.md` globs and `*.ts` files'), '*.md globs and *.ts files');
+  assert.equal(stripMarkdown('use `**kwargs` and `~~old~~` as is'), 'use **kwargs and ~~old~~ as is');
+  assert.equal(stripMarkdown('`.env` is read at launch'), '.env is read at launch', 'a span that opens the line keeps its dot');
+  assert.equal(stripMarkdown('`--verbose` flag'), '--verbose flag');
+  // Outside the code span the usual rules still run.
+  assert.equal(stripMarkdown('**Bold** then `<b>` and <b>tag</b>'), 'Bold then <b> and tag');
+});
+
 test("the 'What's new' section wins over the release template's preamble", () => {
   // This is the shape of RELEASE.md: a tagline and a site link come first, and
   // taking "the first lines" of the body would digest the boilerplate the user

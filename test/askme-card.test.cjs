@@ -21,6 +21,16 @@ test('the headline is Michael\'s bold lead, else the first sentence, as plain te
   assert.equal(askHeadline('Sign in again\nwith the app password'), 'Sign in again');
 });
 
+test('the headline does not truncate at common abbreviations', () => {
+  assert.equal(askHeadline('Mr. Davis sent an invoice for $500. Should we pay it?'), 'Mr. Davis sent an invoice for $500.');
+  assert.equal(askHeadline('Dr. Watson requested an update on the case. What should I reply?'), 'Dr. Watson requested an update on the case.');
+  assert.equal(askHeadline('Invoice No. 42 is ready for review. Can you check it?'), 'Invoice No. 42 is ready for review.');
+  assert.equal(askHeadline('The answer was no. What should we do next?'), 'The answer was no.');
+  assert.equal(askHeadline('Acme Inc. sent their proposal. Should we review it?'), 'Acme Inc. sent their proposal.');
+  assert.equal(askHeadline('e.g. please check whether the payment cleared. It is pending.'), 'e.g. please check whether the payment cleared.');
+  assert.equal(askHeadline('U.S. tax forms are ready. Should I file them?'), 'U.S. tax forms are ready.');
+});
+
 test('the headline keeps underscores in file names and addresses, and drops them as emphasis', () => {
   assert.equal(askHeadline('Should I send `monthly_report.pdf` to Kelly? It is ready.'), 'Should I send monthly_report.pdf to Kelly?');
   assert.equal(askHeadline('Can I email first_last@acme.com the quote?'), 'Can I email first_last@acme.com the quote?');

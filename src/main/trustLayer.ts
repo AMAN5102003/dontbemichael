@@ -28,7 +28,7 @@ import {
   type DataClassId,
   type DataClassSettings
 } from '../shared/dataClasses';
-import { refusalForClass, REFUSAL_TOO_LONG, REFUSAL_UNSURE } from '../shared/research';
+import { refusalForClass, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG, REFUSAL_UNSURE } from '../shared/research';
 
 /** The model the layer runs on, a quick one, and how long one check may take. */
 export const TRUST_MODEL = 'claude-haiku-4-5';
@@ -110,14 +110,66 @@ export function outboundPrompt(subject: string, body: string, nonce: string): st
   ].join('\n');
 }
 
-/** The first JSON object in the model's answer, read strictly. */
+/** The JSON object the model's answer opens with, read strictly. The answer
+ *  must start with it, bare or in a code fence; text after it is ignored, so a
+ *  verdict followed by a sentence of explanation still counts (seen live: every
+ *  check in an office failed that way). Nothing later in the answer is ever
+ *  read as the verdict, so a quoted object can't stand in for it, and a
+ *  verdict that lets something through is not trusted when another verdict
+ *  follows it (a self correction, or one copied from the text checked).
+ *  leadingObject reads strings, so a code fence inside the text is kept. */
 function readJson(answer: string): Record<string, unknown> | null {
-  const a = answer.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/, '').trim();
-  if (!a.startsWith('{') || !a.endsWith('}')) return null;
+  let a = answer.trim();
+  const fenced = /^```[a-z]*[ \t]*\n?/i.exec(a);
+  if (fenced) a = a.slice(fenced[0].length).trim();
+  const obj = leadingObject(a);
+  if (obj === null) return null;
   try {
-    const v = JSON.parse(a) as unknown;
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+    const v = JSON.parse(obj) as unknown;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+    const o = v as Record<string, unknown>;
+    if (String(o.decision ?? '').toUpperCase() !== 'DENY' && laterVerdict(a.slice(obj.length))) return null;
+    return o;
   } catch { return null; }
+}
+
+/** Does `rest` hold another JSON object with a "decision" key? Each "{" is tried
+ *  as the start of a whole object, so prose that only mentions the field (a
+ *  schema in an explanation) is not mistaken for a second verdict. */
+function laterVerdict(rest: string): boolean {
+  // A brace that opens on a decision key, in any case, counts even when what
+  // follows is not valid JSON (a trailing comma, a cut off object).
+  if (/\{[^{}]*"decision"\s*:/i.test(rest)) return true;
+  let n = 0;
+  for (let i = rest.indexOf('{'); i >= 0; i = rest.indexOf('{', i + 1)) {
+    if (++n > 50) return true; // too many to check: fail closed
+    const obj = leadingObject(rest.slice(i));
+    if (!obj) continue;
+    try {
+      const v = JSON.parse(obj) as unknown;
+      if (v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).some((k) => k.toLowerCase() === 'decision')) return true;
+    } catch { /* not an object; keep looking */ }
+  }
+  return false;
+}
+
+/** The balanced {...} that `text` starts with, or null. */
+function leadingObject(text: string): string | null {
+  if (!text.startsWith('{')) return null;
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (c === '\\') i++;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === '{') depth++;
+    else if (c === '}' && --depth === 0) return text.slice(0, i + 1);
+  }
+  return null;
 }
 
 function kinds(v: unknown, settings: DataClassSettings): DataClassId[] | null {
@@ -203,7 +255,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     const subject = asText(msg.subject);
     const body = asText(msg.body);
     let settings: DataClassSettings;
-    try { settings = deps.settings(); } catch { return { decision: 'deny', reason: REFUSAL_UNSURE }; }
+    try { settings = deps.settings(); } catch { return { decision: 'deny', reason: REFUSAL_CHECK_FAILED }; }
     if (subject.length + body.length > TRUST_MAX_CHARS) {
       deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'length' });
       return { decision: 'deny', reason: REFUSAL_TOO_LONG };
@@ -219,7 +271,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     const v = text ? parseInbound(text, settings) : null;
     if (!v) {
       deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'deny', by: text ? 'unreadable' : 'no-answer' });
-      return { decision: 'deny', reason: REFUSAL_UNSURE };
+      return { decision: 'deny', reason: REFUSAL_CHECK_FAILED };
     }
     if (v.decision === 'deny') {
       deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'model', class: v.kinds[0] });
@@ -257,7 +309,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     const v = text ? parseOutbound(text) : null;
     if (!v) {
       deps.log?.({ kind: 'trust-layer', way: 'out', decision: 'deny', by: text ? 'unreadable' : 'no-answer' });
-      return { decision: 'deny', reason: REFUSAL_UNSURE };
+      return { decision: 'deny', reason: REFUSAL_CHECK_FAILED };
     }
     deps.log?.({ kind: 'trust-layer', way: 'out', decision: v.decision, flagged: v.flag });
     return v.decision === 'pass'

@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.0). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.1). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -121,6 +121,21 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.1 (2026-10-14)
+- Reset & start over starts truly fresh: it erases everything the app made for the office (the
+  team, memory, settings, Memory & Knowledge, saved keys, history, agents' worktrees) and keeps
+  your team's folders, your own files and your Claude sign in.
+- Michael hears every message the privacy check keeps from Pete, with who, what, why and what to
+  do next; a check that could not run says so instead of asking for plainer words.
+- An Ask me card that needs you to sign in, accept terms or pay on a website links straight to it.
+- In the communication only mode, a webhook message skips your approval only when it is one short
+  plain status question; a label or a title can't skip it.
+- Pete joins the office's idle chatter with lines of his own and a first day welcome.
+- A new, retimed or turned on schedule waits for its next time instead of running at once.
+- About twenty contributor fixes: documents read in their own process, PDFs up to 500 pages,
+  Excel files from business systems, skill installs, setup retry, Ask me headlines, dark mode
+  warnings, and more (CHANGELOG).
 
 ### 0.2.0 (2026-10-13)
 - Pete, the Research team member, is the one way to the internet in every office: nobody else

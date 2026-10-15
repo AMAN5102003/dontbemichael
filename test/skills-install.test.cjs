@@ -14,9 +14,11 @@ const assert = require('node:assert/strict');
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
+const https = require('node:https');
+const { EventEmitter } = require('node:events');
 const loadTs = require('./load-ts.cjs');
 
-const { parseGitHubSourceUrl, resolveRepoRootSkillDir, safeSkillDirName, uninstallSkill } =
+const { parseGitHubSourceUrl, resolveRepoRootSkillDir, safeSkillDirName, installSkill, uninstallSkill } =
   loadTs('src/main/skills.ts');
 
 const tmpdir = (t) => {
@@ -124,6 +126,57 @@ test('a root listing failure is reported, and an unsafe entry name cannot crash 
   assert.match(failed.error, /rate limit/);
   const unsafe = await resolveRepoRootSkillDir(lister({ '': [dir('src')] }), '../../etc');
   assert.equal(unsafe.unsupported, true);
+});
+
+test('installing a skill writes binary and text files byte for byte', async (t) => {
+  const home = tmpdir(t);
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
+  const realRequest = https.request;
+  t.after(() => {
+    https.request = realRequest;
+    for (const [k, v] of Object.entries(saved)) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  });
+
+  const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n%'), Buffer.from([0x93, 0x8c, 0x8b, 0x9e, 0x00, 0xff, 0xc3])]);
+  const skillMd = Buffer.from('---\nname: demo\n---\nCafé ☕\n', 'utf8');
+  const listing = [
+    { name: 'SKILL.md', path: 'skills/demo/SKILL.md', type: 'file', size: skillMd.length, download_url: 'https://raw.example/SKILL.md' },
+    { name: 'showcase.pdf', path: 'skills/demo/showcase.pdf', type: 'file', size: pdf.length, download_url: 'https://raw.example/showcase.pdf' }
+  ];
+  const bodies = new Map([
+    ['https://api.github.com/repos/o/r/contents/skills/demo?ref=main', Buffer.from(JSON.stringify(listing))],
+    ['https://raw.example/SKILL.md', skillMd],
+    ['https://raw.example/showcase.pdf', pdf]
+  ]);
+  https.request = (url, _opts, onResponse) => {
+    const req = new EventEmitter();
+    req.setTimeout = () => req;
+    req.destroy = () => {};
+    req.end = () => setImmediate(() => {
+      const body = bodies.get(String(url));
+      const res = new EventEmitter();
+      res.statusCode = body ? 200 : 404;
+      res.headers = {};
+      res.resume = () => {};
+      onResponse(res);
+      if (body) {
+        const cut = body.indexOf(0xc3) > 0 ? body.indexOf(0xc3) + 1 : 1;
+        res.emit('data', body.subarray(0, cut));
+        res.emit('data', body.subarray(cut));
+      }
+      res.emit('end');
+    });
+    return req;
+  };
+
+  const res = await installSkill('https://github.com/o/r/tree/main/skills/demo', 'demo');
+  assert.deepEqual(res, { ok: true, path: path.join(home, '.claude', 'skills', 'demo') });
+  assert.deepEqual(fs.readFileSync(path.join(res.path, 'showcase.pdf')), pdf, 'the PDF must not be re-encoded');
+  assert.deepEqual(fs.readFileSync(path.join(res.path, 'SKILL.md')), skillMd, 'text survives a chunk split');
 });
 
 test('uninstall refuses anything outside a managed skills root', (t) => {
