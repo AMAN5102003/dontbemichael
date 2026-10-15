@@ -95,8 +95,19 @@ export function App() {
   // between, matching the existing `cth:` CustomEvent convention.
   useEffect(() => {
     const onOpenSettings = (e: Event): void => {
-      const section = (e as CustomEvent<{ section?: SettingsSection }>).detail?.section;
-      setSettingsSection(section);
+      const section = (e as CustomEvent<{ section?: string }>).detail?.section;
+      const nextSection: SettingsSection = section === 'General' ||
+        section === 'Company profile' ||
+        section === 'Prerequisites' ||
+        section === 'Agents' ||
+        section === 'Skills' ||
+        section === 'Connections' ||
+        section === 'Research & privacy' ||
+        section === 'Voice' ||
+        section === 'Memory & Knowledge'
+          ? section
+          : 'General';
+      setSettingsSection(nextSection);
       setSettingsOpen(true);
     };
     window.addEventListener('cth:open-settings', onOpenSettings);
