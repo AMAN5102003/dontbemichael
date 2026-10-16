@@ -50,6 +50,29 @@ export function tidy(text: unknown, max: number): string {
   return String(text ?? '').replace(/[\p{Pi}\p{Pf}"„‟″＂\s]+/gu, ' ').trim().slice(0, max);
 }
 
+/** The notes in a Research notes text, without the index page's own lines
+ *  (its heading, marker, the app's line about the inbox, file names): what an
+ *  owner would call the notes. Empty when there are none (owner, 2026-10-16:
+ *  "what note was it?"). */
+export function notesPreview(text: string, max = HELD_OPENING_MAX): string {
+  const lines = String(text ?? '').split(/\r?\n/).map((l) => l.trim()).filter((l) =>
+    l && !l.startsWith('#') && !/^<!--.*-->$/.test(l) && !/^The app keeps this file\b/.test(l) && !/^[\w.-]+\.md$/.test(l));
+  return tidy(lines.map((l) => l.replace(/^[-*]\s+/, '')).join(' \u00b7 '), max);
+}
+
+/** Why a hold happened, in the owner's terms (owner, 2026-10-16: "what caused
+ *  the privacy check to fail?"), read from the row's why and the check's report. */
+export type HeldCause = 'starting' | 'slow' | 'unreadable' | 'settings' | 'off' | 'tooLong' | 'checkDown';
+export function heldCause(r: Pick<HeldRow, 'why' | 'error'>): HeldCause {
+  if (r.why === 'too-long') return 'tooLong';
+  if (r.why === 'unreadable') return 'unreadable';
+  if (r.why === 'settings') return 'settings';
+  if (r.why === 'no-layer') return 'off';
+  if (r.why === 'no-answer' && /never took the prompt/.test(r.error ?? '')) return 'starting';
+  if (r.why === 'no-answer' && /no answer within|timed out/.test(r.error ?? '')) return 'slow';
+  return 'checkDown';
+}
+
 /** A deny is a hold when the check could not run: too long, no answer, an
  *  unreadable answer, settings that could not be read, or no check at all.
  *  A deny the check reached (private data, a pattern) is a stop, not a hold. */

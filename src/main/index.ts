@@ -24,7 +24,7 @@ import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
 import { REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG, RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_WORK_STYLE } from '../shared/research';
-import { heldWhy, HELD_TO_MEMORY } from '../shared/heldRecord';
+import { heldWhy, notesPreview, HELD_TO_MEMORY } from '../shared/heldRecord';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -823,7 +823,7 @@ async function researchNotesForPalace(id: string, agentDir: string): Promise<str
   if (v.decision === 'deny') {
     // Held like a message: Pulse lists it and counts it (owner, 2026-10-16).
     const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
-    if (why) hive.recordHeld('out', RESEARCH_ID, HELD_TO_MEMORY, 'Research notes', text, why, v.error, 'nobody');
+    if (why) hive.recordHeld('out', RESEARCH_ID, HELD_TO_MEMORY, 'Research notes', notesPreview(text), why, v.error, 'nobody');
     return clear();
   }
   mkdirSync(dir, { recursive: true });

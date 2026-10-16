@@ -2622,7 +2622,12 @@
       "why": {
         "checkDown": "The privacy check couldn't run, so it was held instead of going out unchecked.",
         "tooLong": "It was too long for the privacy check, so it was held instead of going out unchecked.",
-        "detail": "What the check reported: {{error}}"
+        "detail": "What the check reported: {{error}}",
+        "starting": "The privacy checker was still starting up along with your team and didn't answer in time, so it was held instead of going out unchecked.",
+        "slow": "The privacy checker took too long to answer, so it was held instead of going out unchecked.",
+        "unreadable": "The privacy checker's answer couldn't be understood, so it was held instead of going out unchecked.",
+        "settings": "Your privacy settings couldn't be read at that moment, so it was held instead of going out unchecked.",
+        "off": "The privacy checker wasn't running yet, so it was held instead of going out unchecked."
       },
       "next": {
         "notes": "They are checked again the next time {{research}} starts. Nothing for you to do.",
@@ -2634,7 +2639,8 @@
         "answer": "{{to}} and {{godName}} were told, and {{to}} can ask again.",
         "answerToMichael": "{{godName}} was told and can ask again."
       },
-      "earlier": "{{count}} earlier, from before this list kept details."
+      "earlier": "{{count}} earlier, from before this list kept details.",
+      "notesEmpty": "There were no notes in it yet, only {{research}}'s empty notes page."
     }
   }
 }

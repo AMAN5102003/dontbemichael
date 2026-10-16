@@ -17,7 +17,7 @@ import type { PulseView as PulseData } from '@shared/pulseView';
 import type { Advice } from '@shared/teamAdvice';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
 import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
-import { HELD_TO_MEMORY, type HeldRow } from '@shared/heldRecord';
+import { heldCause, notesPreview, HELD_TO_MEMORY, type HeldRow } from '@shared/heldRecord';
 import { OFFICE_OPEN_SUBJECT } from '@shared/officeOpen';
 import { useStore } from '@/store/store';
 import { useAppTheme } from '@/design/theme';
@@ -631,9 +631,11 @@ function HeldDetail({ from, to, count, onClose }: { from: string; to: string; co
     const kind = notes ? 'notes' : officeOpen ? 'officeOpen' : r.way === 'out' ? (r.told === 'recipient' ? 'answerToMichael' : 'answer')
       : r.from === 'human' ? 'you' : r.from === 'system' ? 'app' : r.told === 'sender' ? 'michael' : 'member';
     const head = t(`pulse.held.head.${kind}`, { research, from, to });
-    // A file or the app's own reminder has nothing the owner needs to read.
-    const what = notes || officeOpen ? '' : [r.subject ? `\u201c${r.subject}\u201d` : '', r.opening].filter(Boolean).join(' ');
-    return { head, what, why: t(r.why === 'too-long' ? 'pulse.held.why.tooLong' : 'pulse.held.why.checkDown'), next: t(`pulse.held.next.${kind}`, { research, from, to }) };
+    // Notes show the notes themselves (an older row kept the index page, which
+    // reads as no notes); the app's own reminder has nothing to read.
+    const what = notes ? notesPreview(r.opening) || t('pulse.held.notesEmpty', { research })
+      : officeOpen ? '' : [r.subject ? `\u201c${r.subject}\u201d` : '', r.opening].filter(Boolean).join(' ');
+    return { head, what, why: t(`pulse.held.why.${heldCause(r)}`), next: t(`pulse.held.next.${kind}`, { research, from, to }) };
   };
   const earlier = rows ? Math.max(0, count - rows.length) : 0;
   return (

@@ -141,7 +141,8 @@ test('the held tile opens the list of what was held, each in plain words: what, 
   assert.match(view, /window\.cth\.pulseHeld\(fromMs, toMs\)/);
   assert.match(view, /const head = t\(`pulse\.held\.head\.\$\{kind\}`, \{ research, from, to \}\);/);
   assert.match(view, /next: t\(`pulse\.held\.next\.\$\{kind\}`, \{ research, from, to \}\)/);
-  assert.match(view, /const what = notes \|\| officeOpen \? '' :/, 'no internal file or app reminder text');
+  assert.match(view, /const what = notes \? notesPreview\(r\.opening\) \|\| t\('pulse\.held\.notesEmpty', \{ research \}\)\n\s+: officeOpen \? '' :/, 'the notes themselves, never the index page; no app reminder text');
+  assert.match(view, /why: t\(`pulse\.held\.why\.\$\{heldCause\(r\)\}`\)/, 'why in the owner\'s terms');
   assert.match(view, /\{r\.error && <> <InfoTip text=\{t\('pulse\.held\.why\.detail', \{ error: r\.error \}\)\} \/><\/>\}/, 'the check\'s report only behind the (i)');
   assert.match(view, /t\('pulse\.held\.earlier', \{ count: earlier \}\)/);
   const kinds = ['answer', 'answerToMichael', 'app', 'member', 'michael', 'notes', 'officeOpen', 'you'];
@@ -152,7 +153,8 @@ test('the held tile opens the list of what was held, each in plain words: what, 
   assert.doesNotMatch(JSON.stringify(en.pulse.held), /memory index|hidden session|team's memory\b/, 'no jargon in the copy');
   // Research's notes for the team's memory are held at the same check (seen live 2026-10-16: 9 of the first 18 holds).
   assert.match(view, /const notes = r\.to === HELD_TO_MEMORY;/);
-  assert.match(read('src/main/index.ts'), /if \(why\) hive\.recordHeld\('out', RESEARCH_ID, HELD_TO_MEMORY, 'Research notes', text, why, v\.error, 'nobody'\);/);
+  assert.match(read('src/main/index.ts'), /if \(why\) hive\.recordHeld\('out', RESEARCH_ID, HELD_TO_MEMORY, 'Research notes', notesPreview\(text\), why, v\.error, 'nobody'\);/);
+  assert.deepEqual(Object.keys(en.pulse.held.why).sort(), ['checkDown', 'detail', 'off', 'settings', 'slow', 'starting', 'tooLong', 'unreadable']);
   const main = read('src/main/index.ts');
   assert.match(main, /ipcMain\.handle\('pulse:held', \(_evt, fromMs: unknown, toMs: unknown\) =>/);
   assert.match(main, /Number\.isFinite\(fromMs\) && Number\.isFinite\(toMs\) \? pulse\.held\(fromMs, toMs\) : \[\]/);

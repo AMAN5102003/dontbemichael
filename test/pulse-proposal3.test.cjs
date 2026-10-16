@@ -49,6 +49,14 @@ test('the held list reads its rows, drops lines that are not rows, and tidies li
   assert.deepEqual(['length', 'no-answer', 'unreadable', 'settings'].map((by) => why({ reason: 'x', by })), ['too-long', 'no-answer', 'unreadable', 'settings']);
   assert.deepEqual(['model', 'pattern', 'recheck'].map((by) => why({ reason: 'x', by })), [null, null, null]);
   assert.deepEqual([why({ reason: R.REFUSAL_CHECK_FAILED }), why({ reason: R.REFUSAL_TOO_LONG }), why({ reason: R.REFUSAL_OFF })], ['failed', 'too-long', null]);
+  // The owner's two questions (2026-10-16): which notes, and what caused it.
+  const index = '# Memory, Research (research)\n\n<!-- memory index v1 -->\nThe app keeps this file. Add notes to memory/inbox.md; they are sorted in here in the background.';
+  assert.equal(H.notesPreview(index), '', 'the empty index page is no notes');
+  assert.equal(H.notesPreview(`${index}\n\ninbox.md\n- King Arthur recipe pages load fully\n- IRS rates table on irs.gov`), 'King Arthur recipe pages load fully \u00b7 IRS rates table on irs.gov');
+  assert.equal(H.notesPreview('- a\n'.repeat(400)).length, 300);
+  const cause = (why, error) => H.heldCause({ why, error });
+  assert.deepEqual([cause('no-answer', 'hidden session never took the prompt (signed out, or a screen is waiting)'), cause('no-answer', 'no answer within 60 seconds'), cause('no-answer', 'hidden session timed out'), cause('no-answer'), cause('unreadable'), cause('too-long'), cause('settings'), cause('no-layer'), cause('failed')],
+    ['starting', 'slow', 'slow', 'checkDown', 'unreadable', 'tooLong', 'settings', 'off', 'checkDown']);
 });
 
 test('Learning: the period\'s notes by source, its questions per 100 requests once it has enough, the span before, and what the team holds in all', () => {
