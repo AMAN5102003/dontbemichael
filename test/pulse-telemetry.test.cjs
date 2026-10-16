@@ -393,6 +393,22 @@ test('Compare runs the same snapshot for the span before, only when on and ready
   assert.deepEqual([month.compare, month.compareReady, month.compareFrom], [null, false, '2026-11-01'], 'September was not recorded live');
 });
 
+test('held is counted from the hive\'s trust-held line, and the held list reads the period\'s rows newest first', (t) => {
+  // Value: protects=D2 (the tile count equals the list) and the IPC range; fails_when=trust-held is not folded, a v 2 trust line counts again, or rows outside the span show; why_new=held list (owner, 2026-10-16); seam=readHeld dep; no_claim=the file on disk (hive tests write it)
+  const env = service(t);
+  const at = (d, h) => new Date(2026, 9, d, h).getTime();
+  env.store.record({ agentId: null, kind: 'trust', ts: at(14, 10), attrs: { way: 'in', decision: 'deny', by: 'no-answer', v: 2 } });
+  env.store.record({ agentId: null, kind: 'trust-held', ts: at(14, 10), attrs: { way: 'in' } });
+  env.store.record({ agentId: null, kind: 'trust-held', ts: at(15, 9), attrs: { way: 'out' } });
+  env.store.record({ agentId: null, kind: 'trust', ts: at(13, 9), attrs: { way: 'in', decision: 'deny', by: 'length' } }); // an older line: still held
+  env.proc.tick('/office');
+  assert.equal(env.svc.snapshot('this-week').keptSafe.held, 3);
+  const row = (d, h, subject) => JSON.stringify({ at: at(d, h), way: 'in', from: 'pam', to: 'research', subject, opening: '', why: 'no-answer', told: 'sender' });
+  const svc = new PulseService({ ...env.svc.d, readHeld: () => [row(1, 9, 'September'), row(14, 10, 'first'), 'not a row', row(15, 9, 'second')].join('\n') });
+  assert.deepEqual(svc.held(at(12, 0), at(18, 23)).map((r) => r.subject), ['second', 'first']);
+  assert.deepEqual(new PulseService({ ...env.svc.d }).held(0, Date.now()), [], 'no record: no rows');
+});
+
 test('a past span\'s Michael counts stop at its end', (t) => {
   // Value: protects=D11; fails_when=later requests or cards leak into a past span's counts; why_new=michaelCounts had no end; seam=none; no_claim=no screen shows these counts yet
   const { store, proc } = setup(t);

@@ -25,7 +25,10 @@ export type TelemetryKind =
   | 'advice-applied'
   // Team at work and Kept safe (proposal 3): working time a backfill read from
   // a past session, a trust layer decision, a step a setting stopped.
-  | 'busy' | 'trust' | 'refused';
+  | 'busy' | 'trust' | 'refused'
+  // A message held because the check could not run (the hive's own line, so
+  // the held count and the held list come from one event, owner 2026-10-16).
+  | 'trust-held';
 
 export interface TelemetryEvent {
   agentId: string | null;

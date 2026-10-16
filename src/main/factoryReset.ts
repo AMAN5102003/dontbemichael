@@ -47,7 +47,9 @@ export const PRIVATE_ENTRIES = [
   'research-outbox',
   'research-pending.json',
   'research-pending-lost.json',
-  'research-mined'
+  'research-mined',
+  // Pulse's held list: subjects and openings of held messages (2026-10-16).
+  'held.jsonl'
 ] as const;
 
 /** The privacy and standing approval checks' own empty folders (index.ts). */

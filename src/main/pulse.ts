@@ -9,6 +9,7 @@
  *   view ─ pulse:apply    ─► apply()    ─► schedule: compare and set in config
  *                                          model: checked here, set by the renderer's roster
  *   view ─ pulse:undo / pulse:dismiss
+ *   view ─ pulse:held(fromMs, toMs) ─► held() ─► private/held.jsonl rows (the held tile's list)
  */
 import type Database from 'better-sqlite3';
 import type { ScheduledMission } from '../shared/missions';
@@ -20,6 +21,7 @@ import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, type Advice, type Dismissal
 import { keptSafe, type KeptSafe } from '../shared/pulseSafety';
 import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan';
 import { learning, type NoteFact } from '../shared/teamLearning';
+import { parseHeld, type HeldRow } from '../shared/heldRecord';
 import type { TelemetryStore } from './telemetryStore';
 import type { TelemetryProcessor } from './telemetryProcessor';
 
@@ -43,6 +45,8 @@ export interface PulseDeps {
   plan: () => PlanPrice | null;
   /** Members' memory notes (date and source only) and procedure counts. */
   memory: () => { notes: NoteFact[]; procedures: Record<string, number> };
+  /** The held list's private record as text (private/held.jsonl), '' when none. */
+  readHeld?: () => string;
   now?: () => number;
 }
 
@@ -195,6 +199,13 @@ export class PulseService {
       compareReady,
       compareFrom: readyFrom
     };
+  }
+
+  /** What was held in a span, newest first (owner, 2026-10-16). */
+  held(fromMs: number, toMs: number): HeldRow[] {
+    let text = '';
+    try { text = this.d.readHeld?.() ?? ''; } catch { text = ''; }
+    return text.split('\n').map(parseHeld).filter((r): r is HeldRow => !!r && r.at >= fromMs && r.at <= toMs).sort((a, b) => b.at - a.at);
   }
 
   private planPrice(): PlanPrice | null {

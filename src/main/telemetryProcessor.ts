@@ -192,6 +192,9 @@ export class TelemetryProcessor {
       case 'trust':
         for (const k of trustKeys(r.attrs ?? {})) this.safety(db, office, day, k);
         return;
+      case 'trust-held':
+        if (r.attrs?.way === 'in' || r.attrs?.way === 'out') this.safety(db, office, day, `${r.attrs.way}-held`);
+        return;
       case 'refused': {
         const gate = String(r.attrs?.gate ?? '') as RefusalGate;
         if (REFUSAL_GATES.includes(gate)) this.safety(db, office, day, refusalKey(gate));

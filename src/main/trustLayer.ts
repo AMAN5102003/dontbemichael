@@ -48,18 +48,24 @@ export function asText(value: unknown): string {
   try { return JSON.stringify(value, null, 1) ?? ''; } catch { return String(value); }
 }
 
+/** Why a deny was reached. `length`, `no-answer`, `unreadable` and `settings`
+ *  mean the check could not run: the message is held, nothing went out
+ *  unchecked (Pulse's held list, owner 2026-10-16). */
+export type DenyBy = 'length' | 'no-answer' | 'unreadable' | 'settings' | 'pattern' | 'model' | 'recheck';
+export type Deny = { decision: 'deny'; reason: string; by?: DenyBy; error?: string };
+
 export type InboundVerdict =
   | { decision: 'pass'; subject: string; body: string }
   | { decision: 'clean'; subject: string; body: string; removed: DataClassId[] }
-  | { decision: 'deny'; reason: string };
+  | Deny;
 
 export type OutboundVerdict =
   | { decision: 'pass' | 'clean'; subject: string; body: string; flagged: boolean }
-  | { decision: 'deny'; reason: string };
+  | Deny;
 
 export interface TrustLayerDeps {
-  /** Runs one no-tools model call; resolves to its text, or null on failure. */
-  run: (prompt: string) => Promise<string | null>;
+  /** Runs one no-tools model call; resolves to its text, or null (or why) on failure. */
+  run: (prompt: string) => Promise<string | null | { error: string }>;
   /** The owner's classes, read at each check. */
   settings: () => DataClassSettings;
   timeoutMs?: number;
@@ -241,11 +247,15 @@ export interface TrustLayer {
 
 export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
   const queue = limiter(deps.concurrency ?? TRUST_CONCURRENCY);
-  const ask = (prompt: string): Promise<string | null> => queue(async () => {
+  // Every line carries v: 2, so Pulse counts a hold from the hive's own
+  // trust-held line, never twice (owner, 2026-10-16).
+  const log = (e: Record<string, unknown>): void => deps.log?.({ ...e, v: 2 });
+  const ask = (prompt: string): Promise<{ text: string | null; error?: string }> => queue(async () => {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<null>((res) => { timer = setTimeout(() => res(null), deps.timeoutMs ?? TRUST_TIMEOUT_MS); });
+    const timeout = new Promise<{ error: string }>((res) => { timer = setTimeout(() => res({ error: `no answer within ${Math.max(1, Math.round((deps.timeoutMs ?? TRUST_TIMEOUT_MS) / 1000))} seconds` }), deps.timeoutMs ?? TRUST_TIMEOUT_MS); });
     try {
-      return await Promise.race([deps.run(prompt).catch(() => null), timeout]);
+      const r = await Promise.race([deps.run(prompt).catch((e: unknown) => ({ error: e instanceof Error ? e.message : 'the check failed' })), timeout]);
+      return typeof r === 'string' ? { text: r } : r && typeof r === 'object' ? { text: null, error: r.error } : { text: null };
     } finally {
       if (timer) clearTimeout(timer);
     }
@@ -255,27 +265,28 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     const subject = asText(msg.subject);
     const body = asText(msg.body);
     let settings: DataClassSettings;
-    try { settings = deps.settings(); } catch { return { decision: 'deny', reason: REFUSAL_CHECK_FAILED }; }
+    try { settings = deps.settings(); } catch { return { decision: 'deny', reason: REFUSAL_CHECK_FAILED, by: 'settings' }; }
     if (subject.length + body.length > TRUST_MAX_CHARS) {
-      deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'length' });
-      return { decision: 'deny', reason: REFUSAL_TOO_LONG };
+      log({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'length' });
+      return { decision: 'deny', reason: REFUSAL_TOO_LONG, by: 'length' };
     }
     // Passwords and keys never go to a model or to Research.
     const hits = patternHits(`${subject}\n${body}`);
     if (hits.some((h) => h.classId === 'secrets')) {
-      deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'pattern', class: 'secrets' });
-      return { decision: 'deny', reason: refusalForClass('secrets') };
+      log({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'pattern', class: 'secrets' });
+      return { decision: 'deny', reason: refusalForClass('secrets'), by: 'pattern' };
     }
     const marked = [...new Set(hits.filter((h) => settings[h.classId] === 'private').map((h) => h.classId))];
-    const text = await ask(inboundPrompt(subject, body, settings, randomBytes(8).toString('hex'), marked));
+    const { text, error } = await ask(inboundPrompt(subject, body, settings, randomBytes(8).toString('hex'), marked));
     const v = text ? parseInbound(text, settings) : null;
     if (!v) {
-      deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'deny', by: text ? 'unreadable' : 'no-answer' });
-      return { decision: 'deny', reason: REFUSAL_CHECK_FAILED };
+      const by = text ? 'unreadable' : 'no-answer';
+      log({ kind: 'trust-layer', way: 'in', decision: 'deny', by });
+      return { decision: 'deny', reason: REFUSAL_CHECK_FAILED, by, ...(!text && error ? { error } : {}) };
     }
     if (v.decision === 'deny') {
-      deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'model', class: v.kinds[0] });
-      return { decision: 'deny', reason: v.kinds.length ? refusalForClass(v.kinds[0]) : REFUSAL_UNSURE };
+      log({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'model', class: v.kinds[0] });
+      return { decision: 'deny', reason: v.kinds.length ? refusalForClass(v.kinds[0]) : REFUSAL_UNSURE, by: 'model' };
     }
     // A pass must be one the patterns agree with; a rewrite must leave no
     // private pattern behind. Either way the text that goes out is checked.
@@ -283,18 +294,18 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     const left = privatePatternHit(`${out.subject}\n${out.body}`, settings);
     if (left || (v.decision === 'pass' && marked.length)) {
       const cls = left?.classId ?? marked[0];
-      deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'recheck', class: cls });
-      return { decision: 'deny', reason: refusalForClass(cls) };
+      log({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'recheck', class: cls });
+      return { decision: 'deny', reason: refusalForClass(cls), by: 'recheck' };
     }
     // A missing subject or body is plain text too (the house rule's example
     // has no subject); only a list or an object is not text as written.
     const notText = (x: unknown): boolean => x !== undefined && x !== null && typeof x !== 'string';
     if (v.decision === 'pass' && (notText(msg.subject) || notText(msg.body))) {
       // Not text as written: what goes out is its text form, already checked.
-      deps.log?.({ kind: 'trust-layer', way: 'in', decision: 'clean', by: 'text-form' });
+      log({ kind: 'trust-layer', way: 'in', decision: 'clean', by: 'text-form' });
       return { decision: 'clean', subject: out.subject, body: out.body, removed: [] };
     }
-    deps.log?.({ kind: 'trust-layer', way: 'in', decision: v.decision });
+    log({ kind: 'trust-layer', way: 'in', decision: v.decision });
     return v.decision === 'pass' ? { decision: 'pass', subject: out.subject, body: out.body } : { decision: 'clean', subject: out.subject, body: out.body, removed: v.removed };
   };
 
@@ -302,16 +313,17 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     const subject = asText(msg.subject);
     const body = asText(msg.body);
     if (subject.length + body.length > TRUST_MAX_CHARS) {
-      deps.log?.({ kind: 'trust-layer', way: 'out', decision: 'deny', by: 'length' });
-      return { decision: 'deny', reason: REFUSAL_TOO_LONG };
+      log({ kind: 'trust-layer', way: 'out', decision: 'deny', by: 'length' });
+      return { decision: 'deny', reason: REFUSAL_TOO_LONG, by: 'length' };
     }
-    const text = await ask(outboundPrompt(subject, body, randomBytes(8).toString('hex')));
+    const { text, error } = await ask(outboundPrompt(subject, body, randomBytes(8).toString('hex')));
     const v = text ? parseOutbound(text) : null;
     if (!v) {
-      deps.log?.({ kind: 'trust-layer', way: 'out', decision: 'deny', by: text ? 'unreadable' : 'no-answer' });
-      return { decision: 'deny', reason: REFUSAL_CHECK_FAILED };
+      const by = text ? 'unreadable' : 'no-answer';
+      log({ kind: 'trust-layer', way: 'out', decision: 'deny', by });
+      return { decision: 'deny', reason: REFUSAL_CHECK_FAILED, by, ...(!text && error ? { error } : {}) };
     }
-    deps.log?.({ kind: 'trust-layer', way: 'out', decision: v.decision, flagged: v.flag });
+    log({ kind: 'trust-layer', way: 'out', decision: v.decision, flagged: v.flag });
     return v.decision === 'pass'
       ? { decision: 'pass', subject, body, flagged: v.flag }
       : { decision: 'clean', subject: v.subject, body: v.body, flagged: v.flag };

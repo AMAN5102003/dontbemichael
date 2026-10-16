@@ -1,4 +1,5 @@
 import type { Period } from '../shared/teamPerformance';
+import type { HeldRow } from '../shared/heldRecord';
 import type { PulseView } from '../shared/pulseView';
 import type { ResearchConfig } from '../shared/research';
 import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
@@ -1367,6 +1368,7 @@ const api = {
   // ─── Pulse (docs/designs/team-performance.md) ─────────────────────────────
   /** What the Pulse view shows for a period. */
   pulseSnapshot: (period: Period, compare: boolean): Promise<PulseView> => ipcRenderer.invoke('pulse:snapshot', period, compare),
+  pulseHeld: (fromMs: number, toMs: number): Promise<HeldRow[]> => ipcRenderer.invoke('pulse:held', fromMs, toMs),
   /** The Claude plan found in the owner's Claude account, and its list price a month. */
   claudePlan: (): Promise<{ label: string | null; listMonthly: number | null }> => ipcRenderer.invoke('claude:plan'),
   /** The owner's Apply on a way to save. A model change comes back for the store to make. */

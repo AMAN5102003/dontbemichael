@@ -120,7 +120,8 @@ moving, and brings you only the decisions that need you.
   recommendations first (a schedule that mostly finds nothing to do, or a member whose work would
   suit a lighter model), each with its numbers and applied only by your click, with Undo; what got
   done and who did it; Kept safe, what the trust layer kept off the internet, the web answers it
-  cleaned of instructions to AI agents, anything held because it could not be checked, and the
+  cleaned of instructions to AI agents, anything held because it could not be checked (open it to
+  see what each one was, when and why), and the
   steps your settings stopped; Learning, what the team learned in the period and whether it asks
   you less; your plan use and your time; and Team at work, how busy each member is next to the
   others, and what their work costs. On a Claude plan, costs are the plan's real price

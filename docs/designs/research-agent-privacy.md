@@ -851,6 +851,21 @@ the out of scope list above, which stay as the record of the 2026-10-13 decision
   follows it, including a badly written or differently cased one, so a self correction or a
   verdict copied from the checked text fails closed.
 
+## Owner decision 2026-10-16: see what was held
+
+- **What a hold is:** a message to or from Pete that the privacy check could not judge (no
+  answer, an answer it could not read, too long, settings it could not read, a check that failed
+  or was not running). A deny the check reached (private data, a password) is a stop, not a hold.
+- **The held list:** each hold is written to `private/held.jsonl` in the office folder, never
+  the shared office log: when, which way, who to whom (names as they were), the subject (80
+  characters) and the first 300 characters, why, the check runner's error when it got no
+  answer, and who was told. Rows are kept 400 days; a reset removes the file and a move copies
+  it. Pulse's held tile opens it, and counts holds from the hive's own `trust-held` line, so the
+  number and the list match.
+- **Michael hears of held answers too:** a web answer the check could not clear is told to the
+  member waiting for it, as before, and now to Michael, so a card waiting on it never stalls
+  unseen. No Send again button: Michael and the sender decide what to ask again.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |

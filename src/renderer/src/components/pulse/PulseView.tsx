@@ -17,6 +17,7 @@ import type { PulseView as PulseData } from '@shared/pulseView';
 import type { Advice } from '@shared/teamAdvice';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
 import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
+import type { HeldRow } from '@shared/heldRecord';
 import { useStore } from '@/store/store';
 import { useAppTheme } from '@/design/theme';
 import { family } from '@/scene/studio/theme';
@@ -126,6 +127,8 @@ export function PulseView() {
   const [data, setData] = useState<PulseData | null>(null);
   const [failed, setFailed] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
+  // The held tile's list (owner, 2026-10-16).
+  const [heldOpen, setHeldOpen] = useState(false);
   const [applied, setApplied] = useState<Array<{ advice: Advice; appliedId: number; text: string }>>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>('');
@@ -341,7 +344,8 @@ export function PulseView() {
               parts={[{ n: safe.toInternet.pass, name: t('pulse.safe.sentAsWritten'), color: 'var(--cth-ink-2)' }, { n: safe.toInternet.clean, name: t('pulse.safe.privateOut'), color: 'var(--cth-green)' }, { n: safe.toInternet.stop, name: t('pulse.safe.stopped'), color: 'var(--cth-amber)' }]} />
             <StatTile icon="search" value={safe.webAnswers.clean} of={answers} trend={pk && pair(pk.webAnswers.clean, safe.webAnswers.clean, t('pulse.safe.answersCleaned'), 'var(--cth-green)')} tip={t('pulse.safe.trustTip')} text={t('pulse.safe.answersCleaned')}
               parts={[{ n: safe.webAnswers.clean, name: t('pulse.safe.cleaned'), color: 'var(--cth-green)' }, { n: safe.webAnswers.pass, name: t('pulse.safe.nothingToRemove'), color: 'var(--cth-ink-4)' }, { n: safe.webAnswers.flagged, name: t('pulse.safe.flagged'), color: 'var(--cth-amber)' }]} />
-            <StatTile icon="pause" value={safe.held} trend={pk && pair(pk.held, safe.held, t('pulse.safe.held'), 'var(--cth-amber)')} tip={t('pulse.safe.heldTip')} text={t(safe.held > 0 ? 'pulse.safe.held' : 'pulse.safe.heldNone')} amber={safe.held > 0} />
+            <StatTile icon="pause" value={safe.held} trend={pk && pair(pk.held, safe.held, t('pulse.safe.held'), 'var(--cth-amber)')} tip={t('pulse.safe.heldTip')} text={t(safe.held > 0 ? 'pulse.safe.held' : 'pulse.safe.heldNone')} amber={safe.held > 0}
+              open={safe.held > 0 ? { label: t('pulse.held.open'), onClick: () => setHeldOpen(true) } : undefined} />
             <StatTile icon="lock" value={rulesTotal} trend={pk && pair(rulesOf(pk), rulesTotal, t('pulse.safe.rules'))} tip={t('pulse.safe.rulesTip')} text={t(rulesTotal > 0 ? 'pulse.safe.rules' : 'pulse.safe.rulesNone')}
               parts={[...rules].sort((a, b) => b[1] - a[1]).map(([g, n], i) => ({ n, name: t(`pulse.safe.gate.${g}`), color: ['var(--cth-ink-2)', 'var(--cth-ink-3)', 'var(--cth-ink-4)', 'var(--cth-line-2)'][Math.min(i, 3)] }))} />
           </div>
@@ -510,12 +514,13 @@ export function PulseView() {
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{notice}</div>
       {body}
       {detail && view && <MemberDetail id={detail} data={view} name={nameOf(detail)} onClose={() => setDetail(null)} money={money} />}
+      {heldOpen && view && <HeldDetail from={view.snapshot.from} to={view.snapshot.to} count={(view.keptSafe ?? keptSafe([])).held} onClose={() => setHeldOpen(false)} />}
     </div>
   );
 }
 
 /** A Kept safe tile: an icon, a number, what it counts, and its parts (proposal 3). */
-function StatTile({ icon, value, of, text, parts, amber, tip, trend }: { icon: IconName; value: number; of?: number; text: string; parts?: Array<{ n: number; name: string; color: string }>; amber?: boolean; tip?: string; trend?: ReactNode }) {
+function StatTile({ icon, value, of, text, parts, amber, tip, trend, open }: { icon: IconName; value: number; of?: number; text: string; parts?: Array<{ n: number; name: string; color: string }>; amber?: boolean; tip?: string; trend?: ReactNode; open?: { label: string; onClick: () => void } }) {
   const { t, i18n } = useTranslation();
   const shown = (parts ?? []).filter((p) => p.n > 0 || (parts ?? []).length <= 3);
   return (
@@ -523,6 +528,7 @@ function StatTile({ icon, value, of, text, parts, amber, tip, trend }: { icon: I
       <div aria-hidden style={{ width: 30, height: 30, borderRadius: 'var(--cth-r-md)', background: amber ? 'var(--cth-card)' : 'var(--cth-card-2)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', display: 'grid', placeItems: 'center', color: amber ? 'var(--cth-amber-text)' : 'var(--cth-ink-2)' }}><Icon name={icon} size={1.125} /></div>
       <div style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 28, fontWeight: 600, lineHeight: '30px' }}>{value.toLocaleString(i18n.language)}{of !== undefined && <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 400, color: 'var(--cth-ink-3)', marginInlineStart: 6 }}>{t('pulse.safe.of', { n: of })}</span>}</div>
       <div style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px' }}>{text}{tip && <> <InfoTip text={tip} /></>}</div>
+      {open && <button type="button" onClick={open.onClick} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: amber ? 'var(--cth-amber-text)' : 'var(--cth-indigo-text)' }}>{open.label}</button>}
       {trend ? trend : <>
         {shown.length > 0 && shown.some((p) => p.n > 0) && <Stack parts={shown} aria={shown.map((p) => `${p.name} ${p.n}`).join(', ')} />}
         {shown.length > 0 && <Legend items={shown.map((p) => [p.name, p.color, p.n])} />}
@@ -591,6 +597,62 @@ function WeekBars({ labels, series, aria, format = (v) => String(v), before = fa
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** What the held tile counted, one row per held message: when, which way,
+ *  who to whom, its subject and opening, why the check could not run, and who
+ *  was told (owner, 2026-10-16). Read from the owner's private record. */
+function HeldDetail({ from, to, count, onClose }: { from: string; to: string; count: number; onClose: () => void }) {
+  const { t, i18n } = useTranslation();
+  const ref = useRef<HTMLDivElement | null>(null);
+  useDialog(ref, onClose);
+  const backdrop = useBackdropClose(onClose);
+  const [rows, setRows] = useState<HeldRow[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    const fromMs = new Date(`${from}T00:00:00`).getTime();
+    const toMs = new Date(`${to}T23:59:59.999`).getTime();
+    window.cth.pulseHeld(fromMs, toMs).then((r) => { if (live) setRows(Array.isArray(r) ? r : []); }, () => { if (live) setRows([]); });
+    return () => { live = false; };
+  }, [from, to]);
+  const when = (at: number): string => new Date(at).toLocaleString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const who = (r: HeldRow): string => {
+    const toName = r.toName ?? r.to;
+    if (r.way === 'out') return t('pulse.held.answer', { from: r.fromName ?? r.from, to: toName });
+    if (r.from === 'human') return t('pulse.held.fromYou', { to: toName });
+    if (r.from === 'system') return t('pulse.held.fromApp', { to: toName });
+    return t('pulse.held.question', { from: r.fromName ?? r.from, to: toName });
+  };
+  const missing = rows ? Math.max(0, count - rows.length) : 0;
+  return (
+    <div {...backdrop} style={{ position: 'fixed', inset: 0, background: 'var(--cth-backdrop)', zIndex: 300, display: 'grid', placeItems: 'start center', paddingTop: 80 }}>
+      <div ref={ref} role="dialog" aria-modal aria-label={t('pulse.held.title')} style={{ width: 600, maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100vh - 140px)', overflow: 'auto', ...card, borderRadius: 'var(--cth-r-2xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-lg)', padding: '18px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Icon name="pause" />
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{t('pulse.held.title')}</div>
+          <button type="button" aria-label={t('common.close')} onClick={onClose} style={{ marginInlineStart: 'auto', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--cth-ink-3)' }}><Icon name="x" /></button>
+        </div>
+        {rows === null ? <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.reading')}</div> : (
+          <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {rows.map((r, i) => (
+              <div key={`${r.at}-${i}`} role="listitem" style={{ background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                  <span style={{ ...label }}>{t(r.way === 'in' ? 'pulse.held.wayIn' : 'pulse.held.wayOut')}</span>
+                  <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto' }}>{when(r.at)}</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--cth-ink-2)' }}>{who(r)}</div>
+                {r.subject && <div style={{ fontSize: 13, fontWeight: 600 }}>{r.subject}</div>}
+                {r.opening && <div style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px' }}>{r.opening}</div>}
+                <div style={{ fontSize: 11, color: 'var(--cth-amber-text)', lineHeight: '15px' }}>{t(`pulse.held.why.${r.why}`)}{r.error ? ` (${r.error})` : ''}</div>
+                <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t(`pulse.held.told.${r.told}`)}</div>
+              </div>
+            ))}
+            {missing > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.notListed', { count: missing })}</div>}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

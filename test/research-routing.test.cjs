@@ -287,6 +287,77 @@ test('an answer the layer can\'t check is not delivered, and a late answer after
   assert.equal(notes(hive, 'pam', R.ANSWER_UNCHECKED_SUBJECT).length, 1);
 });
 
+// ─── Pulse's held list (owner, 2026-10-16) ───────────────────────────────────
+const heldRows = (hive) => {
+  const f = path.join(path.dirname(hive.root()), 'private', 'held.jsonl');
+  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+};
+const heldLines = (hive) => fs.readFileSync(path.join(hive.root(), 'log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'trust-held');
+
+test('a question held because the check could not run is recorded with its subject, opening, why and who was told; a stop is not', async (t) => {
+  // Value: protects=D2 and D4 (one event for count and list; subject and 300 character opening, kept privately); fails_when=a hold is missed, a stop is listed, text passes 300, or the committed log carries text; why_new=held list; seam=fake layer; no_claim=the real model
+  const { hive } = await office(t, { layer: fakeLayer({ inbound: () => ({ decision: 'deny', reason: R.REFUSAL_CHECK_FAILED, by: 'no-answer', error: 'hidden session never took the prompt' }) }) });
+  send(hive, 'pam', { to: 'research', act: 'query', subject: 'Supplier \u201cprices\u201d', body: `Line one\n${'x'.repeat(400)}` });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  const rows = heldRows(hive);
+  assert.equal(rows.length, 1);
+  const r = rows[0];
+  assert.deepEqual([r.way, r.from, r.fromName, r.to, r.toName, r.why, r.error, r.told], ['in', 'pam', 'Pam', 'research', 'Pete', 'no-answer', 'hidden session never took the prompt', 'sender+michael']);
+  assert.equal(r.subject, 'Supplier prices', 'quote marks tidied');
+  assert.equal(r.opening.length, 300);
+  assert.ok(r.opening.startsWith('Line one x'), 'line breaks tidied');
+  assert.deepEqual(heldLines(hive).map((e) => Object.keys(e).sort()), [['kind', 'ts', 'way']], 'the office log line carries no text');
+  const stop = await office(t, { layer: fakeLayer({ inbound: () => ({ decision: 'deny', reason: R.refusalForClass('names'), by: 'model' }) }) });
+  send(stop.hive, 'pam', { to: 'research', act: 'query', subject: 'Who', body: 'Jane' });
+  stop.hive.routeOnce(); await tick(); stop.hive.routeOnce();
+  assert.equal(heldRows(stop.hive).length, 0, 'a deny the check reached is a stop, not a hold');
+  assert.equal(heldLines(stop.hive).length, 0);
+});
+
+test('a check that throws, or no check at all, is a hold too', async (t) => {
+  // Value: protects=D2 (holds the trust layer never logged are counted and listed); fails_when=a rejected or missing check leaves no row; why_new=held list; seam=fake layer
+  const { hive } = await office(t, { layer: fakeLayer({ inbound: () => { throw new Error('down'); } }) });
+  send(hive, 'pam', { to: 'research', act: 'query', subject: 'x', body: 'Pizza trends' });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.deepEqual(heldRows(hive).map((r) => r.why), ['failed']);
+  const unwired = await office(t, { layer: null });
+  send(unwired.hive, 'pam', { to: 'research', act: 'query', subject: 'x', body: 'Pizza trends' });
+  unwired.hive.routeOnce(); await tick(); unwired.hive.routeOnce();
+  assert.deepEqual(heldRows(unwired.hive).map((r) => r.why), ['no-layer']);
+  const off = await office(t, { on: false });
+  send(off.hive, 'pam', { to: 'research', act: 'query', subject: 'x', body: 'Pizza trends' });
+  off.hive.routeOnce(); await tick(); off.hive.routeOnce();
+  assert.equal(heldRows(off.hive).length, 0, 'Research off is not a hold');
+});
+
+test('a held answer is listed, and Michael hears of it as well as the member waiting (D5)', async (t) => {
+  // Value: protects=D5 and D2 for answers; fails_when=Michael is not told, he is told twice, or the row is missing; why_new=held list, agent behavior change approved 2026-10-16; seam=fake layer
+  const layer = fakeLayer({ outbound: () => ({ decision: 'deny', reason: R.REFUSAL_CHECK_FAILED, by: 'unreadable' }) });
+  const { hive } = await office(t, { layer });
+  const ask = await askFrom(hive, 'pam');
+  send(hive, 'research', { to: 'pam', in_reply_to: ask, act: 'inform', subject: 'Pizza answer', body: 'Some answer' });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.equal(notes(hive, 'pam', R.ANSWER_UNCHECKED_SUBJECT).length, 1);
+  const told = msgsIn(hive, 'god').filter((m) => m.subject === "Pete's answer was not delivered");
+  assert.equal(told.length, 1);
+  assert.match(told[0].body, /Pete's answer to Pam \("Pizza answer"\) was not delivered: the privacy check could not run/);
+  assert.doesNotMatch(told[0].body, /[\u2013\u2014]/);
+  const rows = heldRows(hive);
+  assert.deepEqual(rows.map((r) => [r.way, r.from, r.fromName, r.to, r.toName, r.why, r.told]), [['out', 'research', 'Pete', 'pam', 'Pam', 'unreadable', 'recipient+michael']]);
+});
+
+test('held rows past 400 days are pruned when a new one is written', async (t) => {
+  // Value: protects=the record is kept as long as Pulse keeps raw events, no longer; fails_when=old rows stay or new ones are dropped; why_new=held list; seam=none
+  const { hive } = await office(t, { layer: fakeLayer({ inbound: () => ({ decision: 'deny', reason: R.REFUSAL_TOO_LONG, by: 'length' }) }) });
+  const priv = path.join(path.dirname(hive.root()), 'private');
+  fs.mkdirSync(priv, { recursive: true });
+  const old = { at: Date.now() - 401 * 86_400_000, way: 'in', from: 'pam', to: 'research', subject: 'old', opening: '', why: 'no-answer', told: 'sender' };
+  fs.writeFileSync(path.join(priv, 'held.jsonl'), `${JSON.stringify(old)}\n`);
+  send(hive, 'pam', { to: 'research', act: 'query', subject: 'new', body: 'b' });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.deepEqual(heldRows(hive).map((r) => [r.subject, r.why]), [['new', 'too-long']]);
+});
+
 test('turning Research off sends its waiting asks back', async (t) => {
   // Value: protects=no ask is lost when Research turns off; fails_when=asks stay in its inbox or vanish silently; why_new=design review D7; seam=fake layer
   const { hive } = await office(t);

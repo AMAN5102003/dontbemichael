@@ -21,7 +21,7 @@
 import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, type SandboxNetwork } from '../shared/webAccess';
 import {
   addressedToResearch, ANSWER_UNCHECKED, ANSWER_UNCHECKED_SUBJECT, hasAttachments, looksLikeInjection, NOT_SENT_SUBJECT,
-  PRIVACY_CHECK_SENDER, REFUSAL_CHECK_FAILED, REFUSAL_FILES, REFUSAL_OFF, RESEARCH_HOUSE_RULE, RESEARCH_ID, RESEARCH_REPLY_LABEL,
+  PRIVACY_CHECK_SENDER, REFUSAL_CHECK_FAILED, REFUSAL_FILES, REFUSAL_OFF, REFUSAL_TOO_LONG, RESEARCH_HOUSE_RULE, RESEARCH_ID, RESEARCH_REPLY_LABEL,
   RESEARCH_UNCHECKED_TOOL, NOT_SENT_SUBJECT_OUT, RESEARCH_ONLY_ASKERS, RESEARCH_NAME, RESEARCH_ROLE, isReservedName,
   SENT_AS_SUBJECT, sentAsBody, nameKey, researchText, cleanResearchName, RESEARCH_ONLY_SKILLS
 } from '../shared/research';
@@ -44,7 +44,8 @@ import { join, dirname, basename, isAbsolute, relative, resolve, sep } from 'nod
 import { homedir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash, createHmac } from 'node:crypto';
-import type { InboundVerdict, OutboundVerdict, TrustLayer } from './trustLayer';
+import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
+import { heldWhy, tidy, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
 import {
@@ -2548,9 +2549,54 @@ export class HiveManager {
       // The subject is the sender's words: every kind of quote mark and line
       // break is dropped so it can't close the quote and add text in the app's
       // voice. The reason's own "Not sent..." opening is not repeated.
-      body: `${what} for ${n} ("${String(subject ?? '').replace(/[\p{Pi}\p{Pf}"\u201e\u201f\u2033\uff02\s]+/gu, ' ').trim().slice(0, 80)}") was not sent: ${researchText(reason, n).replace(/^Not sent( to [^:]+)?: /, '')} ${next}`
+      body: `${what} for ${n} ("${tidy(subject, HELD_SUBJECT_MAX)}") was not sent: ${researchText(reason, n).replace(/^Not sent( to [^:]+)?: /, '')} ${next}`
     }, PRIVACY_CHECK_SENDER), godId);
   }
+
+  /** Michael hears of a Research answer the check could not clear, as he does
+   *  of a held question, so a card waiting on it never stalls unseen (owner,
+   *  2026-10-16, D5). */
+  private tellMichaelAnswerHeld(to: string | null, subject: unknown): void {
+    const reg = this.registry();
+    const godId = reg.godId ?? 'god';
+    const n = this.researchName();
+    // `to` null: the answer was for Michael himself.
+    const toName = to ? reg.agents[to]?.name?.trim() || to : null;
+    this.deliver(this.normalize({
+      to: godId, act: 'inform', subject: `${n}'s answer was not delivered`,
+      body: toName
+        ? `${n}'s answer to ${toName} ("${tidy(subject, HELD_SUBJECT_MAX)}") was not delivered: the privacy check could not run, so nothing went out unchecked. ${toName} was told to ask again if the work still needs it. This is an app problem. If it keeps happening, tell the owner.`
+        : `${n}'s answer to you ("${tidy(subject, HELD_SUBJECT_MAX)}") was not delivered: the privacy check could not run, so nothing went out unchecked. Ask ${n} again if the work still needs it. This is an app problem. If it keeps happening, tell the owner.`
+    }, PRIVACY_CHECK_SENDER), godId);
+  }
+
+  /** One row per hold in the owner's private folder, never the committed log
+   *  (it carries the subject and the opening of the message), and one
+   *  trust-held line with no text, which Pulse counts (owner, 2026-10-16). */
+  private recordHeld(way: 'in' | 'out', from: string, to: string, subject: unknown, body: unknown, why: HeldWhy, error: string | undefined, told: HeldTold): void {
+    this.appendLog({ kind: 'trust-held', way });
+    const home = this.getHome();
+    if (!home) return;
+    const reg = this.registry();
+    const nameOf = (id: string): string | null => (id === 'human' || id === 'system' ? null : id === RESEARCH_ID ? this.researchName() : reg.agents[id]?.name?.trim() || null);
+    const row: HeldRow = {
+      at: Date.now(), way, from, fromName: nameOf(from), to, toName: nameOf(to),
+      subject: tidy(asText(subject), HELD_SUBJECT_MAX), opening: tidy(asText(body), HELD_OPENING_MAX),
+      why, ...(error ? { error: tidy(error, 200) } : {}), told
+    };
+    const file = join(privateRoot(home), 'held.jsonl');
+    try {
+      mkdirSync(privateRoot(home), { recursive: true });
+      appendFileSync(file, `${JSON.stringify(row)}\n`, 'utf8');
+      // Once a day, rows past the keep window go (Pulse keeps raw events as long).
+      if (row.at - this.heldPrunedAt > 86_400_000) {
+        this.heldPrunedAt = row.at;
+        const keep = readFileSync(file, 'utf8').split('\n').filter((l) => { try { return l && (JSON.parse(l) as HeldRow).at >= row.at - HELD_KEEP_MS; } catch { return false; } });
+        writeFileSync(file, keep.length ? `${keep.join('\n')}\n` : '', 'utf8');
+      }
+    } catch { /* best effort: the count still shows, and the list says what it cannot show */ }
+  }
+  private heldPrunedAt = 0;
 
   /** Start a check, or read the one under way. `key` is the content hash. */
   private trustCheck(key: string, start: () => Promise<InboundVerdict | OutboundVerdict>): InboundVerdict | OutboundVerdict | 'hold' {
@@ -2588,19 +2634,20 @@ export class HiveManager {
    *  until the trust layer answers; then the clean copy goes to Research and the
    *  sender hears what was asked, or the sender alone hears why not. */
   private researchInboundGate(senderId: string, msg: HiveMessage, partial: Partial<HiveMessage>, raw: string, on: boolean): 'hold' | 'denied' | 'sent' {
-    const deny = (reason: string): 'denied' => {
+    const deny = (reason: string, held?: { why: HeldWhy; error?: string }): 'denied' => {
       this.appendLog({ kind: 'trust-denied', from: senderId, id: msg.id });
       this.tellSender(senderId, msg.id, msg.conversation, NOT_SENT_SUBJECT, reason);
       this.tellMichaelNotSent(senderId, partial.subject, reason);
+      if (held) this.recordHeld('in', senderId, RESEARCH_ID, partial.subject, partial.body, held.why, held.error, senderId === (this.registry().godId ?? 'god') ? 'sender' : 'sender+michael');
       return 'denied';
     };
     if (!on) return deny(REFUSAL_OFF);
     if (hasAttachments(partial)) return deny(REFUSAL_FILES);
-    if (!this.trustLayer) return deny(REFUSAL_CHECK_FAILED);
+    if (!this.trustLayer) return deny(REFUSAL_CHECK_FAILED, { why: 'no-layer' });
     const layer = this.trustLayer;
     const v = this.trustCheck(`in:${this.trustKey(layer, raw)}`, () => layer.inbound({ subject: partial.subject, body: partial.body }));
     if (v === 'hold') return 'hold';
-    if (v.decision === 'deny') return deny(v.reason);
+    if (v.decision === 'deny') { const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG); return deny(v.reason, why ? { why, error: v.error } : undefined); }
     this.deliverToResearch(senderId, msg, v.subject, v.body);
     if (v.decision === 'clean') this.tellSender(senderId, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
     return 'sent';
@@ -2620,9 +2667,13 @@ export class HiveManager {
       else if (msg.from !== 'human' && msg.from !== 'system') return;
       this.tellMichaelNotSent(msg.from, msg.subject, reason);
     };
+    // Who heard of a hold: the sender (a teammate) and Michael, or Michael alone.
+    const told: HeldTold = fromAgent ? (msg.from === (this.registry().godId ?? 'god') ? 'sender' : 'sender+michael') : 'michael';
+    const held = (why: HeldWhy, error?: string): void => this.recordHeld('in', msg.from, RESEARCH_ID, msg.subject, msg.body, why, error, told);
     if (!this.researchOn() || !this.trustLayer) {
       this.appendLog({ kind: 'trust-denied', from: msg.from, id: msg.id, reason: this.trustLayer ? 'research-off' : 'no-layer' });
       tell(this.trustLayer ? REFUSAL_OFF : REFUSAL_CHECK_FAILED);
+      if (!this.trustLayer && this.researchOn()) held('no-layer');
       return;
     }
     this.researchQueued++;
@@ -2642,7 +2693,11 @@ export class HiveManager {
         // The owner changed what stays private while it was checked: checked
         // again under the new settings (Codex review, third ship).
         if (this.policyOf(layer) !== policy) { this.queueForResearch(msg); return; }
-        if (v.decision === 'deny') return refuse(v.reason);
+        if (v.decision === 'deny') {
+          const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
+          if (why) held(why, v.error);
+          return refuse(v.reason);
+        }
         // Research may have been turned off while the check ran.
         if (!this.researchOn()) return refuse(REFUSAL_OFF, 'research-off');
         this.deliverToResearch(msg.from, msg, v.subject, v.body);
@@ -2652,7 +2707,7 @@ export class HiveManager {
     }, () => {
       this.researchQueued--;
       if (!fromAgent) this.researchPending(msg, false);
-      try { refuse(REFUSAL_CHECK_FAILED, 'failed'); } catch { /* logged above */ }
+      try { refuse(REFUSAL_CHECK_FAILED, 'failed'); held('failed'); } catch { /* logged above */ }
     });
   }
 
@@ -2763,9 +2818,17 @@ export class HiveManager {
     const lowerTo = typeof msg.to === 'string' ? msg.to.trim().toLowerCase() : '';
     const logTo = recipient ?? (['god', 'michael', 'human'].includes(lowerTo) ? lowerTo : 'invalid');
     const logId = createHash('sha256').update(String(msg.id)).digest('hex').slice(0, 16);
-    const deny = (): 'denied' => {
+    // Every outbound deny is a hold: the check could not run. The waiting
+    // member and Michael are told (owner, 2026-10-16, D5), and Pulse lists it.
+    const deny = (v?: { reason: string; by?: string; error?: string }): 'denied' => {
       this.appendLog({ kind: 'trust-denied', from: RESEARCH_ID, to: logTo, id: logId });
-      if (recipient && recipient !== RESEARCH_ID) this.tellSender(recipient, null, msg.conversation, ANSWER_UNCHECKED_SUBJECT, ANSWER_UNCHECKED);
+      const tellsRecipient = !!recipient && recipient !== RESEARCH_ID;
+      if (tellsRecipient) this.tellSender(recipient!, null, msg.conversation, ANSWER_UNCHECKED_SUBJECT, ANSWER_UNCHECKED);
+      const michaelIsRecipient = toMichael || recipient === godId;
+      // Michael as the registered recipient already heard it from tellSender.
+      if (!(tellsRecipient && recipient === godId)) this.tellMichaelAnswerHeld(michaelIsRecipient ? null : recipient, partial.subject);
+      const why = v ? heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG) ?? 'failed' : 'no-layer';
+      this.recordHeld('out', RESEARCH_ID, michaelIsRecipient ? godId : recipient ?? logTo, partial.subject, partial.body, why, v?.error, michaelIsRecipient ? 'recipient' : tellsRecipient ? 'recipient+michael' : 'michael');
       return 'denied';
     };
     // Research writes only to someone whose question it is answering, or to
@@ -2794,7 +2857,7 @@ export class HiveManager {
     const layer = this.trustLayer;
     const v = this.trustCheck(`out:${this.trustKey(layer, raw)}`, () => layer.outbound({ subject: partial.subject, body: partial.body }));
     if (v === 'hold') return 'hold';
-    if (v.decision === 'deny') return deny();
+    if (v.decision === 'deny') return deny(v);
     // Back into the sender's own thread, only when it goes back to that
     // sender; Research knows only the clean copies' ids, so any other reply
     // id it writes is dropped (ship review pass 3).

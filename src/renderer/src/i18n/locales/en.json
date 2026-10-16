@@ -2604,6 +2604,33 @@
       "memberTip": "This member's part of your plan's cost for the period, by their share of the work.",
       "ofPlan": "of your {{plan}} ({{monthly}} a month)"
     },
-    "questionsAnswered": "questions, answered in {{time}} on average"
+    "questionsAnswered": "questions, answered in {{time}} on average",
+    "held": {
+      "open": "See what was held",
+      "title": "Held messages",
+      "reading": "Reading…",
+      "wayIn": "Question to the internet",
+      "wayOut": "Web answer",
+      "fromYou": "A note from you to {{to}}",
+      "fromApp": "A message from the app to {{to}}",
+      "question": "{{from}}'s question to {{to}}",
+      "answer": "{{from}}'s answer to {{to}}",
+      "why": {
+        "no-answer": "The privacy check got no answer.",
+        "unreadable": "The privacy check's answer could not be read.",
+        "too-long": "Too long to check.",
+        "settings": "Your privacy settings could not be read.",
+        "failed": "The privacy check failed.",
+        "no-layer": "The privacy check was not running."
+      },
+      "told": {
+        "sender+michael": "The sender and {{godName}} were told.",
+        "sender": "The sender was told.",
+        "michael": "{{godName}} was told.",
+        "recipient+michael": "The team member waiting for it and {{godName}} were told.",
+        "recipient": "The team member waiting for it was told."
+      },
+      "notListed": "{{count}} more counted before details were kept, or not saved."
+    }
   }
 }

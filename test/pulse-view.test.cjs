@@ -134,6 +134,23 @@ test('Compare: the app\'s switch reading Compare, remembered, kept in place and 
   assert.match(view, /return \(\) => clearTimeout\(timer\);/);
 });
 
+test('the held tile opens the list of what was held: when, which way, who to whom, subject, opening, why, who was told', () => {
+  // Value: protects=the owner's 2026-10-16 ask (see what exactly was held) and D4; fails_when=the tile stops offering the list, a field drops, the list reads from anything but the private record, or the not listed line goes; why_new=held list; seam=source pins; no_claim=pixel layout (live check)
+  assert.match(view, /open=\{safe\.held > 0 \? \{ label: t\('pulse\.held\.open'\), onClick: \(\) => setHeldOpen\(true\) \} : undefined\}/);
+  assert.match(view, /\{open && <button type="button" onClick=\{open\.onClick\}/, 'a real button, keyboard reachable, not the whole tile (it holds an InfoTip)');
+  assert.match(view, /window\.cth\.pulseHeld\(fromMs, toMs\)/);
+  for (const k of ['pulse.held.wayIn', 'pulse.held.wayOut', 'pulse.held.fromYou', 'pulse.held.fromApp', 'pulse.held.question', 'pulse.held.answer', 'pulse.held.notListed']) assert.ok(view.includes(`'${k}'`), k);
+  assert.match(view, /t\(`pulse\.held\.why\.\$\{r\.why\}`\)/);
+  assert.match(view, /t\(`pulse\.held\.told\.\$\{r\.told\}`\)/);
+  assert.match(view, /const missing = rows \? Math\.max\(0, count - rows\.length\) : 0;/);
+  assert.deepEqual(Object.keys(en.pulse.held.why).sort(), ['failed', 'no-answer', 'no-layer', 'settings', 'too-long', 'unreadable']);
+  assert.deepEqual(Object.keys(en.pulse.held.told).sort(), ['michael', 'recipient', 'recipient+michael', 'sender', 'sender+michael']);
+  assert.ok(Object.values(en.pulse.held.told).filter((v) => /godName/.test(v)).length === 3, 'Michael by his current name');
+  const main = read('src/main/index.ts');
+  assert.match(main, /ipcMain\.handle\('pulse:held', \(_evt, fromMs: unknown, toMs: unknown\) =>/);
+  assert.match(main, /Number\.isFinite\(fromMs\) && Number\.isFinite\(toMs\) \? pulse\.held\(fromMs, toMs\) : \[\]/);
+});
+
 test('Spent and Your time fill their tiles: title at the top, plan use or what it means at the foot', () => {
   // Value: protects=the owner\'s 2026-10-15 notes (title at the top, no empty foot); fails_when=the Spent tile centers its title or plan use leaves the foot; why_new=owner notes; seam=source pins; no_claim=pixel layout
   const spent = view.slice(view.indexOf("{t('pulse.whereMoneyWent')}") - 400, view.indexOf("{/* Your time and while you were away"));

@@ -29,6 +29,26 @@ test('a trust layer deny is a stop only when the check judged it; a check that c
   assert.deepEqual(trustKeys({ way: 'out', decision: 'pass', flagged: true }), ['out-pass', 'out-flagged']);
   assert.deepEqual(trustKeys({ way: 'sideways', decision: 'pass' }), []);
   assert.equal(keptSafe([]).any, false);
+  // From v 2 (2026-10-16) a hold is counted from the hive's trust-held line,
+  // which the held list shares, so a v 2 line never counts it twice.
+  for (const by of ['no-answer', 'unreadable', 'length']) assert.deepEqual(trustKeys({ way: 'in', decision: 'deny', by, v: 2 }), [], by);
+  assert.deepEqual(trustKeys({ way: 'out', decision: 'deny', by: 'no-answer', v: 2 }), []);
+  assert.deepEqual(trustKeys({ way: 'in', decision: 'deny', by: 'model', v: 2 }), ['in-stop'], 'a stop still counts');
+});
+
+test('the held list reads its rows, drops lines that are not rows, and tidies like Michael\'s note', () => {
+  // Value: protects=the held list never breaks on a bad line, and its holds match the count's rule; fails_when=a torn line throws, a stop is called a hold, or quotes survive; why_new=held list (owner, 2026-10-16); seam=none; no_claim=none beyond protects
+  const H = loadTs('src/shared/heldRecord.ts');
+  const R = loadTs('src/shared/research.ts');
+  assert.equal(H.parseHeld('{"at":1'), null);
+  assert.equal(H.parseHeld(JSON.stringify({ at: 1, way: 'up', from: 'x', why: 'no-answer' })), null);
+  assert.deepEqual(H.parseHeld(JSON.stringify({ at: 1, way: 'in', from: 'human', to: 'research', toName: 'Pete', subject: 's', opening: 'o', why: 'failed', told: 'michael' })),
+    { at: 1, way: 'in', from: 'human', fromName: null, to: 'research', toName: 'Pete', subject: 's', opening: 'o', why: 'failed', told: 'michael' });
+  assert.equal(H.tidy('Say \u201chi\u201d\nnow', 80), 'Say hi now');
+  const why = (v) => H.heldWhy(v, R.REFUSAL_CHECK_FAILED, R.REFUSAL_TOO_LONG);
+  assert.deepEqual(['length', 'no-answer', 'unreadable', 'settings'].map((by) => why({ reason: 'x', by })), ['too-long', 'no-answer', 'unreadable', 'settings']);
+  assert.deepEqual(['model', 'pattern', 'recheck'].map((by) => why({ reason: 'x', by })), [null, null, null]);
+  assert.deepEqual([why({ reason: R.REFUSAL_CHECK_FAILED }), why({ reason: R.REFUSAL_TOO_LONG }), why({ reason: R.REFUSAL_OFF })], ['failed', 'too-long', null]);
 });
 
 test('Learning: the period\'s notes by source, its questions per 100 requests once it has enough, the span before, and what the team holds in all', () => {

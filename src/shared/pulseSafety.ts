@@ -20,11 +20,13 @@ export type RefusalGate =
 export const REFUSAL_GATES: readonly RefusalGate[] = ['connector', 'quickbooks', 'mail', 'internet', 'sandbox', 'folder', 'office-files', 'paused', 'impostor'];
 
 /** A trust layer log line as trustLayer.ts writes it. */
-export interface TrustDecision { way?: unknown; decision?: unknown; by?: unknown; flagged?: unknown }
+export interface TrustDecision { way?: unknown; decision?: unknown; by?: unknown; flagged?: unknown; v?: unknown }
 
 /** The counters one trust layer decision adds to. A deny the model or the
  *  patterns reached is a stop; one where the check could not run (no answer,
- *  unreadable, too long) is held: nothing went out unchecked. */
+ *  unreadable, too long) is held: nothing went out unchecked. From v 2
+ *  (2026-10-16) a hold is counted from the hive's own trust-held line, which
+ *  the held list shares, so a v 2 line adds no held key; older lines still do. */
 export function trustKeys(e: TrustDecision): string[] {
   const way = e.way === 'out' ? 'out' : e.way === 'in' ? 'in' : null;
   if (!way) return [];
@@ -34,7 +36,10 @@ export function trustKeys(e: TrustDecision): string[] {
   const keys: string[] = [];
   if (d === 'pass') keys.push(`${way}-pass`);
   else if (d === 'clean') keys.push(`${way}-clean`);
-  else if (d === 'deny') keys.push(held || way === 'out' ? `${way}-held` : `${way}-stop`);
+  else if (d === 'deny') {
+    if (held || way === 'out') { if (e.v !== 2) keys.push(`${way}-held`); }
+    else keys.push(`${way}-stop`);
+  }
   if (way === 'out' && e.flagged === true) keys.push('out-flagged');
   return keys;
 }

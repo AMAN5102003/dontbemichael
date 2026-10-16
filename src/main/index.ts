@@ -600,7 +600,13 @@ const pulse = new PulseService({
   applyMissions: (change) => applyMissions(change),
   billing: () => (readConfig().claudeAuth === 'apiKey' ? 'apiKey' : 'account'),
   plan: () => planPrice(readClaudePlan(), readConfig().planPriceMonthly),
-  memory: () => { const root = hive.root(); return root ? readTeamMemory(root, Object.keys(hive.registry().agents ?? {})) : { notes: [], procedures: {} }; }
+  memory: () => { const root = hive.root(); return root ? readTeamMemory(root, Object.keys(hive.registry().agents ?? {})) : { notes: [], procedures: {} }; },
+  readHeld: () => {
+    const home = readConfig().harnessHome;
+    if (!home) return '';
+    // The same path the hive writes to (hive.ts recordHeld uses the home as configured).
+    try { return readFileSync(join(privateRoot(home), 'held.jsonl'), 'utf8'); } catch { return ''; }
+  }
 });
 // The office log kinds Pulse counts, and the board each tick reads.
 hive.logObserver = (e) => {
@@ -614,6 +620,8 @@ hive.logObserver = (e) => {
     pulseTelemetry.record({ agentId: e.agentId, kind: 'sent', ts: e.ts });
   } else if (kind === 'card-reopen') {
     pulseTelemetry.record({ agentId: typeof e.agentId === 'string' ? e.agentId : null, kind: 'card-reopen', ts: e.ts, attrs: { id: e.id } });
+  } else if (kind === 'trust-held' && (e.way === 'in' || e.way === 'out')) {
+    pulseTelemetry.record({ agentId: null, kind: 'trust-held', ts: e.ts, attrs: { way: e.way } });
   }
 };
 hive.tasksObserver = (tasks) => pulseTelemetry.tasks(tasks as never);
@@ -787,13 +795,14 @@ const trustLayer = makeTrustLayer({
     // Why a check got no answer, beside the layer's own deny line, so the next
     // failure says what happened (2026-10-15: launch checks lost their Enter).
     if (!r.ok) { try { hive.appendLog({ kind: 'trust-check-failed', error: r.error ?? 'unknown' }); } catch { /* best-effort */ } }
-    return r.ok && r.text ? r.text : null;
+    // Why it failed rides on the deny, for Pulse's held list (owner, 2026-10-16).
+    return r.ok && r.text ? r.text : r.ok ? null : { error: r.error ?? 'unknown' };
   },
   settings: () => dataClassSettings(readConfig().dataClasses),
   log: (event) => {
     try { hive.appendLog(event); } catch { /* best-effort */ }
     // Pulse's Kept safe: the decision only, never the text it judged.
-    if (event.kind === 'trust-layer') pulseTelemetry.record({ agentId: null, kind: 'trust', ts: Date.now(), attrs: { way: event.way, decision: event.decision, by: event.by ?? null, flagged: event.flagged === true } });
+    if (event.kind === 'trust-layer') pulseTelemetry.record({ agentId: null, kind: 'trust', ts: Date.now(), attrs: { way: event.way, decision: event.decision, by: event.by ?? null, flagged: event.flagged === true, ...(event.v === 2 ? { v: 2 } : {}) } });
   }
 });
 
@@ -6518,6 +6527,9 @@ ipcMain.handle('claude:plan', () => {
   const id = readClaudePlan();
   return { label: id ? PLAN_LABELS[id] : null, listMonthly: id ? PLAN_PRICES[id] : null };
 });
+// The held tile's list (owner, 2026-10-16): two times, checked here.
+ipcMain.handle('pulse:held', (_evt, fromMs: unknown, toMs: unknown) =>
+  (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) ? pulse.held(fromMs, toMs) : []));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
   try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) pulseProcessor.tick(office); } catch (e) { console.error('[pulse] snapshot tick', e); }
   return pulse.snapshot(isPeriod(period) ? period : 'this-week', compare === true);
