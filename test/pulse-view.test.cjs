@@ -83,8 +83,18 @@ test('the layout follows the stage width, and every picture has words', () => {
   assert.match(view, /role="img" aria-label=\{aria\}/);
   assert.match(view, /aria-live="polite"/);
   assert.match(view, /aria-label=\{t\('pulse\.planAria'/);
-  assert.ok((view.match(/<button[^>]*type="button"/g) || []).length >= 6, 'rows and actions are buttons');
+  assert.ok((view.match(/<(?:button[^>]*type="button"|PixelButton)/g) || []).length >= 6, 'rows and actions are buttons');
   assert.match(view, /role="listitem"/, 'Team at work rows are a list');
+});
+
+test('Apply, Not now, Undo and Try again are PixelButtons, so they get the hover and the disabled state of DESIGN.md 7.7', () => {
+  // Value: protects=one button look across the app and Apply showing it is busy; fails_when=a Pulse action goes back to a hand styled button; why_new=TODOS.md "Pulse buttons use PixelButton"; seam=source pins; no_claim=pixel layout
+  assert.match(view, /import \{ PixelButton \} from '\.\.\/PixelButton';/);
+  assert.doesNotMatch(view, /\bbtn\(/, 'no hand styled button helper');
+  assert.match(view, /<PixelButton size="sm" disabled=\{busy === a\.id\} onClick=\{\(\) => \{ void apply\(a\); \}\}>/, 'Apply is the primary button and is disabled while busy');
+  for (const key of ['pulse.notNow', 'pulse.undo', 'pulse.tryAgain']) {
+    assert.match(view, new RegExp(`<PixelButton variant="secondary" size="sm"[^\\n]*\\{t\\('${key.replace('.', '\\.')}'\\)\\}</PixelButton>`), key);
+  }
 });
 
 test('every pulse string is in all three locales, and the plan ring shows only on a plan', () => {

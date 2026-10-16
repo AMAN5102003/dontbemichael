@@ -24,6 +24,7 @@ import { departmentOf, roleOf } from '@/scene/studio/layout';
 import { useMissions } from '../triggers/ScheduleList';
 import { AgentAvatar } from '../AgentAvatar';
 import { InfoTip } from '../InfoTip';
+import { PixelButton } from '../PixelButton';
 import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
@@ -64,11 +65,6 @@ function useLayout(ref: React.RefObject<HTMLElement | null>): Layout {
 const card: CSSProperties = { background: 'var(--cth-card)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-md)' };
 const label: CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)', display: 'flex', gap: 6, alignItems: 'center' };
 const mono: CSSProperties = { fontFamily: 'var(--cth-font-mono)' };
-const btn = (primary: boolean): CSSProperties => ({
-  height: 28, padding: '0 12px', borderRadius: 'var(--cth-r-md)', fontSize: 11, fontWeight: 600, fontFamily: 'var(--cth-font-ui)', cursor: 'pointer',
-  border: 'none', background: primary ? 'var(--cth-ink)' : 'var(--cth-card)', color: primary ? 'var(--cth-bg)' : 'var(--cth-ink)',
-  boxShadow: primary ? 'none' : 'inset 0 0 0 1px var(--cth-line-2)'
-});
 
 function Section({ title, tip, children }: { title: string; tip?: string; children: ReactNode }) {
   return (
@@ -199,7 +195,7 @@ export function PulseView() {
       <div style={{ ...card, padding: 26, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
         <div style={{ fontSize: 15, fontWeight: 600 }}>{t('pulse.unavailable')}</div>
         <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.unavailableHint')}</div>
-        <button type="button" style={{ ...btn(false), marginTop: 6 }} onClick={() => { void load(); }}>{t('pulse.tryAgain')}</button>
+        <PixelButton variant="secondary" size="sm" style={{ marginTop: 6 }} onClick={() => { void load(); }}>{t('pulse.tryAgain')}</PixelButton>
       </div>
     );
   } else if (!view) {
@@ -262,7 +258,7 @@ export function PulseView() {
             {applied.map((x) => (
               <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{t('pulse.applied')} {x.text}</div>
-                <div><button type="button" style={btn(false)} onClick={() => { void undo(x); }}>{t('pulse.undo')}</button></div>
+                <div><PixelButton variant="secondary" size="sm" onClick={() => { void undo(x); }}>{t('pulse.undo')}</PixelButton></div>
               </div>
             ))}
             {shownAdvice.slice(0, Math.max(0, 3 - applied.length)).map((a) => {
@@ -275,10 +271,10 @@ export function PulseView() {
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>{txt.evidence}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <button type="button" style={btn(true)} disabled={busy === a.id} onClick={() => { void apply(a); }}>
+                    <PixelButton size="sm" disabled={busy === a.id} onClick={() => { void apply(a); }}>
                       {a.change.kind === 'editor' ? t('pulse.openSchedules') : t('pulse.apply')}
-                    </button>
-                    <button type="button" style={btn(false)} onClick={() => { void notNow(a); }}>{t('pulse.notNow')}</button>
+                    </PixelButton>
+                    <PixelButton variant="secondary" size="sm" onClick={() => { void notNow(a); }}>{t('pulse.notNow')}</PixelButton>
                     {a.savesPerWeek !== null && a.savesPerWeek > 0 && (
                       <span style={{ marginInlineStart: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--cth-green-text)', background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-pill)', padding: '2px 8px' }}>
                         {t('pulse.savesAbout', { usd: money(a.savesPerWeek) })}
