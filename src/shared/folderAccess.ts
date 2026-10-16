@@ -56,6 +56,11 @@ export interface AgentFolderPolicy {
    *  false`). Without it, an agent in auto mode can rerun a command with the
    *  sandbox off and read any folder (owner, 2026-09-25). Team members only. */
   sandboxOnly: boolean;
+  /** The members whose hive folders `deny` covers, as the roster stood when
+   *  the agent started (withMemberWall). A Read rule hides a folder from the
+   *  agent's searches too (live check, Claude Code 2.1.302), but rules are read
+   *  once at start, so the hook covers anyone hired since. */
+  walledMembers?: string[];
 }
 
 export interface FolderAgent {
@@ -307,9 +312,11 @@ export function withMemberWall(policy: AgentFolderPolicy, hiveRoot: string, ownI
   if (!hiveRoot || !isAbsolute(hiveRoot)) return policy;
   const agents = resolve(hiveRoot, 'agents');
   const git = resolve(hiveRoot, '.git');
-  const others = Array.from(new Set(memberIds.filter((id) => id && id !== ownId))).map((id) => resolve(agents, id));
+  const members = Array.from(new Set(memberIds.filter(Boolean)));
+  const others = members.filter((id) => id !== ownId).map((id) => resolve(agents, id));
   return {
     ...policy,
+    walledMembers: members,
     sandbox: {
       ...policy.sandbox,
       denyRead: Array.from(new Set([...policy.sandbox.denyRead, agents, git])),
@@ -319,10 +326,21 @@ export function withMemberWall(policy: AgentFolderPolicy, hiveRoot: string, ownI
   };
 }
 
+/** A search the hook can't narrow: Claude Code's Grep and Glob over a folder. */
+const SEARCH_TOOLS: ReadonlySet<string> = new Set(['Grep', 'Glob']);
+
 /** A file tool reaching into another member's hive folder or the hive's git
  *  history, by any agent, Michael included (owner, 2026-10-16). Writes there
- *  are the harness guard's to judge; this keeps reads out. */
-export function memberWallDecision(hiveRoot: string, agentId: string, tool: string, target: string, caseInsensitive: boolean, nameOf: (id: string) => string): { deny: boolean; reason?: string } {
+ *  are the harness guard's to judge; this keeps reads out.
+ *
+ *  A search over a folder that holds every member's (the hive, the app's
+ *  home, the user's home) is left to the Read rules the agent started with,
+ *  which hide those members' folders from its results. Given the roster
+ *  (`members`) and who those rules cover (`walled`, null when unknown), such a
+ *  search is refused while anyone hired since is not covered: the hook can't
+ *  take their files out of a result, only refuse the call. */
+export function memberWallDecision(hiveRoot: string, agentId: string, tool: string, target: string, caseInsensitive: boolean, nameOf: (id: string) => string,
+  roster?: { members: readonly string[]; walled: readonly string[] | null }): { deny: boolean; reason?: string } {
   if (!hiveRoot || (!FOLDER_READ_TOOLS.has(tool) && !FOLDER_WRITE_TOOLS.has(tool))) return { deny: false };
   const inside = insideFn(caseInsensitive);
   const git = resolve(hiveRoot, '.git');
@@ -330,9 +348,18 @@ export function memberWallDecision(hiveRoot: string, agentId: string, tool: stri
     return { deny: true, reason: 'The hive\'s git history keeps every team member\'s notes, so it is closed to everyone. To learn what a teammate knows, send them a "query" message.' };
   }
   const agents = resolve(hiveRoot, 'agents');
+  const same = (a: string, b: string): boolean => (caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b);
+  if (roster && SEARCH_TOOLS.has(tool) && inside(target, agents)) {
+    const walled = roster.walled ?? [];
+    const late = roster.members.filter((id) => id && !same(id, agentId) && !walled.some((w) => same(w, id)));
+    if (late.length) {
+      const names = late.map(nameOf).join(', ');
+      return { deny: true, reason: `${names} joined after this session started, so a search over every team member's folder could reach their notes. Search a folder that holds only your own files or the shared ones (the board, the task list), or ask ${late.length === 1 ? 'them' : 'each of them'} with a "query" message. Your next session covers them.` };
+    }
+  }
   if (!inside(agents, target)) return { deny: false };
   const owner = relative(agents, resolve(target)).split(/[\\/]/)[0];
-  if (!owner || (caseInsensitive ? owner.toLowerCase() === agentId.toLowerCase() : owner === agentId)) return { deny: false };
+  if (!owner || same(owner, agentId)) return { deny: false };
   const name = nameOf(owner);
   return { deny: true, reason: `That is ${name}'s own folder: their notes, memory and inbox are theirs alone. To learn what ${name} knows, send them a "query" message.` };
 }

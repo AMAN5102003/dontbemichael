@@ -793,6 +793,11 @@ export class HiveManager {
    *  spawn or its last update. Lets an owner's toggle reach running agents
    *  without a restart (knowledgeUpdate). */
   private knowledgeTold = new Map<string, boolean>();
+  /** Per agent: the members whose hive folders its Read rules hid when it
+   *  started (AgentFolderPolicy.walledMembers). The hook refuses a search over
+   *  every member's folder while someone hired since is not among them. */
+  private walledAtStart = new Map<string, readonly string[]>();
+  walledMembersOf(id: string): readonly string[] | null { return this.walledAtStart.get(id) ?? null; }
 
   /**
    * What a running agent should be told because the owner turned company
@@ -1503,6 +1508,8 @@ export class HiveManager {
       mkdirSync(dirname(settingsPath), { recursive: true });
       this.writeJson(settingsPath, this.hookSettings(shim, meta.cwd, opts.mcpDefaults, opts.theme, this.sandboxWritableDirs(meta, dir, root, opts.extraWritableDirs), opts.folderPolicy, stripConnectors ? [] : opts.connectors?.deny ?? [], shell.shell, opts.network, meta.isResearch ? this.researchShellWrite(dir, meta.cwd) : undefined));
       args.push('--settings', settingsPath);
+      if (opts.folderPolicy?.walledMembers) this.walledAtStart.set(meta.id, opts.folderPolicy.walledMembers);
+      else this.walledAtStart.delete(meta.id);
       // A `claude` the agent starts from its shell has no hook and no deny
       // rules, so it would load every connector on the account (TODOS, P1).
       // Claude Code sources CLAUDE_ENV_FILE before each shell command, so the

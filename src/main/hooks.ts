@@ -1174,8 +1174,11 @@ export class HookServer {
     // (owner, 2026-10-16: a member's memory is private; ask the member).
     if (hiveRoot) {
       const nameOf = (id: string): string => (id === RESEARCH_ID ? rName() : reg.agents[id]?.name?.trim() || id);
+      // Who its start time Read rules cover, against the roster now: a
+      // member hired since is refused only to a search over everyone's folders.
+      const roster = { members: Object.keys(reg.agents ?? {}), walled: this.hive.walledMembersOf?.(agentId) ?? null };
       for (const t of both) {
-        const r = memberWallDecision(hiveRoot, agentId, tool, t, ci, nameOf);
+        const r = memberWallDecision(hiveRoot, agentId, tool, t, ci, nameOf, roster);
         if (r.deny) return r;
       }
     }
