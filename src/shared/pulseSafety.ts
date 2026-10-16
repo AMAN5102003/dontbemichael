@@ -29,7 +29,8 @@ export interface TrustDecision { way?: unknown; decision?: unknown; by?: unknown
  *  the held list shares, so a v 2 line adds no held key; older lines still do. */
 export function trustKeys(e: TrustDecision): string[] {
   const way = e.way === 'out' ? 'out' : e.way === 'in' ? 'in' : null;
-  if (!way) return [];
+  // From v 3 the hive's trust-checked line counts these (checkedKeys).
+  if (!way || (typeof e.v === 'number' && e.v >= 3)) return [];
   const d = String(e.decision ?? '');
   const by = String(e.by ?? '');
   const held = d === 'deny' && (by === 'no-answer' || by === 'unreadable' || by === 'length' || by === '');
@@ -44,6 +45,15 @@ export function trustKeys(e: TrustDecision): string[] {
   return keys;
 }
 
+/** The counters one hive trust-checked line adds to: one per message the check
+ *  let through or stopped, the same event Pulse's lists read (owner, D5). */
+export function checkedKeys(e: { way?: unknown; decision?: unknown; flagged?: unknown }): string[] {
+  const way = e.way === 'out' ? 'out' : e.way === 'in' ? 'in' : null;
+  const d = String(e.decision ?? '');
+  if (!way || !(d === 'pass' || d === 'clean' || (d === 'stop' && way === 'in'))) return [];
+  return [`${way}-${d}`, ...(way === 'out' && e.flagged === true ? ['out-flagged'] : [])];
+}
+
 export const refusalKey = (gate: RefusalGate): string => `rule-${gate}`;
 
 export interface KeptSafe {
@@ -53,6 +63,9 @@ export interface KeptSafe {
   webAnswers: { pass: number; clean: number; flagged: number };
   /** Messages held because the check could not run, both ways. */
   held: number;
+  /** The same, by way, for the lists' pointer to the held list (DD11). */
+  heldIn: number;
+  heldOut: number;
   /** Steps stopped by the owner's settings, by gate. */
   rules: Partial<Record<RefusalGate, number>>;
   /** True once anything at all was counted, so an office without Research still shows its rules. */
@@ -70,6 +83,8 @@ export function keptSafe(rows: Array<{ key: string; n: number }>): KeptSafe {
     toInternet: { pass: get('in-pass'), clean: get('in-clean'), stop: get('in-stop') },
     webAnswers: { pass: get('out-pass'), clean: get('out-clean'), flagged: get('out-flagged') },
     held: get('in-held') + get('out-held'),
+    heldIn: get('in-held'),
+    heldOut: get('out-held'),
     rules,
     any: [...c.values()].some((n) => n > 0)
   };

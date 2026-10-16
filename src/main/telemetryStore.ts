@@ -28,7 +28,9 @@ export type TelemetryKind =
   | 'busy' | 'trust' | 'refused'
   // A message held because the check could not run (the hive's own line, so
   // the held count and the held list come from one event, owner 2026-10-16).
-  | 'trust-held';
+  | 'trust-held'
+  // One per message the check let through or stopped (owner, 2026-10-16).
+  | 'trust-checked';
 
 export interface TelemetryEvent {
   agentId: string | null;

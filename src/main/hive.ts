@@ -45,6 +45,7 @@ import { homedir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash, createHmac } from 'node:crypto';
 import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
+import { CHECKED_ARCHIVE_DIR, CHECKED_FILE, keepText, splitForArchive, type CheckedOutcome, type CheckedRow } from '../shared/checkedRecord';
 import { heldWaits, heldWhy, tidy, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
@@ -2619,6 +2620,48 @@ export class HiveManager {
   }
   private heldPrunedAt = 0;
 
+  /** One row per message the check let through or stopped, both ways, in the
+   *  owner's private folder (both texts, whole up to 4,000 characters; eng D1),
+   *  and one trust-checked line with no text, which Pulse counts (eng D5).
+   *  Once a day rows past 62 days move to the archive, which the app never
+   *  deletes (eng D2; only a reset does, D3). A hold is recordHeld's. */
+  recordChecked(way: 'in' | 'out', from: string, to: string, outcome: CheckedOutcome, wrote: { subject?: unknown; body?: unknown },
+    sent?: { subject?: unknown; body?: unknown }, extra: { kinds?: readonly string[]; flagged?: boolean } = {}): void {
+    this.appendLog({ kind: 'trust-checked', way, decision: outcome, ...(way === 'out' ? { flagged: extra.flagged === true } : {}) });
+    const home = this.getHome();
+    if (!home) return;
+    const reg = this.registry();
+    const nameOf = (id: string): string | null => (id === 'human' || id === 'system' ? null : id === RESEARCH_ID ? this.researchName() : reg.agents[id]?.name?.trim() || null);
+    const keep = (t: { subject?: unknown; body?: unknown }) => { const s = keepText(asText(t.subject)); const b = keepText(asText(t.body)); return { text: { subject: s.text, body: b.text }, cut: s.cut || b.cut }; };
+    const w = keep(wrote);
+    const g = sent ? keep(sent) : null;
+    const changed = !!g && (g.text.subject !== w.text.subject || g.text.body !== w.text.body);
+    const row: CheckedRow = {
+      at: Date.now(), way, from, fromName: nameOf(from), to, toName: nameOf(to), outcome, wrote: w.text,
+      ...(changed && g ? { sent: g.text } : {}),
+      ...(extra.kinds?.length ? { kinds: [...extra.kinds] } : {}),
+      ...(extra.flagged ? { flagged: true } : {}),
+      ...(w.cut || (changed && g?.cut) ? { cut: true } : {})
+    };
+    const file = join(privateRoot(home), CHECKED_FILE);
+    try {
+      mkdirSync(privateRoot(home), { recursive: true });
+      appendFileSync(file, `${JSON.stringify(row)}\n`, 'utf8');
+      if (row.at - this.checkedArchivedAt > 86_400_000) {
+        this.checkedArchivedAt = row.at;
+        const { keep: live, archive } = splitForArchive(readFileSync(file, 'utf8').split('\n'), row.at);
+        if (archive.size) {
+          // The archive first: a stop in between leaves a row in both, never in neither.
+          const dir = join(privateRoot(home), CHECKED_ARCHIVE_DIR);
+          mkdirSync(dir, { recursive: true });
+          for (const [month, lines] of archive) appendFileSync(join(dir, `${month}.jsonl`), `${lines.join('\n')}\n`, 'utf8');
+          writeFileSync(file, live.length ? `${live.join('\n')}\n` : '', 'utf8');
+        }
+      }
+    } catch { /* best effort: the count still shows, and the list says how many have no details */ }
+  }
+  private checkedArchivedAt = 0;
+
   /** Start a check, or read the one under way. `key` is the content hash. */
   private trustCheck(key: string, start: () => Promise<InboundVerdict | OutboundVerdict>): InboundVerdict | OutboundVerdict | 'hold' {
     const now = Date.now();
@@ -2683,8 +2726,13 @@ export class HiveManager {
     const layer = this.trustLayer;
     const v = this.trustCheck(`in:${this.trustKey(layer, raw)}`, () => layer.inbound({ subject: partial.subject, body: partial.body }));
     if (v === 'hold') return 'hold';
-    if (v.decision === 'deny') { const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG); return deny(v.reason, why ? { why, error: v.error } : undefined); }
+    if (v.decision === 'deny') {
+      const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
+      if (!why) this.recordChecked('in', senderId, RESEARCH_ID, 'stop', partial, undefined, { kinds: 'kinds' in v ? v.kinds : undefined });
+      return deny(v.reason, why ? { why, error: v.error } : undefined);
+    }
     this.deliverToResearch(senderId, msg, v.subject, v.body);
+    this.recordChecked('in', senderId, RESEARCH_ID, v.decision, partial, v, { kinds: 'removed' in v ? v.removed : undefined });
     if (v.decision === 'clean') this.tellSender(senderId, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
     return 'sent';
   }
@@ -2742,11 +2790,13 @@ export class HiveManager {
         if (v.decision === 'deny') {
           const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
           if (why) held(why, v.error);
+          else this.recordChecked('in', msg.from, RESEARCH_ID, 'stop', msg, undefined, { kinds: v.kinds });
           return refuse(v.reason);
         }
         // Research may have been turned off while the check ran.
         if (!this.researchOn()) return refuse(REFUSAL_OFF, 'research-off');
         this.deliverToResearch(msg.from, msg, v.subject, v.body);
+        this.recordChecked('in', msg.from, RESEARCH_ID, v.decision, msg, v, { kinds: v.decision === 'clean' ? v.removed : undefined });
         if (v.decision === 'clean' && fromAgent) this.tellSender(msg.from, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
         this.commit('hive: trust layer delivered to research');
       } catch (e) { console.error('[research] delivering a checked message', e); }
@@ -2934,6 +2984,8 @@ export class HiveManager {
     }, RESEARCH_ID);
     const flagged = ('flagged' in v && v.flagged) || looksLikeInjection(`${v.subject}\n${v.body}`);
     this.routeMessage(out);
+    // What the team read, without the label the app puts above it (eng O4, DD1).
+    this.recordChecked('out', RESEARCH_ID, out.to, v.decision, partial, v, { flagged });
     if (flagged) {
       const toName = reg.agents[out.to]?.name ?? out.to;
       this.appendLog({ kind: 'research-reply-flagged', to: logTo, id: out.id });

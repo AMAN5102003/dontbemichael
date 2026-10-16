@@ -1174,7 +1174,23 @@ half written message survives the switch.
   the start of the message (two lines at most; none for Pete's notes or the app's own
   reminder), one `amber` sentence on why with the check's own report behind an (i), and one
   `ink-3` sentence on what happens next and whether the owner needs to do anything. When the
-  count is above the rows, one line says how many are earlier, from before the list kept details.
+  count is above the rows, one line says how many more have no details. A read that fails says
+  "Couldn't read the list." with Try again.
+  The questions tile carries "See each question" and the answers tile "See each answer" (12/600,
+  `indigo` text, when the count is above zero), each opening a list in the same frame (owner,
+  2026-10-16; mockup `checked-lists-v2.html`): under the title one count line for the period with
+  an (i) on what the marks mean; changed, stopped and flagged rows first, each a `card-2` row with a
+  13/600 sentence headline ("Pam's question to Pete had private parts taken out", "Pete's answer to
+  Pam had web instructions taken out and was flagged to Michael") and the time at the end; the
+  text with removed words struck through (`ink-3` on `neutral-soft`) and the other side's words on
+  `green-soft`, or, when over 40% of what went out is new or there are more than 4 changes, the two
+  texts under 10/600 caps captions; long texts show the changes with about 80 characters around
+  them and "Show the whole answer"; hidden characters show as "[12 hidden characters]"; "Taken
+  out" kinds as `green-soft` pills, "Needed" and "Flagged to Michael" as `amber-soft` pills; one
+  `ink-3` sentence on who was told and whether the owner needs to act. Rows sent as written fold
+  into one line ("17 sent as written") that opens one line items between hairlines. The
+  questions list points to the held list when the period has holds. Every text is plain,
+  `dir="auto"`; marks carry hidden "taken out:" and "sent instead:" for screen readers.
 - **One row of four tiles** under Kept safe (owner, 2026-10-15), each only as big as what it
   shows, 12/14 px padding: What the team learned (the period's new notes as one mono 24 px number, a bar and legend by
   source: `green` your answers, `ink-4` on the job, `indigo` Michael; under it the notes and

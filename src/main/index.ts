@@ -38,6 +38,7 @@ import { answerKey, catchUpRequests, ownerWorkOrder } from '../shared/ownerReque
 import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
+import { CHECKED_FILE } from '../shared/checkedRecord';
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
 import { normalizeTimes, timesDelayMs } from '../shared/scheduleTimes';
 import {
@@ -606,6 +607,12 @@ const pulse = new PulseService({
     if (!home) return '';
     // The same path the hive writes to (hive.ts recordHeld uses the home as configured).
     try { return readFileSync(join(privateRoot(home), 'held.jsonl'), 'utf8'); } catch { return ''; }
+  },
+  readChecked: () => {
+    const home = readConfig().harnessHome;
+    if (!home) return '';
+    // No file yet is an empty record; any other failure is the list's error (DD5).
+    try { return readFileSync(join(privateRoot(home), CHECKED_FILE), 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; }
   }
 });
 // The office log kinds Pulse counts, and the board each tick reads.
@@ -622,6 +629,8 @@ hive.logObserver = (e) => {
     pulseTelemetry.record({ agentId: typeof e.agentId === 'string' ? e.agentId : null, kind: 'card-reopen', ts: e.ts, attrs: { id: e.id } });
   } else if (kind === 'trust-held' && (e.way === 'in' || e.way === 'out')) {
     pulseTelemetry.record({ agentId: null, kind: 'trust-held', ts: e.ts, attrs: { way: e.way } });
+  } else if (kind === 'trust-checked' && (e.way === 'in' || e.way === 'out')) {
+    pulseTelemetry.record({ agentId: null, kind: 'trust-checked', ts: e.ts, attrs: { way: e.way, decision: e.decision, flagged: e.flagged === true } });
   }
 };
 hive.tasksObserver = (tasks) => pulseTelemetry.tasks(tasks as never);
@@ -802,7 +811,7 @@ const trustLayer = makeTrustLayer({
   log: (event) => {
     try { hive.appendLog(event); } catch { /* best-effort */ }
     // Pulse's Kept safe: the decision only, never the text it judged.
-    if (event.kind === 'trust-layer') pulseTelemetry.record({ agentId: null, kind: 'trust', ts: Date.now(), attrs: { way: event.way, decision: event.decision, by: event.by ?? null, flagged: event.flagged === true, ...(event.v === 2 ? { v: 2 } : {}) } });
+    if (event.kind === 'trust-layer') pulseTelemetry.record({ agentId: null, kind: 'trust', ts: Date.now(), attrs: { way: event.way, decision: event.decision, by: event.by ?? null, flagged: event.flagged === true, ...(typeof event.v === 'number' ? { v: event.v } : {}) } });
   }
 });
 
@@ -6514,6 +6523,10 @@ ipcMain.handle('claude:plan', () => {
 // The held tile's list (owner, 2026-10-16): two times, checked here.
 ipcMain.handle('pulse:held', (_evt, fromMs: unknown, toMs: unknown) =>
   (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) ? pulse.held(fromMs, toMs) : []));
+// The questions and answers lists (owner, 2026-10-16): two times and a way,
+// checked here. A record that can't be read rejects, so the list says so.
+ipcMain.handle('pulse:checked', (_evt, fromMs: unknown, toMs: unknown, way: unknown) =>
+  (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) && (way === 'in' || way === 'out') ? pulse.checked(fromMs, toMs, way) : { rows: [], since: null }));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
   try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) pulseProcessor.tick(office); } catch (e) { console.error('[pulse] snapshot tick', e); }
   return pulse.snapshot(isPeriod(period) ? period : 'this-week', compare === true);

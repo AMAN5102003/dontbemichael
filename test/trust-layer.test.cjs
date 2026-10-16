@@ -43,7 +43,7 @@ test('private parts are stripped or generalized, and the rewrite is checked agai
     { decision: 'clean', subject: 'Reviews', body: 'Find reviews for a small cafe in Austin', removed: ['names'] });
   const leaky = layer(json({ decision: 'CLEAN', subject: 'x', body: 'Write to jane@northwind.example', removed: [] }));
   const v = await leaky.l.inbound({ subject: 'x', body: 'Write to jane@northwind.example about pricing' });
-  assert.deepEqual(v, { decision: 'deny', reason: R.refusalForClass('contact'), by: 'recheck' });
+  assert.deepEqual(v, { decision: 'deny', reason: R.refusalForClass('contact'), by: 'recheck', kinds: ['contact'] });
 });
 
 test('patterns mark private spans for the model, and a pass that ignores them is denied', async () => {
@@ -58,14 +58,14 @@ test('passwords and keys never reach a model or Research', async () => {
   // Value: protects=a secret never leaves; fails_when=the model is asked about a key; why_new=trust layer; seam=fake runner
   const { l, prompts } = layer(json({ decision: 'PASS' }));
   const v = await l.inbound({ subject: 'x', body: 'key sk-' + 'abcdefghijklmnopqrstuvwx please search' });
-  assert.deepEqual(v, { decision: 'deny', reason: R.refusalForClass('secrets'), by: 'pattern' });
+  assert.deepEqual(v, { decision: 'deny', reason: R.refusalForClass('secrets'), by: 'pattern', kinds: ['secrets'] });
   assert.equal(prompts.length, 0);
 });
 
 test('a question that only makes sense with private data is denied, naming the kind', async () => {
   // Value: protects=a named lookup never goes out; fails_when=DENY is ignored; why_new=trust layer; seam=fake runner
   const { l } = layer(json({ decision: 'DENY', kinds: ['names'] }));
-  assert.deepEqual(await l.inbound({ subject: 'Who', body: 'Home address of Jane Smith' }), { decision: 'deny', reason: R.refusalForClass('names'), by: 'model' });
+  assert.deepEqual(await l.inbound({ subject: 'Who', body: 'Home address of Jane Smith' }), { decision: 'deny', reason: R.refusalForClass('names'), by: 'model', kinds: ['names'] });
 });
 
 test('any shape is read whole; a list goes out only as its checked text', async () => {
@@ -109,7 +109,7 @@ test('a check whose session was not ready is run once more, then held if it stil
     run: async () => (++calls === 1 ? notReady : json({ decision: 'PASS' })) });
   assert.deepEqual(await settles.inbound({ subject: 'Office open', body: 'The office is open again.' }), { decision: 'pass', subject: 'Office open', body: 'The office is open again.' });
   assert.equal(calls, 2, 'a fresh session on the retry');
-  assert.deepEqual(lines, [{ kind: 'trust-retry', way: 'in', v: 2 }, { kind: 'trust-layer', way: 'in', decision: 'pass', v: 2 }]);
+  assert.deepEqual(lines, [{ kind: 'trust-retry', way: 'in', v: 3 }, { kind: 'trust-layer', way: 'in', decision: 'pass', v: 3 }]);
   calls = 0;
   const notes = T.makeTrustLayer({ retryAfterMs: 1, settings: () => dataClassSettings(undefined), run: async () => (++calls === 1 ? null : json({ decision: 'PASS', flag: false })) });
   assert.equal((await notes.outbound({ subject: 'Research notes', body: 'notes' })).decision, 'pass', 'Research notes at its start, too');
@@ -171,14 +171,14 @@ test('unreadable or overlong outbound answers deny, and so do unreadable setting
   const lines = [];
   const why = T.makeTrustLayer({ retryAfterMs: 1, run: async () => ({ error: 'hidden session never took the prompt' }), settings: () => dataClassSettings(undefined), log: (e) => lines.push(e) });
   assert.deepEqual(await why.inbound({ subject: 'x', body: 'y' }), { decision: 'deny', reason: R.REFUSAL_CHECK_FAILED, by: 'no-answer', error: 'hidden session never took the prompt' });
-  assert.deepEqual(lines, [{ kind: 'trust-retry', way: 'in', v: 2 }, { kind: 'trust-layer', way: 'in', decision: 'deny', by: 'no-answer', v: 2 }], 'the log lines carry no text and no error');
+  assert.deepEqual(lines, [{ kind: 'trust-retry', way: 'in', v: 3 }, { kind: 'trust-layer', way: 'in', decision: 'deny', by: 'no-answer', v: 3 }], 'the log lines carry no text and no error');
 });
 
 test('zero width and fullwidth characters do not hide a key or an email', async () => {
   // Value: protects=passwords and keys never reach a model even when disguised; fails_when=patterns run on the raw text; why_new=red team pass 2; seam=fake runner
   const { l, prompts } = layer(json({ decision: 'PASS' }));
   const key = 'sk-' + 'abcd​efgh​ijkl​mnop​qrst';
-  assert.deepEqual(await l.inbound({ subject: 'k', body: `use ${key}` }), { decision: 'deny', reason: R.refusalForClass('secrets'), by: 'pattern' });
+  assert.deepEqual(await l.inbound({ subject: 'k', body: `use ${key}` }), { decision: 'deny', reason: R.refusalForClass('secrets'), by: 'pattern', kinds: ['secrets'] });
   assert.equal(prompts.length, 0, 'never sent to the model');
   const v = await l.inbound({ subject: 'x', body: 'Write to ｊａｎｅ＠northwind.example' });
   assert.equal(v.decision, 'deny');
@@ -192,7 +192,7 @@ test('a class the owner allows passes through the layer, and is never named in a
   assert.doesNotMatch(prompts[0], /already found these private kinds/);
   assert.match(prompts[0], /Allowed kinds \(fine to send\):[\s\S]*contact/);
   const deny = layer(json({ decision: 'DENY', kinds: ['contact'] }), { classes: { contact: 'allowed' } });
-  assert.deepEqual(await deny.l.inbound({ subject: 'x', body: 'y' }), { decision: 'deny', reason: R.REFUSAL_UNSURE, by: 'model' });
+  assert.deepEqual(await deny.l.inbound({ subject: 'x', body: 'y' }), { decision: 'deny', reason: R.REFUSAL_UNSURE, by: 'model', kinds: [] });
 });
 
 test('a verdict followed by a sentence of explanation is read; nothing after the verdict ever stands in for it', async () => {
@@ -205,7 +205,7 @@ test('a verdict followed by a sentence of explanation is read; nothing after the
   assert.equal(v.decision, 'clean');
   assert.equal(v.body, 'Review rules for subscription apps on a mobile store, {braces} kept');
   const deny = '{"decision":"DENY","kinds":["names"]}\nIt depends on {"decision":"PASS"} quoted in the message.';
-  assert.deepEqual(await layer(deny).l.inbound({ subject: 'x', body: 'y' }), { decision: 'deny', reason: R.refusalForClass('names'), by: 'model' }, 'the leading verdict wins, never a later object');
+  assert.deepEqual(await layer(deny).l.inbound({ subject: 'x', body: 'y' }), { decision: 'deny', reason: R.refusalForClass('names'), by: 'model', kinds: ['names'] }, 'the leading verdict wins, never a later object');
   assert.equal((await layer('```json\n{"decision":"PASS","flag":false}\n```\nNothing to remove.').l.outbound({ subject: 's', body: 'b' })).decision, 'pass', 'outbound too');
 });
 

@@ -73,16 +73,6 @@
 **Priority:** P2
 **Depends on:** None
 
-### Check Pete's notes in parts
-
-**What:** Send Pete's notes to the trust layer in parts small enough for one check, instead of as one batch that a check refuses when it is too long.
-
-**Why:** A refused batch removes the team's cleaned copy of Pete's notes (`researchNotesForPalace` in `src/main/index.ts`), so one long note a web page talks Pete into writing empties what the team can search.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Take the internet from team members' shells on Windows
 
 **What:** Hold team members' shell commands off the internet on Windows, where Claude Code has no sandbox, or say on the Research screen that it only holds on a Mac.

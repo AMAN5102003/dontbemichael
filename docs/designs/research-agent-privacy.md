@@ -90,6 +90,9 @@ as gatekeeper, in both directions, ahead of the guard described in the next sect
   minutes before the message is held; nothing goes out unchecked meanwhile (owner,
   2026-10-16). Too long, private data and settings are refused at once.
   Research's notes go into the team's shared memory only as a copy the layer cleaned.
+  Each check the layer finishes is kept for the owner in the app's private folder (what was
+  written and what went out; 62 days on Pulse, then archived), never in the office log
+  (owner, 2026-10-16).
   Superseded 2026-10-16 (owner: an agent's memory is private to it): no member's notes go
   into any shared search, Research's included; teammates ask Research instead. The palace
   holds company knowledge only.

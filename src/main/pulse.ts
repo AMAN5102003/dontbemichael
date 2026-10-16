@@ -10,6 +10,7 @@
  *                                          model: checked here, set by the renderer's roster
  *   view ─ pulse:undo / pulse:dismiss
  *   view ─ pulse:held(fromMs, toMs) ─► held() ─► private/held.jsonl rows (the held tile's list)
+ *   view ─ pulse:checked(fromMs, toMs, way) ─► checked() ─► private/checked.jsonl rows (questions and answers lists)
  */
 import type Database from 'better-sqlite3';
 import type { ScheduledMission } from '../shared/missions';
@@ -22,6 +23,7 @@ import { keptSafe, type KeptSafe } from '../shared/pulseSafety';
 import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan';
 import { learning, type NoteFact } from '../shared/teamLearning';
 import { parseHeld, type HeldRow } from '../shared/heldRecord';
+import { parseChecked, type CheckedList, type CheckedRow } from '../shared/checkedRecord';
 import type { TelemetryStore } from './telemetryStore';
 import type { TelemetryProcessor } from './telemetryProcessor';
 
@@ -47,6 +49,8 @@ export interface PulseDeps {
   memory: () => { notes: NoteFact[]; procedures: Record<string, number> };
   /** The held list's private record as text (private/held.jsonl), '' when none. */
   readHeld?: () => string;
+  /** private/checked.jsonl, the lists of what the check let through or stopped. */
+  readChecked?: () => string;
   now?: () => number;
 }
 
@@ -206,6 +210,16 @@ export class PulseService {
     let text = '';
     try { text = this.d.readHeld?.() ?? ''; } catch { text = ''; }
     return text.split('\n').map(parseHeld).filter((r): r is HeldRow => !!r && r.at >= fromMs && r.at <= toMs).sort((a, b) => b.at - a.at);
+  }
+
+  /** What the check let through or stopped in a span, one way, newest first.
+   *  Throws when the record can't be read, so the list says so (DD5). */
+  checked(fromMs: number, toMs: number, way: 'in' | 'out'): CheckedList {
+    const text = this.d.readChecked?.() ?? '';
+    const all = text.split('\n').map(parseChecked).filter((r): r is CheckedRow => !!r && r.way === way);
+    // The first kept row says from when words are kept (design DD4).
+    const since = all.reduce<number | null>((m, r) => (m === null || r.at < m ? r.at : m), null);
+    return { rows: all.filter((r) => r.at >= fromMs && r.at <= toMs).sort((a, b) => b.at - a.at), since };
   }
 
   private planPrice(): PlanPrice | null {

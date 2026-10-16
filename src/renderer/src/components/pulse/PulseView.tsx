@@ -18,6 +18,7 @@ import type { Advice } from '@shared/teamAdvice';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
 import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
 import { heldCause, notesPreview, HELD_TO_MEMORY, type HeldRow } from '@shared/heldRecord';
+import { changesInContext, showAsMarks, withHidden, wordChanges, type ChangePart, type CheckedList, type CheckedRow } from '@shared/checkedRecord';
 import { OFFICE_OPEN_SUBJECT } from '@shared/officeOpen';
 import { useStore } from '@/store/store';
 import { useAppTheme } from '@/design/theme';
@@ -29,6 +30,7 @@ import { AgentAvatar } from '../AgentAvatar';
 import { InfoTip } from '../InfoTip';
 import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
+import { godNameNow } from '@/i18n';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
 
 const LS_PERIOD = 'cth.pulsePeriod';
@@ -130,6 +132,8 @@ export function PulseView() {
   const [detail, setDetail] = useState<string | null>(null);
   // The held tile's list (owner, 2026-10-16).
   const [heldOpen, setHeldOpen] = useState(false);
+  // The questions and answers lists (owner, 2026-10-16).
+  const [checkedOpen, setCheckedOpen] = useState<'in' | 'out' | null>(null);
   const [applied, setApplied] = useState<Array<{ advice: Advice; appliedId: number; text: string }>>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>('');
@@ -342,9 +346,11 @@ export function PulseView() {
         <section aria-label={t('pulse.safe.title')}>
           <div style={grid(cols)}>
             <StatTile icon="shield" value={toNet} trend={pk && pair(toNetOf(pk), toNet, t('pulse.safe.toInternet'))} tip={t('pulse.safe.trustTip')} text={t(toNet > 0 && safe.toInternet.clean + safe.toInternet.stop === 0 ? 'pulse.safe.toInternetNone' : 'pulse.safe.toInternet')}
-              parts={[{ n: safe.toInternet.pass, name: t('pulse.safe.sentAsWritten'), color: 'var(--cth-ink-2)' }, { n: safe.toInternet.clean, name: t('pulse.safe.privateOut'), color: 'var(--cth-green)' }, { n: safe.toInternet.stop, name: t('pulse.safe.stopped'), color: 'var(--cth-amber)' }]} />
+              parts={[{ n: safe.toInternet.pass, name: t('pulse.safe.sentAsWritten'), color: 'var(--cth-ink-2)' }, { n: safe.toInternet.clean, name: t('pulse.safe.privateOut'), color: 'var(--cth-green)' }, { n: safe.toInternet.stop, name: t('pulse.safe.stopped'), color: 'var(--cth-amber)' }]}
+              open={toNet > 0 ? { label: t('pulse.checked.q.open'), onClick: () => setCheckedOpen('in') } : undefined} />
             <StatTile icon="search" value={safe.webAnswers.clean} of={answers} trend={pk && pair(pk.webAnswers.clean, safe.webAnswers.clean, t('pulse.safe.answersCleaned'), 'var(--cth-green)')} tip={t('pulse.safe.trustTip')} text={t('pulse.safe.answersCleaned')}
-              parts={[{ n: safe.webAnswers.clean, name: t('pulse.safe.cleaned'), color: 'var(--cth-green)' }, { n: safe.webAnswers.pass, name: t('pulse.safe.nothingToRemove'), color: 'var(--cth-ink-4)' }, { n: safe.webAnswers.flagged, name: t('pulse.safe.flagged'), color: 'var(--cth-amber)' }]} />
+              parts={[{ n: safe.webAnswers.clean, name: t('pulse.safe.cleaned'), color: 'var(--cth-green)' }, { n: safe.webAnswers.pass, name: t('pulse.safe.nothingToRemove'), color: 'var(--cth-ink-4)' }, { n: safe.webAnswers.flagged, name: t('pulse.safe.flagged'), color: 'var(--cth-amber)' }]}
+              open={answers > 0 ? { label: t('pulse.checked.a.open'), onClick: () => setCheckedOpen('out') } : undefined} />
             <StatTile icon="pause" value={safe.held} trend={pk && pair(pk.held, safe.held, t('pulse.safe.held'), 'var(--cth-amber)')} tip={t('pulse.safe.heldTip')} text={t(safe.held > 0 ? 'pulse.safe.held' : 'pulse.safe.heldNone')} amber={safe.held > 0}
               open={safe.held > 0 ? { label: t('pulse.held.open'), onClick: () => setHeldOpen(true) } : undefined} />
             <StatTile icon="lock" value={rulesTotal} trend={pk && pair(rulesOf(pk), rulesTotal, t('pulse.safe.rules'))} tip={t('pulse.safe.rulesTip')} text={t(rulesTotal > 0 ? 'pulse.safe.rules' : 'pulse.safe.rulesNone')}
@@ -515,6 +521,14 @@ export function PulseView() {
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{notice}</div>
       {body}
       {detail && view && <MemberDetail id={detail} data={view} name={nameOf(detail)} onClose={() => setDetail(null)} money={money} />}
+      {checkedOpen && view && (() => {
+        const k = view.keptSafe ?? keptSafe([]);
+        const counts = checkedOpen === 'in'
+          ? { total: k.toInternet.pass + k.toInternet.clean + k.toInternet.stop, changed: k.toInternet.clean, stopped: k.toInternet.stop, flagged: 0 }
+          : { total: k.webAnswers.pass + k.webAnswers.clean, changed: k.webAnswers.clean, stopped: 0, flagged: k.webAnswers.flagged };
+        return <CheckedDetail way={checkedOpen} from={view.snapshot.from} to={view.snapshot.to} period={t(`pulse.periods.${period}`)} research={nameOf('research')} counts={counts}
+          heldCount={checkedOpen === 'in' ? k.heldIn : k.heldOut} onClose={() => setCheckedOpen(null)} onOpenHeld={() => { setCheckedOpen(null); setHeldOpen(true); }} />;
+      })()}
       {heldOpen && view && <HeldDetail from={view.snapshot.from} to={view.snapshot.to} count={(view.keptSafe ?? keptSafe([])).held} onClose={() => setHeldOpen(false)} />}
     </div>
   );
@@ -602,23 +616,58 @@ function WeekBars({ labels, series, aria, format = (v) => String(v), before = fa
   );
 }
 
+/** The frame Pulse's lists share (eng Section 2, design DD5, DD15): the held
+ *  list's dialog, reading, and a read that failed with Try again. */
+function useListRows<T>(load: () => Promise<T>, deps: unknown[]): { data: T | null; failed: boolean; retry: () => void } {
+  const [data, setData] = useState<T | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setData(null); setFailed(false);
+    load().then((r) => { if (live) setData(r); }, () => { if (live) setFailed(true); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, tick]);
+  return { data, failed, retry: () => setTick((n) => n + 1) };
+}
+
+function ListFrame({ icon, title, count, failed, reading, onRetry, onClose, children }: { icon: IconName; title: string; count?: ReactNode; failed: boolean; reading: boolean; onRetry: () => void; onClose: () => void; children?: ReactNode }) {
+  const { t } = useTranslation();
+  const ref = useRef<HTMLDivElement | null>(null);
+  useDialog(ref, onClose);
+  const backdrop = useBackdropClose(onClose);
+  return (
+    <div {...backdrop} style={{ position: 'fixed', inset: 0, background: 'var(--cth-backdrop)', zIndex: 300, display: 'grid', placeItems: 'start center', paddingTop: 80 }}>
+      <div ref={ref} role="dialog" aria-modal aria-label={title} style={{ width: 600, maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100vh - 140px)', overflow: 'auto', ...card, borderRadius: 'var(--cth-r-2xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-lg)', padding: '18px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Icon name={icon} />
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>
+          <button type="button" aria-label={t('common.close')} onClick={onClose} style={{ marginInlineStart: 'auto', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--cth-ink-3)' }}><Icon name="x" /></button>
+        </div>
+        {failed ? (
+          <div role="alert" style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
+            {t('pulse.list.failed')}{' '}
+            <button type="button" onClick={onRetry} style={{ border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--cth-indigo-text)' }}>{t('pulse.list.retry')}</button>
+          </div>
+        ) : reading ? <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.reading')}</div> : <>{count}{children}</>}
+      </div>
+    </div>
+  );
+}
+
+const rowBox: CSSProperties = { background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 };
+const whenOf = (lang: string) => (at: number): string => new Date(at).toLocaleString(lang, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const spanMs = (from: string, to: string): [number, number] => [new Date(`${from}T00:00:00`).getTime(), new Date(`${to}T23:59:59.999`).getTime()];
+
 /** What the held tile counted, one row per held message: when, which way,
  *  who to whom, its subject and opening, why the check could not run, and who
  *  was told (owner, 2026-10-16). Read from the owner's private record. */
 function HeldDetail({ from, to, count, onClose }: { from: string; to: string; count: number; onClose: () => void }) {
   const { t, i18n } = useTranslation();
-  const ref = useRef<HTMLDivElement | null>(null);
-  useDialog(ref, onClose);
-  const backdrop = useBackdropClose(onClose);
-  const [rows, setRows] = useState<HeldRow[] | null>(null);
-  useEffect(() => {
-    let live = true;
-    const fromMs = new Date(`${from}T00:00:00`).getTime();
-    const toMs = new Date(`${to}T23:59:59.999`).getTime();
-    window.cth.pulseHeld(fromMs, toMs).then((r) => { if (live) setRows(Array.isArray(r) ? r : []); }, () => { if (live) setRows([]); });
-    return () => { live = false; };
-  }, [from, to]);
-  const when = (at: number): string => new Date(at).toLocaleString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const [fromMs, toMs] = spanMs(from, to);
+  const { data: rows, failed, retry } = useListRows<HeldRow[]>(() => window.cth.pulseHeld(fromMs, toMs).then((r) => (Array.isArray(r) ? r : [])), [from, to]);
+  const when = whenOf(i18n.language);
   // Each row in the owner's words (owner, 2026-10-16: the first list "made no
   // sense"): what was held, why in one sentence, and what happens next. The
   // check's own report sits behind an (i).
@@ -634,41 +683,173 @@ function HeldDetail({ from, to, count, onClose }: { from: string; to: string; co
     // Notes show the notes themselves (an older row kept the index page, which
     // reads as no notes); the app's own reminder has nothing to read.
     const what = notes ? notesPreview(r.opening) || t('pulse.held.notesEmpty', { research })
-      : officeOpen ? '' : [r.subject ? `\u201c${r.subject}\u201d` : '', r.opening].filter(Boolean).join(' ');
+      : officeOpen ? '' : [r.subject ? `“${r.subject}”` : '', r.opening].filter(Boolean).join(' ');
     return { head, what, why: t(`pulse.held.why.${heldCause(r)}`), next: t(`pulse.held.next.${kind}`, { research, from, to }) };
   };
   const earlier = rows ? Math.max(0, count - rows.length) : 0;
   return (
-    <div {...backdrop} style={{ position: 'fixed', inset: 0, background: 'var(--cth-backdrop)', zIndex: 300, display: 'grid', placeItems: 'start center', paddingTop: 80 }}>
-      <div ref={ref} role="dialog" aria-modal aria-label={t('pulse.held.title')} style={{ width: 600, maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100vh - 140px)', overflow: 'auto', ...card, borderRadius: 'var(--cth-r-2xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-lg)', padding: '18px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <Icon name="pause" />
-          <div style={{ fontSize: 15, fontWeight: 600 }}>{t('pulse.held.title')}</div>
-          <button type="button" aria-label={t('common.close')} onClick={onClose} style={{ marginInlineStart: 'auto', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--cth-ink-3)' }}><Icon name="x" /></button>
-        </div>
-        {rows === null ? <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.reading')}</div> : (
-          <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rows.map((r, i) => {
-              const x = say(r);
-              return (
-                <div key={`${r.at}-${i}`} role="listitem" style={{ background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>{x.head}</span>
-                    <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
-                  </div>
-                  {x.what && <div style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{x.what}</div>}
-                  <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>
-                    {x.why}{r.error && <> <InfoTip text={t('pulse.held.why.detail', { error: r.error })} /></>}
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{x.next}</div>
-                </div>
-              );
-            })}
-            {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.earlier', { count: earlier })}</div>}
-          </div>
-        )}
+    <ListFrame icon="pause" title={t('pulse.held.title')} failed={failed} reading={!rows} onRetry={retry} onClose={onClose}>
+      <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {(rows ?? []).map((r, i) => {
+          const x = say(r);
+          return (
+            <div key={`${r.at}-${i}`} role="listitem" style={{ ...rowBox, gap: 4 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>{x.head}</span>
+                <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+              </div>
+              {x.what && <div dir="auto" style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{x.what}</div>}
+              <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>
+                {x.why}{r.error && <> <InfoTip text={t('pulse.held.why.detail', { error: r.error })} /></>}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{x.next}</div>
+            </div>
+          );
+        })}
+        {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.earlier', { count: earlier })}</div>}
       </div>
-    </div>
+    </ListFrame>
+  );
+}
+
+/** The marks for one changed text (design DD1, DD6, DD7, DD13): struck words
+ *  grey with a line through, the other side's words on soft green, hidden
+ *  characters as a counted marker; screen readers hear which is which. */
+function Marked({ parts, context }: { parts: ChangePart[]; context?: boolean }) {
+  const { t } = useTranslation();
+  const list: Array<ChangePart | null> = context ? changesInContext(parts) : parts;
+  const show = (text: string) => withHidden(text).map((x, k) => (typeof x === 'string' ? x
+    : <span key={k} style={{ fontSize: 11, color: 'var(--cth-ink-3)', background: 'var(--cth-neutral-soft)', borderRadius: 3, padding: '0 3px' }}>{t('pulse.checked.hidden', { count: x.hidden })}</span>));
+  return (
+    <>
+      {list.map((p, k) => p === null ? <span key={k} aria-hidden>{'…'}</span>
+        : p.op === 'same' ? <span key={k}>{show(p.text)}</span>
+        : p.op === 'del' ? <del key={k} style={{ background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)', textDecorationThickness: 1, borderRadius: 3, padding: '0 2px' }}><span style={srOnly}>{t('pulse.checked.srOut')} </span>{show(p.text)}</del>
+        : <ins key={k} style={{ background: 'var(--cth-green-soft)', color: 'var(--cth-green-text)', textDecoration: 'none', borderRadius: 3, padding: '0 2px' }}><span style={srOnly}>{t('pulse.checked.srIn')} </span>{show(p.text)}</ins>)}
+    </>
+  );
+}
+const srOnly: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
+const textStyle: CSSProperties = { fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '18px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
+const capStyle: CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)' };
+const chip = (amber: boolean): CSSProperties => ({ fontSize: 11, fontWeight: 600, borderRadius: 'var(--cth-r-pill)', padding: '2px 8px', background: amber ? 'var(--cth-amber-soft)' : 'var(--cth-green-soft)', color: amber ? 'var(--cth-amber-text)' : 'var(--cth-green-text)' });
+const linkBtn: CSSProperties = { alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--cth-ink-2)' };
+const joinText = (x: CheckedRow['wrote']): string => [x.subject ? `“${x.subject}”` : '', x.body].filter(Boolean).join(' ');
+
+/** The questions sent to the internet (way in) or Research's answers (way
+ *  out), each as the check left it (owner, 2026-10-16; eng D1 to D5; design
+ *  DD1 to DD15): changed, stopped and flagged first, the rest folded. */
+function CheckedDetail({ way, from, to, period, research, counts, heldCount, onClose, onOpenHeld }: {
+  way: 'in' | 'out'; from: string; to: string; period: string; research: string;
+  counts: { total: number; changed: number; stopped: number; flagged: number }; heldCount: number;
+  onClose: () => void; onOpenHeld: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const [fromMs, toMs] = spanMs(from, to);
+  const { data, failed, retry } = useListRows<CheckedList>(() => window.cth.pulseChecked(fromMs, toMs, way).then((r) => (r && Array.isArray(r.rows) ? r : { rows: [], since: null })), [from, to, way]);
+  const [foldOpen, setFoldOpen] = useState(false);
+  const [whole, setWhole] = useState<Set<number>>(new Set());
+  const when = whenOf(i18n.language);
+  const rows = data?.rows ?? [];
+  const asWritten = (r: CheckedRow): boolean => r.outcome === 'pass' && !r.flagged;
+  const top = rows.filter((r) => !asWritten(r));
+  const rest = rows.filter(asWritten);
+  const kindName = (id: string): string => t(`research.class.${id}.name`, { defaultValue: id });
+  const head = (r: CheckedRow): string => {
+    if (way === 'in') {
+      const research = r.toName ?? r.to;
+      const who = r.from === 'human' ? t('pulse.checked.q.who.you') : r.from === 'system' ? t('pulse.checked.q.who.app')
+        : r.from === 'god' ? t('pulse.checked.q.who.michael') : t('pulse.checked.q.who.member', { from: r.fromName ?? r.from });
+      return t(`pulse.checked.q.head.${r.outcome}`, { who, research });
+    }
+    const research = r.fromName ?? r.from;
+    const toName = ['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to;
+    const k = r.outcome === 'clean' ? (r.flagged ? 'cleanFlagged' : 'clean') : r.flagged ? 'flagged' : 'pass';
+    return t(`pulse.checked.a.head.${k}`, { research, to: toName });
+  };
+  const next = (r: CheckedRow): string => {
+    if (way === 'in') {
+      const from = r.fromName ?? r.from;
+      const k = r.from === 'human' || r.from === 'system' ? 'owner' : r.from === 'god' ? 'michael' : 'member';
+      return t(`pulse.checked.q.next.${r.outcome}.${k}`, { from, research: r.toName ?? r.to });
+    }
+    const toName = ['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to;
+    return [r.outcome === 'clean' ? t('pulse.checked.a.next.clean', { to: toName }) : t('pulse.checked.a.next.pass', { to: toName }), r.flagged ? t('pulse.checked.a.next.flagged') : ''].filter(Boolean).join(' ');
+  };
+  const body = (r: CheckedRow, k: number): ReactNode => {
+    if (!r.sent) return <div dir="auto" style={textStyle}>{joinText(r.wrote)}</div>;
+    const parts = wordChanges(joinText(r.wrote), joinText(r.sent));
+    if (!showAsMarks(parts)) {
+      // Mostly rewritten, or too long to compare: the two texts (DD1).
+      const sender = way === 'in' ? (r.fromName ?? (r.from === 'human' ? t('pulse.checked.q.who.you') : t('pulse.checked.q.who.app'))) : (r.fromName ?? r.from);
+      const getter = way === 'in' ? (r.toName ?? r.to) : (['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to);
+      return <>
+        <div style={capStyle}>{t('pulse.checked.wrote', { name: sender })}</div>
+        <div dir="auto" style={textStyle}>{joinText(r.wrote)}</div>
+        <div style={capStyle}>{way === 'in' ? t('pulse.checked.got', { name: getter }) : t('pulse.checked.read', { name: getter })}</div>
+        <div dir="auto" style={textStyle}>{joinText(r.sent)}</div>
+      </>;
+    }
+    // A long text shows its changes with some text around them, whole on a click (DD6).
+    const long = joinText(r.wrote).length > 600;
+    const open = !long || whole.has(k);
+    return <>
+      {long && !open && <div style={capStyle}>{t('pulse.checked.removed')}</div>}
+      <div dir="auto" style={textStyle}><Marked parts={parts} context={!open} /></div>
+      {long && <button type="button" aria-expanded={open} onClick={() => setWhole((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; })} style={linkBtn}>
+        {open ? t('pulse.checked.showLess') : t(way === 'in' ? 'pulse.checked.showWholeQuestion' : 'pulse.checked.showWholeAnswer', { n: joinText(r.wrote).length.toLocaleString(i18n.language) })}
+      </button>}
+    </>;
+  };
+  // Rows the count has but the list doesn't: before words were kept (DD4), or a write that failed.
+  const earlier = data ? Math.max(0, counts.total - rows.length) : 0;
+  const beforeKept = data !== null && (data.since === null || data.since > fromMs);
+  const fmtDate = (ms: number): string => new Date(ms).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
+  const count = way === 'in'
+    ? t('pulse.checked.q.count', { period, count: counts.total, changed: counts.changed, stopped: counts.stopped, asWritten: Math.max(0, counts.total - counts.changed - counts.stopped) })
+    : t('pulse.checked.a.count', { period, count: counts.total, cleaned: counts.changed, flagged: counts.flagged });
+  return (
+    <ListFrame icon={way === 'in' ? 'shield' : 'search'} title={way === 'in' ? t('pulse.checked.q.title') : t('pulse.checked.a.title', { research })} failed={failed} reading={!data} onRetry={retry} onClose={onClose}
+      count={<div style={{ fontSize: 12, color: 'var(--cth-ink-2)', marginTop: -4 }}>{count} <InfoTip text={way === 'in' ? t('pulse.checked.q.marks', { research }) : t('pulse.checked.a.marks')} /></div>}>
+      <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {top.map((r, k) => (
+          <div key={`${r.at}-${k}`} role="listitem" style={rowBox}>
+            <div style={{ display: 'flex', gap: '2px 10px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>{head(r)}</span>
+              <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+            </div>
+            {body(r, k)}
+            {r.cut && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.checked.cut')}</div>}
+            {(r.kinds?.length || r.flagged) && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 11, color: 'var(--cth-ink-3)' }}>
+              {r.kinds?.length ? <>{r.outcome === 'stop' ? t('pulse.checked.needed') : t('pulse.checked.takenOut')} {r.kinds.map((id) => <span key={id} style={chip(r.outcome === 'stop')}>{kindName(id)}</span>)}</> : null}
+              {r.flagged && <span style={chip(true)}>{t('pulse.safe.flagged')}</span>}
+            </div>}
+            <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{next(r)}</div>
+          </div>
+        ))}
+        {rest.length > 0 && <>
+          <button type="button" aria-expanded={foldOpen} onClick={() => setFoldOpen((o) => !o)} style={{ ...linkBtn, fontWeight: 400 }}>
+            {foldOpen ? '▾ ' : '▸ '}<b>{way === 'in' ? t('pulse.checked.q.fold', { count: rest.length }) : t('pulse.checked.a.fold', { count: rest.length })}</b>
+          </button>
+          {foldOpen && rest.map((r, k) => (
+            <div key={`p-${r.at}-${k}`} role="listitem" style={{ fontSize: 12, color: 'var(--cth-ink-2)', padding: '7px 2px', boxShadow: 'inset 0 -1px 0 var(--cth-line)', display: 'flex', gap: 10 }}>
+              <span dir="auto" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                <b>{way === 'in' ? (r.from === 'human' ? t('pulse.checked.q.who.you') : r.from === 'system' ? t('pulse.checked.q.who.app') : r.fromName ?? r.from) : (['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to)}:</b>{' '}
+                {r.wrote.subject || r.wrote.body.split('\n')[0]}
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+            </div>
+          ))}
+        </>}
+        {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
+          {beforeKept ? t('pulse.checked.firstOpen', { date: fmtDate(data?.since ?? Date.now()), count: earlier }) : t('pulse.checked.earlier', { count: earlier })}
+        </div>}
+        {heldCount > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
+          {t('pulse.checked.held', { count: heldCount })}{' '}
+          <button type="button" onClick={onOpenHeld} style={{ ...linkBtn, color: 'var(--cth-indigo-text)' }}>{t('pulse.checked.seeHeld')}</button>
+        </div>}
+      </div>
+    </ListFrame>
   );
 }
 

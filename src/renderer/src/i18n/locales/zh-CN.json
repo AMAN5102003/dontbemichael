@@ -2605,6 +2605,90 @@
       "ofPlan": "来自你的 {{plan}}（每月 {{monthly}}）"
     },
     "questionsAnswered": "个问题，平均 {{time}} 内回答",
+    "list": {
+      "failed": "无法读取列表。",
+      "retry": "重试"
+    },
+    "checked": {
+      "hidden_one": "[{{count}} 个隐藏字符]",
+      "hidden": "[{{count}} 个隐藏字符]",
+      "srOut": "已删除：",
+      "srIn": "改为发送：",
+      "wrote": "{{name}} 写的",
+      "got": "{{name}} 收到的",
+      "read": "{{name}} 读到的",
+      "removed": "已删除",
+      "showWholeQuestion": "显示完整问题（{{n}} 个字符）",
+      "showWholeAnswer": "显示完整回答（{{n}} 个字符）",
+      "showLess": "收起",
+      "cut": "在 4,000 个字符处截断",
+      "needed": "需要：",
+      "takenOut": "已删除：",
+      "firstOpen_one": "从 {{date}} 起保存文字。在此之前的 {{count}} 条已计数，但没有保存文字。",
+      "firstOpen": "从 {{date}} 起保存文字。在此之前的 {{count}} 条已计数，但没有保存文字。",
+      "earlier_one": "还有 {{count}} 条没有详情。",
+      "earlier": "还有 {{count}} 条没有详情。",
+      "held_one": "还有 {{count}} 条因检查无法运行而被扣留。",
+      "held": "还有 {{count}} 条因检查无法运行而被扣留。",
+      "seeHeld": "查看被扣留的消息",
+      "q": {
+        "open": "查看每个问题",
+        "title": "发往互联网的问题",
+        "count_one": "{{period}}：{{count}} 个问题。{{changed}} 个已修改，{{stopped}} 个已拦下，{{asWritten}} 个原样发送",
+        "count": "{{period}}：{{count}} 个问题。{{changed}} 个已修改，{{stopped}} 个已拦下，{{asWritten}} 个原样发送",
+        "marks": "删除线：留在你办公室的内容。高亮：{{research}} 收到的替代内容。",
+        "fold_one": "{{count}} 个原样发送",
+        "fold": "{{count}} 个原样发送",
+        "who": {
+          "member": "{{from}} 的问题",
+          "michael": "{{godName}} 的问题",
+          "you": "你的留言",
+          "app": "应用的通知"
+        },
+        "head": {
+          "clean": "{{who}}（发给 {{research}}）删除了私密内容",
+          "stop": "{{who}}（发给 {{research}}）被拦下",
+          "pass": "{{who}}（发给 {{research}}）原样发送"
+        },
+        "next": {
+          "clean": {
+            "member": "{{from}} 已看到 {{research}} 收到的内容。你无需处理。",
+            "michael": "{{godName}} 已看到 {{research}} 收到的内容。你无需处理。",
+            "owner": "你无需处理。"
+          },
+          "stop": {
+            "member": "已告知 {{from}} 和 {{godName}}。{{from}} 可以去掉这部分后再问。",
+            "michael": "已告知 {{godName}}，他可以去掉这部分后再问。",
+            "owner": "已告知 {{godName}}。没有任何内容发出。"
+          },
+          "pass": {
+            "member": "你无需处理。",
+            "michael": "你无需处理。",
+            "owner": "你无需处理。"
+          }
+        }
+      },
+      "a": {
+        "open": "查看每个回答",
+        "title": "{{research}} 来自网络的回答",
+        "count_one": "{{period}}：{{count}} 个回答。{{cleaned}} 个删除了网页指令，{{flagged}} 个已标记",
+        "count": "{{period}}：{{count}} 个回答。{{cleaned}} 个删除了网页指令，{{flagged}} 个已标记",
+        "marks": "删除线：在你的团队阅读之前被删除的内容。",
+        "fold_one": "{{count}} 个没有需要删除的内容",
+        "fold": "{{count}} 个没有需要删除的内容",
+        "head": {
+          "clean": "{{research}} 给 {{to}} 的回答删除了网页指令",
+          "pass": "{{research}} 给 {{to}} 的回答没有需要删除的内容",
+          "flagged": "{{research}} 给 {{to}} 的回答已标记给 {{godName}}",
+          "cleanFlagged": "{{research}} 给 {{to}} 的回答删除了网页指令，并已标记给 {{godName}}"
+        },
+        "next": {
+          "clean": "在 {{to}} 阅读之前已删除。你无需处理。",
+          "pass": "{{to}} 读到的内容标注为仅供参考。",
+          "flagged": "已请 {{godName}} 查看。"
+        }
+      }
+    },
     "held": {
       "open": "查看被扣留的内容",
       "title": "被扣留的消息",
@@ -2639,7 +2723,7 @@
         "answer": "已告知 {{to}} 和 {{godName}}，{{to}} 可以再问一次。",
         "answerToMichael": "已告知 {{godName}}，他可以再问一次。"
       },
-      "earlier": "还有 {{count}} 条较早的，来自此列表开始保存详情之前。",
+      "earlier": "还有 {{count}} 条没有详情。",
       "notesEmpty": "里面还没有笔记，只有 {{research}} 的空白笔记页。"
     }
   }

@@ -2605,6 +2605,90 @@
       "ofPlan": "of your {{plan}} ({{monthly}} a month)"
     },
     "questionsAnswered": "questions, answered in {{time}} on average",
+    "list": {
+      "failed": "Couldn't read the list.",
+      "retry": "Try again"
+    },
+    "checked": {
+      "hidden_one": "[{{count}} hidden character]",
+      "hidden": "[{{count}} hidden characters]",
+      "srOut": "taken out:",
+      "srIn": "sent instead:",
+      "wrote": "{{name}} wrote",
+      "got": "{{name}} got",
+      "read": "{{name}} read",
+      "removed": "Removed",
+      "showWholeQuestion": "Show the whole question ({{n}} characters)",
+      "showWholeAnswer": "Show the whole answer ({{n}} characters)",
+      "showLess": "Show less",
+      "cut": "Cut at 4,000 characters",
+      "needed": "Needed:",
+      "takenOut": "Taken out:",
+      "firstOpen_one": "Words are kept from {{date}}. The {{count}} before then was counted, but its words weren't saved.",
+      "firstOpen": "Words are kept from {{date}}. The {{count}} before then were counted, but their words weren't saved.",
+      "earlier_one": "{{count}} more without details.",
+      "earlier": "{{count}} more without details.",
+      "held_one": "{{count}} more was held because the check couldn't run.",
+      "held": "{{count}} more were held because the check couldn't run.",
+      "seeHeld": "See held messages",
+      "q": {
+        "open": "See each question",
+        "title": "Questions sent to the internet",
+        "count_one": "{{period}}: {{count}} question. {{changed}} changed, {{stopped}} stopped, {{asWritten}} as written",
+        "count": "{{period}}: {{count}} questions. {{changed}} changed, {{stopped}} stopped, {{asWritten}} as written",
+        "marks": "Struck through: what stayed in your office. Highlighted: what {{research}} got instead.",
+        "fold_one": "{{count}} sent as written",
+        "fold": "{{count}} sent as written",
+        "who": {
+          "member": "{{from}}'s question",
+          "michael": "{{godName}}'s question",
+          "you": "Your note",
+          "app": "The app's note"
+        },
+        "head": {
+          "clean": "{{who}} to {{research}} had private parts taken out",
+          "stop": "{{who}} to {{research}} was stopped",
+          "pass": "{{who}} to {{research}} went as written"
+        },
+        "next": {
+          "clean": {
+            "member": "{{from}} saw what {{research}} got. Nothing for you to do.",
+            "michael": "{{godName}} saw what {{research}} got. Nothing for you to do.",
+            "owner": "Nothing for you to do."
+          },
+          "stop": {
+            "member": "{{from}} and {{godName}} were told. {{from}} can ask again without it.",
+            "michael": "{{godName}} was told and can ask again without it.",
+            "owner": "{{godName}} was told. Nothing went out."
+          },
+          "pass": {
+            "member": "Nothing for you to do.",
+            "michael": "Nothing for you to do.",
+            "owner": "Nothing for you to do."
+          }
+        }
+      },
+      "a": {
+        "open": "See each answer",
+        "title": "{{research}}'s answers from the web",
+        "count_one": "{{period}}: {{count}} answer. {{cleaned}} had web instructions taken out, {{flagged}} flagged",
+        "count": "{{period}}: {{count}} answers. {{cleaned}} had web instructions taken out, {{flagged}} flagged",
+        "marks": "Struck through: what was taken out before your team read it.",
+        "fold_one": "{{count}} came in with nothing to take out",
+        "fold": "{{count}} came in with nothing to take out",
+        "head": {
+          "clean": "{{research}}'s answer to {{to}} had web instructions taken out",
+          "pass": "{{research}}'s answer to {{to}} came in with nothing to take out",
+          "flagged": "{{research}}'s answer to {{to}} was flagged to {{godName}}",
+          "cleanFlagged": "{{research}}'s answer to {{to}} had web instructions taken out and was flagged to {{godName}}"
+        },
+        "next": {
+          "clean": "Taken out before {{to}} read it. Nothing for you to do.",
+          "pass": "{{to}} read it labelled as information only.",
+          "flagged": "{{godName}} was told to look at it."
+        }
+      }
+    },
     "held": {
       "open": "See what was held",
       "title": "Held messages",
@@ -2639,7 +2723,7 @@
         "answer": "{{to}} and {{godName}} were told, and {{to}} can ask again.",
         "answerToMichael": "{{godName}} was told and can ask again."
       },
-      "earlier": "{{count}} earlier, from before this list kept details.",
+      "earlier": "{{count}} more without details.",
       "notesEmpty": "There were no notes in it yet, only {{research}}'s empty notes page."
     }
   }

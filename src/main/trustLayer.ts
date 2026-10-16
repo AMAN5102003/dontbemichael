@@ -59,7 +59,9 @@ export function asText(value: unknown): string {
  *  mean the check could not run: the message is held, nothing went out
  *  unchecked (Pulse's held list, owner 2026-10-16). */
 export type DenyBy = 'length' | 'no-answer' | 'unreadable' | 'settings' | 'pattern' | 'model' | 'recheck';
-export type Deny = { decision: 'deny'; reason: string; by?: DenyBy; error?: string };
+/** `kinds`: what a stop needed (pattern, model, recheck), for Pulse's list of
+ *  questions (owner, 2026-10-16). */
+export type Deny = { decision: 'deny'; reason: string; by?: DenyBy; error?: string; kinds?: DataClassId[] };
 
 export type InboundVerdict =
   | { decision: 'pass'; subject: string; body: string }
@@ -256,9 +258,10 @@ export interface TrustLayer {
 
 export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
   const queue = limiter(deps.concurrency ?? TRUST_CONCURRENCY);
-  // Every line carries v: 2, so Pulse counts a hold from the hive's own
-  // trust-held line, never twice (owner, 2026-10-16).
-  const log = (e: Record<string, unknown>): void => deps.log?.({ ...e, v: 2 });
+  // Every line carries v: 3: Pulse counts holds from the hive's trust-held
+  // line (v 2) and what was let through or stopped from its trust-checked line
+  // (v 3), one per message, the same events its lists read (owner, 2026-10-16).
+  const log = (e: Record<string, unknown>): void => deps.log?.({ ...e, v: 3 });
   const askOnce = (prompt: string): Promise<{ text: string | null; error?: string }> => queue(async () => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<{ error: string }>((res) => { timer = setTimeout(() => res({ error: `no answer within ${Math.max(1, Math.round((deps.timeoutMs ?? TRUST_TIMEOUT_MS) / 1000))} seconds` }), deps.timeoutMs ?? TRUST_TIMEOUT_MS); });
@@ -295,7 +298,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     const hits = patternHits(`${subject}\n${body}`);
     if (hits.some((h) => h.classId === 'secrets')) {
       log({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'pattern', class: 'secrets' });
-      return { decision: 'deny', reason: refusalForClass('secrets'), by: 'pattern' };
+      return { decision: 'deny', reason: refusalForClass('secrets'), by: 'pattern', kinds: ['secrets'] };
     }
     const marked = [...new Set(hits.filter((h) => settings[h.classId] === 'private').map((h) => h.classId))];
     const { text, error } = await ask(inboundPrompt(subject, body, settings, randomBytes(8).toString('hex'), marked), 'in');
@@ -307,7 +310,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     }
     if (v.decision === 'deny') {
       log({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'model', class: v.kinds[0] });
-      return { decision: 'deny', reason: v.kinds.length ? refusalForClass(v.kinds[0]) : REFUSAL_UNSURE, by: 'model' };
+      return { decision: 'deny', reason: v.kinds.length ? refusalForClass(v.kinds[0]) : REFUSAL_UNSURE, by: 'model', kinds: v.kinds };
     }
     // A pass must be one the patterns agree with; a rewrite must leave no
     // private pattern behind. Either way the text that goes out is checked.
@@ -316,7 +319,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
     if (left || (v.decision === 'pass' && marked.length)) {
       const cls = left?.classId ?? marked[0];
       log({ kind: 'trust-layer', way: 'in', decision: 'deny', by: 'recheck', class: cls });
-      return { decision: 'deny', reason: refusalForClass(cls), by: 'recheck' };
+      return { decision: 'deny', reason: refusalForClass(cls), by: 'recheck', kinds: [cls] };
     }
     // A missing subject or body is plain text too (the house rule's example
     // has no subject); only a list or an object is not text as written.
