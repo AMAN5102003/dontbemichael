@@ -36,11 +36,19 @@ export interface MessageView<M extends HistoryItem = HistoryItem> {
 }
 
 const SYSTEM_SENDERS = new Set(['scheduler', 'heartbeat', 'system', 'breaker']);
-const CLOSING = /closing[\s_-]*time/i;
+const CLOSING_PROTOCOL = /^closing[-_\s]*time[-_\s]*(?:ack|complete)(?!\w)/i;
+const CLOSING_LEGACY = /^closing time\s*[—-]\s*save work$/i;
+const CLOSING_CONTROLLER = /^closing time(?:: (?:close the office now|reminder|closing without .+|.+ was archived|.+['’]s terminal ended|still waiting on the team)| cancelled)$/i;
+
+function isClosingNotice(m: Pick<HistoryItem, 'from' | 'subject'>): boolean {
+  const subject = (m.subject ?? '').trim();
+  return CLOSING_PROTOCOL.test(subject) || CLOSING_LEGACY.test(subject)
+    || (m.from === 'human' && CLOSING_CONTROLLER.test(subject));
+}
 
 /** Traffic that isn't a handoff: the app's own notes and closing time. */
 export function isRoutine(m: Pick<HistoryItem, 'from' | 'subject'>): boolean {
-  return SYSTEM_SENDERS.has(m.from) || CLOSING.test(m.subject ?? '');
+  return SYSTEM_SENDERS.has(m.from) || isClosingNotice(m);
 }
 
 /** Local YYYY-MM-DD of an ISO time. */
@@ -60,8 +68,9 @@ export function messageView<M extends HistoryItem>(msgs: M[]): MessageView<M> {
   const notices: MessageView<M>['notices'] = { scheduled: 0, closing: 0, other: 0, messages: [] };
   const by = new Map<string, M[]>();
   for (const m of msgs) {
+    const closing = isClosingNotice(m);
     if (isRoutine(m)) {
-      if (CLOSING.test(m.subject ?? '')) notices.closing++;
+      if (closing) notices.closing++;
       else if (m.from === 'scheduler' || m.from === 'heartbeat') notices.scheduled++;
       else notices.other++;
       notices.messages.push(m);
