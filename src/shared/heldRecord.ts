@@ -17,8 +17,9 @@ export type HeldWhy = 'no-answer' | 'unreadable' | 'too-long' | 'settings' | 'fa
 /** Who heard of the hold. */
 export type HeldTold = 'sender+michael' | 'sender' | 'michael' | 'recipient+michael' | 'recipient' | 'nobody';
 
-/** `to` for Research's notes on their way into the team's shared memory: held,
- *  they are left out this time and checked again at Research's next start. */
+/** `to` for Research's notes on their way into the team's shared memory. No
+ *  new row has it since notes stopped being shared (owner, 2026-10-16: an
+ *  agent's memory is private); older rows still show. */
 export const HELD_TO_MEMORY = 'memory';
 
 export interface HeldRow {

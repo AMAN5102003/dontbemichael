@@ -630,23 +630,21 @@ test('Research\'s folder stays out of the hive\'s git history, and a link in an 
   assert.match(fs.readFileSync(path.join(root, 'log.jsonl'), 'utf8'), /outbox-not-a-file/);
 });
 
-test('Research\'s notes are read only from plain files inside its own folder', posixOnly('symlinks'), (t) => {
-  // Value: protects=a link Research makes can't pull an office file into the team's shared memory through the app; fails_when=the reader follows a link or reads outside the folder; why_new=Codex adversarial review (critical); seam=none
-  const { readResearchNotes } = loadTs('src/main/researchNotes.ts');
+test('the app reads Research\'s files only as plain files inside its own folder', posixOnly('symlinks'), (t) => {
+  // Value: protects=a link Research makes can't pull an office file into what the app reads for it; fails_when=the reader follows a link or reads outside the folder; why_new=Codex adversarial review (critical), kept when notes mining went (2026-10-16); seam=none
+  const { readResearchFile } = loadTs('src/main/researchNotes.ts');
   const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const dir = path.join(base, 'research');
   fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
   fs.writeFileSync(path.join(base, 'ledger.md'), 'Jane Smith owes 4200');
   fs.writeFileSync(path.join(dir, 'memory.md'), 'Flour suppliers in Austin');
-  fs.writeFileSync(path.join(dir, 'memory', 'inbox.md'), 'not mined');
   fs.symlinkSync(path.join(base, 'ledger.md'), path.join(dir, 'memory', 'ledger.md'));
-  const text = readResearchNotes(dir);
-  assert.match(text, /Flour suppliers/);
-  assert.doesNotMatch(text, /Jane Smith|not mined/);
+  assert.match(readResearchFile(dir, path.join(dir, 'memory.md')), /Flour suppliers/);
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'ledger.md')), null);
   fs.rmSync(path.join(dir, 'memory.md'));
   fs.symlinkSync(path.join(base, 'ledger.md'), path.join(dir, 'memory.md'));
-  assert.equal(readResearchNotes(dir), '', 'a linked top note is skipped too');
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory.md')), null, 'a linked top file is skipped too');
 });
 
 test('turning Research off answers each waiting ask in its sender\'s own thread', async (t) => {
@@ -715,9 +713,9 @@ test('turning Research off tells Michael about owner and app notes still waiting
   assert.match(note.body, new RegExp(R.REFUSAL_OFF.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-test('Research\'s notes skip a file with a second name', posixOnly('hard links'), (t) => {
-  // Value: protects=a hard link Research makes can't pull an office file into shared memory; fails_when=the reader trusts lstat and realpath alone; why_new=verification of the Codex fix; seam=none
-  const { readResearchNotes } = loadTs('src/main/researchNotes.ts');
+test('the app skips a Research file with a second name', posixOnly('hard links'), (t) => {
+  // Value: protects=a hard link Research makes can't pull an office file into what the app reads; fails_when=the reader trusts lstat and realpath alone; why_new=verification of the Codex fix; seam=none
+  const { readResearchFile } = loadTs('src/main/researchNotes.ts');
   const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes2-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const dir = path.join(base, 'research');
@@ -725,9 +723,8 @@ test('Research\'s notes skip a file with a second name', posixOnly('hard links')
   fs.writeFileSync(path.join(base, 'ledger.md'), 'SECRET ledger');
   fs.linkSync(path.join(base, 'ledger.md'), path.join(dir, 'memory', 'hard.md'));
   fs.writeFileSync(path.join(dir, 'memory', 'ok.md'), 'Flour notes');
-  const text = readResearchNotes(dir);
-  assert.match(text, /Flour notes/);
-  assert.doesNotMatch(text, /SECRET/);
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'ok.md')), 'Flour notes');
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'hard.md')), null);
 });
 
 test('a refused note from the owner or the app is told to Michael, so nothing vanishes', async (t) => {
@@ -850,9 +847,9 @@ test('the Research agent is Pete by default, the owner may rename it, and the ap
   assert.match(back.body, /Robin is off/);
 });
 
-test('Research\'s notes reader skips a pipe and an oversized file instead of hanging', posixOnly('mkfifo'), (t) => {
-  // Value: protects=a pipe Pete makes can't freeze the app when his notes are read; fails_when=the open waits on a pipe or a huge note is read whole; why_new=security review (reproduced hang); seam=none
-  const { readResearchNotes, MAX_NOTE_BYTES } = loadTs('src/main/researchNotes.ts');
+test('the app skips a pipe and an oversized Research file instead of hanging', posixOnly('mkfifo'), (t) => {
+  // Value: protects=a pipe Pete makes can't freeze the app when it reads his files; fails_when=the open waits on a pipe or a huge file is read whole; why_new=security review (reproduced hang); seam=none
+  const { readResearchFile, MAX_NOTE_BYTES } = loadTs('src/main/researchNotes.ts');
   const { execFileSync } = require('node:child_process');
   const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes3-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -860,8 +857,8 @@ test('Research\'s notes reader skips a pipe and an oversized file instead of han
   fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
   execFileSync('mkfifo', [path.join(dir, 'memory', 'pipe.md')]);
   fs.writeFileSync(path.join(dir, 'memory', 'huge.md'), 'x'.repeat(MAX_NOTE_BYTES + 1));
-  fs.writeFileSync(path.join(dir, 'memory.md'), 'Flour suppliers');
-  assert.equal(readResearchNotes(dir), 'Flour suppliers');
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'pipe.md')), null);
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'huge.md')), null);
 });
 
 test('nobody else takes the Research agent\'s name, and its name reaches it unless an older hire has it', async (t) => {
@@ -908,25 +905,6 @@ test('Pete may write to Michael by his display name', async (t) => {
   send(hive, 'research', { to: 'mike', act: 'inform', subject: 'Stuck', body: 'No source has it' });
   hive.routeOnce(); await tick(); hive.routeOnce();
   assert.equal(msgsIn(hive, 'god').filter((m) => m.subject === 'Stuck').length, 1);
-});
-
-test('Research\'s notes: memory.md and memory/*.md are read, inbox.md is not, and a linked memory folder is refused', (t) => {
-  // Value: protects=his own notes reach the shared memory and an office folder linked in as memory/ does not; fails_when=the folder checks go; why_new=testing review (only single file links were covered); seam=none
-  const { readResearchNotes } = loadTs('src/main/researchNotes.ts');
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes4-')));
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const dir = path.join(base, 'research');
-  fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'memory.md'), 'Flour');
-  fs.writeFileSync(path.join(dir, 'memory', 'yeast.md'), 'Yeast');
-  fs.writeFileSync(path.join(dir, 'memory', 'inbox.md'), 'not mined');
-  assert.equal(readResearchNotes(dir), 'Flour\n\nYeast');
-  if (process.platform === 'win32') return;
-  fs.rmSync(path.join(dir, 'memory'), { recursive: true });
-  fs.mkdirSync(path.join(base, 'office'));
-  fs.writeFileSync(path.join(base, 'office', 'ledger.md'), 'SECRET ledger');
-  fs.symlinkSync(path.join(base, 'office'), path.join(dir, 'memory'));
-  assert.equal(readResearchNotes(dir), 'Flour');
 });
 
 test('an owner note whose check fails leaves nothing pending, so no second note comes at the next start', async (t) => {

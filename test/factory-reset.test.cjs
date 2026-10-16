@@ -124,7 +124,7 @@ test('every file the app keeps in an office\'s private folder is erased by a res
     for (const m of fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/privateRoot\((?:[^()]|\([^()]*\))*\),\s*'([^']+)'/g)) names.add(m[1]);
   }
   assert.ok(names.size >= 8, `the scan finds the private files (${[...names].join(', ')})`);
-  assert.ok(names.has('research-mined'), 'a call nested in privateRoot() is seen too');
+  assert.ok(names.has('research-mined'), 'the old copy of Research\'s notes, which the palace clears, is erased too');
   for (const n of names) assert.ok(PRIVATE_ENTRIES.includes(n), `${n} is not erased`);
 });
 

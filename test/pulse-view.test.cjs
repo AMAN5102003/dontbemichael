@@ -149,11 +149,11 @@ test('the held tile opens the list of what was held, each in plain words: what, 
   assert.deepEqual(Object.keys(en.pulse.held.head).sort(), kinds);
   assert.deepEqual(Object.keys(en.pulse.held.next).sort(), kinds);
   assert.equal(en.pulse.held.head.notes, "{{research}}'s notes were not added to the team's shared knowledge");
-  assert.equal(en.pulse.held.next.notes, 'They are checked again the next time {{research}} starts. Nothing for you to do.');
+  assert.equal(en.pulse.held.next.notes, 'Notes now stay with {{research}}, and teammates ask {{research}} instead. Nothing for you to do.');
   assert.doesNotMatch(JSON.stringify(en.pulse.held), /memory index|hidden session|team's memory\b/, 'no jargon in the copy');
-  // Research's notes for the team's memory are held at the same check (seen live 2026-10-16: 9 of the first 18 holds).
+  // Research's notes were held at the same check until notes stopped being shared (owner, 2026-10-16); older rows still read plainly.
   assert.match(view, /const notes = r\.to === HELD_TO_MEMORY;/);
-  assert.match(read('src/main/index.ts'), /if \(why\) hive\.recordHeld\('out', RESEARCH_ID, HELD_TO_MEMORY, 'Research notes', notesPreview\(text\), why, v\.error, 'nobody'\);/);
+  assert.doesNotMatch(read('src/main/index.ts'), /HELD_TO_MEMORY/, 'no new notes rows');
   assert.deepEqual(Object.keys(en.pulse.held.why).sort(), ['checkDown', 'detail', 'off', 'settings', 'slow', 'starting', 'tooLong', 'unreadable']);
   const main = read('src/main/index.ts');
   assert.match(main, /ipcMain\.handle\('pulse:held', \(_evt, fromMs: unknown, toMs: unknown\) =>/);

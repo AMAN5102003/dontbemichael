@@ -2630,7 +2630,7 @@
         "off": "The privacy checker wasn't running yet, so it was held instead of going out unchecked."
       },
       "next": {
-        "notes": "They are checked again the next time {{research}} starts. Nothing for you to do.",
+        "notes": "Notes now stay with {{research}}, and teammates ask {{research}} instead. Nothing for you to do.",
         "officeOpen": "Nothing for you to do.",
         "you": "{{godName}} was told. Send it again if it still matters.",
         "app": "{{godName}} was told. Nothing for you to do.",

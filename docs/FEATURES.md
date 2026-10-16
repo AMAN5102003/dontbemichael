@@ -82,6 +82,9 @@ moving, and brings you only the decisions that need you.
   looked up, where things live, and the steps for jobs it repeats. A background tidy up merges and
   updates them instead of letting them pile up.
 - Your answers to its questions go straight into its memory, so it doesn't ask again.
+- Each team member's memory is its own. Nobody, Michael included, reads or searches another's
+  notes: to learn what a teammate knows, they ask that teammate, and Michael reads the task board
+  and the work each one hands in.
 - Company profile and company knowledge (Word, Excel, PowerPoint, PDF, and scans on a Mac) are
   shared with the whole team, searchable by meaning.
 

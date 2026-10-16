@@ -94,7 +94,7 @@ src/
                              at agents and flags a steering answer to Michael; fixed patterns mark and recheck what
                              goes in to him; anything unsure, slow or failing is refused
     researchGoal.ts          Pete's Work style and jobs, as the trust layer passed them (his built in text until then)
-    researchNotes.ts         Pete's notes for the shared memory: plain files inside his own folder only
+    researchNotes.ts         Pete's files read only as plain files inside his own folder
     factoryReset.ts          what Settings, Reset & start over erases (app:resetAll in index.ts): everything the app
                              made for the office, in the office folder and the app's data folder; team folders,
                              roster backups, the owner's own files and the Claude sign in stay

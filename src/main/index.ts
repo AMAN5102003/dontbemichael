@@ -23,8 +23,7 @@ import {
 import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
-import { REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG, RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_WORK_STYLE } from '../shared/research';
-import { heldWhy, notesPreview, HELD_TO_MEMORY } from '../shared/heldRecord';
+import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_WORK_STYLE } from '../shared/research';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -77,7 +76,7 @@ import bakedModelCatalog from '../shared/modelCatalog.json';
 import { parseModelCatalog, type ModelCatalog } from '../shared/modelCatalogPayload';
 import { isPeriod } from '../shared/teamPerformance';
 import { makeResearchGoal } from './researchGoal';
-import { ownResearchDir, readResearchNotes } from './researchNotes';
+import { ownResearchDir } from './researchNotes';
 import { backfilled, runBackfill } from './pulseBackfill';
 import { readTeamMemory } from './teamMemory';
 import { readClaudePlan } from './claudeAccount';
@@ -152,7 +151,7 @@ import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
 import { APP_NAME, APP_DATA_DIR, APP_URL_SCHEME } from '../shared/appName';
 import { copyOfficeData, homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
 import { backfillOfficeRecord, findOffice, folderLayoutFor, isUsableTeamFolder, syncOfficeRecord } from './officeFile';
-import { folderPolicy, AGENT_TMP_DIR, agentTmpName, researchFolderPolicy, withAgentTmpWall, RESEARCH_TMP_DIR, shellTempWalls, withResearchWall, type AgentFolderPolicy, type FolderLayout } from '../shared/folderAccess';
+import { folderPolicy, AGENT_TMP_DIR, agentTmpName, researchFolderPolicy, withAgentTmpWall, withMemberWall, RESEARCH_TMP_DIR, shellTempWalls, withResearchWall, type AgentFolderPolicy, type FolderLayout } from '../shared/folderAccess';
 import { sandboxNetwork } from '../shared/webAccess';
 import { MCP_CATALOG } from '../shared/mcpCatalog';
 import { legacyBusinessFolder, touchesOffice } from '../shared/officeRecord';
@@ -807,30 +806,6 @@ const trustLayer = makeTrustLayer({
   }
 });
 
-/** Research's notes reach the team's shared memory only as a copy the trust
- *  layer cleaned of instructions aimed at agents (ship review D2.9); a note the
- *  layer can't check is left out. Every other agent is mined as is. */
-async function researchNotesForPalace(id: string, agentDir: string): Promise<string | null | undefined> {
-  if (id !== RESEARCH_ID) return undefined;
-  const home = readConfig().harnessHome;
-  if (!home) return null;
-  const dir = join(privateRoot(expandTilde(home)), 'research-mined');
-  const text = readResearchNotes(agentDir);
-  // A copy the layer did not pass this time is not kept from last time.
-  const clear = (): null => { try { rmSync(join(dir, 'memory.md'), { force: true }); } catch { /* next time */ } return null; };
-  if (!text) return clear();
-  const v = await trustLayer.outbound({ subject: 'Research notes', body: text });
-  if (v.decision === 'deny') {
-    // Held like a message: Pulse lists it and counts it (owner, 2026-10-16).
-    const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
-    if (why) hive.recordHeld('out', RESEARCH_ID, HELD_TO_MEMORY, 'Research notes', notesPreview(text), why, v.error, 'nobody');
-    return clear();
-  }
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'memory.md'), `${v.body}\n`, 'utf8');
-  return dir;
-}
-
 /** Research's desk: its own working folder, in the app's home, outside the
  *  hive and the business folder. */
 function researchDesk(): string | null {
@@ -1117,9 +1092,8 @@ async function finalizeWorkerWorktree(wtPath: string, origCwd: string, worker: W
     if (!r.ok) { console.error('[worker] removeWorktree failed:', r.error); return; }
     // Worktree is gone (clean/integrated at teardown), but DEFER its scratch-dir
     // cleanup to the throttled GC sweep rather than deleting it synchronously here:
-    // HIVE_ROOT/agents/<id> holds the worker's memory.md and the MemPalace miner
-    // ingests it asynchronously, so an immediate delete can beat the miner and
-    // permanently lose the worker's durable notes from the shared palace. Register
+    // HIVE_ROOT/agents/<id> holds the worker's memory.md, which the owner's
+    // views still read for a while after it stops. Register
     // it (its worktree path is now absent) so the sweep's path-gone branch reclaims
     // the scratch after a window — same throttled path the preserved case uses.
     preservedWorktrees.set(wtPath, {
@@ -3983,7 +3957,11 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd }, businessFolderLayout(businessFolder), process.platform !== 'linux')
           : privateOnlyFolderPolicy(!!opts.hive!.isGod, opts.cwd);
         if (!base) return undefined;
-        const walled = withAgentTmpWall(withResearchWall(base, researchFolders()), home, opts.hive!.id, !!opts.hive!.isGod);
+        const hiveRoot = hive.root();
+        // Each member's hive folder and the hive's history are closed to the
+        // others, Michael included (owner, 2026-10-16).
+        const walled = withMemberWall(withAgentTmpWall(withResearchWall(base, researchFolders()), home, opts.hive!.id, !!opts.hive!.isGod),
+          hiveRoot ?? '', opts.hive!.id, Object.keys(hive.registry().agents ?? {}));
         // Michael's commands stay in their sandbox too, where his shell
         // reaches no host and Research's folders are walled (owner, D7.1,
         // D9.1; every office, ship 2 D16).
@@ -7675,10 +7653,6 @@ function bootstrapHiveServices(): void {
   hive.setBusinessOffice(!!(readConfig().businessFolder || readConfig().officeFolder));
   hive.onScheduleRequest(receiveScheduleRequest);
   hive.setTrustLayer(trustLayer);
-  memory.setNotesFilter(researchNotesForPalace);
-  // Research's cleaned copy is made again when the owner changes what stays
-  // private, not only when its notes change (Codex review, third ship).
-  memory.setMineKey((id) => (id === RESEARCH_ID ? trustLayer.policyKey?.() ?? '' : ''));
   hive.setResearchEnabled(() => !!readConfig().research?.on);
   hive.setResearchName(() => readConfig().research?.name);
   // The update that took the internet from the team (issue #230): an office

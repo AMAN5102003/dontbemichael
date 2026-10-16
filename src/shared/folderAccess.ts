@@ -295,6 +295,48 @@ export function withResearchWall(policy: AgentFolderPolicy, researchFolders: str
   };
 }
 
+/** Each team member's hive folder is its own (owner, 2026-10-16: a member's
+ *  memory is private, Michael's included in the rule): its shell reads no other
+ *  member's folder and not the hive's git history, which keeps every member's
+ *  notes over time; its own folder stays open, since allowRead wins over
+ *  denyRead in Claude's sandbox. Its file tools get a Read rule on every other
+ *  member's folder and the history, so a search over the hive leaves them out;
+ *  the hook (memberWallDecision) also judges each call, members hired later
+ *  included. */
+export function withMemberWall(policy: AgentFolderPolicy, hiveRoot: string, ownId: string, memberIds: string[]): AgentFolderPolicy {
+  if (!hiveRoot || !isAbsolute(hiveRoot)) return policy;
+  const agents = resolve(hiveRoot, 'agents');
+  const git = resolve(hiveRoot, '.git');
+  const others = Array.from(new Set(memberIds.filter((id) => id && id !== ownId))).map((id) => resolve(agents, id));
+  return {
+    ...policy,
+    sandbox: {
+      ...policy.sandbox,
+      denyRead: Array.from(new Set([...policy.sandbox.denyRead, agents, git])),
+      allowRead: Array.from(new Set([...policy.sandbox.allowRead, resolve(agents, ownId)]))
+    },
+    deny: Array.from(new Set([...policy.deny, rule('Read', git), ...others.map((d) => rule('Read', d))]))
+  };
+}
+
+/** A file tool reaching into another member's hive folder or the hive's git
+ *  history, by any agent, Michael included (owner, 2026-10-16). Writes there
+ *  are the harness guard's to judge; this keeps reads out. */
+export function memberWallDecision(hiveRoot: string, agentId: string, tool: string, target: string, caseInsensitive: boolean, nameOf: (id: string) => string): { deny: boolean; reason?: string } {
+  if (!hiveRoot || (!FOLDER_READ_TOOLS.has(tool) && !FOLDER_WRITE_TOOLS.has(tool))) return { deny: false };
+  const inside = insideFn(caseInsensitive);
+  const git = resolve(hiveRoot, '.git');
+  if (inside(git, target)) {
+    return { deny: true, reason: 'The hive\'s git history keeps every team member\'s notes, so it is closed to everyone. To learn what a teammate knows, send them a "query" message.' };
+  }
+  const agents = resolve(hiveRoot, 'agents');
+  if (!inside(agents, target)) return { deny: false };
+  const owner = relative(agents, resolve(target)).split(/[\\/]/)[0];
+  if (!owner || (caseInsensitive ? owner.toLowerCase() === agentId.toLowerCase() : owner === agentId)) return { deny: false };
+  const name = nameOf(owner);
+  return { deny: true, reason: `That is ${name}'s own folder: their notes, memory and inbox are theirs alone. To learn what ${name} knows, send them a "query" message.` };
+}
+
 /** A team member's shell reads no other agent's session scratch folder
  *  (ship review pass 2); its own stays open, since allowRead wins over
  *  denyRead in Claude's sandbox. Michael's shell reads them, as team folders. */

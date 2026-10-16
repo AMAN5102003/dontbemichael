@@ -86,6 +86,9 @@ as gatekeeper, in both directions, ahead of the guard described in the next sect
   labelled as information, and one that plainly tries to steer its reader is flagged to
   Michael only. An answer the layer can't check is not delivered and the recipient is told.
   Research's notes go into the team's shared memory only as a copy the layer cleaned.
+  Superseded 2026-10-16 (owner: an agent's memory is private to it): no member's notes go
+  into any shared search, Research's included; teammates ask Research instead. The palace
+  holds company knowledge only.
 - **Walls** (D2.5 to D2.8): Research reads nothing in the home folder but its own folders
   (agent transcripts, app settings and documents included) and writes only its own folders
   (hook allowlist, plus permission rules on the riskiest home paths). Who Research is comes

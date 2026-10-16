@@ -1,0 +1,122 @@
+'use strict';
+
+/**
+ * Each team member's memory is its own (owner, 2026-10-16): "agents should not
+ * be able to search each other's memory. instead they should ask the agent
+ * what they need ... only company wide knowledge store is seachable by every
+ * one." And, after the research pass, "the rule applies to Michael as well".
+ *
+ *   member ─ query ─► teammate          (asks, never reads)
+ *   member ─ search ─► company knowledge (the one shared store)
+ *   member ─✗─ agents/<other>/, the hive's git history
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const loadTs = require('./load-ts.cjs');
+
+const electron = require.resolve('electron');
+require.cache[electron] = {
+  id: electron, filename: electron, loaded: true,
+  exports: { Notification: class { show() {} static isSupported() { return false; } } }
+};
+
+const { HiveManager } = loadTs('src/main/hive.ts');
+const { HookServer } = loadTs('src/main/hooks.ts');
+const F = loadTs('src/shared/folderAccess.ts');
+const { MemoryManager, otherWings } = loadTs('src/main/memory.ts');
+
+const posix = { skip: process.platform === 'win32' ? 'posix paths' : false };
+const promptOf = (inj) => inj.args[inj.args.indexOf('--append-system-prompt') + 1];
+
+test('a member\'s shell reads its own hive folder and no one else\'s, nor the hive\'s git history', posix, () => {
+  // Value: protects=a teammate's notes can't be read by cat or grep in a shell; fails_when=the sandbox leaves agents/ or .git open, or closes the member's own folder; why_new=memory privacy; seam=none
+  const base = { sandbox: { denyWrite: [], denyRead: ['/a'], allowRead: [] }, deny: ['Read(/b)'], sandboxOnly: true };
+  const w = F.withMemberWall(base, '/h/hive', 'pam', ['god', 'pam', 'jim']);
+  assert.deepEqual(w.sandbox.denyRead, ['/a', '/h/hive/agents', '/h/hive/.git']);
+  assert.deepEqual(w.sandbox.allowRead, ['/h/hive/agents/pam']);
+  for (const d of ['/h/hive/.git', '/h/hive/agents/god', '/h/hive/agents/jim']) assert.ok(w.deny.some((r) => r.includes(d)), d);
+  assert.ok(!w.deny.some((r) => r.includes('/h/hive/agents/pam')), 'its own folder stays open to its file tools');
+  const god = F.withMemberWall(base, '/h/hive', 'god', ['god', 'pam']);
+  assert.deepEqual(god.sandbox.allowRead, ['/h/hive/agents/god'], 'Michael too: only his own');
+  assert.ok(god.deny.some((r) => r.includes('/h/hive/agents/pam')));
+  assert.equal(F.withMemberWall(base, '', 'pam', ['god']), base, 'no hive, nothing to wall');
+});
+
+test('a file tool into another member\'s folder is refused for everyone, Michael included, and says to ask', posix, () => {
+  // Value: protects=the owner's rule holds for members hired after a session started and for Michael; fails_when=the hook lets a read through or the refusal doesn't point to a query; why_new=memory privacy; seam=none
+  const nameOf = (id) => ({ god: 'Michael', pam: 'Pam', jim: 'Jim' })[id] ?? id;
+  const d = (agent, tool, target) => F.memberWallDecision('/h/hive', agent, tool, target, true, nameOf);
+  const pam = d('pam', 'Read', '/h/hive/agents/jim/memory.md');
+  assert.equal(pam.deny, true);
+  assert.match(pam.reason, /Jim's own folder.*send them a "query" message/);
+  assert.equal(d('god', 'Read', '/h/hive/agents/pam/memory/inbox.md').deny, true, 'Michael asks too');
+  assert.equal(d('god', 'Grep', '/h/hive/agents/pam').deny, true);
+  assert.equal(d('pam', 'Read', '/h/hive/.git/objects/ab').deny, true, 'the history keeps every member\'s notes');
+  assert.equal(d('pam', 'Read', '/h/hive/agents/PAM/memory.md').deny, false, 'its own folder, as the disk spells it');
+  assert.equal(d('pam', 'Write', '/h/hive/agents/pam/outbox/a.json').deny, false);
+  assert.equal(d('pam', 'Read', '/h/hive/tasks.json').deny, false, 'the board stays open');
+  assert.equal(d('pam', 'Bash', '/h/hive/agents/jim').deny, false, 'shell commands are the sandbox\'s');
+});
+
+test('the app\'s hook refuses Michael a teammate\'s notes and lets a member read its own', async (t) => {
+  // Value: protects=the wall is wired into the hook every agent's tools pass through; fails_when=folderCheck skips memberWallDecision; why_new=memory privacy; seam=HookServer.handle
+  const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-private-')));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const server = new HookServer(hive, () => null, () => ({ harnessHome: home }));
+  const read = (agent_id, file_path) => server.handle({ agent_id, hook_event_name: 'PreToolUse', cwd: home, tool_name: 'Read', tool_input: { file_path } }).hookSpecificOutput;
+  const pamNotes = path.join(hive.root(), 'agents', 'pam', 'memory.md');
+  const god = read('god', pamNotes);
+  assert.equal(god?.permissionDecision, 'deny');
+  assert.match(god.permissionDecisionReason, /Pam's own folder/);
+  assert.notEqual(read('pam', pamNotes)?.permissionDecision, 'deny');
+});
+
+test('both prompts say memory is private and to ask, and nothing says to search across the team', async (t) => {
+  // Value: protects=agents are told the rule, not only stopped by it; fails_when=a prompt brings back the shared memory search; why_new=memory privacy; seam=prompt text
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-private-p-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  const god = promptOf(await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true }));
+  const pam = promptOf(await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home }));
+  assert.match(god, /PRIVATE MEMORY: each team member's notes, memory and inbox are its own\. Never open a team member's folder/);
+  assert.match(god, /send it a "query", and read its card on the board and the work it publishes/);
+  assert.match(pam, /PRIVATE MEMORY: your notes and memory are yours alone/);
+  assert.match(pam, /ask them with a "query" message\. The one store everyone searches is company knowledge\./);
+  for (const p of [god, pam]) assert.doesNotMatch(p, /across the team|team's shared memory|other agents' memor/i);
+  const protocol = fs.readFileSync(path.join(hive.root(), 'PROTOCOL.md'), 'utf8');
+  assert.match(protocol, /## Private memory/);
+  assert.doesNotMatch(protocol, /## Semantic memory/);
+});
+
+test('the palace keeps company knowledge only: any other section clears it once', async (t) => {
+  // Value: protects=members' notes mined by an older build don't stay searchable; fails_when=status parsing misses a wing or a company only palace is cleared; why_new=memory privacy; seam=stubbed CLI
+  assert.deepEqual(otherWings('WING: company\n  rooms: 3\nWING: pam\nWING: god\nWING: pam\n', 'company'), ['pam', 'god']);
+  assert.deepEqual(otherWings('WING: company\n', 'company'), []);
+  assert.deepEqual(otherWings('', 'company'), []);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-palace-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const palace = path.join(home, 'palace');
+  const mined = path.join(home, 'private', 'research-mined');
+  fs.mkdirSync(palace, { recursive: true });
+  fs.mkdirSync(mined, { recursive: true });
+  const memory = new MemoryManager(() => home, () => ({ enabled: true, model: 'minilm' }));
+  memory.palacePath = () => palace;
+  let status = 'WING: company\n';
+  memory.runCli = async () => ({ ok: true, output: status });
+  await memory.keepCompanyOnly();
+  assert.ok(fs.existsSync(palace), 'a company only palace stays');
+  assert.ok(!fs.existsSync(mined), 'the old copy of Research\'s notes is gone');
+  status = 'WING: company\nWING: pam\n';
+  await memory.keepCompanyOnly();
+  assert.ok(!fs.existsSync(palace), 'cleared, and company knowledge is indexed again next');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/memory.ts'), 'utf8');
+  assert.match(src, /await this\.keepCompanyOnly\(\);\n\s+await this\.indexCompanyKnowledge\(\);/);
+  assert.doesNotMatch(src, /mineAgent|setNotesFilter/, 'no agent folder is mined');
+});
