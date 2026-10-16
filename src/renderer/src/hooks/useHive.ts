@@ -32,6 +32,7 @@ import { ENGINE_READY_EVENT } from '@/shell/useNeedsYou';
 import { seedStarterJobs } from '@/shell/seedStarterJobs';
 import { PromptSubmits, confirmSubmit } from '../../../shared/submitConfirm';
 import { isTerminalPrompt } from '../../../shared/hookEvents';
+import { cutText } from '@shared/cutText';
 
 const GOD_ID = 'god';
 /** Accent palette for MAIN-spawned (voice-hired) agents — picked deterministically
@@ -1165,7 +1166,7 @@ export function useHive(config: HarnessConfig | null): void {
             : [];
         const id = `slack-${slack.thread_ts}-${m.id}`;
         if (existing.some((t) => t.id === id)) return; // already promoted — no dup
-        const title = m.text.length > 80 ? `${m.text.slice(0, 79)}…` : m.text;
+        const title = cutText(m.text, 80);
         const card: SlackTaskCard = {
           id,
           title,
