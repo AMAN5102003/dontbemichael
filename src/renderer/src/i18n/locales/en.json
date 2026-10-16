@@ -2628,9 +2628,12 @@
         "sender": "The sender was told.",
         "michael": "{{godName}} was told.",
         "recipient+michael": "The team member waiting for it and {{godName}} were told.",
-        "recipient": "The team member waiting for it was told."
+        "recipient": "The team member waiting for it was told.",
+        "nobody": "Nobody was told: they are checked again the next time {{research}} starts."
       },
-      "notListed": "{{count}} more counted before details were kept, or not saved."
+      "notListed": "{{count}} more counted before details were kept, or not saved.",
+      "wayNotes": "Notes for the team's memory",
+      "notes": "{{from}}'s notes for the team's shared memory"
     }
   }
 }

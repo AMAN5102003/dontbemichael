@@ -17,7 +17,7 @@ import type { PulseView as PulseData } from '@shared/pulseView';
 import type { Advice } from '@shared/teamAdvice';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
 import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
-import type { HeldRow } from '@shared/heldRecord';
+import { HELD_TO_MEMORY, type HeldRow } from '@shared/heldRecord';
 import { useStore } from '@/store/store';
 import { useAppTheme } from '@/design/theme';
 import { family } from '@/scene/studio/theme';
@@ -620,6 +620,7 @@ function HeldDetail({ from, to, count, onClose }: { from: string; to: string; co
   const when = (at: number): string => new Date(at).toLocaleString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
   const who = (r: HeldRow): string => {
     const toName = r.toName ?? r.to;
+    if (r.to === HELD_TO_MEMORY) return t('pulse.held.notes', { from: r.fromName ?? r.from });
     if (r.way === 'out') return t('pulse.held.answer', { from: r.fromName ?? r.from, to: toName });
     if (r.from === 'human') return t('pulse.held.fromYou', { to: toName });
     if (r.from === 'system') return t('pulse.held.fromApp', { to: toName });
@@ -639,14 +640,14 @@ function HeldDetail({ from, to, count, onClose }: { from: string; to: string; co
             {rows.map((r, i) => (
               <div key={`${r.at}-${i}`} role="listitem" style={{ background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                  <span style={{ ...label }}>{t(r.way === 'in' ? 'pulse.held.wayIn' : 'pulse.held.wayOut')}</span>
+                  <span style={{ ...label }}>{t(r.to === HELD_TO_MEMORY ? 'pulse.held.wayNotes' : r.way === 'in' ? 'pulse.held.wayIn' : 'pulse.held.wayOut')}</span>
                   <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto' }}>{when(r.at)}</span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--cth-ink-2)' }}>{who(r)}</div>
                 {r.subject && <div style={{ fontSize: 13, fontWeight: 600 }}>{r.subject}</div>}
                 {r.opening && <div style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px' }}>{r.opening}</div>}
                 <div style={{ fontSize: 11, color: 'var(--cth-amber-text)', lineHeight: '15px' }}>{t(`pulse.held.why.${r.why}`)}{r.error ? ` (${r.error})` : ''}</div>
-                <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t(`pulse.held.told.${r.told}`)}</div>
+                <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t(`pulse.held.told.${r.told}`, { research: r.fromName ?? r.from })}</div>
               </div>
             ))}
             {missing > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.notListed', { count: missing })}</div>}

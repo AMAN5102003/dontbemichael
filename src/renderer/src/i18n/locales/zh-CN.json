@@ -2628,9 +2628,12 @@
         "sender": "已告知发送者。",
         "michael": "已告知 {{godName}}。",
         "recipient+michael": "已告知等待它的团队成员和 {{godName}}。",
-        "recipient": "已告知等待它的团队成员。"
+        "recipient": "已告知等待它的团队成员。",
+        "nobody": "没有通知任何人：下次 {{research}} 启动时会再检查一次。"
       },
-      "notListed": "另有 {{count}} 条在开始保存详情之前被计入，或未能保存。"
+      "notListed": "另有 {{count}} 条在开始保存详情之前被计入，或未能保存。",
+      "wayNotes": "团队记忆的笔记",
+      "notes": "{{from}}写给团队共享记忆的笔记"
     }
   }
 }

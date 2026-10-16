@@ -2573,7 +2573,7 @@ export class HiveManager {
   /** One row per hold in the owner's private folder, never the committed log
    *  (it carries the subject and the opening of the message), and one
    *  trust-held line with no text, which Pulse counts (owner, 2026-10-16). */
-  private recordHeld(way: 'in' | 'out', from: string, to: string, subject: unknown, body: unknown, why: HeldWhy, error: string | undefined, told: HeldTold): void {
+  recordHeld(way: 'in' | 'out', from: string, to: string, subject: unknown, body: unknown, why: HeldWhy, error: string | undefined, told: HeldTold): void {
     this.appendLog({ kind: 'trust-held', way });
     const home = this.getHome();
     if (!home) return;

@@ -141,10 +141,13 @@ test('the held tile opens the list of what was held: when, which way, who to who
   assert.match(view, /window\.cth\.pulseHeld\(fromMs, toMs\)/);
   for (const k of ['pulse.held.wayIn', 'pulse.held.wayOut', 'pulse.held.fromYou', 'pulse.held.fromApp', 'pulse.held.question', 'pulse.held.answer', 'pulse.held.notListed']) assert.ok(view.includes(`'${k}'`), k);
   assert.match(view, /t\(`pulse\.held\.why\.\$\{r\.why\}`\)/);
-  assert.match(view, /t\(`pulse\.held\.told\.\$\{r\.told\}`\)/);
+  assert.match(view, /t\(`pulse\.held\.told\.\$\{r\.told\}`, \{ research: r\.fromName \?\? r\.from \}\)/);
+  // Research's notes for the team's memory are held at the same check (seen live 2026-10-16: 9 of the first 18 holds).
+  assert.match(view, /if \(r\.to === HELD_TO_MEMORY\) return t\('pulse\.held\.notes'/);
+  assert.match(read('src/main/index.ts'), /if \(why\) hive\.recordHeld\('out', RESEARCH_ID, HELD_TO_MEMORY, 'Research notes', text, why, v\.error, 'nobody'\);/);
   assert.match(view, /const missing = rows \? Math\.max\(0, count - rows\.length\) : 0;/);
   assert.deepEqual(Object.keys(en.pulse.held.why).sort(), ['failed', 'no-answer', 'no-layer', 'settings', 'too-long', 'unreadable']);
-  assert.deepEqual(Object.keys(en.pulse.held.told).sort(), ['michael', 'recipient', 'recipient+michael', 'sender', 'sender+michael']);
+  assert.deepEqual(Object.keys(en.pulse.held.told).sort(), ['michael', 'nobody', 'recipient', 'recipient+michael', 'sender', 'sender+michael']);
   assert.ok(Object.values(en.pulse.held.told).filter((v) => /godName/.test(v)).length === 3, 'Michael by his current name');
   const main = read('src/main/index.ts');
   assert.match(main, /ipcMain\.handle\('pulse:held', \(_evt, fromMs: unknown, toMs: unknown\) =>/);

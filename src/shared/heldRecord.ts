@@ -15,7 +15,11 @@
 export type HeldWhy = 'no-answer' | 'unreadable' | 'too-long' | 'settings' | 'failed' | 'no-layer';
 
 /** Who heard of the hold. */
-export type HeldTold = 'sender+michael' | 'sender' | 'michael' | 'recipient+michael' | 'recipient';
+export type HeldTold = 'sender+michael' | 'sender' | 'michael' | 'recipient+michael' | 'recipient' | 'nobody';
+
+/** `to` for Research's notes on their way into the team's shared memory: held,
+ *  they are left out this time and checked again at Research's next start. */
+export const HELD_TO_MEMORY = 'memory';
 
 export interface HeldRow {
   at: number;
