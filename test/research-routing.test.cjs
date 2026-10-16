@@ -22,6 +22,9 @@ const electron = require.resolve('electron');
 require.cache[electron] = { id: electron, filename: electron, loaded: true, exports: { Notification: class { show() {} static isSupported() { return false; } } } };
 const { HiveManager, HOUSE_RULES, OFFICE_HOUSE_RULES } = loadTs('src/main/hive.ts');
 const R = loadTs('src/shared/research.ts');
+// These tests pin what happens once a check that could not run has waited
+// its time out; research-check-wait.test.cjs pins the wait itself.
+HiveManager.TRUST_WAIT_MS = 0;
 
 /** A fake trust layer: `inbound` and `outbound` decide from the text. */
 function fakeLayer(over = {}) {

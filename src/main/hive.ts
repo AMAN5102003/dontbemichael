@@ -45,7 +45,7 @@ import { homedir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash, createHmac } from 'node:crypto';
 import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
-import { heldWhy, tidy, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
+import { heldWaits, heldWhy, tidy, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
 import {
@@ -2335,8 +2335,20 @@ export class HiveManager {
   /** Checks under way or finished, by the outbox file's content. A message
    *  waits in its outbox until its check finishes; an app restart checks it
    *  again; an entry nobody claims is forgotten after TRUST_CHECK_KEEP_MS. */
-  private trustChecks = new Map<string, { done: boolean; at: number; verdict?: InboundVerdict | OutboundVerdict }>();
+  private trustChecks = new Map<string, { done: boolean; at: number; verdict?: InboundVerdict | OutboundVerdict; firstAt: number; tries: number; retryAt?: number }>();
   static readonly TRUST_CHECK_KEEP_MS = 10 * 60_000;
+  /** A check that could not run (no answer, an unreadable one, a failure) is
+   *  tried again for this long before the message is held: the check's hidden
+   *  session can take minutes while the whole team starts (owner, 2026-10-16:
+   *  "why messages are not queued and waited", D1 30 minutes). Nothing goes
+   *  out unchecked meanwhile. */
+  static TRUST_WAIT_MS = 30 * 60_000;
+  /** The gap before try `tries + 1`: 30 s, 1, 2 and 4 minutes, then every 5. */
+  static trustRetryDelayMs(tries: number): number { return Math.min(5 * 60_000, 30_000 * 2 ** Math.max(0, tries)); }
+  /** A deny that only says the check could not run this time. */
+  private checkMayRunLater(v: InboundVerdict | OutboundVerdict): boolean {
+    return v.decision === 'deny' && heldWaits(heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG));
+  }
   /** Ids of clean copies the trust layer produced; only these reach Research. */
   private researchCleared = new Set<string>();
   /** The sender's message behind each clean copy, by the copy's id and its
@@ -2609,16 +2621,27 @@ export class HiveManager {
 
   /** Start a check, or read the one under way. `key` is the content hash. */
   private trustCheck(key: string, start: () => Promise<InboundVerdict | OutboundVerdict>): InboundVerdict | OutboundVerdict | 'hold' {
+    const now = Date.now();
     const c = this.trustChecks.get(key);
-    if (!c) {
-      this.trustChecks.set(key, { done: false, at: Date.now() });
+    const launch = (firstAt: number, tries: number): 'hold' => {
+      this.trustChecks.set(key, { done: false, at: now, firstAt, tries });
       start().then(
-        (verdict) => { this.trustChecks.set(key, { done: true, at: Date.now(), verdict }); },
-        () => { this.trustChecks.set(key, { done: true, at: Date.now(), verdict: { decision: 'deny', reason: REFUSAL_CHECK_FAILED } }); }
+        (verdict) => { this.trustChecks.set(key, { done: true, at: Date.now(), verdict, firstAt, tries }); },
+        () => { this.trustChecks.set(key, { done: true, at: Date.now(), verdict: { decision: 'deny', reason: REFUSAL_CHECK_FAILED }, firstAt, tries }); }
       );
       return 'hold';
+    };
+    if (!c) return launch(now, 0);
+    // Waiting for its next try, or running.
+    if (!c.done) return c.retryAt !== undefined && now >= c.retryAt ? launch(c.firstAt, c.tries + 1) : 'hold';
+    if (!c.verdict) return 'hold';
+    // The check could not run: the message keeps waiting in its outbox and is
+    // tried again, until TRUST_WAIT_MS from its first try.
+    if (this.checkMayRunLater(c.verdict) && now - c.firstAt < HiveManager.TRUST_WAIT_MS) {
+      this.trustChecks.set(key, { done: false, at: now, firstAt: c.firstAt, tries: c.tries, retryAt: now + HiveManager.trustRetryDelayMs(c.tries) });
+      this.appendLog({ kind: 'trust-wait', way: key.startsWith('out:') ? 'out' : 'in', tries: c.tries + 1 });
+      return 'hold';
     }
-    if (!c.done || !c.verdict) return 'hold';
     this.trustChecks.delete(key);
     return c.verdict;
   }
@@ -2636,7 +2659,11 @@ export class HiveManager {
   private pruneTrustChecks(now = Date.now()): void {
     // Only finished checks: one still running or waiting its turn is kept, so
     // a long queue never starts a second paid check for the same message.
-    for (const [k, c] of this.trustChecks) if (c.done && now - c.at > HiveManager.TRUST_CHECK_KEEP_MS) this.trustChecks.delete(k);
+    for (const [k, c] of this.trustChecks) {
+      // A finished check nobody claimed, or one waiting to be tried again whose
+      // message is gone (it would have been held by now).
+      if ((c.done && now - c.at > HiveManager.TRUST_CHECK_KEEP_MS) || (c.retryAt !== undefined && now - c.firstAt > HiveManager.TRUST_WAIT_MS + HiveManager.TRUST_CHECK_KEEP_MS)) this.trustChecks.delete(k);
+    }
   }
 
   /** A teammate's or Michael's message to Research, from its outbox. Held
@@ -2695,13 +2722,23 @@ export class HiveManager {
     };
     const layer = this.trustLayer;
     const policy = this.policyOf(layer);
-    layer.inbound({ subject: msg.subject, body: msg.body }).then((v) => {
+    const firstAt = Date.now();
+    const attempt = (tries: number): void => { layer.inbound({ subject: msg.subject, body: msg.body }).then((v) => {
+      // The check could not run: tried again with growing gaps, still waiting
+      // and still in the pending list, until TRUST_WAIT_MS (owner, 2026-10-16).
+      if (this.checkMayRunLater(v) && Date.now() - firstAt < HiveManager.TRUST_WAIT_MS && this.researchOn() && this.policyOf(layer) === policy) {
+        this.appendLog({ kind: 'trust-wait', way: 'in', tries: tries + 1 });
+        setTimeout(() => attempt(tries + 1), HiveManager.trustRetryDelayMs(tries));
+        return;
+      }
       this.researchQueued--;
       if (!fromAgent) this.researchPending(msg, false);
       try {
         // The owner changed what stays private while it was checked: checked
         // again under the new settings (Codex review, third ship).
         if (this.policyOf(layer) !== policy) { this.queueForResearch(msg); return; }
+        // Turned off while it waited for a check that could not run.
+        if (!this.researchOn() && this.checkMayRunLater(v)) return refuse(REFUSAL_OFF, 'research-off');
         if (v.decision === 'deny') {
           const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
           if (why) held(why, v.error);
@@ -2714,10 +2751,19 @@ export class HiveManager {
         this.commit('hive: trust layer delivered to research');
       } catch (e) { console.error('[research] delivering a checked message', e); }
     }, () => {
+      if (Date.now() - firstAt < HiveManager.TRUST_WAIT_MS && this.researchOn() && this.policyOf(layer) === policy) {
+        this.appendLog({ kind: 'trust-wait', way: 'in', tries: tries + 1 });
+        setTimeout(() => attempt(tries + 1), HiveManager.trustRetryDelayMs(tries));
+        return;
+      }
       this.researchQueued--;
       if (!fromAgent) this.researchPending(msg, false);
-      try { refuse(REFUSAL_CHECK_FAILED, 'failed'); held('failed'); } catch { /* logged above */ }
-    });
+      try {
+        if (!this.researchOn()) refuse(REFUSAL_OFF, 'research-off');
+        else { refuse(REFUSAL_CHECK_FAILED, 'failed'); held('failed'); }
+      } catch { /* logged above */ }
+    }); };
+    attempt(0);
   }
 
   /** The owner's and the app's messages for Research whose check is under

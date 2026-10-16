@@ -74,6 +74,13 @@ export function heldCause(r: Pick<HeldRow, 'why' | 'error'>): HeldCause {
   return 'checkDown';
 }
 
+/** A hold whose check may run on a later try: no answer, an unreadable one,
+ *  or a failure. The message waits and is tried again before it is held
+ *  (owner, 2026-10-16); too long, settings and no check are held at once. */
+export function heldWaits(why: HeldWhy | null): boolean {
+  return why === 'no-answer' || why === 'unreadable' || why === 'failed';
+}
+
 /** A deny is a hold when the check could not run: too long, no answer, an
  *  unreadable answer, settings that could not be read, or no check at all.
  *  A deny the check reached (private data, a pattern) is a stop, not a hold. */

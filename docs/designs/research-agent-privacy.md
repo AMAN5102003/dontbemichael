@@ -85,6 +85,10 @@ as gatekeeper, in both directions, ahead of the guard described in the next sect
   removes instructions aimed at AI agents and keeps the findings and sources; it arrives
   labelled as information, and one that plainly tries to steer its reader is flagged to
   Michael only. An answer the layer can't check is not delivered and the recipient is told.
+  A check that could not run (no answer, an unreadable one, a failure) is tried again
+  with growing gaps (30 seconds, then 1, 2 and 4 minutes, then every 5) for up to 30
+  minutes before the message is held; nothing goes out unchecked meanwhile (owner,
+  2026-10-16). Too long, private data and settings are refused at once.
   Research's notes go into the team's shared memory only as a copy the layer cleaned.
   Superseded 2026-10-16 (owner: an agent's memory is private to it): no member's notes go
   into any shared search, Research's included; teammates ask Research instead. The palace
