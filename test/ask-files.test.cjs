@@ -46,6 +46,23 @@ test('a Markdown link to a file is a chip when its path has spaces or the link h
   assert.deepEqual(askFilePaths('See [r](/Users/me/Biz/report.md) and [site](https://example.com/a.md)'), ['/Users/me/Biz/report.md'], 'plain links unchanged, URLs stay links');
 });
 
+test('Markdown link destinations keep balanced and escaped parentheses', () => {
+  const question = 'See [first](/Users/me/Q3(final(v2))/report.md "review") and '
+    + '[again](/Users/me/Q3(final(v2))/report.md) then '
+    + '[escaped](/Users/me/Q3\\(final\\)/notes.md) and '
+    + '[space](</Users/me/Harbor & Pine/Q3 (final)/report.md> "draft /Users/me/not-a-file.md") '
+    + 'but not [site](https://example.com/Q3(final)/report.md).';
+  assert.deepEqual(askFilePaths(question), [
+    '/Users/me/Q3(final(v2))/report.md',
+    '/Users/me/Q3(final)/notes.md',
+    '/Users/me/Harbor & Pine/Q3 (final)/report.md'
+  ]);
+});
+
+test('a Markdown link title may start on the next line', () => {
+  assert.deepEqual(askFilePaths('See [report](/Users/me/report.md\n "Q3")'), ['/Users/me/report.md']);
+});
+
 test('main opens only allowlisted documents inside the roots, judged on the canonical path', async (t) => {
   // Value: protects=an agent named path opens only a safe document inside the office folders; fails_when=safeResolve, the canonical extension check or the allowlist is dropped; why_new=no code opened agent paths before; seam=none
   // .native, like main: on Windows it spells the temp folder out in full, not as RUNNER~1.
