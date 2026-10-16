@@ -808,6 +808,12 @@ const trustLayer = makeTrustLayer({
     return r.ok && r.text ? r.text : r.ok ? null : { error: r.error ?? 'unknown' };
   },
   settings: () => dataClassSettings(readConfig().dataClasses),
+  // Every AI team member's name, Michael's and Research's included, passes as
+  // written; real people's names stay private (owner, 2026-10-16).
+  teamNames: () => {
+    const reg = hive.registry();
+    return [...Object.values(reg.agents ?? {}).map((a) => a?.name), resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name), hive.researchName()];
+  },
   log: (event) => {
     try { hive.appendLog(event); } catch { /* best-effort */ }
     // Pulse's Kept safe: the decision only, never the text it judged.

@@ -90,6 +90,10 @@ as gatekeeper, in both directions, ahead of the guard described in the next sect
   minutes before the message is held; nothing goes out unchecked meanwhile (owner,
   2026-10-16). Too long, private data and settings are refused at once.
   Research's notes go into the team's shared memory only as a copy the layer cleaned.
+  The office's own AI team members' names (Michael's and Research's included) reach the
+  check as AI assistants' names, not people's, and pass as written; real people's names stay
+  private (owner, 2026-10-16: a note to Research about itself arrived as "Someone has
+  stopped"). Names are one line, four words, plain characters, so none carries instructions.
   Each check the layer finishes is kept for the owner in the app's private folder (what was
   written and what went out; 62 days on Pulse, then archived), never in the office log
   (owner, 2026-10-16).
