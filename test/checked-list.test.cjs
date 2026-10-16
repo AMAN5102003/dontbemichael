@@ -230,3 +230,15 @@ test('the list reads one way, in its span, and says from when words are kept', (
   svc.d = { readChecked: () => { throw new Error('EACCES'); } };
   assert.throws(() => svc.checked(0, 1, 'in'), 'a read that fails reaches the list as an error');
 });
+
+test('before any words were kept, the list says "from now on" and how many changed or stopped are among them', () => {
+  // Value: protects=the owner's 2026-10-16 report (the tile said 1 changed, the list said words are kept from today's date and showed nothing); fails_when=a period with nothing kept names today's date, or the changed and stopped ones before keeping go unmentioned; why_new=investigate fix; seam=source pins and locale strings; no_claim=pixel layout
+  const view = read('src/renderer/src/components/pulse/PulseView.tsx');
+  assert.match(view, /data\?\.since == null \? t\('pulse\.checked\.firstOpenNow', \{ count: earlier \}\) : t\('pulse\.checked\.firstOpen', \{ date: when\(data\.since\), count: earlier \}\)/);
+  assert.match(view, /const earlierChanged = Math\.max\(0, counts\.changed - rows\.filter\(\(r\) => r\.outcome === 'clean'\)\.length\);/);
+  assert.match(view, /t\(way === 'in' \? 'pulse\.checked\.q\.among' : 'pulse\.checked\.a\.among', \{ changed: earlierChanged, other: earlierOther \}\)/);
+  assert.doesNotMatch(view, /fmtDate\(data\?\.since \?\? Date\.now\(\)\)/, 'never today\'s date for words that were never kept');
+  const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.checked;
+  assert.equal(en.firstOpenNow, "Words are kept from now on. The {{count}} counted in this period came before that, so their words weren't saved.");
+  assert.equal(en.q.among, 'That includes {{changed}} changed and {{other}} stopped.');
+});

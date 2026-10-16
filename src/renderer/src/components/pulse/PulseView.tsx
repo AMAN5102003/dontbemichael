@@ -804,7 +804,17 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
   // Rows the count has but the list doesn't: before words were kept (DD4), or a write that failed.
   const earlier = data ? Math.max(0, counts.total - rows.length) : 0;
   const beforeKept = data !== null && (data.since === null || data.since > fromMs);
-  const fmtDate = (ms: number): string => new Date(ms).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
+  // Which of those had a change or a stop, so the owner knows the one the
+  // count names is among them (owner, 2026-10-16: "it says 1 was changed but
+  // i cant see which message").
+  const earlierChanged = Math.max(0, counts.changed - rows.filter((r) => r.outcome === 'clean').length);
+  const earlierOther = way === 'in' ? Math.max(0, counts.stopped - rows.filter((r) => r.outcome === 'stop').length) : Math.max(0, counts.flagged - rows.filter((r) => r.flagged).length);
+  const before = (): string => {
+    // Nothing kept yet: from now on, never a date that reads like today's are kept.
+    const first = data?.since == null ? t('pulse.checked.firstOpenNow', { count: earlier }) : t('pulse.checked.firstOpen', { date: when(data.since), count: earlier });
+    const among = earlierChanged + earlierOther > 0 ? t(way === 'in' ? 'pulse.checked.q.among' : 'pulse.checked.a.among', { changed: earlierChanged, other: earlierOther }) : '';
+    return [first, among].filter(Boolean).join(' ');
+  };
   const count = way === 'in'
     ? t('pulse.checked.q.count', { period, count: counts.total, changed: counts.changed, stopped: counts.stopped, asWritten: Math.max(0, counts.total - counts.changed - counts.stopped) })
     : t('pulse.checked.a.count', { period, count: counts.total, cleaned: counts.changed, flagged: counts.flagged });
@@ -842,7 +852,7 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
           ))}
         </>}
         {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
-          {beforeKept ? t('pulse.checked.firstOpen', { date: fmtDate(data?.since ?? Date.now()), count: earlier }) : t('pulse.checked.earlier', { count: earlier })}
+          {beforeKept ? before() : t('pulse.checked.earlier', { count: earlier })}
         </div>}
         {heldCount > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
           {t('pulse.checked.held', { count: heldCount })}{' '}

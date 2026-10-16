@@ -2624,6 +2624,8 @@
       "cut": "在 4,000 个字符处截断",
       "needed": "需要：",
       "takenOut": "已删除：",
+      "firstOpenNow_one": "从现在起保存文字。此期间计数的 {{count}} 条在此之前，所以没有保存文字。",
+      "firstOpenNow": "从现在起保存文字。此期间计数的 {{count}} 条在此之前，所以没有保存文字。",
       "firstOpen_one": "从 {{date}} 起保存文字。在此之前的 {{count}} 条已计数，但没有保存文字。",
       "firstOpen": "从 {{date}} 起保存文字。在此之前的 {{count}} 条已计数，但没有保存文字。",
       "earlier_one": "还有 {{count}} 条没有详情。",
@@ -2637,6 +2639,7 @@
         "count_one": "{{period}}：{{count}} 个问题。{{changed}} 个已修改，{{stopped}} 个已拦下，{{asWritten}} 个原样发送",
         "count": "{{period}}：{{count}} 个问题。{{changed}} 个已修改，{{stopped}} 个已拦下，{{asWritten}} 个原样发送",
         "marks": "删除线：留在你办公室的内容。高亮：{{research}} 收到的替代内容。",
+        "among": "其中 {{changed}} 条已修改，{{other}} 条被拦下。",
         "fold_one": "{{count}} 个原样发送",
         "fold": "{{count}} 个原样发送",
         "who": {
@@ -2674,6 +2677,7 @@
         "count_one": "{{period}}：{{count}} 个回答。{{cleaned}} 个删除了网页指令，{{flagged}} 个已标记",
         "count": "{{period}}：{{count}} 个回答。{{cleaned}} 个删除了网页指令，{{flagged}} 个已标记",
         "marks": "删除线：在你的团队阅读之前被删除的内容。",
+        "among": "其中 {{changed}} 条已清理，{{other}} 条已标记。",
         "fold_one": "{{count}} 个没有需要删除的内容",
         "fold": "{{count}} 个没有需要删除的内容",
         "head": {

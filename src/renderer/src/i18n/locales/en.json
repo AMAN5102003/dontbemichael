@@ -2624,6 +2624,8 @@
       "cut": "Cut at 4,000 characters",
       "needed": "Needed:",
       "takenOut": "Taken out:",
+      "firstOpenNow_one": "Words are kept from now on. The {{count}} counted in this period came before that, so its words weren't saved.",
+      "firstOpenNow": "Words are kept from now on. The {{count}} counted in this period came before that, so their words weren't saved.",
       "firstOpen_one": "Words are kept from {{date}}. The {{count}} before then was counted, but its words weren't saved.",
       "firstOpen": "Words are kept from {{date}}. The {{count}} before then were counted, but their words weren't saved.",
       "earlier_one": "{{count}} more without details.",
@@ -2637,6 +2639,7 @@
         "count_one": "{{period}}: {{count}} question. {{changed}} changed, {{stopped}} stopped, {{asWritten}} as written",
         "count": "{{period}}: {{count}} questions. {{changed}} changed, {{stopped}} stopped, {{asWritten}} as written",
         "marks": "Struck through: what stayed in your office. Highlighted: what {{research}} got instead.",
+        "among": "That includes {{changed}} changed and {{other}} stopped.",
         "fold_one": "{{count}} sent as written",
         "fold": "{{count}} sent as written",
         "who": {
@@ -2674,6 +2677,7 @@
         "count_one": "{{period}}: {{count}} answer. {{cleaned}} had web instructions taken out, {{flagged}} flagged",
         "count": "{{period}}: {{count}} answers. {{cleaned}} had web instructions taken out, {{flagged}} flagged",
         "marks": "Struck through: what was taken out before your team read it.",
+        "among": "That includes {{changed}} cleaned and {{other}} flagged.",
         "fold_one": "{{count}} came in with nothing to take out",
         "fold": "{{count}} came in with nothing to take out",
         "head": {
