@@ -9,6 +9,7 @@ import { lastAssistantText, transcriptFile } from './transcriptText';
 import { ensureKilled } from './procKill';
 import { Terminal } from '@xterm/headless';
 import { ANSWER_MARK, screenAnswer } from './screenAnswer';
+import { tokenizeCommand } from '../shared/commandLine';
 
 /**
  * Shared helper: run a HIDDEN interactive claude session (ephemeral PTY) and
@@ -118,7 +119,7 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
     }
     opts = { ...opts, cwd };
 
-    const binary = (opts.command || 'claude').trim().split(/\s+/)[0] || 'claude';
+    const binary = tokenizeCommand((opts.command || 'claude').trim())[0] || 'claude';
     const exe = resolveCommand(binary);
     const disallowed = opts.disallowedTools ?? ['Edit', 'Write', 'NotebookEdit'];
     const addDirs = (opts.addDirs ?? []).filter((d) => d && existsSync(d));
