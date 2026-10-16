@@ -335,8 +335,11 @@ export function App() {
   // A file tab keeps it beside the file, so an Ask me card stays answerable
   // while its file is read (docs/designs/open-file-tab.md, F1). Pulse takes the
   // whole window like Tasks, without the bottom bar either (owner, 2026-10-15).
+  // A file tab has no bottom bar either, so the file reads to the bottom edge
+  // (owner, 2026-10-16).
   const columnView = floorView === 'office' || floorView === 'file';
   const columnShown = columnOpen && columnView;
+  const barHidden = floorView === 'pulse' || floorView === 'file';
   const columnRef = useRef<HTMLDivElement>(null);
   const lastColumnMode = useRef<'board' | 'person'>('board');
   // An ask arriving, or waiting at launch, opens the board. Focus stays put.
@@ -477,7 +480,7 @@ export function App() {
               position: 'absolute', inset: 0, zIndex: 50,
               display: 'flex', flexDirection: 'column',
               // Room for the floating bottom bar, so it never covers the last cards.
-              paddingBottom: floorView === 'pulse' ? 0 : 96,
+              paddingBottom: barHidden ? 0 : 96,
               background: 'var(--cth-bg)'
             }}>
               {floorView === 'tasks' && <TasksKanban />}
@@ -488,10 +491,10 @@ export function App() {
               )}
             </div>
           )}
-          {/* The bottom bar stays mounted behind the closing bar and on Pulse,
-              so a Cancel or a tab switch finds Talk to Michael with its
-              attached files still there. */}
-          <div style={{ display: closingOpen || floorView === 'pulse' ? 'none' : 'contents' }}>
+          {/* The bottom bar stays mounted behind the closing bar, on Pulse and
+              on a file tab, so a Cancel or a tab switch finds Talk to Michael
+              with its attached files still there. */}
+          <div style={{ display: closingOpen || barHidden ? 'none' : 'contents' }}>
             <BottomBar />
           </div>
           {closingOpen && (

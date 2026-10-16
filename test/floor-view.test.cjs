@@ -32,7 +32,7 @@ test('the view tabs sit in the top bar, and the board covers the office above th
   const board = app.indexOf("{floorView !== 'office' && (");
   const bottom = app.indexOf('<BottomBar />');
   assert.ok(office > 0 && board > office && bottom > board, 'office, then the board over it, then the bottom bar over both');
-  assert.match(app.slice(board, board + 700), /position: 'absolute', inset: 0, zIndex: 50,[\s\S]*paddingBottom: floorView === 'pulse' \? 0 : 96,[\s\S]*\{floorView === 'tasks' && <TasksKanban \/>\}/);
+  assert.match(app.slice(board, board + 700), /position: 'absolute', inset: 0, zIndex: 50,[\s\S]*paddingBottom: barHidden \? 0 : 96,[\s\S]*\{floorView === 'tasks' && <TasksKanban \/>\}/);
   assert.match(read('src/renderer/src/shell/TopBar.tsx'), /<ViewTabs \/>/);
   assert.doesNotMatch(app, /<FloorViewToggle \/>/);
 });

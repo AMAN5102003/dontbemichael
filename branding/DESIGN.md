@@ -496,7 +496,8 @@ its real path; opening it again selects it; at most 5, a sixth closes the one op
 longest ago. They shrink to fit (down to about 72 px), and the fixed tabs, the clock and
 Needs you never move. Never saved: the app restarts on the last fixed view. Closing the
 selected tab selects the file tab to its left, or the view the owner came from. The right
-column stays beside a file tab, so an Ask me card is answered while its file is read.
+column stays beside a file tab, so an Ask me card is answered while its file is read. A
+file tab has no bottom bar (owner, 2026-10-16); it stays mounted, hidden, as on Pulse.
 
 The file view: a `card` header with the name (14 / 600), its place in office words
 ("Office / IT", or a team member's name and folder; `ink-3`, full path as tooltip), and

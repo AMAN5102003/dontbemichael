@@ -25,8 +25,8 @@ test('Pulse is a fixed view tab between Tasks and Who talks to whom, and takes t
   assert.equal(en.floorView.pulse, 'Pulse');
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
-  assert.match(app, /display: closingOpen \|\| floorView === 'pulse' \? 'none' : 'contents'/, 'the bottom bar hides on Pulse but stays mounted');
-  assert.match(app, /paddingBottom: floorView === 'pulse' \? 0 : 96/);
+  assert.match(app, /display: closingOpen \|\| barHidden \? 'none' : 'contents'/, 'the bottom bar hides on Pulse but stays mounted');
+  assert.match(app, /paddingBottom: barHidden \? 0 : 96/);
   assert.match(read('src/renderer/src/store/store.ts'), /if \(view === 'office' \|\| view === 'file'\) return \{\};/);
 });
 
