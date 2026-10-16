@@ -39,6 +39,13 @@ export const TRUST_MAX_CHARS = 60_000;
 /** Checks that may run at once; the rest wait their turn (a message waits in
  *  its sender's outbox meanwhile, so this costs only time). */
 export const TRUST_CONCURRENCY = 2;
+/** A check that got no answer quickly (its hidden session never took the
+ *  prompt) is run once more, in a fresh session, after this long. At app launch
+ *  every team member starts at once and the check's session is not ready yet:
+ *  every hold from 2026-10-14 to 2026-10-16 came 26 to 56 s after a launch, and
+ *  a check 12 to 20 s later passed in 3 of the 4 cases where one came that
+ *  soon. Still no answer, and the message is held: nothing goes out unchecked. */
+export const TRUST_RETRY_AFTER_MS = 15_000;
 
 /** Anything an agent wrote, as text the layer can judge. Text stays text; a
  *  list or an object is written out as JSON so nothing in it is skipped. */
@@ -71,6 +78,8 @@ export interface TrustLayerDeps {
   timeoutMs?: number;
   concurrency?: number;
   log?: (e: Record<string, unknown>) => void;
+  /** Wait before the one retry of a check that failed fast (tests shorten it). */
+  retryAfterMs?: number;
 }
 
 const fence = (nonce: string, name: string, text: string): string[] => [`--- ${name} ${nonce} ---`, text, `--- END OF ${name} ${nonce} ---`];
@@ -250,7 +259,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
   // Every line carries v: 2, so Pulse counts a hold from the hive's own
   // trust-held line, never twice (owner, 2026-10-16).
   const log = (e: Record<string, unknown>): void => deps.log?.({ ...e, v: 2 });
-  const ask = (prompt: string): Promise<{ text: string | null; error?: string }> => queue(async () => {
+  const askOnce = (prompt: string): Promise<{ text: string | null; error?: string }> => queue(async () => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<{ error: string }>((res) => { timer = setTimeout(() => res({ error: `no answer within ${Math.max(1, Math.round((deps.timeoutMs ?? TRUST_TIMEOUT_MS) / 1000))} seconds` }), deps.timeoutMs ?? TRUST_TIMEOUT_MS); });
     try {
@@ -260,6 +269,18 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
       if (timer) clearTimeout(timer);
     }
   });
+  // One retry for a check that failed before its time was up (no answer from a
+  // session that was not ready); a slow one is not run twice. The retry waits
+  // outside the queue, so other checks are not held up meanwhile.
+  const ask = async (prompt: string, way: 'in' | 'out'): Promise<{ text: string | null; error?: string }> => {
+    const timeoutMs = deps.timeoutMs ?? TRUST_TIMEOUT_MS;
+    const started = Date.now();
+    const first = await askOnce(prompt);
+    if (first.text || Date.now() - started >= timeoutMs) return first;
+    log({ kind: 'trust-retry', way });
+    await new Promise((res) => setTimeout(res, deps.retryAfterMs ?? TRUST_RETRY_AFTER_MS));
+    return askOnce(prompt);
+  };
 
   const inbound = async (msg: { subject?: unknown; body?: unknown }): Promise<InboundVerdict> => {
     const subject = asText(msg.subject);
@@ -277,7 +298,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
       return { decision: 'deny', reason: refusalForClass('secrets'), by: 'pattern' };
     }
     const marked = [...new Set(hits.filter((h) => settings[h.classId] === 'private').map((h) => h.classId))];
-    const { text, error } = await ask(inboundPrompt(subject, body, settings, randomBytes(8).toString('hex'), marked));
+    const { text, error } = await ask(inboundPrompt(subject, body, settings, randomBytes(8).toString('hex'), marked), 'in');
     const v = text ? parseInbound(text, settings) : null;
     if (!v) {
       const by = text ? 'unreadable' : 'no-answer';
@@ -316,7 +337,7 @@ export function makeTrustLayer(deps: TrustLayerDeps): TrustLayer {
       log({ kind: 'trust-layer', way: 'out', decision: 'deny', by: 'length' });
       return { decision: 'deny', reason: REFUSAL_TOO_LONG, by: 'length' };
     }
-    const { text, error } = await ask(outboundPrompt(subject, body, randomBytes(8).toString('hex')));
+    const { text, error } = await ask(outboundPrompt(subject, body, randomBytes(8).toString('hex')), 'out');
     const v = text ? parseOutbound(text) : null;
     if (!v) {
       const by = text ? 'unreadable' : 'no-answer';

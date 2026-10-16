@@ -865,6 +865,12 @@ the out of scope list above, which stay as the record of the 2026-10-13 decision
 - **Michael hears of held answers too:** a web answer the check could not clear is told to the
   member waiting for it, as before, and now to Michael, so a card waiting on it never stalls
   unseen. No Send again button: Michael and the sender decide what to ask again.
+- **One more try at launch:** every hold from 2026-10-14 to 2026-10-16 came 26 to 56 seconds
+  after the app started, while the whole team was starting and the check's hidden session never
+  took its prompt; a check 12 to 20 seconds later passed in 3 of the 4 cases where one came that
+  soon. A check that gets no answer before its time is up is run once more in a fresh session
+  15 seconds later. If that also gets nothing, the message is held as before. A check that used
+  its whole minute, or an answer it could not read, is not retried.
 
 ## GSTACK REVIEW REPORT
 
