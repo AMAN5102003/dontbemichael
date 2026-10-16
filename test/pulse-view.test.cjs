@@ -134,21 +134,25 @@ test('Compare: the app\'s switch reading Compare, remembered, kept in place and 
   assert.match(view, /return \(\) => clearTimeout\(timer\);/);
 });
 
-test('the held tile opens the list of what was held: when, which way, who to whom, subject, opening, why, who was told', () => {
-  // Value: protects=the owner's 2026-10-16 ask (see what exactly was held) and D4; fails_when=the tile stops offering the list, a field drops, the list reads from anything but the private record, or the not listed line goes; why_new=held list; seam=source pins; no_claim=pixel layout (live check)
+test('the held tile opens the list of what was held, each in plain words: what, why, and what happens next', () => {
+  // Value: protects=the owner's 2026-10-16 ask (see what exactly was held) and its follow up (the first list "made no sense": jargon labels, an internal file, a raw error); fails_when=a row loses its headline, why or next step, a raw error shows outside the (i), an internal file or the app's reminder is quoted, or the list reads from anything but the private record; why_new=held list; seam=source pins; no_claim=pixel layout (live check)
   assert.match(view, /open=\{safe\.held > 0 \? \{ label: t\('pulse\.held\.open'\), onClick: \(\) => setHeldOpen\(true\) \} : undefined\}/);
   assert.match(view, /\{open && <button type="button" onClick=\{open\.onClick\}/, 'a real button, keyboard reachable, not the whole tile (it holds an InfoTip)');
   assert.match(view, /window\.cth\.pulseHeld\(fromMs, toMs\)/);
-  for (const k of ['pulse.held.wayIn', 'pulse.held.wayOut', 'pulse.held.fromYou', 'pulse.held.fromApp', 'pulse.held.question', 'pulse.held.answer', 'pulse.held.notListed']) assert.ok(view.includes(`'${k}'`), k);
-  assert.match(view, /t\(`pulse\.held\.why\.\$\{r\.why\}`\)/);
-  assert.match(view, /t\(`pulse\.held\.told\.\$\{r\.told\}`, \{ research: r\.fromName \?\? r\.from \}\)/);
+  assert.match(view, /const head = t\(`pulse\.held\.head\.\$\{kind\}`, \{ research, from, to \}\);/);
+  assert.match(view, /next: t\(`pulse\.held\.next\.\$\{kind\}`, \{ research, from, to \}\)/);
+  assert.match(view, /const what = notes \|\| officeOpen \? '' :/, 'no internal file or app reminder text');
+  assert.match(view, /\{r\.error && <> <InfoTip text=\{t\('pulse\.held\.why\.detail', \{ error: r\.error \}\)\} \/><\/>\}/, 'the check\'s report only behind the (i)');
+  assert.match(view, /t\('pulse\.held\.earlier', \{ count: earlier \}\)/);
+  const kinds = ['answer', 'answerToMichael', 'app', 'member', 'michael', 'notes', 'officeOpen', 'you'];
+  assert.deepEqual(Object.keys(en.pulse.held.head).sort(), kinds);
+  assert.deepEqual(Object.keys(en.pulse.held.next).sort(), kinds);
+  assert.equal(en.pulse.held.head.notes, "{{research}}'s notes were not added to the team's shared knowledge");
+  assert.equal(en.pulse.held.next.notes, 'They are checked again the next time {{research}} starts. Nothing for you to do.');
+  assert.doesNotMatch(JSON.stringify(en.pulse.held), /memory index|hidden session|team's memory\b/, 'no jargon in the copy');
   // Research's notes for the team's memory are held at the same check (seen live 2026-10-16: 9 of the first 18 holds).
-  assert.match(view, /if \(r\.to === HELD_TO_MEMORY\) return t\('pulse\.held\.notes'/);
+  assert.match(view, /const notes = r\.to === HELD_TO_MEMORY;/);
   assert.match(read('src/main/index.ts'), /if \(why\) hive\.recordHeld\('out', RESEARCH_ID, HELD_TO_MEMORY, 'Research notes', text, why, v\.error, 'nobody'\);/);
-  assert.match(view, /const missing = rows \? Math\.max\(0, count - rows\.length\) : 0;/);
-  assert.deepEqual(Object.keys(en.pulse.held.why).sort(), ['failed', 'no-answer', 'no-layer', 'settings', 'too-long', 'unreadable']);
-  assert.deepEqual(Object.keys(en.pulse.held.told).sort(), ['michael', 'nobody', 'recipient', 'recipient+michael', 'sender', 'sender+michael']);
-  assert.ok(Object.values(en.pulse.held.told).filter((v) => /godName/.test(v)).length === 3, 'Michael by his current name');
   const main = read('src/main/index.ts');
   assert.match(main, /ipcMain\.handle\('pulse:held', \(_evt, fromMs: unknown, toMs: unknown\) =>/);
   assert.match(main, /Number\.isFinite\(fromMs\) && Number\.isFinite\(toMs\) \? pulse\.held\(fromMs, toMs\) : \[\]/);

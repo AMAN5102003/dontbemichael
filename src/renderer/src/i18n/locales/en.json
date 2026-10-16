@@ -2609,31 +2609,32 @@
       "open": "See what was held",
       "title": "Held messages",
       "reading": "Reading…",
-      "wayIn": "Question to the internet",
-      "wayOut": "Web answer",
-      "fromYou": "A note from you to {{to}}",
-      "fromApp": "A message from the app to {{to}}",
-      "question": "{{from}}'s question to {{to}}",
-      "answer": "{{from}}'s answer to {{to}}",
+      "head": {
+        "notes": "{{research}}'s notes were not added to the team's shared knowledge",
+        "officeOpen": "The app's \"office is open\" reminder to {{research}} was not sent",
+        "you": "Your note to {{research}} was not sent",
+        "app": "A message from the app to {{research}} was not sent",
+        "member": "{{from}}'s question to {{research}} was not sent",
+        "michael": "{{godName}}'s question to {{research}} was not sent",
+        "answer": "{{research}}'s answer to {{to}} was not delivered",
+        "answerToMichael": "{{research}}'s answer to {{godName}} was not delivered"
+      },
       "why": {
-        "no-answer": "The privacy check got no answer.",
-        "unreadable": "The privacy check's answer could not be read.",
-        "too-long": "Too long to check.",
-        "settings": "Your privacy settings could not be read.",
-        "failed": "The privacy check failed.",
-        "no-layer": "The privacy check was not running."
+        "checkDown": "The privacy check couldn't run, so it was held instead of going out unchecked.",
+        "tooLong": "It was too long for the privacy check, so it was held instead of going out unchecked.",
+        "detail": "What the check reported: {{error}}"
       },
-      "told": {
-        "sender+michael": "The sender and {{godName}} were told.",
-        "sender": "The sender was told.",
-        "michael": "{{godName}} was told.",
-        "recipient+michael": "The team member waiting for it and {{godName}} were told.",
-        "recipient": "The team member waiting for it was told.",
-        "nobody": "Nobody was told: they are checked again the next time {{research}} starts."
+      "next": {
+        "notes": "They are checked again the next time {{research}} starts. Nothing for you to do.",
+        "officeOpen": "Nothing for you to do.",
+        "you": "{{godName}} was told. Send it again if it still matters.",
+        "app": "{{godName}} was told. Nothing for you to do.",
+        "member": "{{from}} and {{godName}} were told, and {{from}} can send it again.",
+        "michael": "{{godName}} was told and can send it again.",
+        "answer": "{{to}} and {{godName}} were told, and {{to}} can ask again.",
+        "answerToMichael": "{{godName}} was told and can ask again."
       },
-      "notListed": "{{count}} more counted before details were kept, or not saved.",
-      "wayNotes": "Notes for the team's memory",
-      "notes": "{{from}}'s notes for the team's shared memory"
+      "earlier": "{{count}} earlier, from before this list kept details."
     }
   }
 }

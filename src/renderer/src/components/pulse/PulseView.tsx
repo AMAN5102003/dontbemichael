@@ -18,6 +18,7 @@ import type { Advice } from '@shared/teamAdvice';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
 import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
 import { HELD_TO_MEMORY, type HeldRow } from '@shared/heldRecord';
+import { OFFICE_OPEN_SUBJECT } from '@shared/officeOpen';
 import { useStore } from '@/store/store';
 import { useAppTheme } from '@/design/theme';
 import { family } from '@/scene/studio/theme';
@@ -618,15 +619,23 @@ function HeldDetail({ from, to, count, onClose }: { from: string; to: string; co
     return () => { live = false; };
   }, [from, to]);
   const when = (at: number): string => new Date(at).toLocaleString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
-  const who = (r: HeldRow): string => {
-    const toName = r.toName ?? r.to;
-    if (r.to === HELD_TO_MEMORY) return t('pulse.held.notes', { from: r.fromName ?? r.from });
-    if (r.way === 'out') return t('pulse.held.answer', { from: r.fromName ?? r.from, to: toName });
-    if (r.from === 'human') return t('pulse.held.fromYou', { to: toName });
-    if (r.from === 'system') return t('pulse.held.fromApp', { to: toName });
-    return t('pulse.held.question', { from: r.fromName ?? r.from, to: toName });
+  // Each row in the owner's words (owner, 2026-10-16: the first list "made no
+  // sense"): what was held, why in one sentence, and what happens next. The
+  // check's own report sits behind an (i).
+  const say = (r: HeldRow): { head: string; what: string; why: string; next: string } => {
+    const research = r.way === 'in' ? r.toName ?? r.to : r.fromName ?? r.from;
+    const from = r.fromName ?? r.from;
+    const to = r.toName ?? r.to;
+    const notes = r.to === HELD_TO_MEMORY;
+    const officeOpen = r.way === 'in' && r.from === 'human' && r.subject === OFFICE_OPEN_SUBJECT;
+    const kind = notes ? 'notes' : officeOpen ? 'officeOpen' : r.way === 'out' ? (r.told === 'recipient' ? 'answerToMichael' : 'answer')
+      : r.from === 'human' ? 'you' : r.from === 'system' ? 'app' : r.told === 'sender' ? 'michael' : 'member';
+    const head = t(`pulse.held.head.${kind}`, { research, from, to });
+    // A file or the app's own reminder has nothing the owner needs to read.
+    const what = notes || officeOpen ? '' : [r.subject ? `\u201c${r.subject}\u201d` : '', r.opening].filter(Boolean).join(' ');
+    return { head, what, why: t(r.why === 'too-long' ? 'pulse.held.why.tooLong' : 'pulse.held.why.checkDown'), next: t(`pulse.held.next.${kind}`, { research, from, to }) };
   };
-  const missing = rows ? Math.max(0, count - rows.length) : 0;
+  const earlier = rows ? Math.max(0, count - rows.length) : 0;
   return (
     <div {...backdrop} style={{ position: 'fixed', inset: 0, background: 'var(--cth-backdrop)', zIndex: 300, display: 'grid', placeItems: 'start center', paddingTop: 80 }}>
       <div ref={ref} role="dialog" aria-modal aria-label={t('pulse.held.title')} style={{ width: 600, maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100vh - 140px)', overflow: 'auto', ...card, borderRadius: 'var(--cth-r-2xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-lg)', padding: '18px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -637,20 +646,23 @@ function HeldDetail({ from, to, count, onClose }: { from: string; to: string; co
         </div>
         {rows === null ? <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.reading')}</div> : (
           <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {rows.map((r, i) => (
-              <div key={`${r.at}-${i}`} role="listitem" style={{ background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-                  <span style={{ ...label }}>{t(r.to === HELD_TO_MEMORY ? 'pulse.held.wayNotes' : r.way === 'in' ? 'pulse.held.wayIn' : 'pulse.held.wayOut')}</span>
-                  <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto' }}>{when(r.at)}</span>
+            {rows.map((r, i) => {
+              const x = say(r);
+              return (
+                <div key={`${r.at}-${i}`} role="listitem" style={{ background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>{x.head}</span>
+                    <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+                  </div>
+                  {x.what && <div style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{x.what}</div>}
+                  <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>
+                    {x.why}{r.error && <> <InfoTip text={t('pulse.held.why.detail', { error: r.error })} /></>}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{x.next}</div>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--cth-ink-2)' }}>{who(r)}</div>
-                {r.subject && <div style={{ fontSize: 13, fontWeight: 600 }}>{r.subject}</div>}
-                {r.opening && <div style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px' }}>{r.opening}</div>}
-                <div style={{ fontSize: 11, color: 'var(--cth-amber-text)', lineHeight: '15px' }}>{t(`pulse.held.why.${r.why}`)}{r.error ? ` (${r.error})` : ''}</div>
-                <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t(`pulse.held.told.${r.told}`, { research: r.fromName ?? r.from })}</div>
-              </div>
-            ))}
-            {missing > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.notListed', { count: missing })}</div>}
+              );
+            })}
+            {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.earlier', { count: earlier })}</div>}
           </div>
         )}
       </div>

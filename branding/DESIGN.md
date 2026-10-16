@@ -1168,10 +1168,13 @@ half written message survives the switch.
   "Nothing went out unchecked"), and steps stopped by the owner's settings by gate. A held
   message is never counted as protection. Above zero, the held tile carries "See what was held"
   (12/600, `amber` text), which opens a list in the member detail's frame (owner, 2026-10-16):
-  per held message a `card-2` row with which way (a question to the internet or a web answer)
-  and when, who to whom, the subject (13/600) and the first 300 characters, why the check
-  could not run in `amber` text, and who was told in `ink-3`; when the count is above the rows,
-  one line says how many more were counted before details were kept, or not saved.
+  per held message a `card-2` row in the owner's words (owner, 2026-10-16): a 13/600 headline
+  saying what was not sent ("Pete's notes were not added to the team's shared knowledge",
+  "Pam's question to Pete was not sent") with the time at the end, the subject in quotes and
+  the start of the message (two lines at most; none for Pete's notes or the app's own
+  reminder), one `amber` sentence on why with the check's own report behind an (i), and one
+  `ink-3` sentence on what happens next and whether the owner needs to do anything. When the
+  count is above the rows, one line says how many are earlier, from before the list kept details.
 - **One row of four tiles** under Kept safe (owner, 2026-10-15), each only as big as what it
   shows, 12/14 px padding: What the team learned (the period's new notes as one mono 24 px number, a bar and legend by
   source: `green` your answers, `ink-4` on the job, `indigo` Michael; under it the notes and
