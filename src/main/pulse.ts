@@ -4,7 +4,8 @@
  * ways to save. Nothing here changes a schedule or a model on its own: apply,
  * undo and dismiss run only from the owner's click (memory 2026-10-10, D10).
  *
- *   view ─ pulse:snapshot ─► snapshot() ─► pulseSnapshot + adviceFor + savings + headroom
+ *   view ─ pulse:snapshot(period, compare) ─► snapshot() ─► pulseSnapshot (the period, and with
+ *                                          Compare the span before) + adviceFor + savings + headroom
  *   view ─ pulse:apply    ─► apply()    ─► schedule: compare and set in config
  *                                          model: checked here, set by the renderer's roster
  *   view ─ pulse:undo / pulse:dismiss
@@ -12,13 +13,13 @@
 import type Database from 'better-sqlite3';
 import type { ScheduledMission } from '../shared/missions';
 import {
-  dayKey, keptAsIs, measuredSaving, periodRange, planHeadroom, pulseSnapshot,
-  type AskFact, type Period, type PlanReading
+  compareFrom, dayKey, keptAsIs, measuredSaving, periodRange, planHeadroom, previousRange, pulseSnapshot,
+  type AskFact, type DayRange, type Period, type PlanReading, type PulseSnapshot
 } from '../shared/teamPerformance';
 import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, type Advice, type Dismissal, type LadderModel, type MissionFact } from '../shared/teamAdvice';
-import { keptSafe, REFUSAL_GATES } from '../shared/pulseSafety';
+import { keptSafe, type KeptSafe } from '../shared/pulseSafety';
 import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan';
-import { learning, type Learning, type NoteFact } from '../shared/teamLearning';
+import { learning, type NoteFact } from '../shared/teamLearning';
 import type { TelemetryStore } from './telemetryStore';
 import type { TelemetryProcessor } from './telemetryProcessor';
 
@@ -46,7 +47,7 @@ export interface PulseDeps {
 }
 
 export type { AppliedChange, PulseView } from '../shared/pulseView';
-import type { AppliedChange, PulseView, PulseWeeks } from '../shared/pulseView';
+import type { AppliedChange, PulseView } from '../shared/pulseView';
 
 /** Window lengths by Claude Code's rate limit names. */
 function windowMs(name: string): number {
@@ -130,37 +131,48 @@ export class PulseService {
     }).filter((a) => !recent.has(a.id));
   }
 
-  snapshot(period: Period): PulseView {
+  snapshot(period: Period, compare = false): PulseView {
     const office = this.d.office();
     const now = this.now();
     const billing = this.d.billing();
     const godId = this.d.godId();
     const db = this.d.db();
-    const empty = pulseSnapshot({ period, now, days: [], cards: [], decisions: [], asks: [], members: [] });
-    if (!office || !db) return { available: false, billing, collectingSince: null, liveSince: null, snapshot: empty, advice: [], adviceFrom: null, saved: { state: 'none' }, headroom: null, applied: [], trend: {}, keptSafe: keptSafe([]), learning: learning({ now, notes: [], procedures: {}, asks: [], turns: [] }), plan: null, weeks: null };
     const range = periodRange(period, now);
-    const from = Math.min(range.fromMs, now - ADVICE_WINDOW_MS);
-    const ids = this.d.members().map((m) => m.id);
-    const raw = pulseSnapshot({
-      period, now,
-      days: this.d.processor.days(office, dayKey(from)),
-      cards: this.d.processor.cards(office, from),
-      decisions: this.d.processor.decisions(office, from),
-      asks: this.asks(),
-      members: ids,
-      sentAsWritten: this.d.processor.decisions(office, range.fromMs).filter((x) => x.decision === 'approve' && x.at <= range.toMs).length,
-      gapDays: this.d.store.failureDays(office),
-      ...(godId ? { michael: { agentId: godId, ...this.d.processor.michaelCounts(office, godId, range.fromMs) } } : {})
-    });
-    // On a plan, each member's dollars are their part of the plan's real cost
-    // for the period, by share of the work (owner, 2026-10-15).
-    const price = billing === 'account' ? this.planPrice() : null;
-    const periodCost = price ? planCostFor(price.monthly, range.fromMs, range.toMs, now) : 0;
-    const snapshot = price && raw.totalUsd > 0 ? scaleSnapshot(raw, periodCost / raw.totalUsd) : raw;
-    const plan = price ? { label: price.label, monthly: price.monthly, source: price.source, periodCost, payPerUse: raw.totalUsd } : null;
+    const empty = pulseSnapshot({ period, now, days: [], cards: [], decisions: [], asks: [], members: [] });
+    if (!office || !db) return { available: false, billing, collectingSince: null, liveSince: null, snapshot: empty, advice: [], adviceFrom: null, saved: { state: 'none' }, headroom: null, applied: [], trend: {}, keptSafe: keptSafe([]), learning: learning({ notes: [], procedures: {}, asks: [], turns: [], range }), plan: null, compare: null, compareReady: false, compareFrom: null };
     const first = this.d.processor.firstDay(office);
-    // Recommendations count from live recording, never from a backfill.
+    // Recommendations and Compare count from live recording, never from a backfill.
     const live = this.d.processor.firstDay(office, true);
+    const readyFrom = live ? compareFrom(period, live) : null;
+    const compareReady = readyFrom !== null && dayKey(now) >= readyFrom;
+    const before = compare && compareReady ? previousRange(period, now) : null;
+    const from = Math.min(range.fromMs, before?.fromMs ?? range.fromMs, now - ADVICE_WINDOW_MS);
+    const ids = this.d.members().map((m) => m.id);
+    const days = this.d.processor.days(office, dayKey(from));
+    const cards = this.d.processor.cards(office, from);
+    const decisions = this.d.processor.decisions(office, from);
+    const asks = this.asks();
+    const gapDays = this.d.store.failureDays(office);
+    // On a plan, each member's dollars are their part of the plan's real cost
+    // for the period, split by share of the work (owner, 2026-10-15).
+    const price = billing === 'account' ? this.planPrice() : null;
+    const measure = (r: DayRange): { snapshot: PulseSnapshot; keptSafe: KeptSafe; periodCost: number; payPerUse: number } => {
+      const raw = pulseSnapshot({
+        period, now, range: r, days, cards, decisions, asks, members: ids, gapDays,
+        sentAsWritten: decisions.filter((x) => x.decision === 'approve' && x.at >= r.fromMs && x.at <= r.toMs).length,
+        ...(godId ? { michael: { agentId: godId, ...this.d.processor.michaelCounts(office, godId, r.fromMs, r.toMs) } } : {})
+      });
+      const periodCost = price ? planCostFor(price.monthly, r.fromMs, r.toMs, now) : 0;
+      return {
+        snapshot: price && raw.totalUsd > 0 ? scaleSnapshot(raw, periodCost / raw.totalUsd) : raw,
+        keptSafe: keptSafe(this.d.processor.safetyRows(office, r.from, r.to)),
+        periodCost,
+        payPerUse: raw.totalUsd
+      };
+    };
+    const cur = measure(range);
+    const prev = before ? measure(before) : null;
+    const plan = price ? { label: price.label, monthly: price.monthly, source: price.source, periodCost: cur.periodCost, payPerUse: cur.payPerUse } : null;
     const firstMs = live ? new Date(`${live}T00:00:00`).getTime() : now;
     const adviceReady = now - firstMs >= ADVICE_WINDOW_MS;
     const applied = this.appliedChanges(office);
@@ -169,73 +181,42 @@ export class PulseService {
       billing,
       collectingSince: first,
       liveSince: live,
-      snapshot,
+      snapshot: cur.snapshot,
       advice: adviceReady ? visibleAdvice(this.allAdvice(office), this.dismissed(office), now) : [],
       adviceFrom: adviceReady ? null : dayKey(firstMs + ADVICE_WINDOW_MS),
       saved: this.saved(office, applied),
       headroom: billing === 'account' ? planHeadroom(this.reading) : null,
       applied,
       trend: this.trend(office, ids, price),
-      keptSafe: keptSafe(this.d.processor.safetyRows(office, range.from, range.to)),
-      learning: this.learning(office),
+      keptSafe: cur.keptSafe,
+      learning: this.learning(office, range, before, asks),
       plan,
-      weeks: period === '4-weeks' ? this.weeks(office, range.fromMs, price) : null
+      compare: prev ? { snapshot: prev.snapshot, keptSafe: prev.keptSafe } : null,
+      compareReady,
+      compareFrom: readyFrom
     };
-  }
-
-  /** Last 4 weeks, week by week, for the tiles' trend charts (owner, 2026-10-15). */
-  private weeks(office: string, startMs: number, price: PlanPrice | null): PulseWeeks {
-    const now = this.now();
-    const week = 7 * 86_400_000;
-    const starts = [0, 1, 2, 3].map((w) => startMs + w * week);
-    const keys = starts.map((t) => dayKey(t));
-    const days = this.d.processor.days(office, keys[0]);
-    const asks = this.asks();
-    const out: PulseWeeks = { from: keys, emails: [], sent: [], tasks: [], checks: [], usd: [], asks: [], away: [], toInternet: [], cleaned: [], held: [], rules: [] };
-    starts.forEach((t0, w) => {
-      const from = keys[w];
-      const to = dayKey(t0 + 6 * 86_400_000);
-      const mine = days.filter((d) => d.day >= from && d.day <= to);
-      const sum = (f: (d: typeof mine[number]) => number): number => mine.reduce((s, d) => s + f(d), 0);
-      const pieces = sum((d) => d.emails + d.sent + d.tasks + d.checks);
-      const value = sum((d) => d.usd);
-      out.emails.push(sum((d) => d.emails));
-      out.sent.push(sum((d) => d.sent));
-      out.tasks.push(sum((d) => d.tasks));
-      out.checks.push(sum((d) => d.checks + d.checksNothing));
-      out.usd.push(price && value > 0 ? planCostFor(price.monthly, t0, t0 + week - 1, now) : value);
-      out.asks.push(asks.filter((a) => a.askedAt >= t0 && a.askedAt < t0 + week).length);
-      out.away.push(pieces > 0 ? sum((d) => d.awayPieces) / pieces : null);
-      const k = keptSafe(this.d.processor.safetyRows(office, from, to));
-      out.toInternet.push(k.toInternet.pass + k.toInternet.clean + k.toInternet.stop);
-      out.cleaned.push(k.webAnswers.clean);
-      out.held.push(k.held);
-      out.rules.push(REFUSAL_GATES.reduce((s, g) => s + (k.rules[g] ?? 0), 0));
-    });
-    return out;
   }
 
   private planPrice(): PlanPrice | null {
     try { return this.d.plan(); } catch { return null; }
   }
 
-  /** Learning: eight weeks of notes and of questions per request; the view picks the period's. */
-  private learning(office: string): Learning {
-    const now = this.now();
-    // Eight weeks, so the Last 4 weeks period has four before it to compare with.
-    const from = dayKey(periodRange('4-weeks', now).fromMs - 28 * 86_400_000);
+  /** Learning for the period and, with Compare, the span before. */
+  private learning(office: string, range: DayRange, before: DayRange | null, asks: AskFact[]): PulseView['learning'] {
     const turns = new Map<string, number>();
-    for (const d of this.d.processor.days(office, from)) turns.set(d.day, (turns.get(d.day) ?? 0) + (d.turns ?? 0));
+    for (const d of this.d.processor.days(office, before && before.from < range.from ? before.from : range.from)) turns.set(d.day, (turns.get(d.day) ?? 0) + (d.turns ?? 0));
     let mem: { notes: NoteFact[]; procedures: Record<string, number> } = { notes: [], procedures: {} };
     try { mem = this.d.memory(); } catch { /* memory unreadable: the row shows what it has */ }
-    return learning({ now, notes: mem.notes, procedures: mem.procedures, asks: this.asks(), turns: [...turns].map(([day, t]) => ({ day, turns: t })), count: 8 });
+    return learning({ notes: mem.notes, procedures: mem.procedures, asks, turns: [...turns].map(([day, t]) => ({ day, turns: t })), range, previous: before });
   }
 
   /** Value per week, last four weeks (this week last), per member; on a plan,
    *  each week's part of the plan's cost for that week. */
   private trend(office: string, ids: string[], price: PlanPrice | null): Record<string, number[]> {
     const now = this.now();
-    const start = periodRange('4-weeks', now).fromMs;
+    const monday = new Date(periodRange('this-week', now).fromMs);
+    monday.setDate(monday.getDate() - 21);
+    const start = monday.getTime();
     const days = this.d.processor.days(office, dayKey(start));
     const out: Record<string, number[]> = {};
     for (const id of ids) out[id] = [0, 0, 0, 0];

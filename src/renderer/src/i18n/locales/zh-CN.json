@@ -2482,10 +2482,24 @@
     "awayLine": "的工作在那时完成",
     "period": "时段",
     "periods": {
+      "today": "今天",
       "this-week": "本周",
-      "last-week": "上周",
-      "4-weeks": "最近 4 周"
+      "this-month": "本月"
     },
+    "compare": "对比",
+    "compareWith": {
+      "today": "与昨天对比",
+      "this-week": "与上周对比",
+      "this-month": "与上月对比"
+    },
+    "compareBefore": {
+      "today": "昨天",
+      "this-week": "上周",
+      "this-month": "上月"
+    },
+    "compareTip": "两根柱子统计的是到目前为止相同的天数。",
+    "compareNotReady": "数量太少，暂无法比较。{{period}}从{{day}}起可以对比。",
+    "daySpan": "{{from}}至{{to}}",
     "collectingSince": "自 {{day}} 起收集",
     "tooFew": "数量太少，暂无法比较",
     "per": {
@@ -2551,21 +2565,13 @@
       "questionsSub": "每 100 个团队处理的请求",
       "learned": "团队学到的内容",
       "sub": {
+        "today": "今天新笔记",
         "this-week": "本周新笔记",
-        "last-week": "上周新笔记",
-        "4-weeks": "最近 4 周新笔记"
+        "this-month": "本月新笔记"
       },
       "inAll": "共 {{notes}} 条笔记和 {{procedures}} 份书面工作方法",
       "tooFewRate": "请求太少，暂时无法判断。",
-      "counts": "{{turns}} 个请求中有 {{asks}} 个问题",
-      "down": "低于{{before}}的 {{from}}",
-      "up": "高于{{before}}的 {{from}}",
-      "same": "与{{before}}持平",
-      "before": {
-        "this-week": "前一周",
-        "last-week": "前一周",
-        "4-weeks": "前 4 周"
-      }
+      "counts": "{{turns}} 个请求中有 {{asks}} 个问题"
     },
     "work": {
       "title": "团队工作情况",
@@ -2598,7 +2604,6 @@
       "memberTip": "该成员在本期按其工作份额分摊的套餐费用。",
       "ofPlan": "来自你的 {{plan}}（每月 {{monthly}}）"
     },
-    "questionsAnswered": "个问题，平均 {{time}} 内回答",
-    "asksBefore": "{{before}}：{{n}} 个"
+    "questionsAnswered": "个问题，平均 {{time}} 内回答"
   }
 }

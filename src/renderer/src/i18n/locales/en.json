@@ -2482,10 +2482,24 @@
     "awayLine": "of the work happened then",
     "period": "Period",
     "periods": {
+      "today": "Today",
       "this-week": "This week",
-      "last-week": "Last week",
-      "4-weeks": "Last 4 weeks"
+      "this-month": "This month"
     },
+    "compare": "Compare",
+    "compareWith": {
+      "today": "Compare with yesterday",
+      "this-week": "Compare with last week",
+      "this-month": "Compare with last month"
+    },
+    "compareBefore": {
+      "today": "Yesterday",
+      "this-week": "Last week",
+      "this-month": "Last month"
+    },
+    "compareTip": "Both bars count the same days so far.",
+    "compareNotReady": "Too few to compare yet. {{period}} can compare from {{day}}.",
+    "daySpan": "{{from}} to {{to}}",
     "collectingSince": "Collecting since {{day}}",
     "tooFew": "Too few to compare yet",
     "per": {
@@ -2551,21 +2565,13 @@
       "questionsSub": "per 100 requests the team took",
       "learned": "What the team learned",
       "sub": {
+        "today": "new notes today",
         "this-week": "new notes this week",
-        "last-week": "new notes last week",
-        "4-weeks": "new notes in the last 4 weeks"
+        "this-month": "new notes this month"
       },
       "inAll": "{{notes}} notes and {{procedures}} written ways of working in all",
       "tooFewRate": "Too few requests to tell yet.",
-      "counts": "{{asks}} questions in {{turns}} requests",
-      "down": "down from {{from}} {{before}}",
-      "up": "up from {{from}} {{before}}",
-      "same": "same as {{before}}",
-      "before": {
-        "this-week": "the week before",
-        "last-week": "the week before",
-        "4-weeks": "the 4 weeks before"
-      }
+      "counts": "{{asks}} questions in {{turns}} requests"
     },
     "work": {
       "title": "Team at work",
@@ -2598,7 +2604,6 @@
       "memberTip": "This member's part of your plan's cost for the period, by their share of the work.",
       "ofPlan": "of your {{plan}} ({{monthly}} a month)"
     },
-    "questionsAnswered": "questions, answered in {{time}} on average",
-    "asksBefore": "{{n}} {{before}}"
+    "questionsAnswered": "questions, answered in {{time}} on average"
   }
 }

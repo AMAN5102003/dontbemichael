@@ -92,30 +92,51 @@ test('every pulse string is in all three locales, and the plan ring shows only o
   const keys = (o, p = '') => Object.entries(o).flatMap(([k, v]) => (typeof v === 'object' ? keys(v, `${p}${k}.`) : [`${p}${k}`]));
   const want = keys(en.pulse).sort();
   for (const loc of ['ar', 'zh-CN']) assert.deepEqual(keys(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).pulse).sort(), want, loc);
+  // Compare's copy (owner, 2026-10-16): every period has its words, the old periods' copy is gone, no dashes.
+  for (const k of ['periods', 'compareWith', 'compareBefore']) assert.deepEqual(Object.keys(en.pulse[k]), ['today', 'this-week', 'this-month'], k);
+  assert.deepEqual(Object.keys(en.pulse.learning.sub), ['today', 'this-week', 'this-month']);
+  assert.ok(!('asksBefore' in en.pulse) && !('before' in en.pulse.learning) && !('down' in en.pulse.learning), 'no copy for the before lines');
+  assert.equal(en.pulse.compare, 'Compare');
+  assert.equal(en.pulse.compareTip, 'Both bars count the same days so far.');
+  for (const v of keys(en.pulse).map((k) => k.split('.').reduce((o, x) => o[x], en.pulse))) assert.doesNotMatch(v, /[\u2013\u2014]| - /, v);
   assert.match(read('src/main/pulse.ts'), /headroom: billing === 'account' \? planHeadroom\(this\.reading\) : null/);
 });
 
-test('Learning follows the period: the period\'s new notes and question rate, against the same span before', () => {
-  // Value: protects=the owner\'s 2026-10-15 ask (a tile under This week shows this week); fails_when=a Learning tile shows all time or a fixed four weeks under a period, or Last 4 weeks compares with one week; why_new=owner ask; seam=source pins; no_claim=pixel layout
-  assert.match(view, /const span = s\.period === '4-weeks' \? 4 : 1;/);
-  assert.match(view, /const off = s\.period === 'last-week' \? 1 : 0;/);
+test('Pulse offers Today, This week and This month from one list, main and the select alike', () => {
+  // Value: protects=D5 and the shared list (owner, 2026-10-16); fails_when=the select or main keeps its own list and a new period silently shows This week; why_new=three hand kept copies became one; seam=source pins; no_claim=IPC at run time
+  assert.match(view, /import \{ dayKey, teamAtWork, PERIODS,/);
+  assert.match(view, /\{PERIODS\.map\(\(p\) => <option key=\{p\} value=\{p\}>\{t\(`pulse\.periods\.\$\{p\}`\)\}<\/option>\)\}/);
+  assert.match(view, /PERIODS\.includes\(v as Period\) \? \(v as Period\) : 'this-week'/, 'a stored Last week or Last 4 weeks opens This week');
+  const main = read('src/main/index.ts');
+  assert.doesNotMatch(main, /PULSE_PERIODS/);
+  assert.match(main, /pulse\.snapshot\(isPeriod\(period\) \? period : 'this-week', compare === true\)/, 'a bad period is This week, anything but true is off');
   assert.match(view, /t\(`pulse\.learning\.sub\.\$\{s\.period\}`\)/);
-  assert.doesNotMatch(view, /function RateLine|remembersSub/, 'no all time chart');
-  assert.equal(en.pulse.learning.sub['this-week'], 'new notes this week');
-  assert.match(read('src/main/pulse.ts'), /count: 8 \}\);/, 'eight weeks, so four can be compared with four');
+  assert.doesNotMatch(view, /const span = |const off = |learn\.weeks|view\.weeks|<WeekLine /, 'no week slicing in the screen');
 });
 
-test('on Last 4 weeks every top tile shows its week by week trend', () => {
-  // Value: protects=the owner\'s 2026-10-15 ask (trends on multi week periods); fails_when=a tile drops its weekly chart; why_new=owner ask; seam=source pins; no_claim=pixel layout
-  assert.equal((view.match(/<WeekBars /g) || []).length, 8, 'got done, four Kept safe, learned, spent, your time');
-  assert.equal((view.match(/<WeekLine /g) || []).length, 2, 'questions per 100 and while you were away');
-  assert.match(view, /const wks = view\.weeks \?\? null;/);
+test('Compare: the app\'s switch reading Compare, remembered, kept in place and greyed while a period cannot compare, and two bars on every top tile', () => {
+  // Value: protects=design D4 to D8 and eng D3, D6 (owner, 2026-10-16); fails_when=the switch loses the owner's choice when not ready, looks busy, a tile drops its bars, before lines return, or Pulse misses midnight; why_new=new screen behavior; seam=source pins; no_claim=pixel layout (live check)
+  assert.match(view, /const LS_COMPARE = 'cth\.pulseCompare';/);
+  assert.match(view, /<Toggle\s+on=\{compare\}/);
+  assert.match(view, /onLabel=\{t\('pulse\.compare'\)\}\s+offLabel=\{t\('pulse\.compare'\)\}\s+label=\{t\(`pulse\.compareWith\.\$\{period\}`\)\}/);
+  assert.match(view, /unavailable=\{!!view\?\.available && !view\.compareReady\}/);
+  assert.match(view, /window\.cth\.pulseSnapshot\(period, compare\)/);
+  const ui = read('src/renderer/src/components/triggers/ui.tsx');
+  assert.match(ui, /aria-disabled=\{unavailable \|\| undefined\}/);
+  assert.match(ui, /onClick=\{unavailable \? undefined : onClick\}/);
+  assert.match(ui, /cursor: disabled \? 'progress' : unavailable \? 'default' : 'pointer'/, 'not ready is not busy');
+  assert.equal((view.match(/\bpair\(/g) || []).length, 9, 'got done (one per tile), four Kept safe, questions, spent, your time, while away');
+  assert.equal((view.match(/<WeekBars before /g) || []).length, 2, 'the pair helper and the stacked Learning bars');
+  assert.match(view, /outline: '1px solid var\(--cth-ink-3\)'/, 'the earlier bar\'s outline (design D8)');
+  assert.match(view, /\{total !== null && \(/, 'a missing value draws no bar (eng O2)');
+  assert.doesNotMatch(view, /asksBefore|learning\.before|learning\.down/, 'no before lines with Compare off');
+  assert.match(view, /next\.setHours\(24, 0, 1, 0\);/, 'reload at local midnight');
+  assert.match(view, /return \(\) => clearTimeout\(timer\);/);
 });
 
 test('Spent and Your time fill their tiles: title at the top, plan use or what it means at the foot', () => {
-  // Value: protects=the owner\'s 2026-10-15 notes (title at the top, no empty foot); fails_when=the Spent tile centers its title, plan use leaves the foot, or Your time loses its comparison; why_new=owner notes; seam=source pins; no_claim=pixel layout
+  // Value: protects=the owner\'s 2026-10-15 notes (title at the top, no empty foot); fails_when=the Spent tile centers its title or plan use leaves the foot; why_new=owner notes; seam=source pins; no_claim=pixel layout
   const spent = view.slice(view.indexOf("{t('pulse.whereMoneyWent')}") - 400, view.indexOf("{/* Your time and while you were away"));
   assert.match(spent, /\.\.\.tight, justifyContent: 'space-between'/);
   assert.match(spent, /width: `\$\{Math\.min\(100, view\.headroom\.usedPct\)\}%`/, 'plan use is a bar at the foot');
-  assert.match(view, /t\('pulse\.asksBefore', \{ n: prev\.asks, before: t\(`pulse\.learning\.before\.\$\{s\.period\}`\) \}\)/);
 });

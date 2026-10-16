@@ -74,7 +74,7 @@ import { PulseService } from './pulse';
 import { knownPrice } from './pricing';
 import bakedModelCatalog from '../shared/modelCatalog.json';
 import { parseModelCatalog, type ModelCatalog } from '../shared/modelCatalogPayload';
-import type { Period } from '../shared/teamPerformance';
+import { isPeriod } from '../shared/teamPerformance';
 import { makeResearchGoal } from './researchGoal';
 import { ownResearchDir, readResearchNotes } from './researchNotes';
 import { backfilled, runBackfill } from './pulseBackfill';
@@ -6513,15 +6513,14 @@ ipcMain.handle('missions:upsert', (_evt, mission: unknown): MissionOpResult => {
   return applyMissions((list) => upsertMission(list, clean, Date.now()));
 });
 // ─── IPC: Pulse (docs/designs/team-performance.md) ───────────────────────────
-const PULSE_PERIODS: readonly string[] = ['this-week', 'last-week', '4-weeks'];
 // The detected Claude plan and its list price, for Settings > Agents.
 ipcMain.handle('claude:plan', () => {
   const id = readClaudePlan();
   return { label: id ? PLAN_LABELS[id] : null, listMonthly: id ? PLAN_PRICES[id] : null };
 });
-ipcMain.handle('pulse:snapshot', (_evt, period: unknown) => {
+ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
   try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) pulseProcessor.tick(office); } catch (e) { console.error('[pulse] snapshot tick', e); }
-  return pulse.snapshot(PULSE_PERIODS.includes(String(period)) ? (period as Period) : 'this-week');
+  return pulse.snapshot(isPeriod(period) ? period : 'this-week', compare === true);
 });
 ipcMain.handle('pulse:apply', (_evt, id: unknown, expected: unknown) => (typeof id === 'string' ? pulse.apply(id, expected) : { ok: false, error: 'stale' }));
 ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from: unknown, to: unknown) =>

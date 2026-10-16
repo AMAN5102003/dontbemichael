@@ -122,11 +122,13 @@ moving, and brings you only the decisions that need you.
   done and who did it; Kept safe, what the trust layer kept off the internet, the web answers it
   cleaned of instructions to AI agents, anything held because it could not be checked, and the
   steps your settings stopped; Learning, what the team learned in the period and whether it asks
-  you less than before; your plan use and your time; and Team at work, how busy each member is next to the
+  you less; your plan use and your time; and Team at work, how busy each member is next to the
   others, and what their work costs. On a Claude plan, costs are the plan's real price
   (found in your Claude account, or the price you set in Settings) split by each member's share
-  of the work, with the pay per use figure one click away. It fills in the weeks before
-  it started from what the office already keeps, so it never starts at zero.
+  of the work, with the pay per use figure one click away. Pick Today, This week or This month,
+  and turn on Compare to see each figure next to the same days of the day, week or month
+  before. It fills in the weeks before it started from what the office already keeps, so it
+  never starts at zero.
 
 ### 8. Built for small business owners
 - Setup by kind of business: restaurant and food, retail, professional services, home services,

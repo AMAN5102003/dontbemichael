@@ -1139,8 +1139,13 @@ the whole window: no right column and no bottom bar (owner, 2026-10-15). Opening
 or a person goes back to the office, as from Tasks; the bottom bar stays mounted, hidden, so a
 half written message survives the switch.
 
-- Header: "Pulse" `t-view`, a period select (This week, Last week, Last 4 weeks; weeks start
-  Monday; remembered), "Collecting since" in `t-meta` `ink-3`. A first start reads the eight
+- Header: "Pulse" `t-view`, a period select (Today, This week, This month; weeks start
+  Monday; remembered), then **Compare** (owner, 2026-10-16): the app's switch (§7.12, green
+  when on) reading "Compare", spoken "Compare with yesterday / last week / last month", with an
+  (i): "Both bars count the same days so far." Remembered. While the span before starts before
+  the first live recorded day, it keeps the owner's position, greyed and not clickable, and its
+  (i) says "Too few to compare yet. This month can compare from 1 December." Then "Collecting
+  since" in `t-meta` `ink-3`. A first start reads the eight
   weeks before it from the office log, members' sessions and the cost ledger, so Pulse never
   starts at zero; recommendations still count from live recording.
 - **Recommendations** first (owner, 2026-10-15): up to three recommendation cards in `amber` soft with a 1 px `amber`
@@ -1166,12 +1171,12 @@ half written message survives the switch.
   shows, 12/14 px padding: What the team learned (the period's new notes as one mono 24 px number, a bar and legend by
   source: `green` your answers, `ink-4` on the job, `indigo` Michael; under it the notes and
   written ways of working held in all), Questions to you per 100 requests in the period (one
-  number, then up, down or same against the same span just before; under 20 requests, too few
-  to tell), both following the period select (owner, 2026-10-15), Spent with plan use (a mono 24 px total with what it is beneath at the top;
+  number with its counts; under 20 requests, too few to tell), both following the period
+  select (owner, 2026-10-15), Spent with plan use (a mono 24 px total with what it is beneath at the top;
   plan use at the foot as a full width 8 px bar with its percent and reset day, on a Claude
   plan only, turning `amber` with a soft "Runs out around …" when the pace says so; who spent
   what is Team at work's job), and Your time with While you were away past a hairline (the
-  number at the top, what it means or how it compares with the period before at the foot).
+  number at the top, what it means at the foot).
   Each tile spreads its content top to bottom so none holds an empty foot. On a Claude plan with a known price
   (Settings > Agents, else the plan found in the owner's Claude account), every dollar on
   Pulse is a member's part of the plan's real cost for the days so far in the period, split by
@@ -1190,10 +1195,15 @@ half written message survives the switch.
   for its work" (twice the usual value per hour, with ten minutes of work and three peers at
   least). A row opens the member detail, an overlay like Task detail (§7.21): six facts in
   `card-2` boxes and a four week value bar.
-- **Trends on Last 4 weeks** (owner, 2026-10-15): every top tile adds its week by week
-  trend under its total: four small bars (value above, week below; stacked by source on What
-  the team learned; who did it bars give way to them) for counts and money, a small line for
-  rates (questions per 100, while you were away). A one week period shows none.
+- **Compare** (owner, 2026-10-16): with the switch on, every top tile shows two small bars
+  under its total, the span before and this one, named Yesterday and Today, Last week and This
+  week, Last month and This month. The span before runs up to the same day: all of yesterday;
+  last week's Monday to the same weekday; last month's 1st to the same date, capped at its last
+  day. The earlier bar is muted (`ink-4`, or the series color at 45%) with a 1 px `ink-3`
+  outline; this one is `ink-2` or the series color; the value sits above each in mono 10 px.
+  Bars take the place of who did it and of Kept safe's breakdown while Compare is on. A span
+  with too few requests for a rate draws no bar and reads "…". Team at work shows the period
+  only. With Compare off, no tile compares.
 - Layout by the window's width: 1100 px and wider, 4 a row and every Team at work column;
   760 to 1099, tiles 2 by 2; under 760, one
   column and Team at work with name, bar, hours and value. Coral is never used on Pulse. Every chart has an
@@ -1861,6 +1871,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-14 | Edit agent: a Danger zone under the engine with Delete, for anyone but Michael, his assistant and Pete; the one card besides Settings' Danger zone with the coral ring (§6.3, §7.26). |
 | 2026-10-15 | Ask me: options as rows to pick, with a Recommended tag, and several questions with a line each; picking never sends, Reply on its own row says what it sends, and any question may be left blank (§7.8). |
 | 2026-10-15 | Pulse, a view tab between Tasks and Who talks to whom that takes the whole window: recommendations, what got done, Kept safe, the row of four tiles, Team at work, and trends on Last 4 weeks (§5.2, §7.2, §7.6, §7.27). |
+| 2026-10-16 | Pulse: periods Today, This week, This month, and Compare, two bars per tile against the span before up to the same day, the switch kept in place while a period cannot compare yet; Last week and Last 4 weeks go (§7.27). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
 
 ---

@@ -313,10 +313,11 @@ export class TelemetryProcessor {
     return this.rows(office, ['mail-decision'], since).filter((r) => r.agentId).map((r) => ({ agentId: r.agentId!, decision: String(r.attrs?.decision) as MailDecisionKind, at: r.ts }));
   }
 
-  /** Requests Michael routed and cards he opened, since a time. */
-  michaelCounts(office: string, godId: string, since: number): { routed: number; cardsOpened: number } {
-    const routed = this.rows(office, ['message'], since).filter((r) => r.agentId === godId && r.attrs?.act === 'request').length;
-    const cardsOpened = this.rows(office, ['card-status'], since).filter((r) => r.attrs?.from === null).length;
+  /** Requests Michael routed and cards he opened between two times, so a past
+   *  span never counts later work (owner, 2026-10-16, D11). */
+  michaelCounts(office: string, godId: string, since: number, until = Infinity): { routed: number; cardsOpened: number } {
+    const routed = this.rows(office, ['message'], since).filter((r) => r.ts <= until && r.agentId === godId && r.attrs?.act === 'request').length;
+    const cardsOpened = this.rows(office, ['card-status'], since).filter((r) => r.ts <= until && r.attrs?.from === null).length;
     return { routed, cardsOpened };
   }
 

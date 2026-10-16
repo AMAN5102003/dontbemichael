@@ -189,7 +189,7 @@ function service(t, opts = {}) {
 test('Apply changes a schedule only if it still is what the advice saw; Undo restores it; Not now hides it', (t) => {
   // Value: protects=D10 apply and undo, compare and set, D13 dismiss; fails_when=a stale or double click overwrites a schedule, Undo restores the wrong value, or a dismissed card stays; why_new=new apply path; seam=none; no_claim=the Schedules UI refresh (missions:updated is sent by applyMissions)
   const { svc, missions, setMissions } = service(t);
-  const view = svc.snapshot('last-week');
+  const view = svc.snapshot('this-week');
   assert.equal(view.available, true);
   const [advice] = view.advice;
   assert.equal(advice.kind, 'run-less');
@@ -340,7 +340,7 @@ test('the backfill reads the office log, sessions and cost ledger once, before t
 test("on a plan, each member's cost is their part of the plan's cost so far this period; on an API key nothing is split", (t) => {
   // Value: protects=the owner's realistic cost (2026-10-15); fails_when=members' costs do not add up to the period's plan cost, a share changes, the pay per use figure is lost, or an API key is split; why_new=owner 2026-10-15; seam=none; no_claim=the plan price itself (owner or list)
   const { planCostFor } = loadTs('src/shared/claudePlan.ts');
-  const { periodRange } = loadTs('src/shared/teamPerformance.ts');
+  const { periodRange, previousRange } = loadTs('src/shared/teamPerformance.ts');
   const add = (env) => {
     const now = env.clock.now();
     env.store.cost('toby', 'x', 3, 100, null, now - 3600_000);
@@ -361,24 +361,49 @@ test("on a plan, each member's cost is their part of the plan's cost so far this
   const k = onKey.svc.snapshot('this-week');
   assert.equal(k.plan, null);
   assert.equal(k.snapshot.totalUsd, 4);
+  // Today and the span before Compare draws (owner, 2026-10-16).
+  const today = onPlan.svc.snapshot('today');
+  const tr = periodRange('today', onPlan.clock.now());
+  assert.ok(Math.abs(today.snapshot.totalUsd - planCostFor(200, tr.fromMs, tr.toMs, onPlan.clock.now())) < 1e-9, 'today: the plan cost so far today');
+  onPlan.store.cost('toby', 'z', 2, 100, null, new Date(2026, 9, 6, 10).getTime());
+  onPlan.proc.tick('/office');
+  const cmp = onPlan.svc.snapshot('this-week', true);
+  const pr = previousRange('this-week', onPlan.clock.now());
+  assert.ok(Math.abs(cmp.compare.snapshot.totalUsd - planCostFor(200, pr.fromMs, pr.toMs, onPlan.clock.now())) < 1e-9, 'the span before: its plan cost up to the end of its same day');
 });
 
-test('Last 4 weeks comes with week by week figures that add up to the period; a single week has none', (t) => {
-  // Value: protects=the trend charts on a multi week period (owner, 2026-10-15); fails_when=a week is missing, the weeks do not add up to the period, or one week periods carry weeks; why_new=owner ask; seam=none; no_claim=chart drawing (source pins in pulse-view)
-  const env = service(t);
-  const now = env.clock.now();
-  for (const back of [1, 8, 15]) {
-    env.store.record({ agentId: 'toby', kind: 'email', ts: now - back * 86_400_000, value: back });
-    env.store.record({ agentId: 'toby', kind: 'sent', ts: now - back * 86_400_000 });
-  }
+test('Compare runs the same snapshot for the span before, only when on and ready, up to the same day', (t) => {
+  // Value: protects=D6, D7, D8, D9 (owner, 2026-10-16); fails_when=the span before counts the wrong days, a bar and its tile number come from different sums, compare shows before live recording, or off still sends a span before; why_new=new contract; seam=none; no_claim=bar drawing (source pins in pulse-view)
+  const env = service(t); // live since Thu 1 Oct, now Fri 16 Oct 09:00
+  const email = (day, n) => env.store.record({ agentId: 'toby', kind: 'email', ts: new Date(2026, 9, day, 10).getTime(), value: n });
+  email(5, 2); email(10, 4); email(13, 3); // last Monday, last Saturday (past the same weekday), this Tuesday
   env.proc.tick('/office');
-  assert.equal(env.svc.snapshot('this-week').weeks, null);
-  const v = env.svc.snapshot('4-weeks');
-  assert.equal(v.weeks.from.length, 4);
-  const total = (k) => v.snapshot.outcomes.find((o) => o.kind === k).total;
-  assert.equal(v.weeks.emails.reduce((a, b) => a + b, 0), total('email'));
-  assert.equal(v.weeks.sent.reduce((a, b) => a + b, 0), total('sent'));
-  assert.equal(v.weeks.toInternet.length, 4);
+  const total = (s) => s.outcomes.find((o) => o.kind === 'email').total;
+  const off = env.svc.snapshot('this-week');
+  assert.equal(off.compare, null, 'off sends no span before');
+  assert.equal(off.compareReady, true);
+  const on = env.svc.snapshot('this-week', true);
+  assert.deepEqual([on.compare.snapshot.from, on.compare.snapshot.to], ['2026-10-05', '2026-10-09']);
+  assert.equal(total(on.compare.snapshot), 2, 'Saturday is past the same weekday');
+  assert.equal(total(on.snapshot), 3);
+  assert.equal(total(on.snapshot), total(off.snapshot), 'the tile number is the same with Compare on');
+  assert.ok(on.compare.keptSafe && on.learning.previous, 'Kept safe and Learning carry the span before');
+  assert.equal(off.learning.previous, null);
+  const month = env.svc.snapshot('this-month', true);
+  assert.deepEqual([month.compare, month.compareReady, month.compareFrom], [null, false, '2026-11-01'], 'September was not recorded live');
+});
+
+test('a past span\'s Michael counts stop at its end', (t) => {
+  // Value: protects=D11; fails_when=later requests or cards leak into a past span's counts; why_new=michaelCounts had no end; seam=none; no_claim=no screen shows these counts yet
+  const { store, proc } = setup(t);
+  for (const day of [5, 14]) {
+    store.record({ agentId: 'god', kind: 'message', ts: new Date(2026, 9, day, 10).getTime(), attrs: { act: 'request' } });
+    store.record({ agentId: 'god', kind: 'card-status', ts: new Date(2026, 9, day, 11).getTime(), attrs: { id: `c${day}`, from: null, to: 'todo' } });
+  }
+  store.flush();
+  const from = new Date(2026, 9, 1).getTime();
+  assert.deepEqual(proc.michaelCounts('/office', 'god', from, new Date(2026, 9, 9, 23, 59).getTime()), { routed: 1, cardsOpened: 1 });
+  assert.deepEqual(proc.michaelCounts('/office', 'god', from), { routed: 2, cardsOpened: 2 }, 'no end: up to now');
 });
 
 // ─── coverage audit, 2026-10-16: the board, presence, headroom, the advice gate ──
