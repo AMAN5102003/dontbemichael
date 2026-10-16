@@ -255,7 +255,7 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 
 **Your business, known to everyone**
 - **Company profile.** Your business name, owner, address, hours, time zone, currency and more, given to every team member. Change it in Settings.
-- **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and on a Mac, scans or photos. Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy.
+- **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and scans or photos (on a Mac or a Windows PC). Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy.
 
 **Private folders**
 - Michael works in your business folder, and each team member works in its own folder inside it.
