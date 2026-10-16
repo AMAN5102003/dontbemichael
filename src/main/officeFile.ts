@@ -179,7 +179,10 @@ export function folderLayoutFor(businessFolder: string | undefined, folders: str
 function commonDir(paths: string[]): string | undefined {
   if (paths.length === 0) return undefined;
   let dir = dirname(paths[0]);
-  while (!paths.every((p) => p === dir || p.startsWith(dir + sep))) {
+  const fold = process.platform === 'win32'
+    ? (p: string) => p.toLowerCase()
+    : (p: string) => p;
+  while (!paths.every((p) => fold(p) === fold(dir) || fold(p).startsWith(fold(dir + sep)))) {
     const up = dirname(dir);
     if (up === dir) return undefined;
     dir = up;
