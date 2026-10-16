@@ -247,18 +247,6 @@
 **Priority:** P2
 **Depends on:** None
 
-### Bound the refused hook frame counters
-
-**What:** Count a refused frame under its claimed id only when that id is in the registry (else "unknown"), cap the maps, and rate limit the impostor count Pulse records.
-
-**Why:** Any local process that reaches the hook socket without a secret can grow the maps, the office log and the Kept safe impostor tile with made up names.
-
-**Context:** From the /ship red team review, 2026-10-16. `hooks.ts` authenticate (`rejected`, `rejectLogged`, `onRefused('impostor')`).
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
 ### Hand the hook secret over where another process cannot read it
 
 **What:** On engines and platforms where a sibling process can read another's environment (Linux /proc, Windows), pass the hook secret through a 0600 file or descriptor only that agent's sandbox can read, or check the peer on the socket.

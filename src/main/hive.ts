@@ -724,6 +724,11 @@ export class HiveManager {
     this.hookTokens.delete(agentId);
   }
 
+  /** Whether the app made a hook secret for this agent's current start. */
+  hasHookToken(agentId: string): boolean {
+    return this.hookTokens.has(agentId);
+  }
+
   /** The agent a hook secret belongs to, or undefined for a missing, unknown
    *  or retired one. */
   hookTokenOwner(token: unknown): string | undefined {
