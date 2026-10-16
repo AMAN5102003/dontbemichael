@@ -71,9 +71,10 @@ function writeFixture(dir, name, content) {
     const b = kg.chunkText(text, { size: 800, overlap: 120 });
     assert.deepStrictEqual(a, b, 'deterministic');
     assert.ok(a.join(' ').includes('word'), 'covers content');
-  });
+  }); 
+  
 
-  // ─── scoreChunk ─────────────────────────────────────────────────────────
+  // ─── scoreChunk ───────────────────────────────────────────────────────────
   test('scoreChunk: 0 when no term matches, higher for title + phrase matches', () => {
     const terms = kg.tokenize('refund policy');
     const none = kg.scoreChunk({ title: 'Holidays', text: 'office closed friday' }, terms, 'refund policy');
@@ -83,6 +84,25 @@ function writeFixture(dir, name, content) {
     assert.ok(body > 0, 'body match scores');
     assert.ok(titled > body, 'title match boosts above body-only');
   });
+
+  test('scoreChunk: title matching does not match partial words', () => {
+    const terms = kg.tokenize('art');
+
+    const partial = kg.scoreChunk(
+      { title: 'Article Guide', text: 'art is discussed here' },
+      terms,
+      'art'
+    );
+
+    const exact = kg.scoreChunk(
+      { title: 'Art Guide', text: 'art is discussed here' },
+      terms,
+      'art'
+    );
+
+    assert.ok(exact > partial, 'whole-word title match should receive a boost');
+  });
+
 
   // ─── ingest → search round-trip: TEXT modality ──────────────────────────
   test('ingest a markdown doc, then search finds it with a snippet', () => {
