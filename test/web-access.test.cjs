@@ -107,7 +107,7 @@ test('Research\'s notes reach the shared memory only as a cleaned copy', () => {
   assert.match(main, /memory\.setNotesFilter\(researchNotesForPalace\);/);
   assert.match(main, /if \(id !== RESEARCH_ID\) return undefined;/);
   assert.match(main, /const text = readResearchNotes\(agentDir\);/);
-  assert.match(main, /const v = await trustLayer\.outbound\(\{ subject: 'Research notes', body: text \}\);\n  if \(v\.decision === 'deny'\) return clear\(\);/, 'a refused set is mined from nothing, not last time\'s copy');
+  assert.match(main, /const v = await trustLayer\.outbound\(\{ subject: 'Research notes', body: text \}\);\n  if \(v\.decision === 'deny'\) \{[\s\S]{0,400}?\n    return clear\(\);\n  \}/, 'a refused set is mined from nothing, not last time\'s copy (a hold is listed first, 2026-10-16)');
   const mem = read('src/main/memory.ts');
   assert.match(mem, /if \(dir === null\) continue;\n        await this\.mineAgent\(dir, id\);/);
 });
