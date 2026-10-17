@@ -20,6 +20,7 @@ export type { IntegrationRecord, IntegrationTemplate } from '../shared/integrati
 import type { UpdateStatus } from '../shared/updateState';
 import type { CliUpdateStatus } from '../shared/cliUpdate';
 import type { OfficeBreakView } from '../shared/officeBreak';
+import type { SilentEpisode } from '../shared/silentEngine';
 export type { UpdateStatus } from '../shared/updateState';
 import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
@@ -1009,6 +1010,28 @@ const api = {
     const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
     ipcRenderer.on('connectors:restartNeeded', listener);
     return () => ipcRenderer.removeListener('connectors:restartNeeded', listener);
+  },
+  /** Members whose engine isn't reporting to the app (issue #326). */
+  silentList: (): Promise<SilentEpisode[]> => ipcRenderer.invoke('silent:list'),
+  onSilentChanged: (cb: (episodes: SilentEpisode[]) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, episodes: SilentEpisode[]) => cb(Array.isArray(episodes) ? episodes : []);
+    ipcRenderer.on('silent:changed', listener);
+    return () => ipcRenderer.removeListener('silent:changed', listener);
+  },
+  silentRestart: (agentIds: string[]): Promise<void> => ipcRenderer.invoke('silent:restart', agentIds),
+  silentKeep: (agentIds: string[]): Promise<void> => ipcRenderer.invoke('silent:keep', agentIds),
+  silentCheckAgain: (agentId: string): Promise<void> => ipcRenderer.invoke('silent:checkAgain', agentId),
+  /** The not reporting watch (or the owner on its card) asks for a restart. */
+  onAgentRestartSilent: (cb: (p: { agentId: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
+    ipcRenderer.on('agent:restartSilent', listener);
+    return () => ipcRenderer.removeListener('agent:restartSilent', listener);
+  },
+  /** A click on the not reporting desktop notice: show Needs you. */
+  onSilentOpen: (cb: () => void): (() => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('silent:open', listener);
+    return () => ipcRenderer.removeListener('silent:open', listener);
   },
   /** A member stopped on a prompt: restart it now (hooks.ts stuckOnPrompt). */
   onAgentRestartStuck: (cb: (p: { agentId: string }) => void): (() => void) => {

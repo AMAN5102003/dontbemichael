@@ -18,6 +18,8 @@ import { WorkStyleUpdateCards } from './WorkStyleUpdateCards';
 import { MailProposalCards } from './MailProposalCards';
 import { EngineSetupCard } from './EngineSetupCard';
 import { OfficeBreakCard, useOfficeBreak } from './OfficeBreakNotice';
+import { SilentEngineCards } from './SilentEngine';
+import { silentCards } from '@shared/silentEngine';
 import { FileText } from './FileChip';
 import { ChoiceRows, PartLines } from './AskAnswerFields';
 import { refreshNeedsYou, setupCardShown, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
@@ -74,7 +76,9 @@ export function AskMeTab() {
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   // One shared read with the pill, the strip and the chips (D3, eng R4).
-  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice } = useNeedsYou();
+  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice, silent } = useNeedsYou();
+  // Members whose engine isn't reporting (issue #326): their cards keep All clear away.
+  const silentShown = silentCards(silent).length > 0;
   // A sign in stop already asks the owner to sign in: one card (eng R3).
   const engineCard = setupCardShown({ engineSetup, stop });
   const onBreak = !!useOfficeBreak();
@@ -240,19 +244,20 @@ export function AskMeTab() {
     // board heading stays put.
     <div ref={rootRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '2px 2px 10px', margin: '-2px -2px 0' }}>
       <OfficeBreakCard />
+      <SilentEngineCards />
       <EngineSetupCard status={engineCard ? engineSetup : null} />
       <ScheduleRequestCards requests={scheduleRequests} refresh={refreshScheduleRequests} />
       <WorkStyleUpdateCards offers={offers} />
       <MailProposalCards proposals={proposals} refresh={refreshNeedsYou} />
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
-      {!engineCard && !onBreak && !researchNotice && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
+      {!engineCard && !onBreak && !researchNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
         <div style={{ padding: '4px 2px 2px' }}>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)' }}>{translate('shell.allClear')}</div>
           <div style={{ marginTop: 4, fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink-3)' }}>{translate(`shell.allClearLine${line}`, { godName })}</div>
         </div>
       )}
-      {!engineCard && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && answeredHere.map((x) => (
+      {!engineCard && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && answeredHere.map((x) => (
         <section key={x.id} aria-label={askTitle(x.title)} style={card}>
           <div style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px', letterSpacing: '-0.01em', color: 'var(--cth-ink)' }}>{askTitle(x.title)}</div>
           {x.who && <div style={{ marginTop: 6 }}><span style={personChip}><AgentAvatar id={x.whoId} name={x.who} size={16} />{x.who}</span></div>}

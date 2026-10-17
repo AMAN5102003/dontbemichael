@@ -320,6 +320,8 @@ export function App() {
   const feed = useNeedsYou();
   // New default job descriptions are offered on Needs you (workStyleUpdates.ts).
   useEffect(() => { setWorkStyleOffersSource(readWorkStyleOffers); }, []);
+  // A click on the not reporting desktop notice shows Needs you (issue #326, SD10).
+  useEffect(() => window.cth.onSilentOpen?.(() => useStore.getState().openNeedsYou()), []);
   const locked = columnLocked(feed.status, feed.count);
   // The open person goes home: their panel closes and the closing bar takes
   // the focus (4A).

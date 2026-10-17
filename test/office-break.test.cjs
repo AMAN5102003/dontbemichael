@@ -226,7 +226,7 @@ test('during a break nothing types into a Claude terminal, and schedules still r
   assert.match(read('src/renderer/src/components/OfficeBreakNotice.tsx'), /return known \? view : \{ until: null, checking: false, reason: 'limit', again: false \};/);
   // Shown at the top of Needs you and in the top bar. The plan limit never
   // counts; a stop only the owner can fix does (office-stopped-account.md, D2).
-  assert.match(read('src/renderer/src/components/AskMeTab.tsx'), /<OfficeBreakCard \/>\s*<EngineSetupCard status=\{engineCard \? engineSetup : null\} \/>/);
+  assert.match(read('src/renderer/src/components/AskMeTab.tsx'), /<OfficeBreakCard \/>\s*<SilentEngineCards \/>\s*<EngineSetupCard status=\{engineCard \? engineSetup : null\} \/>/);
   assert.match(read('src/renderer/src/shell/TopBar.tsx'), /<CliUpdateBadge \/>\s*<OfficeBreakChip \/>/);
   assert.match(read('src/renderer/src/shell/useNeedsYou.ts'), /if \(stopNeedsOwner\(merged\.stop\)\) feed = \{ \.\.\.feed, count: feed\.count \+ 1 \};/);
   assert.equal(stopNeedsOwner({ until: null, checking: false, reason: 'limit', again: false }), false, 'the plan limit never counts');

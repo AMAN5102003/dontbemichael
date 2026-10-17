@@ -3161,6 +3161,11 @@ export class HiveManager {
     }
     // Anything else for Research (an app note, an owner answer, a send()) goes
     // through the trust layer first, in the background (ship review D2.1).
+    // Research not reporting: its questions wait with Michael like anyone's (SD16).
+    if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && this.memberMail?.(RESEARCH_ID) === 'hold') {
+      this.holdForMichael(msg, RESEARCH_ID, godId);
+      return;
+    }
     if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && !this.researchCleared.has(msg.id)) {
       this.appendLog({ kind: 'message-held-for-trust-layer', from: msg.from, id: msg.id });
       this.queueForResearch({ ...msg, to: RESEARCH_ID });
@@ -3190,6 +3195,14 @@ export class HiveManager {
           to: godId,
           subject: `[bounced — "${t}" is the send-only prep assistant; route work to a real agent] ${msg.subject}`
         }, godId);
+        continue;
+      }
+      // Not reporting (issue #326): held for Michael, or by terminal when kept.
+      const silent = t !== godId ? this.memberMail?.(t) ?? null : null;
+      if (silent === 'hold') { this.holdForMichael(msg, t, godId); continue; }
+      if (silent === 'handoff') {
+        if (!this.emitTerminalHandoff(msg, t)) this.holdForMichael(msg, t, godId);
+        else delivered.push(t);
         continue;
       }
       // A provider without safe-idle lifecycle state (a hookless custom command)
@@ -4392,6 +4405,16 @@ export class HiveManager {
   /** Main is told of each reply Michael sends to an owner question, for the
    *  one notification per final reply (12A). */
   private ownerReplyListener: ((msg: HiveMessage) => void) | null = null;
+  /** A member that isn't reporting to the app (issue #326, SD12): its new mail
+   *  is held for Michael ('hold'), or reaches it by its terminal when the owner
+   *  kept it working unchecked ('handoff'); null flows as usual. Set by index.ts. */
+  memberMail: ((agentId: string) => 'hold' | 'handoff' | null) | null = null;
+  /** Mail for a member that isn't reporting goes to Michael instead (SD12). */
+  private holdForMichael(msg: HiveMessage, t: string, godId: string): void {
+    const name = this.registry().agents[t]?.name ?? t;
+    this.appendLog({ kind: 'message-held-not-reporting', to: t, id: msg.id });
+    this.deliver({ ...msg, to: godId, subject: `[held: "${name}" isn't reporting to the app; route this to someone else or let it wait] ${msg.subject}` }, godId);
+  }
   onOwnerReply(cb: ((msg: HiveMessage) => void) | null): void { this.ownerReplyListener = cb; }
 
   /** Michael's terminal words for a question his turn sent nothing about

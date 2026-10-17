@@ -6,6 +6,7 @@ import { useRtl } from '@/i18n/useDirection';
 import { isComposingKey } from '@shared/imeGuard';
 import { PersonAvatar } from '@/scene/office/props';
 import { Icon } from '@/components/Icon';
+import { NotReportingTag, useSilentEpisode } from '@/components/SilentEngine';
 import { closeTarget, columnLocked, focusNeedsYouPill } from './rightColumn';
 import { getNeedsYouFeed } from './useNeedsYou';
 
@@ -21,6 +22,8 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
 }) {
   const { t } = useTranslation();
   const raw = agent.action?.trim() ? actionText(agent.action.trim(), t) : '';
+  // Not reporting: the app can't vouch for its status, so the tag replaces it (SD14).
+  const silent = useSilentEpisode(agent.id);
   const caption = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
   return (
     <div style={{ flexShrink: 0, padding: '14px 14px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -29,7 +32,7 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
-            <PixelBadge status={agent.status as StatusKind} style={{ fontSize: 10.5, lineHeight: '14px', padding: '1px 8px' }} />
+            {silent ? <NotReportingTag style={{ fontSize: 10.5, lineHeight: '14px', padding: '1px 8px' }} /> : <PixelBadge status={agent.status as StatusKind} style={{ fontSize: 10.5, lineHeight: '14px', padding: '1px 8px' }} />}
           </div>
           <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role}</div>
           {caption && (

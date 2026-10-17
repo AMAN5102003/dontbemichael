@@ -42,6 +42,7 @@ import { BUILD_ENGINES, canReceiveInbox } from '@shared/agentProvider';
 import { isComposingKey } from '@shared/imeGuard';
 import { fmtTokens } from '@shared/tokenFormat';
 import { useRtl } from '@/i18n/useDirection';
+import { SilentPanelLine } from './SilentEngine';
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
  *  when the god agent is selected: terminal + queue, the floor roster (with
@@ -218,6 +219,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
 
       {/* Tabs (DESIGN.md 7.11): Profile, Access, Work, Office schedule, History
           (only once a webhook exists), Memory, Advanced. */}
+      <SilentPanelLine agentId={agent.id} name={agent.name} />
       <PanelTabs tabs={visibleTabs.map((tabDef) => ({ key: tabDef.key, label: t(tabDef.labelKey) }))} current={tab} onChange={setTab} />
 
       {/* Body (data-panel-body: see AgentDetailPanel). */}

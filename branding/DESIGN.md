@@ -456,8 +456,8 @@ The v1 "no radius" rule is retired.
 
 ### 6.3 Borders
 
-Hairlines only: 1 px. The exceptions are the 2.5 px top rule on mailbox tags (§7.18), the
-3 px coral left rule on Ask me cards (§7.8), and the 1.5 px coral ring and 700 title and
+Hairlines only: 1 px. The exceptions are the 2.5 px top rule on mailbox tags (§7.18) and
+the 1.5 px coral ring and 700 title and
 button of the Danger zone card in Settings, General, which is loud on purpose because
 Reset deletes the office (owner, 2026-10-02). Edit agent's Danger zone (§7.26) is the one
 other card with that coral tint and ring, because Delete removes a team member for good
@@ -617,6 +617,38 @@ take a few minutes to show." with the buttons back), Done (the card and chip
 go). Out of credit and an expired account login also check on their own every
 15 minutes; a key that stopped working waits for Change key. Resuming only sends
 the next message: nothing restarts, except the Claude terminals after a new key.
+
+### 7.6b Not reporting (SilentEngineCards)
+
+A team member whose AI engine stopped reporting to the app (issue #326; design review
+2026-10-16; approved picture `silent-engine-v2.html`). Its reports are how the app follows
+its work and checks its folders and tools, so the owner hears, plainly, and can act in one
+click. A plain Ask me card (§7.8: no side rule, no "from" line) at the top of Needs you,
+under an Office stops card when one shows, counted in the Needs you button.
+
+- **Words.** Title "{name} isn't reporting to the app"; one line "{name} is still working.
+  The app can't check {name}'s folder and tool limits."; a time line in `t-meta` `ink-3`
+  ("Last checked in {n} min ago." or "Hasn't checked in since {name} started, {n} min
+  ago."). Why it matters is behind the info icon. Names only, never he or she, in every
+  language.
+- **One card per engine and version.** Members silenced together ("Kelly, Dwight and
+  Oscar aren't reporting to the app") share one card and one count; a member who reports
+  again drops off the list.
+- **States.** Not reporting (Restart {name}); Restarting or Checking (a spinner, no
+  buttons); a restart didn't help, or the version is known never to report: the engine and
+  version named, with Change engine (opens Edit {name}, the engine open) and Keep working
+  unchecked; Paused, where nothing else guards the files (Windows, and Gemini anywhere):
+  Restart and Keep working unchecked, or Change engine and Keep working unchecked after a
+  failed restart; Done closes it with "{name} is reporting again".
+- **Michael.** When Michael isn't reporting, the office's own card, built like The office
+  stopped (§7.6a) with an "The office" kicker, sits first: "Michael is still working, but
+  can't pass on mail or work right now." with Restart Michael. Never restarted on its own.
+- **Elsewhere.** An amber `Not reporting` tag (`amber-soft`, `amber-text`) replaces the
+  member's status pill on its pod and panel header; one amber line above the panel's tabs
+  ("The app can't see {name}'s work right now. The Work tab still shows it live."), or,
+  when the owner kept it working unchecked, "{name} works unchecked on {engine}, by your
+  choice." with Check again. One desktop notice in Michael's name when a card first
+  appears, only with notifications on.
 
 ### 7.7 Buttons
 
@@ -1915,6 +1947,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-15 | Ask me: options as rows to pick, with a Recommended tag, and several questions with a line each; picking never sends, Reply on its own row says what it sends, and any question may be left blank (§7.8). |
 | 2026-10-15 | Pulse, a view tab between Tasks and Who talks to whom that takes the whole window: recommendations, what got done, Kept safe, the row of four tiles, Team at work, and trends on Last 4 weeks (§5.2, §7.2, §7.6, §7.27). |
 | 2026-10-16 | Pulse: periods Today, This week, This month, and Compare, two bars per tile against the span before up to the same day, the switch kept in place while a period cannot compare yet; Last week and Last 4 weeks go (§7.27). |
+| 2026-10-17 | Not reporting (§7.6b): a card on Needs you when a team member's engine stops reporting to the app, one per engine version, with Restart, Change engine and Keep working unchecked; an amber Not reporting tag on its pod and panel; the office's own card for Michael. §6.3 drops the stale coral left rule on Ask me cards (§7.8 has none since 2026-09-30). |
 | 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
 

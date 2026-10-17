@@ -16,6 +16,7 @@ import { departments, type DepartmentName } from '@/design/tokens';
 import { useAppTheme } from '@/design/theme';
 import { DeptIcon, PersonAvatar } from '@/scene/office/props';
 import { PixelBadge, type StatusKind } from '@/components/PixelBadge';
+import { NotReportingTag, useSilentEpisode } from '@/components/SilentEngine';
 import { useHasTerminalDraft } from '@/components/terminalPool';
 import { useOfficeBreak } from '@/components/OfficeBreakNotice';
 import type { OfficeBreakView } from '@shared/officeBreak';
@@ -677,6 +678,8 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
   const typing = useHasTerminalDraft(a.ptyId);
   const onBreak = useOfficeBreak();
   const status: StatusKind = typing ? 'typing' : breakStatus(a, onBreak);
+  // Its engine isn't reporting: the tag replaces the status (issue #326, SD14).
+  const silent = useSilentEpisode(a.id);
   const next = (() => {
     const now = Date.now();
     const times = missionsFor(missions, a.id, godId).filter((m) => m.enabled).map((m) => ({ at: nextRunAt(m, now), label: m.label })).filter((x): x is { at: number; label: string } => x.at !== null);
@@ -707,7 +710,9 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
           <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', letterSpacing: '-0.02em', color: a.status === 'idle' ? 'var(--cth-ink-3)' : 'var(--cth-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInlineEnd: 78 }}>{a.name}</b>
           <i style={{ fontStyle: 'normal', fontSize: 10, lineHeight: '13px', color: 'var(--cth-ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleOf(a)}</i>
         </span>
-        <PixelBadge status={status} style={{ position: 'absolute', insetInlineEnd: 0, top: 0, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+        {silent
+          ? <NotReportingTag style={{ position: 'absolute', insetInlineEnd: 0, top: 0 }} />
+          : <PixelBadge status={status} style={{ position: 'absolute', insetInlineEnd: 0, top: 0, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />}
       </div>
       <div style={{ marginTop: 5, marginBottom: 8, fontSize: 10.5, lineHeight: '14px', color: a.status === 'idle' ? 'var(--cth-ink-3)' : 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         title={caption}>{caption || t('studio.nothingNow')}</div>
@@ -824,6 +829,7 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
 }) {
   const { t } = useTranslation();
   const onBreak = useOfficeBreak();
+  const godSilent = useSilentEpisode(god.id);
   const ctx = god.contextTokens !== undefined && god.contextLimit ? Math.round((god.contextTokens / god.contextLimit) * 100) : null;
   const stat = (n: number, label: string, coral = false) => (
     <div style={{ padding: '6px 0 7px', textAlign: 'center' }}>
@@ -852,7 +858,9 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
             <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', color: 'var(--cth-ink)', paddingInlineEnd: 76 }}>{god.name}</b>
             <i style={{ fontStyle: 'normal', fontSize: 10, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>{t('studio.officeManager')}</i>
           </span>
-          <PixelBadge status={breakStatus(god, onBreak)} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+          {godSilent
+            ? <NotReportingTag style={{ position: 'absolute', insetInlineEnd: 11, top: 9 }} />
+            : <PixelBadge status={breakStatus(god, onBreak)} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />}
         </div>
         <div style={{ marginTop: 6, fontSize: 10.5, lineHeight: '14px', color: 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {god.action?.trim() ? sentence(actionText(god.action.trim(), t)) : t('studio.runningTheOffice')}

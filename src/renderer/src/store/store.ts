@@ -40,8 +40,9 @@ export interface AnswerPick { pick?: number; parts?: ({ chip?: number; text?: st
 export interface PendingRestart {
   at: number;
   /** engine: Claude Code was just set up (docs/designs/get-michael-ready.md).
-   *  stuck: the session stopped on a prompt (hooks.ts stuckOnPrompt). */
-  reason: 'email' | 'connectors' | 'engine' | 'stuck';
+   *  stuck: the session stopped on a prompt (hooks.ts stuckOnPrompt).
+   *  silent: its engine stopped reporting to the app (issue #326). */
+  reason: 'email' | 'connectors' | 'engine' | 'stuck' | 'silent';
   /** The owner pressed Restart now: do not wait for idle. */
   now?: boolean;
   /** The last restart attempt failed; it is tried again on the next tick. */
@@ -344,6 +345,10 @@ interface State {
    *  floor — the card content grows: contracts, deps, the human Q&A trail). */
   taskDetailId: string | null;
   openTaskDetail: (id: string) => void;
+  /** Open Edit {name} for a member from outside its panel (a Needs you card's
+   *  Change engine, issue #326): its panel opens and Edit with it. */
+  editAgentRequest: { agentId: string; engine: boolean; seq: number } | null;
+  requestEditAgent: (agentId: string, opts?: { engine?: boolean }) => void;
   closeTaskDetail: () => void;
   /** One-shot prefill for the Command Center's dispatch box (a task detail's
    *  "assign" from anywhere in the app). seq-keyed like ccTabRequest. */
@@ -1211,6 +1216,11 @@ export const useStore = create<State>((set, get) => ({
     }),
   taskDetailId: null,
   openTaskDetail: (id) => set({ taskDetailId: id }),
+  editAgentRequest: null,
+  requestEditAgent: (agentId, opts) => {
+    get().select(agentId);
+    set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, seq: (s.editAgentRequest?.seq ?? 0) + 1 } }));
+  },
   closeTaskDetail: () => set({ taskDetailId: null }),
   dispatchSeedRequest: null,
   requestDispatchSeed: (text) =>

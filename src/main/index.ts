@@ -133,8 +133,11 @@ import { COLLECT_USAGE_STATS, SHOW_DELIVERY_SWITCH, SHOW_VOICE, SHOW_SLACK, SHOW
 import { fetchHireManifest, readHireManifestFiles } from './hire';
 import { parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
+import { SilentWatch, type WatchMember } from './silentWatch';
+import { mailFor, type SilentEpisode } from '../shared/silentEngine';
 import {
   argsWithAutoModeFlag,
+  bridgeOf,
   inferAgentProvider,
   isClaudeProvider,
   nonInteractiveEnvForProvider,
@@ -453,6 +456,8 @@ const workerWake = new WorkerWakeWatchdog();
 const promptSubmits = new PromptSubmits();
 // HookServer needs BOTH: Oscar's control registry (HITL pause/gate/steer/halt via
 // hook returns) AND Jim's breaker (feed recordToolUse on each PostToolUse).
+// The not reporting watch (issue #326), set up once the store exists below.
+let silentWatch: SilentWatch | null = null;
 const hookServer = new HookServer(
   hive,
   () => liveWebContents(),
@@ -468,6 +473,8 @@ const hookServer = new HookServer(
       else if (event === 'Stop') pulseTelemetry.record({ agentId, kind: 'stop', ts: Date.now() });
     }
     workerWake.noteHook(agentId, event, message);
+    // Any event, a Claude status tick included, is a check in (issue #326).
+    silentWatch?.noteHook(agentId);
     safeClearer.noteHook(agentId, event, message);
     if (agentId && event === 'UserPromptSubmit') promptSubmits.note(agentId);
     if (agentId && (event === 'Notification' || event === 'PermissionRequest')) promptSubmits.noteAttention(agentId);
@@ -539,6 +546,114 @@ const memoryTidy = new MemoryTidy(
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
 const persist = new PersistStore();
+
+// ─── Not reporting (issue #326; src/main/silentWatch.ts) ────────────────────
+const SILENT_KV_KEY = 'silent.episodes';
+/** pty id → the owner's last keystroke into it (pty:write). */
+const ptyInputAt = new Map<string, number>();
+/** Engine versions per resolved binary path, probed once in the background. */
+const silentVersions = new Map<string, string | null>();
+function silentVersion(bin: string): string | null {
+  if (!silentVersions.has(bin)) {
+    silentVersions.set(bin, null);
+    void claudeCliVersion(bin).then((v) => { silentVersions.set(bin, v); }).catch(() => { /* unknown */ });
+  }
+  return silentVersions.get(bin) ?? null;
+}
+function silentName(agentId: string): string {
+  try { return hive.registry().agents[agentId]?.name || agentId; } catch { return agentId; }
+}
+function silentNoteToMichael(subject: string, body: string): void {
+  try { if (hive.enabled()) hive.send({ to: hive.registry().godId ?? 'god', act: 'inform', subject, body }, 'system'); } catch (e) { console.error('[silent] note', e); }
+}
+/** One desktop notice when a card first appears (SD10): Michael's name, or the
+ *  office's own for Michael's card; a click brings the window and Needs you. */
+function silentNotice(e: SilentEpisode): void {
+  if (!readConfig().notifications) return;
+  const name = silentName(e.agentId);
+  const title = e.isMichael ? (readConfig().businessName || "Don't Be Michael") : michaelName();
+  const body = `${name} isn't reporting to the app. ${name} is still working, but the app can't check ${name}'s folders and tools.`;
+  try {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body });
+    n.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+      try { liveWebContents()?.send('silent:open'); } catch { /* window gone */ }
+    });
+    n.show();
+  } catch { /* unsupported platform */ }
+}
+silentWatch = new SilentWatch({
+  now: () => Date.now(),
+  platform: process.platform,
+  mayAutoRestart: (agentId) => hookServer.mayAutoRestart(agentId),
+  restart: (agentId, auto) => {
+    const wc = liveWebContents();
+    if (!wc) return false;
+    try { wc.send('agent:restartSilent', { agentId }); } catch { return false; }
+    if (auto) {
+      hookServer.noteAutoRestart(agentId);
+      // A quiet line in Michael's activity (SD11).
+      try { hive.appendLog({ kind: 'silent-auto-restart', agentId, note: `Restarted ${silentName(agentId)}: no check in` }); } catch { /* best effort */ }
+    }
+    return true;
+  },
+  // End its terminal (R1). Only the process: teardownPty would archive the
+  // member and drop it off its own card; Restart & Continue tears down on resume.
+  stop: (m) => { if (m.ptyId) { try { ptyManager.kill(m.ptyId); } catch { /* already gone */ } } },
+  changed: (episodes) => {
+    try { persist.setKv(SILENT_KV_KEY, episodes); } catch { /* the store may not be open yet */ }
+    try { liveWebContents()?.send('silent:changed', episodes); } catch { /* window gone */ }
+  },
+  event: ({ type, episode }) => {
+    const name = silentName(episode.agentId);
+    if (type === 'opened') {
+      const key = (e: SilentEpisode): string => (e.isMichael ? 'michael' : `${e.engine}@${e.version ?? ''}`);
+      const others = (silentWatch?.list() ?? []).filter((e) => e.agentId !== episode.agentId && e.state !== 'kept' && key(e) === key(episode));
+      if (!others.length) silentNotice(episode);
+      if (!episode.isMichael) {
+        silentNoteToMichael(`${name} isn't reporting to the app`,
+          `${name}'s engine stopped reporting to the app, so the app can't check ${name}'s folders and tools. Until it reports again, ${name}'s new mail comes to you. Give ${name} no new cards; route the work to someone else or let it wait. The owner has a card on Needs you.`);
+      }
+    } else if (type === 'resolved' && !episode.isMichael) {
+      silentNoteToMichael(`${name} is reporting again`, `${name} is reporting to the app again. Work can go to ${name} as usual.`);
+    } else if (type === 'kept') {
+      silentNoteToMichael(`${name} works unchecked`, `The owner chose to keep ${name} working without the app's checks. Work can go to ${name} again; it reaches ${name} through the terminal.`);
+    }
+  }
+});
+/** The watch's beat: every member in the registry, running or not. */
+function silentBeat(): void {
+  if (!silentWatch || !hive.enabled()) return;
+  const reg = hive.registry();
+  const sessions = new Map(ptyManager.list().map((s) => [s.id, s]));
+  const godId = reg.godId ?? 'god';
+  const members: WatchMember[] = Object.entries(reg.agents ?? {}).filter(([, a]) => a && !a.archived && !a.isAssistant).map(([id, a]) => {
+    const ptyId = ptyForAgent(id) ?? '';
+    const s = ptyId ? sessions.get(ptyId) : undefined;
+    const provider = (a.provider ?? 'claude') as AgentProvider;
+    const claude = isClaudeProvider(provider);
+    return {
+      id, ptyId, running: !!s,
+      engine: claude ? 'claude' : provider,
+      engineLabel: providerPreset(provider).label,
+      version: s?.command ? silentVersion(s.command) : null,
+      isMichael: id === godId,
+      reports: claude || !!bridgeOf(provider),
+      statusTicks: claude,
+      hasOutput: !!s?.hasOutput,
+      lastOutputAt: s?.lastOutputAt ?? 0,
+      lastInputAt: ptyId ? ptyInputAt.get(ptyId) ?? 0 : 0
+    };
+  });
+  silentWatch.beat(members);
+}
+// Its mail: held for Michael, or by terminal when kept (SD12).
+hive.memberMail = (agentId) => mailFor(silentWatch?.episode(agentId));
+ipcMain.handle('silent:list', () => silentWatch?.list() ?? []);
+ipcMain.handle('silent:restart', (_evt, ids: unknown) => { if (Array.isArray(ids)) silentWatch?.restart(ids.filter((x): x is string => typeof x === 'string')); });
+ipcMain.handle('silent:keep', (_evt, ids: unknown) => { if (Array.isArray(ids)) silentWatch?.keep(ids.filter((x): x is string => typeof x === 'string')); });
+ipcMain.handle('silent:checkAgain', (_evt, id: unknown) => { if (typeof id === 'string') silentWatch?.checkAgain(id); });
 
 // ─── Pulse telemetry (docs/designs/team-performance.md) ─────────────────────
 // The isolated store: written only here, in harness.db, keyed by office.
@@ -4406,6 +4521,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
 }
 ipcMain.handle('pty:write', (_evt, id: string, data: string) => {
   if (typeof id !== 'string' || typeof data !== 'string') return { ok: false, error: 'invalid args' };
+  // Typing into a terminal keeps it busy without a report: the not reporting
+  // watch leaves it alone meanwhile (issue #326, SD9).
+  ptyInputAt.set(id, Date.now());
   return ptyManager.write(id, data);
 });
 ipcMain.handle('pty:resize', (_evt, id: string, cols: number, rows: number) => {
@@ -7931,6 +8049,7 @@ function armAlwaysOnBeats(): void {
   // (docs/designs/card-lifecycle.md), so a prompt never scans his mail.
   const fleetBeat = (): void => {
     writeFleetSnapshot();
+    try { silentBeat(); } catch (e) { console.error('[silent beat]', e); }
     try { if (hive.enabled()) hive.refreshOwnerRequests(); } catch (e) { console.error('[owner requests]', e); }
   };
   fleetBeat();
@@ -8081,6 +8200,8 @@ app.whenReady().then(() => {
   try { persist.open(); } catch (e) { console.error('[db] open failed:', e); }
   // A break saved before quitting is still on (issue 124).
   armOfficeBreak();
+  // Members that were not reporting when the app quit: Checking (issue #326, SD8).
+  try { silentWatch?.restore(persist.getKv<SilentEpisode[]>(SILENT_KV_KEY) ?? []); } catch (e) { console.error('[silent] restore', e); }
   // Auto-update from GitHub releases (installed builds only; always on since
   // 2026-10-02). Download-in-background + restart-to-apply toast;
   // never restarts on its own. Falls back to a notify-only releases/latest

@@ -1022,6 +1022,14 @@ export class HookServer {
   /** agentId → when the app last restarted it for a prompt; outlives the episode. */
   private stuckRestartAt = new Map<string, number>();
 
+  /** The one automatic restart a member gets per STUCK_AGAIN_MS, shared by the
+   *  stuck path and the not reporting watch (issue #326, eng R4). */
+  mayAutoRestart(agentId: string): boolean {
+    const last = this.stuckRestartAt.get(agentId);
+    return last === undefined || this.now() - last >= STUCK_AGAIN_MS;
+  }
+  noteAutoRestart(agentId: string): void { this.stuckRestartAt.set(agentId, this.now()); }
+
   /** A member stopped on a prompt: restart them once, or, when it comes back
    *  before they moved on (or no window can restart them), Michael asks the owner. */
   private stuckOnPrompt(agentId: string, text: string): void {

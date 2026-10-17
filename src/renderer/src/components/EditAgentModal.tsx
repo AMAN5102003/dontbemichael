@@ -40,6 +40,8 @@ export interface EditAgentModalProps {
   /** False from the fullscreen view: no panel to lay over, so no wide mode
    *  and no panel changes to hold. */
   docked?: boolean;
+  /** Open with the engine unfolded (Change engine on a not reporting card). */
+  engineOpen?: boolean;
 }
 
 /**
@@ -53,7 +55,7 @@ export interface EditAgentModalProps {
  * lays over the wide panel in two columns, and leaving with unsaved changes,
  * by any way out, asks first.
  */
-export function EditAgentModal({ agent, onClose, docked = true }: EditAgentModalProps) {
+export function EditAgentModal({ agent, onClose, docked = true, engineOpen: openEngine = false }: EditAgentModalProps) {
   const { t } = useTranslation();
   const researchName = useResearchName();
   const updateAgent = useStore((s) => s.updateAgent);
@@ -84,7 +86,7 @@ export function EditAgentModal({ agent, onClose, docked = true }: EditAgentModal
     && AGENT_PROVIDER_PRESETS.filter((p) => BUILD_ENGINES.includes(p.id) && isClaudeProvider(p.id)).length <= 1;
   const [model, setModel] = useState<string | undefined>(agent.model);
   // Folded by default: the engine rarely changes after hiring.
-  const [engineOpen, setEngineOpen] = useState(false);
+  const [engineOpen, setEngineOpen] = useState(openEngine);
   // The stored role is one string ("Finance: Keeps track of..."), shown here as
   // two fields and joined back on save (agentRole.ts).
   const [role, setRole] = useState(() => splitAgentRole(agent.description).role);
@@ -211,6 +213,9 @@ export function EditAgentModal({ agent, onClose, docked = true }: EditAgentModal
     if (trimmedDescription !== agent.description) {
       void window.cth.hivePatchAgentRole(agent.id, trimmedDescription).catch(() => undefined);
     }
+    // A new engine for a member that isn't reporting starts it on that engine
+    // now (issue #326, Change engine); main ignores members with no episode.
+    if (command !== agent.command) void window.cth.silentRestart?.([agent.id]);
     onClose();
   };
 

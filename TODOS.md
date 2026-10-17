@@ -762,6 +762,22 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 
 ## Engines
 
+### Run Gemini members in Gemini's own sandbox
+
+**What:** Start Gemini team members with Gemini's own sandbox (`-s`) where it works, so a Gemini member has a guard besides its reports to the app.
+
+**Why:** The app starts Gemini with `--yolo` and no sandbox (`src/shared/agentProvider.ts`), so a Gemini member whose reports stop has no guard at all. The #326 design therefore stops a silent Gemini member on every platform; with a sandbox it could keep working the way a Claude member on a Mac does.
+
+**Pros:** Gemini offices stop far less often; parity with Claude and Codex on a Mac.
+
+**Cons:** Gemini's sandbox needs Docker or Podman on some platforms, may block tools the team uses, and needs its own writable folder setup (like Codex `--add-dir`).
+
+**Context:** From the #326 eng review, 2026-10-16 (decision R2). Start in `hive.ts` where Gemini's `--include-directories` are added, and check what `-s` needs on each platform.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** none; independent of #326.
+
 ### Make a second engine (Codex first) ready for an office
 
 **What:** Close the gaps that keep engines other than Claude Code out of `BUILD_ENGINES`, starting with Codex, then add it to the list.
