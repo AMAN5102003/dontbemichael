@@ -354,7 +354,7 @@ export class HookServer {
   }
 
   /** Frames refused for a missing or wrong secret, by the agent they named
-   *  (or "unknown"). Kept for the telemetry health readout (TODOS.md); tests read it today. */
+   *  (or "unknown"). The health readout (telemetry:health) shows them. */
   rejectedFrames(): ReadonlyMap<string, number> {
     return this.rejected;
   }

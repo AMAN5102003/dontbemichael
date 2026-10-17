@@ -1,5 +1,6 @@
 import type { Period } from '../shared/teamPerformance';
 import type { PulseView } from '../shared/pulseView';
+import type { PulseHealthView } from '../shared/pulseHealth';
 import type { ResearchConfig } from '../shared/research';
 import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
@@ -1381,6 +1382,8 @@ const api = {
   pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
     ipcRenderer.invoke('pulse:undo', appliedId),
   pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  /** Whether Pulse's points are flowing: the last batch, failed writes, refused hook frames. */
+  telemetryHealth: (): Promise<PulseHealthView> => ipcRenderer.invoke('telemetry:health'),
   /** Fires when new telemetry was folded, so an open Pulse view refreshes. */
   onPulseUpdated: (cb: () => void): (() => void) => {
     const listener = (): void => cb();
