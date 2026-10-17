@@ -728,8 +728,10 @@ const api = {
   /** A terminal still drawn past its box after a fit: sizes only, to the office log. */
   logTerminalOverflow: (info: Record<string, number | string>): void =>
     ipcRenderer.send('terminal:overflow', info),
-  killPty: (id: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('pty:kill', id),
+  /** `restart`: the same member starts again at once, so its isolated
+   *  worktree stays (ship review 2026-10-17: a restart deleted it). */
+  killPty: (id: string, opts?: { restart?: boolean }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('pty:kill', id, opts),
   listPtys: (): Promise<Array<{
     id: string;
     cwd: string;

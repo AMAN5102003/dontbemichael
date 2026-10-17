@@ -1172,7 +1172,7 @@ function pausePty(id: string): void {
   syncKeepAwake();
 }
 
-function teardownPty(id: string): void {
+function teardownPty(id: string, opts: { keepWorktree?: boolean } = {}): void {
   // Ephemeral-worker flag, read BEFORE the cleanup below deletes the entry. All
   // worker deaths (done-release, idle/token reap, manual stop, crash) funnel
   // through here, so this is the one place their floor card gets archived
@@ -1208,7 +1208,9 @@ function teardownPty(id: string): void {
     }
   }
   // 2) Remove the isolated worktree, if any. Non-blocking; errors are logged.
-  const wtPath = worktreePaths.get(id);
+  // Not on a restart: the member starts again in it at once, its uncommitted
+  // work included (ship review 2026-10-17).
+  const wtPath = opts.keepWorktree ? undefined : worktreePaths.get(id);
   if (wtPath) {
     const origCwd = worktreeOrigins.get(id) ?? wtPath;
     worktreePaths.delete(id);
@@ -4622,13 +4624,15 @@ ipcMain.handle('pty:redraw', (_evt, id: string) => {
   if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
   return ptyManager.redraw(id);
 });
-ipcMain.handle('pty:kill', (_evt, id: string) => {
+ipcMain.handle('pty:kill', (_evt, id: string, opts?: unknown) => {
   if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
   // Kill the process, then run the shared lifecycle teardown (archive the agent,
   // remove its isolated worktree, drop the maps). teardownPty is idempotent, so
   // node-pty firing onExit once the child actually dies is a harmless no-op.
+  // A restart keeps the worktree: the member starts again in it.
+  const restart = !!opts && typeof opts === 'object' && (opts as { restart?: unknown }).restart === true;
   const res = ptyManager.kill(id);
-  teardownPty(id);
+  teardownPty(id, { keepWorktree: restart });
   // The owner closed it: it no longer waits on Claude, so no card or restart.
   claudeBlocked.delete(id);
   return res;

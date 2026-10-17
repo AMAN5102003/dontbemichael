@@ -476,7 +476,8 @@ async function respawnResumed(a: Agent, ptyId: string): Promise<{ ok: boolean; e
   // it if it still exists, else fall back to the base cwd, same as restoreTeam.
   let cwd = a.cwd;
   if (a.worktreePath && (await window.cth.gitIsRepo(a.worktreePath))) cwd = a.worktreePath;
-  await window.cth.killPty(ptyId);
+  // A restart: the worktree it re-enters stays (ship review 2026-10-17).
+  await window.cth.killPty(ptyId, { restart: true });
   // Soft-reset the pooled xterm in place (no-op if none): re-arm input and
   // clear the stale frame so the revived TUI paints clean, like the button.
   resetTerminal(ptyId);

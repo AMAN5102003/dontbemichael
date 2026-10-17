@@ -518,3 +518,22 @@ test('a card whose member is closed or leaves goes, and Michael hears its mail i
   assert.equal(r.watch.list().length, 0);
   assert.deepEqual(r.log.events.map((e) => e[0]), ['opened', 'removed']);
 });
+
+test('a Keep whose restart never brings a terminal gives the card back', () => {
+  // Value: protects=no keep left with nothing running and no card; fails_when=keep is final before a terminal runs; why_new=Codex adversarial review 2026-10-17; seam=none
+  const r = rig({ platform: 'win32', mayAutoRestart: false });
+  run(r, 60_000 + 2 * BEAT, member());
+  assert.equal(r.watch.episode('kelly').stopped, true);
+  r.watch.keep(['kelly']);
+  assert.equal(r.watch.episode('kelly').state, 'kept');
+  run(r, S.RESTART_WAIT_MS + BEAT, member({ running: false, ptyId: '' }), { busy: false });
+  const ep = r.watch.episode('kelly');
+  assert.equal(ep.state, 'open', 'back on Needs you');
+  assert.equal(ep.stopped, true);
+  assert.equal(S.mailFor(ep), 'hold', 'its mail goes to Michael again');
+  const ok = rig({ platform: 'win32', mayAutoRestart: false });
+  run(ok, 60_000 + 2 * BEAT, member({ pid: 1 }));
+  ok.watch.keep(['kelly']);
+  run(ok, S.RESTART_WAIT_MS + BEAT, member({ pid: 2, hasOutput: false }), { busy: false });
+  assert.equal(ok.watch.episode('kelly').state, 'kept', 'running again: the keep stands');
+});

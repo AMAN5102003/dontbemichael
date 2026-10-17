@@ -146,7 +146,7 @@ test('the main process watches archived members as not running, stops without ar
   assert.match(beat, /running: !!s, pid: s\?\.pid,/);
   assert.match(beat, /isResearch: id === RESEARCH_ID,/);
   assert.match(main, /stop: \(m\) => \{ if \(m\.ptyId\) \{ try \{ ptyManager\.kill\(m\.ptyId\); \} catch \{ \/\* already gone \*\/ \} pausePty\(m\.ptyId\); \} \},/);
-  const pause = main.slice(main.indexOf('function pausePty(id: string): void {'), main.indexOf('function teardownPty(id: string): void {'));
+  const pause = main.slice(main.indexOf('function pausePty(id: string): void {'), main.indexOf('function teardownPty(id: string, opts'));
   assert.match(pause, /ptyToAgent\.delete\(id\);/);
   assert.match(pause, /breaker\.forget\(agentId\)/);
   assert.doesNotMatch(pause, /setArchived|removeWorktree/, 'not archived, its worktree kept');
@@ -191,4 +191,13 @@ test('held copies for Michael: one per message naming every silent member, under
   assert.ok(msgs('god').some((m) => /^\[held: "Pete" isn't reporting to the app/.test(m.subject) && /Flour/.test(m.subject)));
   assert.equal(msgs('pam').filter((m) => m.subject === R.SENT_AS_SUBJECT).length, 0, 'Pam is not told it reached Pete');
   assert.equal(msgs('research').length, 0);
+});
+
+test('a restart keeps the member\'s worktree; closing or deleting removes it', () => {
+  // Value: protects=an isolated member's uncommitted work survives Restart and Continue and the watch's restarts; fails_when=the restart's kill runs the full teardown; why_new=Codex adversarial review 2026-10-17; seam=source pin, the teardown needs Electron
+  assert.match(read('src/renderer/src/hooks/useHive.ts'), /await window\.cth\.killPty\(ptyId, \{ restart: true \}\);/);
+  const main = read('src/main/index.ts');
+  assert.match(main, /teardownPty\(id, \{ keepWorktree: restart \}\);/);
+  assert.match(main, /const wtPath = opts\.keepWorktree \? undefined : worktreePaths\.get\(id\);/);
+  assert.match(read('src/renderer/src/components/EditAgentModal.tsx'), /killPty: \(ptyId\) => window\.cth\.killPty\(ptyId\),/, 'delete still tears down fully');
 });

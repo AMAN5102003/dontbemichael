@@ -153,6 +153,18 @@ export class SilentWatch {
         ep = undefined;
         dirty = true;
       }
+      // A keep whose restart never brought a terminal: the card comes back.
+      if (ep?.state === 'kept' && ep.waitSince !== undefined) {
+        if (m.running) { delete ep.waitSince; delete ep.before; }
+        else if (now - ep.waitSince >= RESTART_WAIT_MS) {
+          ep.state = ep.before && ep.before !== 'kept' ? ep.before : 'open';
+          ep.stopped = true;
+          delete ep.before;
+          delete ep.waitSince;
+          this.deps.event({ type: 'opened', episode: ep });
+          dirty = true;
+        }
+      }
       // A restart that never came back, or a restored member never started:
       // settled, so the card offers its buttons again.
       if (ep && (ep.state === 'restarting' || ep.state === 'checking') && ep.waitSince !== undefined && now - ep.waitSince >= RESTART_WAIT_MS) {
@@ -293,14 +305,19 @@ export class SilentWatch {
       if (!ep || ep.isResearch) continue;
       // A stopped member is kept only once its terminal is started again;
       // otherwise its card stays, since nothing would reach it.
-      if (ep.stopped) {
+      const wasStopped = ep.stopped;
+      if (wasStopped) {
         if (!this.deps.restart(id, false)) continue;
         this.watches.delete(id);
       }
+      const prior = ep.state;
       ep.state = 'kept';
       ep.stopped = false;
       delete ep.before;
       delete ep.waitSince;
+      // Started again for the keep: until its terminal runs, the card can come
+      // back (a spawn that failed must not leave a keep with nothing running).
+      if (wasStopped) { ep.before = prior; ep.waitSince = this.deps.now(); }
       this.deps.event({ type: 'kept', episode: ep });
     }
     this.publish();
