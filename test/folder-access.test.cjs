@@ -272,9 +272,9 @@ test('file tools are refused on a transcript or the history, even for an agent w
 test('the office layout carries the records, wherever CLAUDE_CONFIG_DIR puts them', (t) => {
   const before = process.env.CLAUDE_CONFIG_DIR;
   t.after(() => { if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before; });
-  process.env.CLAUDE_CONFIG_DIR = abs('/Volumes/work/claude-config');
+  process.env.CLAUDE_CONFIG_DIR = abs('/Volumes/work/engine-config');
   assert.deepEqual(folderLayoutFor(undefined, []).engineRecords, {
-    projects: path.join(abs('/Volumes/work/claude-config'), 'projects'),
-    history: path.join(abs('/Volumes/work/claude-config'), 'history.jsonl')
+    projects: path.join(abs('/Volumes/work/engine-config'), 'projects'),
+    history: path.join(abs('/Volumes/work/engine-config'), 'history.jsonl')
   });
 });
