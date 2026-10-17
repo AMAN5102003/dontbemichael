@@ -69,7 +69,7 @@ test('the line is made safe before it leaves main: no secrets, no hidden charact
 
 test('main only reads a transcript inside the engine\'s own folder', async (t) => {
   const hive = new HiveManager(() => home);
-  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', cwd: home });
   const server = new HookServer(hive, () => null, () => ({ harnessHome: home }));
   t.after(() => server.stop());
   assert.equal(server.latestLine('pam'), undefined, 'no hook has named a transcript yet');
