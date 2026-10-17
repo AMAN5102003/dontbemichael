@@ -123,8 +123,9 @@ moving, and brings you only the decisions that need you.
 - A person's panel and Edit agent open wide in the center of the window for long reading and
   writing, and leaving Edit with unsaved changes asks first.
 - When a team member's AI engine stops reporting to the app, Needs you says so with Restart.
-  Michael restarts it once on his own, its mail goes to him until it reports again, and where
-  nothing else guards its files its terminal is stopped until you restart it.
+  Michael restarts one that never checked in once on his own, its mail goes to him until it
+  reports again, and where nothing else guards its files its terminal is stopped until you
+  restart it.
 - Pulse shows what the office got done and what each team member costs, as pictures:
   recommendations first (a schedule that mostly finds nothing to do, or a member whose work would
   suit a lighter model), each with its numbers and applied only by your click, with Undo; what got

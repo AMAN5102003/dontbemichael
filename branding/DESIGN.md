@@ -411,7 +411,7 @@ Rules:
 
 - **No bottom strip of agent cards, no left floor, no permanent Command Center.** People
   live on the stage.
-- Minimum window 1280 × 800: the studio scales down to fit the stage beside a 340 px
+- Minimum window 1280 × 800: the studio scales down to fit the stage beside a 320 px
   right column. Below 1100 px of stage width the platform scales, never crops.
 - Focus mode (full screen terminal) keeps its v1 behavior with v2 styling. Hidden in this
   build (`SHOW_FOCUS_MODE`, owner, 2026-10-01): no button opens it and a saved preference
@@ -631,15 +631,17 @@ under an Office stops card when one shows, counted in the Needs you button.
   ("Last checked in {n} min ago." or "Hasn't checked in since {name} started, {n} min
   ago."). Why it matters is behind the info icon. Names only, never he or she, in every
   language.
-- **One card per engine and version.** Members silenced together ("Kelly, Dwight and
-  Oscar aren't reporting to the app") share one card and one count; a member who reports
-  again drops off the list.
+- **One card per engine, version and kind** (never checked in, or went quiet mid work);
+  Research has a card of its own. Members silenced together ("Kelly, Dwight and Oscar
+  aren't reporting to the app") share one card and one count; a member who reports again
+  drops off the list.
 - **States.** Not reporting (Restart {name}); Restarting or Checking (a spinner, no
   buttons); a restart didn't help, or the version is known never to report: the engine and
   version named, with Change engine (opens Edit {name}, the engine open) and Keep working
-  unchecked; Paused, where nothing else guards the files (Windows, and Gemini anywhere):
-  Restart and Keep working unchecked, or Change engine and Keep working unchecked after a
-  failed restart; Done closes it with "{name} is reporting again".
+  unchecked; Paused, where nothing else guards the files (Windows, Gemini anywhere, and
+  Research): Restart and Keep working unchecked, or Change engine and Keep working unchecked
+  after a failed restart; Done closes it with "{name} is reporting again". Research's card
+  offers Restart only: it is never kept working unchecked (owner, 2026-10-17).
 - **Michael.** When Michael isn't reporting, the office's own card, built like The office
   stopped (§7.6a) with an "The office" kicker, sits first: "Michael is still working, but
   can't pass on mail or work right now." with Restart Michael. Never restarted on its own.
