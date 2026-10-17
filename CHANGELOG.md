@@ -6,6 +6,42 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [Unreleased]
+
+### Added
+
+- **Needs you says when a team member stops reporting to the app.** While a member works, its AI engine sends the app small reports; without them the app can't check the member's folders and tool limits. When a member never checks in after starting, or goes quiet in the middle of work, a card on Needs you names it (one card per engine and reason, Michael's first), with Restart. Michael restarts a member that never checked in once on his own. If a restart doesn't help, or the engine version is known never to report (Gemini CLI 0.60 and later), the card offers Change engine or Keep working unchecked. Where nothing else guards the member's files (every engine on Windows, Gemini everywhere, and Research), its terminal is stopped until you restart it; Research is never kept unchecked. Its new mail goes to Michael meanwhile. One long tool call, such as a build, is not silence. Cards survive a relaunch and a break, and go when the member reports again or leaves. A desktop notice comes once per card, only with notifications on. (Agent behavior: Michael hears when a member isn't reporting and again when it is, gets that member's mail, is told to give it no new cards, and is asked to send held work again; the app restarts a silent member once in Michael's name.) Thanks to @SuriyaPrakash1928 for the first watchdog (#345) and @iNoumanMalik for the report (#326).
+- **A person's panel and Edit agent open wide.** A button in the panel header moves it to the center of the window, 80% wide, with text kept to a comfortable line length; the office dims behind it and the Needs you pill stays live. Edit agent wide shows who you are editing and splits into two columns. Leaving Edit with unsaved changes, by any way out, asks first: Discard or Keep editing.
+- **Pulse: Today, This week and This month, with Compare.** Pulse's period picker offers Today, This week and This month, and Compare puts the span before beside each tile, up to the same day.
+- **Pulse lists what the privacy check did.** The held tile opens a list of each message held because the check could not run: when, who to whom, what it was about, why, and who was told. See each question and See each answer list every question sent to Research and every web answer, as written and as it went out, with what was taken out marked word by word; changed and stopped ones come first. The lists keep 62 days and then move to an archive the app never deletes (a reset erases it; a home move takes it along). Checks from before the lists kept words are put together once from the office's files.
+- **Right-click a link to copy its address** (contributed in #372).
+
+### Changed
+
+- **Each team member's memory is its own.** No team member, Michael included, opens another member's notes, inbox or hive folder, or the office's change history; they ask the member instead. The app walls those folders off for every Claude member's shell and file tools, members hired later included. The one store everyone searches is company knowledge. Research's notes are no longer copied for the team. (Agent behavior: Michael and every member are told to ask a teammate instead of reading its notes; work folders and handed off files stay readable.)
+- **A message to or from Research waits while the privacy check can't run.** When the check's session is not ready (often while the whole team starts), the message waits and is tried again for up to 30 minutes instead of being held at once; nothing goes out unchecked meanwhile. A check that got no answer quickly is tried once more after 15 seconds. The check keeps the names of the office's own AI team as written. Michael hears when Research's answer is held, as he does for a held question. (Agent behavior: Michael gets a note for a held answer.)
+- **Background checks run on Michael's configured engine** instead of always on Claude (contributed in #354). (Agent behavior: the app's own hidden checks use Michael's engine; the privacy check stays on Claude.)
+- **A file tab hides the Talk to Michael bar**, as Pulse does.
+- Saving an AI provider key on a computer that can't keep it safe says so first, like connected apps and mailboxes (contributed in #384).
+- An office stop for credit or sign in ends only once a turn has finished (contributed in #383).
+- The router reads the team list once per pass (contributed in #385).
+- Brave Search in the connector catalog uses Brave's own server (contributed in #365).
+- Setup gives Qwen an install command, and Grok, Kimi and Antigravity a docs link (contributed in #377).
+- The Business name label matches the other form labels (contributed in #341).
+
+### Security
+
+- Pulse's lists read the office's files without following a link or waiting on a pipe a team member left in its own folder, and the memory wall checks the real path of the office folder too.
+- Usage counts only for the team member whose token sent it (contributed in #364).
+
+### Fixed
+
+- Gemini members start without a workspace trust prompt (contributed in #342).
+- Quoted text that starts with a slash links only the file name in it (contributed in #378).
+- A new hire's folder name never ends in a dot or a space (contributed in #381).
+- Updates between prerelease versions with hyphens sort in the right order (contributed in #359).
+- The docs say Node.js 20 or newer (contributed in #360).
+
 ## [0.2.2] (2026-10-16)
 
 ### Added

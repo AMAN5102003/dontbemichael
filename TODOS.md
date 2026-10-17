@@ -71,6 +71,28 @@
 **Priority:** P2
 **Depends on:** A Windows shell sandbox, or a firewall rule per team member.
 
+### Wall members' notes from every engine's shell, and on Windows
+
+**What:** Keep a team member's shell from reading another member's hive folder (agents/<id>/) and the hive's git history on every engine, not only Claude on a Mac and Linux, and on Windows.
+
+**Why:** Member memory is private (owner, 2026-10-16), and the walls are Claude Code's sandbox Read rules plus the hook on file tools. Codex, Gemini and the other engines get no such shell rule, and Windows has no sandbox at all, so a shell command there can still read a teammate's notes; on Windows that includes Research, which can reach the internet from its shell. Found by the ship review and the Codex adversarial review of the running branch (2026-10-17, owner D3.3).
+
+**Context:** The prompts tell every member to ask instead; the file tool hook refuses everywhere. Each engine's own sandbox config, where one exists, is the place to add the rule; Windows needs the same shell sandbox as the item above.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** A Windows shell sandbox for the Windows part.
+
+### Keep a teammate's question to Pete across a quit while its check waits
+
+**What:** Save a teammate's own message to Research while it waits for the privacy check (up to 30 minutes), as the owner's and the app's notes are saved, and tell the sender and Michael after a restart.
+
+**Why:** queueForResearch writes only the owner's and the app's notes to research-pending.json; a teammate's question that waits through a quit or a crash is lost with no word to anyone. The wait used to be seconds; it is now up to 30 minutes, mostly while the team starts. Found by the ship review red team (2026-10-17, owner D3.3).
+
+**Effort:** S
+**Priority:** P3
+**Depends on:** None
+
 ## Team performance (from the CEO review of docs/designs/team-performance.md, 2026-10-15)
 
 ### Move the cost ledger into the telemetry store
@@ -251,6 +273,26 @@
 
 **Effort:** S (human) / S (CC)
 **Priority:** P3
+**Depends on:** None
+
+### Fill in Pulse's earlier checks off the main process
+
+**What:** Run the one-time backfill of Pulse's questions and answers lists, and the parse of the 62 day list, off the main process (a worker, or rows in the telemetry database queried by time and way).
+
+**Why:** The first open of the list scans every member's inbox and sent folders and then parses the whole checked.jsonl on the main process; a large office stalls the window and every timer for that time. The live file is now read without blocking, but the scan and the parse are not. Found by the Codex adversarial review (2026-10-17).
+
+**Effort:** M
+**Priority:** P3
+**Depends on:** None
+
+### Retry the backfill when it skipped files it could not read
+
+**What:** Write the backfill's done mark only after a scan that read every file it meant to, and record how many it skipped, so a scan cut short by files being written or a slow volume runs again.
+
+**Why:** ensureCheckedBackfill writes checked-backfill.json whatever it read, so a scan that met unreadable files never fills in their details. Links and pipes an agent left are skipped on purpose and must not count as a failure. Found by the Codex adversarial review (2026-10-17).
+
+**Effort:** S
+**Priority:** P4
 **Depends on:** None
 
 ## Terminal links (from the ship review of mit/named-links, 2026-10-13)
