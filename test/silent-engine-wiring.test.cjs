@@ -186,7 +186,8 @@ test('held copies for Michael: one per message naming every silent member, under
   assert.ok(forMichael.some((m) => !m.subject.startsWith('[held:')), 'Michael\'s own copy of the broadcast is still there');
   assert.ok(msgs('pam').some((m) => m.subject === 'Office closes early'));
   fs.writeFileSync(path.join(hive.root(), 'agents', 'pam', 'outbox', 'q.json'), JSON.stringify({ to: 'research', act: 'query', subject: 'Flour', body: 'Flour prices' }));
-  hive.routeOnce(); await new Promise((r) => setTimeout(r, 20)); hive.routeOnce();
+  // The hold is decided at once, before any check could start, so one routing pass shows it.
+  hive.routeOnce();
   assert.equal(checks, 0, 'no check paid for a question Research can\'t take now');
   assert.ok(msgs('god').some((m) => /^\[held: "Pete" isn't reporting to the app/.test(m.subject) && /Flour/.test(m.subject)));
   assert.equal(msgs('pam').filter((m) => m.subject === R.SENT_AS_SUBJECT).length, 0, 'Pam is not told it reached Pete');
