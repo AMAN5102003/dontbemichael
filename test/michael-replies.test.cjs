@@ -214,6 +214,8 @@ test('the dock and its count follow the design', () => {
   assert.doesNotMatch(bar, /shell\.queued/, 'the queue chip is gone (2A)');
   assert.match(bar, /\{dock\.items\.length > 0 && \(\n\s*<button onClick=\{\(\) => \(dockOpen \? setDock\(false\) : openAt\(\)\)\} aria-expanded=\{dockOpen\}/,
     'with every reply read (after a restart, say) the conversation still opens from its own button');
+  // Value (extension): protects=the conversation button reads as open and close, not a new chat; fails_when=it goes back to a chat bubble or stops flipping with the dock; why_new=owner report 2026-10-17; seam=source pin (no layout harness)
+  assert.match(bar, /<path d=\{dockOpen \? 'M6 9l6 6 6-6' : 'M6 15l6-6 6 6'\} \/>/);
   // Value (extension): protects=the message box keeps its width when the conversation button joins its row; fails_when=the button squeezes the placeholder onto two lines; why_new=review D10; seam=source pin (no layout harness)
   assert.match(bar, /flex: `0 1 \$\{dock\.items\.length > 0 \? 464 : 420\}px`, minWidth: dock\.items\.length > 0 \? 344 : 300,/);
   const main = read('src/main/index.ts');
@@ -338,4 +340,20 @@ test('Couldn\'t finish without a reason reads "No reason given", and the dock sl
     assert.equal(typeof d.noReason, 'string', loc);
     assert.doesNotMatch(d.noReason, /[–—]| - /, `${loc} noReason has no dash`);
   }
+});
+
+test('More brings the opened reply into view instead of leaving older messages on screen', () => {
+  // Value: protects=a long reply opened with More shows where the owner is reading; fails_when=More expands in place and the list keeps its old scroll, so the new lines land below the fold under older messages; why_new=owner report 2026-10-17; seam=pure scroll math plus source pins (no layout harness)
+  const { revealScroll } = loadTs('src/renderer/src/shell/revealScroll.ts');
+  const view = { top: 0, bottom: 390 };
+  // Measured in Electron 32: scrolled to the latest, the reply sat at 266 to 378 and More grew it to 1364.
+  assert.equal(revealScroll(view, { top: 266, bottom: 1364 }, 12), 254, 'taller than the list: its start goes to the top');
+  assert.equal(revealScroll(view, { top: 266, bottom: 450 }, 12), 72, 'fits: scroll just enough to show all of it');
+  assert.equal(revealScroll(view, { top: 40, bottom: 300 }, 12), 0, 'already in view: no scroll');
+  assert.equal(revealScroll(view, { top: -50, bottom: 900 }, 12), -62, 'its start above the top: back to its start');
+  const dock = read('src/renderer/src/shell/MichaelDock.tsx');
+  assert.match(dock, /onMore=\{\(\) => \{ reveal\.current = it\.id; setExpanded/);
+  assert.match(dock, /el\.scrollTop \+= revealScroll\(el\.getBoundingClientRect\(\), bubble\.getBoundingClientRect\(\), 12\);\n {2}\}, \[expanded\]\);/,
+    'scrolls the dock list only, once the expanded reply is laid out');
+  assert.match(dock, /<div data-r=\{r\.id\}/);
 });

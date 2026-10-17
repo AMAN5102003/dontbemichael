@@ -124,8 +124,9 @@ function TalkToMichael() {
             display: 'grid', placeItems: 'center',
             background: dockOpen ? 'var(--cth-ink)' : 'var(--cth-neutral-soft)', color: dockOpen ? 'var(--cth-bg)' : 'var(--cth-ink-2)'
           }}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z" />
+          {/* The conversation opens upward: up shows it, down puts it away. */}
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d={dockOpen ? 'M6 9l6 6 6-6' : 'M6 15l6-6 6 6'} />
           </svg>
         </button>
       )}
