@@ -141,7 +141,7 @@ function scoreChunk(rec, queryTerms, queryRaw) {
   for (const term of queryTerms) {
     const c = tf[term] || 0;
     if (c > 0) { matched++; score += 1 + Math.log(1 + c); }
-    if (titleLc.includes(term)) score += 2;
+    if (tokenize(titleLc).includes(term)) score += 2;
   }
   if (matched === 0) return 0;
   score += matched * 0.5; // reward breadth of distinct matches
