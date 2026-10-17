@@ -83,16 +83,6 @@
 **Priority:** P2
 **Depends on:** A Windows shell sandbox, or a firewall rule per team member.
 
-### Read the registry once per router tick
-
-**What:** In `routeOnce`, read the registry and Pete's name once per tick, not once per outbox file.
-
-**Why:** Each outbox file asks `addressedToResearch` with a fresh `registry()` read, so a busy tick reads registry.json once per message (performance review, third ship).
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ## Team performance (from the CEO review of docs/designs/team-performance.md, 2026-10-15)
 
 ### Move the cost ledger into the telemetry store
@@ -842,6 +832,16 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Depends on:** None
 
 ## Completed
+
+### Read the registry once per router tick
+
+**What:** In `routeOnce`, read the registry and Pete's name once per tick, not once per outbox file.
+
+**Why:** Each outbox file asks `addressedToResearch` with a fresh `registry()` read, so a busy tick reads registry.json once per message (performance review, third ship).
+
+**Effort:** S
+**Priority:** P3
+**Completed:** merged 2026-10-17. `routeOnce` reads the registry and Research's name once per tick, the first time a message needs them; delivery still reads per message (agentvivekkumar/dontbemichael#385, by amartya1523).
 
 ### End a credit or sign in stop only on a finished turn
 
