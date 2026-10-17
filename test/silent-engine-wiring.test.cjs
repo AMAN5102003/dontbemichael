@@ -74,6 +74,37 @@ test('questions for a Research member that isn\'t reporting wait with Michael (S
   assert.equal(msgs('research').length, 0);
 });
 
+test('a member kept working unchecked gets its mail by its terminal, or Michael gets it when no window can hand it over; Michael\'s own mail is never held (SD5, SD12)', async (t) => {
+  // Value: protects=the owner's keep reaches the member, and nothing is lost; fails_when=handoff mail lands in the inbox, a failed handoff drops or bounces it unseen, or Michael's own mail is held; why_new=the handoff branch of routeMessage had no test (the e2e covers hold only); seam=the hive's emit sink; no_claim=the renderer typing into the terminal
+  const electron = require.resolve('electron');
+  require.cache[electron] = { id: electron, filename: electron, loaded: true, exports: { Notification: class { show() {} static isSupported() { return false; } } } };
+  const { HiveManager } = loadTs('src/main/hive.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-silent-keep-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  let windowUp = true;
+  const handed = [];
+  const hive = new HiveManager(() => home, (channel, p) => { if (channel !== 'hive:terminalHandoff') return undefined; if (windowUp) handed.push([p.to, p.subject]); return windowUp; });
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  await hive.ensureAgent({ id: 'kelly', name: 'Kelly', provider: 'claude', cwd: home });
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  hive.memberMail = (id) => (id === 'kelly' ? 'handoff' : 'hold');
+  const dir = (id) => path.join(hive.root(), 'agents', id, 'inbox');
+  const msgs = (id) => (fs.existsSync(dir(id)) ? fs.readdirSync(dir(id)).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(dir(id), f), 'utf8'))) : []);
+  const post = (from, msg, name) => fs.writeFileSync(path.join(hive.root(), 'agents', from, 'outbox', name), JSON.stringify(msg));
+  post('pam', { to: 'kelly', act: 'inform', subject: 'Invoice 4471', body: 'Paid' }, 'a.json');
+  hive.routeOnce();
+  assert.deepEqual(handed, [['kelly', 'Invoice 4471']], 'by its terminal');
+  assert.equal(msgs('kelly').length, 0, 'never its inbox, which nothing checks');
+  assert.ok(!msgs('god').some((m) => /Invoice 4471/.test(m.subject)), 'Michael is not given it as well');
+  windowUp = false;
+  post('pam', { to: 'kelly', act: 'inform', subject: 'Invoice 4472', body: 'Paid' }, 'b.json');
+  hive.routeOnce();
+  assert.ok(msgs('god').some((m) => /^\[held: "Kelly" isn't reporting to the app/.test(m.subject) && /Invoice 4472/.test(m.subject)), 'no window: held for Michael, not lost');
+  post('pam', { to: 'god', act: 'inform', subject: 'For Michael', body: 'Hi' }, 'c.json');
+  hive.routeOnce();
+  assert.ok(msgs('god').some((m) => m.subject === 'For Michael'), 'Michael\'s own mail is never held, whatever the watch says');
+});
+
 test('the card, the tag and the panel line are placed where the design says (SD1, SD14)', () => {
   // Value: protects=placement on the board, the pods, the panel header and above the tabs; fails_when=a piece is dropped or All clear shows beside a card; why_new=new UI; seam=source pin; no_claim=the look (live check against silent-engine-v2.html)
   const ask = read('src/renderer/src/components/AskMeTab.tsx');

@@ -19,11 +19,15 @@ if (!process.env.PULSE_UNDER_ELECTRON) {
   try { bin = require('electron'); } catch { bin = null; }
   const ok = typeof bin === 'string' && fs.existsSync(bin);
   test('telemetry store and processor (run under Electron\'s Node)', { skip: ok ? false : 'no Electron binary' }, () => {
-    const r = spawnSync(bin, ['--test', __filename], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PULSE_UNDER_ELECTRON: '1' },
-      encoding: 'utf8', timeout: 300_000
-    });
+    // Value: protects=a failing test in this file fails the suite; fails_when=the nested run inherits NODE_TEST_CONTEXT and exits 0 on a failure; why_new=ship coverage audit 2026-10-17 found a red inner test reported green; seam=none; no_claim=none beyond protects
+    // `node --test` sets NODE_TEST_CONTEXT for each file it runs; inherited, it
+    // makes the nested run report to a parent that is not listening and exit 0
+    // whatever fails, so it is taken out of the child's environment.
+    const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', PULSE_UNDER_ELECTRON: '1' };
+    delete env.NODE_TEST_CONTEXT;
+    const r = spawnSync(bin, ['--test', __filename], { env, encoding: 'utf8', timeout: 300_000 });
     assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+    assert.match(r.stdout, /# fail 0/, 'the nested run reported its own results');
   });
   return;
 }
@@ -283,8 +287,26 @@ test('trust layer decisions and refusals become Kept safe counters', (t) => {
   const { keptSafe } = loadTs('src/shared/pulseSafety.ts');
   const day = new Date(ts); const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
   assert.deepEqual(keptSafe(proc.safetyRows('/office', key, key)), {
-    toInternet: { pass: 1, clean: 1, stop: 1 }, webAnswers: { pass: 1, clean: 1, flagged: 1 }, held: 2, rules: { quickbooks: 1 }, any: true
+    toInternet: { pass: 1, clean: 1, stop: 1 }, webAnswers: { pass: 1, clean: 1, flagged: 1 }, held: 2, heldIn: 1, heldOut: 1, rules: { quickbooks: 1 }, any: true
   });
+});
+
+test('from v 3 the hive\'s trust-checked line is what counts; the trust layer\'s own v 3 line adds nothing', (t) => {
+  // Value: protects=eng D5 through the real processor: one count per message, the tile equals the list; fails_when=the processor drops trust-checked, counts an answer's stop, or a v 3 trust line counts a second time; why_new=checked-list.test.cjs pins the fold in source only; seam=none; no_claim=the hive writing the lines (checked-list.test.cjs)
+  const { store, proc, clock } = setup(t);
+  const ts = clock.now();
+  // The same three messages, as the trust layer (v 3) and the hive log them.
+  for (const a of [{ way: 'in', decision: 'clean', v: 3 }, { way: 'in', decision: 'deny', by: 'model', v: 3 }, { way: 'out', decision: 'pass', flagged: true, v: 3 }]) store.record({ agentId: null, kind: 'trust', ts, attrs: a });
+  for (const a of [{ way: 'in', decision: 'clean' }, { way: 'in', decision: 'stop' }, { way: 'out', decision: 'pass', flagged: true }, { way: 'out', decision: 'stop' }, { way: 'sideways', decision: 'pass' }]) store.record({ agentId: null, kind: 'trust-checked', ts, attrs: a });
+  store.record({ agentId: null, kind: 'trust-held', ts, attrs: { way: 'out' } });
+  store.record({ agentId: null, kind: 'trust-held', ts, attrs: { way: 'nowhere' } });
+  proc.tick('/office');
+  const { keptSafe } = loadTs('src/shared/pulseSafety.ts');
+  const day = new Date(ts); const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  const k = keptSafe(proc.safetyRows('/office', key, key));
+  assert.deepEqual(k.toInternet, { pass: 0, clean: 1, stop: 1 }, 'once each, from the hive\'s lines');
+  assert.deepEqual(k.webAnswers, { pass: 1, clean: 0, flagged: 1 }, 'an answer\'s stop is no count');
+  assert.deepEqual([k.held, k.heldIn, k.heldOut], [1, 0, 1], 'a line with no known way is skipped');
 });
 
 test('the backfill reads the office log, sessions and cost ledger once, before the first live point', async (t) => {

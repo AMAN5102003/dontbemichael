@@ -252,6 +252,25 @@ test('the backfill counts only a frame naming the wrong member as an impostor, a
   assert.deepEqual(trustKeys(pts[2].attrs), ['in-stop'], 'a past decision folds like a live one');
 });
 
+test('the backfill keeps a trust line\'s version and reads the hive\'s checked and held lines, so a past message counts once', () => {
+  // Value: protects=Kept safe for days before live recording counts each message once (eng D5); fails_when=logPoints drops v (a v 3 line counts again beside its trust-checked line), skips trust-checked or trust-held, or keeps a line with no known way; why_new=checked-list.test.cjs pins the case label only; seam=none; no_claim=the processor fold (pulse-telemetry.test.cjs)
+  const { checkedKeys } = loadTs('src/shared/pulseSafety.ts');
+  const pts = logPoints([
+    { ts: 10, kind: 'trust-layer', way: 'in', decision: 'clean', v: 3 },
+    { ts: 10, kind: 'trust-checked', way: 'in', decision: 'clean', flagged: false },
+    { ts: 10, kind: 'trust-checked', way: 'out', decision: 'pass', flagged: true },
+    { ts: 10, kind: 'trust-held', way: 'out' },
+    { ts: 10, kind: 'trust-checked', way: 'up', decision: 'pass' },
+    { ts: 10, kind: 'trust-held' }
+  ], 0, 50, new Set(['pam']));
+  assert.deepEqual(pts.map((p) => [p.kind, p.attrs.way, p.attrs.bf]), [['trust', 'in', 1], ['trust-checked', 'in', 1], ['trust-checked', 'out', 1], ['trust-held', 'out', 1]]);
+  assert.equal(pts[0].attrs.v, 3);
+  assert.deepEqual(trustKeys(pts[0].attrs), [], 'the v 3 trust line adds nothing');
+  assert.deepEqual(checkedKeys(pts[1].attrs), ['in-clean'], 'the hive\'s line counts it, once');
+  assert.deepEqual(checkedKeys(pts[2].attrs), ['out-pass', 'out-flagged']);
+  assert.ok(!('v' in logPoints([{ ts: 10, kind: 'trust-layer', way: 'in', decision: 'pass' }], 0, 50, new Set())[0].attrs), 'an older line stays unversioned and still counts');
+});
+
 test('a step stopped from the floor counts as paused in the backfill, as hooks.ts counts it live', () => {
   // Value: protects=Your rules held reads the same for the weeks before Pulse as after; fails_when=a refusal from the floor's pause or tool gate is filed under the tool's own rule (sandbox, folder, connector) instead of paused, where hooks.ts files every control refusal live; why_new=gateOfTool matched only the pause wording; seam=none (ControlRegistry's own reasons); no_claim=reasons a future control adds
   const { ControlRegistry } = loadTs('src/main/control.ts');

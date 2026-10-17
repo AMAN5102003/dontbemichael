@@ -148,6 +148,37 @@ test('Keep working unchecked: no card, mail by handoff, ends on a report or a ne
   assert.equal(again.watch.list().length, 0);
 });
 
+test('the owner\'s Restart: the card waits on it, a stopped member starts again, and it fails only if it is still silent (SD4)', () => {
+  // Value: protects=the Restart button's states; fails_when=Restart leaves the card open or stopped, counts as an automatic restart, restarts a kept member, changes a card when the window could not restart it, or a still silent member never reaches failed; why_new=SilentWatch.restart had no test; seam=none; no_claim=the window's respawn (faked)
+  const r = rig({ platform: 'win32', mayAutoRestart: false });
+  run(r, 60_000 + 2 * BEAT, member());
+  assert.deepEqual([r.watch.episode('kelly').state, r.watch.episode('kelly').stopped], ['open', true], 'Windows: stopped, waiting on the owner');
+  r.watch.restart(['kelly', 'nobody']);
+  assert.deepEqual(r.log.restarts, [['kelly', false]], 'the owner\'s restart, never counted as automatic; an unknown id is skipped');
+  const ep = r.watch.episode('kelly');
+  assert.deepEqual([ep.state, ep.stopped, ep.restartTried], ['restarting', false, true]);
+  assert.deepEqual(S.silentButtons(S.silentCards(r.watch.list())[0]), [], 'no buttons while it restarts');
+  run(r, 60_000 + 3 * BEAT, member());
+  assert.deepEqual([r.watch.episode('kelly').state, r.watch.episode('kelly').stopped], ['failed', true], 'still silent: a restart did not help');
+  assert.equal(S.silentCards(r.watch.list())[0].restartTried, true);
+  const healed = rig({ mayAutoRestart: false });
+  run(healed, 60_000 + 2 * BEAT, member());
+  healed.watch.restart(['kelly']);
+  healed.watch.noteHook('kelly');
+  assert.equal(healed.watch.list().length, 0, 'a check in after the restart closes the card');
+  const noWindow = rig({ mayAutoRestart: false, restartOk: false });
+  run(noWindow, 60_000 + 2 * BEAT, member());
+  noWindow.watch.restart(['kelly']);
+  assert.equal(noWindow.watch.episode('kelly').state, 'open', 'the window could not restart it: the card stays as it was');
+  assert.equal(noWindow.watch.episode('kelly').restartTried, undefined);
+  const kept = rig({ mayAutoRestart: false });
+  run(kept, 60_000 + 2 * BEAT, member());
+  kept.watch.keep(['kelly']);
+  kept.watch.restart(['kelly']);
+  assert.deepEqual(kept.log.restarts, [], 'a kept member is not restarted');
+  assert.equal(kept.watch.episode('kelly').state, 'kept');
+});
+
 test('reopening the app: Checking until the restored member starts, then Done or back as it was (SD8)', () => {
   // Value: protects=no stale alarm and no lost one after a relaunch; fails_when=a restored member is flagged before it starts, or a still silent one is forgotten; why_new=SD8, outside voice 6; seam=none; no_claim=the KV store (faked)
   const r = rig({ mayAutoRestart: false });

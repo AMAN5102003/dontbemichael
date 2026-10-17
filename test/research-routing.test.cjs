@@ -349,6 +349,25 @@ test('a held answer is listed, and Michael hears of it as well as the member wai
   assert.deepEqual(rows.map((r) => [r.way, r.from, r.fromName, r.to, r.toName, r.why, r.told]), [['out', 'research', 'Pete', 'pam', 'Pam', 'unreadable', 'recipient+michael']]);
 });
 
+test('a held answer meant for Michael tells him once, by his id or by a name for him (D5)', async (t) => {
+  // Value: protects=Michael hears exactly once when Pete's answer to him is held; fails_when=the guard against a second note is lost, an alias answer tells nobody, or the row names the wrong recipient or who was told; why_new=only an answer to a teammate was tested; seam=fake layer; no_claim=the real model
+  const layer = () => fakeLayer({ outbound: () => ({ decision: 'deny', reason: R.REFUSAL_CHECK_FAILED, by: 'unreadable' }) });
+  const byId = await office(t, { layer: layer() });
+  send(byId.hive, 'research', { to: 'god', act: 'inform', subject: 'Stuck', body: 'No source has it' });
+  byId.hive.routeOnce(); await tick(); byId.hive.routeOnce();
+  assert.equal(notes(byId.hive, 'god', R.ANSWER_UNCHECKED_SUBJECT).length, 1, 'told as the one waiting');
+  assert.equal(notes(byId.hive, 'god', "Pete's answer was not delivered").length, 0, 'and not a second time');
+  assert.deepEqual(heldRows(byId.hive).map((r) => [r.way, r.to, r.why, r.told]), [['out', 'god', 'unreadable', 'recipient']]);
+  const byName = await office(t, { layer: layer() });
+  send(byName.hive, 'research', { to: 'michael', act: 'inform', subject: 'Stuck', body: 'No source has it' });
+  byName.hive.routeOnce(); await tick(); byName.hive.routeOnce();
+  const told = notes(byName.hive, 'god', "Pete's answer was not delivered");
+  assert.equal(told.length, 1);
+  assert.match(told[0].body, /^Pete's answer to you \("Stuck"\) was not delivered: .* Ask Pete again if the work still needs it\./);
+  assert.equal(notes(byName.hive, 'god', R.ANSWER_UNCHECKED_SUBJECT).length, 0);
+  assert.deepEqual(heldRows(byName.hive).map((r) => [r.to, r.toName, r.told]), [['god', 'Michael', 'recipient']]);
+});
+
 test('held rows past 400 days are pruned when a new one is written', async (t) => {
   // Value: protects=the record is kept as long as Pulse keeps raw events, no longer; fails_when=old rows stay or new ones are dropped; why_new=held list; seam=none
   const { hive } = await office(t, { layer: fakeLayer({ inbound: () => ({ decision: 'deny', reason: R.REFUSAL_TOO_LONG, by: 'length' }) }) });
