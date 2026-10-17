@@ -133,7 +133,7 @@ test("a subagent's tool calls do not release a prompt hold, the main session's d
   // Value: protects=a prompt still on screen is never typed into; fails_when=a Task subagent's PostToolUse ends the hold; why_new=ship review 2026-10-16; seam=none
   const w = new WorkerWakeWatchdog();
   w.noteSpawn('pty-alice', 0);
-  w.noteHook('alice', 'Notification', 'Claude needs your permission to use Bash.', 100_000);
+  w.noteHook('alice', 'Notification', 'Needs your permission to use Bash.', 100_000);
   w.noteHook('alice', 'PreToolUse', undefined, 110_000, true);
   w.noteHook('alice', 'PostToolUse', undefined, 120_000, true);
   assert.deepEqual(w.decide([fact()], 200_000), []);
@@ -159,7 +159,7 @@ test('a prompt hold ends on its own after a long ceiling', () => {
   const w = new WorkerWakeWatchdog();
   w.noteSpawn('pty-alice', 0);
   const held = 100_000;
-  w.noteHook('alice', 'Notification', 'Claude needs your permission to use Bash.', held);
+  w.noteHook('alice', 'Notification', 'Needs your permission to use Bash.', held);
   const before = held + WORKER_WAKE_PROMPT_HOLD_MS - 1;
   assert.deepEqual(w.decide([fact({ lastOutputAt: before - WORKER_WAKE_IDLE_MS - 1 })], before), []);
   const after = held + WORKER_WAKE_PROMPT_HOLD_MS;
