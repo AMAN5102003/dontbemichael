@@ -83,16 +83,6 @@
 **Priority:** P2
 **Depends on:** A Windows shell sandbox, or a firewall rule per team member.
 
-### End a credit or sign in stop only on a finished turn
-
-**What:** When the office stopped because the Claude account ran out of credit or its sign in stopped working, end the stop when a turn finishes, never because a check heard nothing for ten minutes.
-
-**Why:** After a restart, or with no Claude session alive to take Michael's check, silence ends the stop (`CHECK_TIMEOUT_MS` in `src/main/officeBreak.ts`) and the team is given work on an account that still cannot run it, then stops again.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** None
-
 ### Read the registry once per router tick
 
 **What:** In `routeOnce`, read the registry and Pete's name once per tick, not once per outbox file.
@@ -852,6 +842,16 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Depends on:** None
 
 ## Completed
+
+### End a credit or sign in stop only on a finished turn
+
+**What:** When the office stopped because the Claude account ran out of credit or its sign in stopped working, end the stop when a turn finishes, never because a check heard nothing for ten minutes.
+
+**Why:** After a restart, or with no Claude session alive to take Michael's check, silence ends the stop (`CHECK_TIMEOUT_MS` in `src/main/officeBreak.ts`) and the team is given work on an account that still cannot run it, then stops again.
+
+**Effort:** S
+**Priority:** P3
+**Completed:** merged 2026-10-17. A credit or sign in check that hears nothing goes back to waiting and checks again after RETRY_MS; only a finished turn ends the stop. The plan limit keeps its old ending and a key stop still waits for the owner (agentvivekkumar/dontbemichael#383, by amartya1523).
 
 ### Copy a link's address from a card
 
