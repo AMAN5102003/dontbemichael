@@ -243,7 +243,7 @@ const HISTORY = abs('/Users/me/.claude/history.jsonl');
 const withRecords = { ...layout, engineRecords: { projects: PROJECTS, history: HISTORY } };
 
 test('every agent, Michael too, is walled from the session records in shell and file tools', () => {
-  // Value: protects=no agent reads a teammate's conversation or a hidden check's prompt; fails_when=the records drop out of the sandbox or the deny rules; why_new=TODOS "Keep Claude Code's transcripts and history out of agents' reach"; seam=none
+  // Value: protects=no agent reads a teammate's conversation or a hidden check's prompt; fails_when=the records drop out of the sandbox or the deny rules; why_new=TODOS, keep the engine's session records out of agents' reach; seam=none
   for (const agent of [{ isGod: false, cwd: path.join(B, 'Finance') }, { isGod: true, cwd: B }]) {
     const p = folderPolicy(agent, withRecords, false);
     for (const f of [PROJECTS, HISTORY]) {

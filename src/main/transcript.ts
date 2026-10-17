@@ -47,8 +47,8 @@ export function claudeProjectsRoot(): string {
   return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
 }
 
-/** Claude Code's prompt history, beside its projects folder. */
-export function claudeHistoryFile(): string {
+/** The engine's prompt history, beside its projects folder. */
+export function engineHistoryFile(): string {
   return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'history.jsonl');
 }
 

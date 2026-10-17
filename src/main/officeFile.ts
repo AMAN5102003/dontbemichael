@@ -18,7 +18,7 @@ import {
 } from '../shared/officeRecord';
 import { homeFolderStatus } from './homeFolder';
 import type { FolderLayout } from '../shared/folderAccess';
-import { claudeHistoryFile, claudeProjectsRoot } from './transcript';
+import { claudeProjectsRoot, engineHistoryFile } from './transcript';
 
 export function officeRecordPath(home: string): string {
   return join(home, 'office.json');
@@ -174,7 +174,7 @@ export function folderLayoutFor(businessFolder: string | undefined, folders: str
   return {
     business, teamFolders,
     ...(app ? { appPrivate: join(app, 'private'), appLocked: [join(app, 'hive', 'bin'), join(app, 'agent-settings')] } : {}),
-    engineRecords: { projects: claudeProjectsRoot(), history: claudeHistoryFile() }
+    engineRecords: { projects: claudeProjectsRoot(), history: engineHistoryFile() }
   };
 }
 
