@@ -67,7 +67,28 @@ function Fixture() {
 }
 createRoot(document.getElementById('root')!).render(<Fixture />);
 
-const settle = () => new Promise<void>((r) => setTimeout(r, 80));
+// Let layout/ResizeObserver delivery finish before checking preservation or
+// absence: those predicates can already be true before the action is handled.
+const settle = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+async function until(predicate: () => unknown, message: string): Promise<void> {
+  const deadline = performance.now() + 2000;
+  while (!predicate()) {
+    if (performance.now() >= deadline) throw new Error(message);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  }
+}
+async function scrollTo(top: number) {
+  const el = list();
+  let delivered = false;
+  const onScroll = () => { delivered = true; };
+  el.addEventListener('scroll', onScroll, { once: true });
+  const before = el.scrollTop;
+  try {
+    el.scrollTop = top;
+    if (el.scrollTop !== before) await until(() => delivered, 'scroll event is delivered');
+    await settle();
+  } finally { el.removeEventListener('scroll', onScroll); }
+}
 const list = () => document.querySelector('.cth-dock > div:nth-child(2)') as HTMLElement;
 const jump = () => document.querySelector('[data-dock-jump]') as HTMLButtonElement | null;
 const bottom = () => list().scrollHeight - list().clientHeight - list().scrollTop;
@@ -84,30 +105,28 @@ async function language(lng: string) {
   document.documentElement.dir = directionFor(lng);
 }
 
-Object.assign(window, { dockTest: { reset, append, list, bottom, jump, settle, update, language, sendToMichael } });
+Object.assign(window, { dockTest: { reset, append, list, bottom, jump, settle, until, scrollTo, update, language, sendToMichael } });
 
 async function runDockTests() {
   const passed: string[] = [];
   const check = (ok: unknown, message: string) => { if (!ok) throw new Error(message); };
-  const near = (a: number, b: number, message: string) => check(Math.abs(a - b) <= 1, `${message}: ${a} vs ${b}`);
-  const pause = async (top = 200) => { list().scrollTop = top; await settle(); };
+  const pause = (top = 200) => scrollTo(top);
   const commit = async (next: DockItem[]) => { flushSync(() => update(next)); await settle(); };
   const anchor = () => {
     const top = list().getBoundingClientRect().top;
     const row = [...list().querySelectorAll<HTMLElement>('[data-dock-item]')].find((r) => r.getBoundingClientRect().bottom > top)!;
     return { id: row.dataset.dockItem!, offset: row.getBoundingClientRect().top - top };
   };
-  const unchanged = (saved: ReturnType<typeof anchor>, label: string) => {
-    const row = list().querySelector<HTMLElement>(`[data-dock-item="${saved.id}"]`)!;
-    check(row, `${label}: anchor survives`);
-    near(row.getBoundingClientRect().top - list().getBoundingClientRect().top, saved.offset, label);
-  };
+  const unchanged = (saved: ReturnType<typeof anchor>, label: string) => until(() => {
+    const row = list().querySelector<HTMLElement>(`[data-dock-item="${saved.id}"]`);
+    return row && Math.abs(row.getBoundingClientRect().top - list().getBoundingClientRect().top - saved.offset) <= 1;
+  }, label);
   const navigate = async (id?: string) => { flushSync(() => useStore.getState().setDock(true, id)); await settle(); };
 
   reset(); await settle();
-  check(bottom() <= 1 && !jump(), 'opening starts at latest without a count');
+  await until(() => bottom() <= 1 && !jump(), 'opening starts at latest without a count');
   append(); await settle();
-  check(bottom() <= 1 && !jump(), 'bottom follows incoming replies');
+  await until(() => bottom() <= 1 && !jump(), 'bottom follows incoming replies');
   passed.push('open and follow at bottom');
 
   await pause();
@@ -116,40 +135,40 @@ async function runDockTests() {
   const composer = document.querySelector('textarea')!;
   composer.focus();
   append(); await settle();
-  unchanged(reading, 'two replies preserve the passage');
-  check(jump()?.textContent?.includes('2 new replies'), `two distinct arrivals are counted: ${jump()?.textContent}, bottom=${bottom()}`);
-  check(document.querySelector('[aria-live]')?.textContent === '2 new replies', 'arrivals use one polite announcement');
+  await unchanged(reading, 'two replies preserve the passage');
+  await until(() => jump()?.textContent?.includes('2 new replies'), `two distinct arrivals are counted: ${jump()?.textContent}, bottom=${bottom()}`);
+  await until(() => document.querySelector('[aria-live]')?.textContent === '2 new replies', 'arrivals use one polite announcement');
   check(document.activeElement === composer, 'arrivals preserve composer focus');
-  check(list().clientHeight === viewportHeight, 'jump control reserves space');
+  await until(() => list().clientHeight === viewportHeight, 'jump control reserves space');
   await commit([...current]);
-  check(jump()?.textContent?.includes('2 new replies'), 'duplicate polling does not count twice');
+  await until(() => jump()?.textContent?.includes('2 new replies'), 'duplicate polling does not count twice');
   await commit(current.map((it) => it.kind === 'owner' ? { ...it, status: 'couldnt-finish' as const } : it));
-  unchanged(reading, 'status reflow preserves the passage');
-  check(jump()?.textContent?.includes('2 new replies'), 'status edits do not count');
+  await unchanged(reading, 'status reflow preserves the passage');
+  await until(() => jump()?.textContent?.includes('2 new replies'), 'status edits do not count');
   jump()!.click(); await settle();
-  check(bottom() <= 1 && !jump(), 'jump clears count and resumes following');
-  check(document.querySelector('[aria-live]')?.textContent === '', 'catch-up does not replay a stale announcement');
+  await until(() => bottom() <= 1 && !jump(), 'jump clears count and resumes following');
+  await until(() => document.querySelector('[aria-live]')?.textContent === '', 'catch-up does not replay a stale announcement');
   append(); await settle();
-  check(bottom() <= 1 && !jump(), 'following remains enabled after jump');
+  await until(() => bottom() <= 1 && !jump(), 'following remains enabled after jump');
   passed.push('reading anchor, counts, polling, status, focus and jump');
 
   await pause(); append(); await settle();
-  list().scrollTop = list().scrollHeight; await settle();
-  check(!jump(), 'manual catch-up clears count');
-  append(); await settle(); check(bottom() <= 1 && !jump(), 'manual catch-up resumes following');
+  await scrollTo(list().scrollHeight);
+  await until(() => !jump(), 'manual catch-up clears count');
+  append(); await settle(); await until(() => bottom() <= 1 && !jump(), 'manual catch-up resumes following');
   await pause(); append(true); await settle();
-  check(jump()?.textContent?.includes('Jump to latest'), 'notes have no invented reply count');
+  await until(() => jump()?.textContent?.includes('Jump to latest'), 'notes have no invented reply count');
   await commit(current.slice(0, -1));
-  check(!jump(), 'removing arrivals clears stale count');
+  await until(() => !jump(), 'removing arrivals clears stale count');
   passed.push('manual catch-up, notes and removal');
 
   await navigate('q4');
   await pause(500); const targeted = anchor();
-  append(); await settle(); unchanged(targeted, 'retained target is not recentered');
+  append(); await settle(); await unchanged(targeted, 'retained target is not recentered');
   await navigate('q4');
   const q4 = list().querySelector<HTMLElement>('[data-q="q4"]')!;
-  near(q4.getBoundingClientRect().top - list().getBoundingClientRect().top + q4.offsetHeight / 2, list().clientHeight / 2, 'same target explicitly navigates again');
-  check(!jump(), 'explicit navigation clears arrival count');
+  await until(() => Math.abs(q4.getBoundingClientRect().top - list().getBoundingClientRect().top + q4.offsetHeight / 2 - list().clientHeight / 2) <= 1, 'same target explicitly navigates again');
+  await until(() => !jump(), 'explicit navigation clears arrival count');
   passed.push('one-time and repeated explicit navigation');
 
   reset(); await settle(); await pause(800);
@@ -157,28 +176,28 @@ async function runDockTests() {
   const oldQ = { ...question(-1), at: new Date(Date.now() - 40 * 86400000).toISOString() };
   const oldR = { ...reply(-1), at: oldQ.at };
   await commit([oldQ, oldR, ...current]);
-  unchanged(beforeEarlier, 'hidden old history does not move reading');
+  await unchanged(beforeEarlier, 'hidden old history does not move reading');
   [...document.querySelectorAll('button')].find((b) => b.textContent === 'Earlier')!.click(); await settle();
-  unchanged(beforeEarlier, 'Earlier prepends preserve reading');
-  check(!jump(), 'old history is not a new reply');
+  await unchanged(beforeEarlier, 'Earlier prepends preserve reading');
+  await until(() => !jump(), 'old history is not a new reply');
   await navigate('q-1');
-  check(list().scrollTop < 80, 'old question can be targeted');
+  await until(() => list().scrollTop < 80, 'old question can be targeted');
   // A quoted answer after another exchange navigates through the same path.
   await commit([...current, { ...reply(101), replyTo: 'q4' }]);
   await navigate();
   const quote = list().querySelector('[data-dock-item="r101"] button') as HTMLButtonElement;
   check(quote, 'quote is rendered'); quote.click(); await settle();
   await pause(600); const afterQuote = anchor(); append(); await settle();
-  unchanged(afterQuote, 'quote navigation is consumed once');
+  await unchanged(afterQuote, 'quote navigation is consumed once');
   passed.push('Earlier, hidden question and quote navigation');
 
   reset(); await settle();
   await commit([oldQ, oldR, ...current]);
-  check(!list().querySelector('[data-q="q-1"]'), 'target starts hidden');
+  await until(() => !list().querySelector('[data-q="q-1"]'), 'target starts hidden');
   await navigate('q-1');
-  check(list().querySelector('[data-q="q-1"]') && list().scrollTop < 80, 'explicit navigation reveals hidden history');
+  await until(() => list().querySelector('[data-q="q-1"]') && list().scrollTop < 80, 'explicit navigation reveals hidden history');
   await navigate('missing-question');
-  check(bottom() <= 1, 'missing question falls back to latest');
+  await until(() => bottom() <= 1, 'missing question falls back to latest');
   passed.push('hidden and missing navigation targets');
 
   reset(); await settle();
@@ -186,38 +205,38 @@ async function runDockTests() {
   await commit([oldQ, oldR, ...current, foldedReply]);
   await pause(); const beforeReveal = anchor();
   [...document.querySelectorAll('button')].find((b) => b.textContent === 'Earlier')!.click(); await settle();
-  unchanged(beforeReveal, 'revealing a folded exchange preserves reading');
-  check(!jump(), 'an existing reply in a folded exchange is not a new arrival');
+  await unchanged(beforeReveal, 'revealing a folded exchange preserves reading');
+  await until(() => !jump(), 'an existing reply in a folded exchange is not a new arrival');
   passed.push('folded exchange arrival baseline');
 
   reset(); await settle(); await navigate('q200'); await pause(); append(); await settle();
   jump()!.click(); await settle();
   await commit([question(200), ...current]);
-  check(bottom() <= 1 && !jump(), 'catch-up cancels an unresolved question target');
+  await until(() => bottom() <= 1 && !jump(), 'catch-up cancels an unresolved question target');
   passed.push('catch-up supersedes pending navigation');
 
   reset(); await settle(); await pause(); const beforeDelayedReply = anchor();
   const delayedReply = { ...reply(400), replyTo: 'q11', at: at(23) };
   await commit([...current.slice(0, 24), delayedReply, ...current.slice(24)]);
-  unchanged(beforeDelayedReply, 'a delayed reply below the reader preserves reading');
-  check(jump()?.textContent?.includes('1 new reply'), 'arrival IDs count even when their timestamps precede the latest reply');
+  await unchanged(beforeDelayedReply, 'a delayed reply below the reader preserves reading');
+  await until(() => jump()?.textContent?.includes('1 new reply'), 'arrival IDs count even when their timestamps precede the latest reply');
   passed.push('delayed arrival below the reader');
 
   reset(); await settle(); await pause(350);
   const beforeMore = anchor();
   const more = list().querySelector(`[data-dock-item="${beforeMore.id}"] button`) as HTMLButtonElement;
   check(more?.textContent === 'More', 'visible reply can expand');
-  more.click(); await settle(); unchanged(beforeMore, 'More preserves the reply text');
+  more.click(); await settle(); await unchanged(beforeMore, 'More preserves the reply text');
   await navigate(); const lastReply = list().querySelector('[data-dock-item="r13"] button') as HTMLButtonElement;
   const beforeLastMore = anchor();
-  lastReply.click(); await settle(); unchanged(beforeLastMore, 'More at bottom keeps the text being read visible');
-  check(bottom() > 32, 'More pauses following for reading');
+  lastReply.click(); await settle(); await unchanged(beforeLastMore, 'More at bottom keeps the text being read visible');
+  await until(() => bottom() > 32, 'More pauses following for reading');
   await pause(800); const beforeResize = anchor();
   document.querySelector<HTMLElement>('.cth-dock')!.style.maxHeight = '300px'; await settle();
-  unchanged(beforeResize, 'viewport resize preserves reading');
+  await unchanged(beforeResize, 'viewport resize preserves reading');
   // Child-only layout change exercises ResizeObserver without a dock rerender.
   (list().querySelector('[data-dock-item="r0"]') as HTMLElement).style.minHeight = '350px'; await settle();
-  unchanged(beforeResize, 'late child layout preserves reading');
+  await unchanged(beforeResize, 'late child layout preserves reading');
   passed.push('More, viewport resize and asynchronous child layout');
 
   reset(); await settle(); await pause();
@@ -225,7 +244,7 @@ async function runDockTests() {
   const nextRow = [...list().querySelectorAll<HTMLElement>('[data-dock-item]')].find((r) => r.dataset.dockItem !== removedAnchor.id && r.getBoundingClientRect().top > list().getBoundingClientRect().top)!;
   const neighbour = { id: nextRow.dataset.dockItem!, offset: nextRow.getBoundingClientRect().top - list().getBoundingClientRect().top };
   await commit(current.filter((it) => it.id !== removedAnchor.id));
-  unchanged(neighbour, 'removing visible anchor preserves a surviving neighbour');
+  await unchanged(neighbour, 'removing visible anchor preserves a surviving neighbour');
   passed.push('visible anchor removal');
 
   reset(); await settle(); await pause();
@@ -233,31 +252,31 @@ async function runDockTests() {
   useStore.getState().setDraft('god', 'Keep this draft');
   composer.value = 'Keep this draft';
   check(await sendToMichael('god', 'Keep this draft', []) === false, 'send failure is reported');
-  await settle(); unchanged(beforeSend, 'failed send preserves viewport');
+  await settle(); await unchanged(beforeSend, 'failed send preserves viewport');
   check(useStore.getState().drafts.god === 'Keep this draft', 'failed send preserves draft');
   failSend = false;
   check(await sendToMichael('god', 'New owner question', []) === true, 'send succeeds');
-  await settle(); check(bottom() <= 1 && !jump(), 'successful send navigates to new owner message');
+  await settle(); await until(() => bottom() <= 1 && !jump(), 'successful send navigates to new owner message');
   // The send target may arrive in a later poll than setDock.
   await navigate('q200'); await pause(400);
   await commit([...current, question(200)]);
-  check(bottom() <= 1, 'pending send target is applied when it arrives');
+  await until(() => bottom() <= 1, 'pending send target is applied when it arrives');
   passed.push('send success, failure and delayed target');
 
   reset(); await settle(); await pause(); append(); await settle();
   flushSync(() => useStore.getState().setDock(false));
   flushSync(() => useStore.getState().setDock(true)); await settle();
-  check(bottom() <= 1 && !jump(), 'reopening starts at latest');
+  await until(() => bottom() <= 1 && !jump(), 'reopening starts at latest');
   flushSync(() => useStore.getState().setDock(false));
   await commit([]);
   flushSync(() => useStore.getState().setDock(true)); await settle();
-  check(document.querySelector('.cth-dock') && !jump(), 'empty dock renders');
-  await commit(history()); check(bottom() <= 1 && !jump(), 'delayed first history is baseline');
+  await until(() => document.querySelector('.cth-dock') && !jump(), 'empty dock renders');
+  await commit(history()); await until(() => bottom() <= 1 && !jump(), 'delayed first history is baseline');
   passed.push('reopen, empty and initial history');
 
   document.querySelector('.cth-dock')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await settle();
-  check(!document.querySelector('.cth-dock') && document.activeElement === composer, 'Escape closes and returns composer focus');
+  await until(() => !document.querySelector('.cth-dock') && document.activeElement === composer, 'Escape closes and returns composer focus');
   reset(); await settle();
   passed.push('Escape and composer focus');
 
@@ -266,7 +285,7 @@ async function runDockTests() {
   const file = list().querySelector('[data-dock-item="r0"]');
   await commit(current.map((it) => it.id === 'r0' ? { ...it, text: 'Saved as /tmp/accounts.csv.' } : it));
   resolveFiles?.([{ verdict: 'open', tab: false, path: '/tmp/accounts.csv' }]); await settle();
-  unchanged(beforeFiles, 'file verdict preserves reading');
+  await unchanged(beforeFiles, 'file verdict preserves reading');
   const fileButton = file!.querySelector('button') as HTMLButtonElement;
   check(fileButton, 'existing file chip is retained'); fileButton.click(); await settle();
   check(fileOpened, 'file opening still reaches main boundary');
@@ -278,12 +297,12 @@ async function runDockTests() {
     for (const theme of ['light', 'dark']) {
       document.documentElement.dataset.cthTheme = theme;
       reset(); await settle(); await pause(); append(); await settle();
-      check(jump()?.textContent?.includes(i18n.t('dock.newReplies', { count: 2 })), `${lng} ${theme} localized count`);
+      await until(() => jump()?.textContent?.includes(i18n.t('dock.newReplies', { count: 2 })), `${lng} ${theme} localized count`);
       check(!jump()?.textContent?.includes('dock.'), 'no untranslated key');
-      check(jump()!.getBoundingClientRect().width < 380, 'localized button fits');
+      await until(() => jump()!.getBoundingClientRect().width < 380, 'localized button fits');
       jump()!.focus();
       check(document.activeElement === jump(), 'button is focusable');
-      jump()!.click(); await settle(); check(bottom() <= 1, `${lng} ${theme} jump`);
+      jump()!.click(); await settle(); await until(() => bottom() <= 1, `${lng} ${theme} jump`);
     }
   }
   await language('en'); document.documentElement.dataset.cthTheme = 'light';
@@ -304,11 +323,11 @@ async function runDockStressTests() {
     const row = [...list().querySelectorAll<HTMLElement>('[data-dock-item]')].find((r) => r.getBoundingClientRect().bottom > top)!;
     return { id: row.dataset.dockItem!, offset: row.getBoundingClientRect().top - top };
   };
-  const unchanged = (saved: ReturnType<typeof anchor>) => {
+  const unchanged = (saved: ReturnType<typeof anchor>) => until(() => {
     const row = list().querySelector<HTMLElement>(`[data-dock-item="${saved.id}"]`);
-    check(row && Math.abs(row.getBoundingClientRect().top - list().getBoundingClientRect().top - saved.offset) <= 1, `reading anchor ${saved.id} moved`);
-  };
-  const read = async () => { list().scrollTop = 200; await settle(); };
+    return row && Math.abs(row.getBoundingClientRect().top - list().getBoundingClientRect().top - saved.offset) <= 1;
+  }, `reading anchor ${saved.id} moved`);
+  const read = () => scrollTo(200);
   const scenario = async (name: string, run: () => Promise<void>) => {
     reset(); await settle();
     try { await run(); passed.push(name); }
@@ -320,64 +339,63 @@ async function runDockStressTests() {
     const saved = anchor();
     // Chromium has changed scrollTop, but its scroll event has not fired yet.
     append(); await settle();
-    unchanged(saved);
-    check(jump()?.textContent === '2 new replies', 'same-frame arrivals must be counted');
+    await unchanged(saved);
+    await until(() => jump()?.textContent === '2 new replies', 'same-frame arrivals must be counted');
   });
   await scenario('scroll and history prepend in the same frame', async () => {
     list().scrollTop = 200;
     const saved = anchor();
     const q = { ...question(-10), status: 'has-it' as const };
     commit([q, reply(-10), ...current]); await settle();
-    unchanged(saved); check(!jump(), 'a history prepend must not count as an arrival');
+    await unchanged(saved); await until(() => !jump(), 'a history prepend must not count as an arrival');
   });
   await scenario('manual catch-up and arrival in the same frame', async () => {
     await read(); append(); await settle();
     list().scrollTop = list().scrollHeight;
     append(); await settle();
-    check(bottom() <= 1 && !jump(), 'catch-up intent must use the pre-arrival scroll height');
+    await until(() => bottom() <= 1 && !jump(), 'catch-up intent must use the pre-arrival scroll height');
   });
   await scenario('manual catch-up supersedes a pending target', async () => {
     navigate('delayed-question'); await settle(); await read(); append(); await settle();
-    list().scrollTop = list().scrollHeight; await settle();
+    await scrollTo(list().scrollHeight);
     const delayed = { ...question(200), id: 'delayed-question', at: current[6].at };
     commit([...current.slice(0, 6), delayed, ...current.slice(6)]); await settle();
-    check(bottom() <= 1 && !jump(), 'a resolved target must not override manual catch-up');
+    await until(() => bottom() <= 1 && !jump(), 'a resolved target must not override manual catch-up');
   });
   for (const distance of [31, 33]) await scenario(`follow boundary at ${distance}px`, async () => {
-    list().scrollTop = list().scrollHeight - list().clientHeight - distance;
-    await settle(); const saved = anchor();
+    await scrollTo(list().scrollHeight - list().clientHeight - distance); const saved = anchor();
     append(); await settle();
-    if (distance < 32) check(bottom() <= 1 && !jump(), 'near-bottom reader must follow');
-    else { unchanged(saved); check(jump()?.textContent === '2 new replies', 'reader outside tolerance must stay paused'); }
+    if (distance < 32) await until(() => bottom() <= 1 && !jump(), 'near-bottom reader must follow');
+    else { await unchanged(saved); await until(() => jump()?.textContent === '2 new replies', 'reader outside tolerance must stay paused'); }
   });
   await scenario('30 reply bursts without waiting between commits', async () => {
     await read(); const saved = anchor();
     for (let i = 0; i < 30; i++) append();
-    await settle(); unchanged(saved);
-    check(jump()?.textContent === '60 new replies', 'every burst counts exactly once');
-    commit([...current]); await settle(); unchanged(saved);
-    check(jump()?.textContent === '60 new replies', 'a poll after bursts must not recount');
+    await settle(); await unchanged(saved);
+    await until(() => jump()?.textContent === '60 new replies', 'every burst counts exactly once');
+    commit([...current]); await settle(); await unchanged(saved);
+    await until(() => jump()?.textContent === '60 new replies', 'a poll after bursts must not recount');
   });
   await scenario('replies above the passage are not catch-up arrivals', async () => {
     await read(); const saved = anchor();
     commit([current[0], { ...reply(700), replyTo: 'q0', at: current[0].at }, ...current.slice(1)]);
-    await settle(); unchanged(saved); check(!jump(), 'arrival above the viewport must not show a count');
+    await settle(); await unchanged(saved); await until(() => !jump(), 'arrival above the viewport must not show a count');
   });
   await scenario('target IDs with selector punctuation', async () => {
     const id = 'question "quoted" [bracket] \\ slash';
     commit(current.map((it) => it.id === 'q4' ? { ...it, id } : it));
     navigate(id); await settle();
     const q = [...list().querySelectorAll<HTMLElement>('[data-q]')].find((r) => r.dataset.q === id)!;
-    check(Math.abs(q.getBoundingClientRect().top - list().getBoundingClientRect().top + q.offsetHeight / 2 - list().clientHeight / 2) <= 1, 'escaped target is not centered');
+    await until(() => Math.abs(q.getBoundingClientRect().top - list().getBoundingClientRect().top + q.offsetHeight / 2 - list().clientHeight / 2) <= 1, 'escaped target is not centered');
   });
   await scenario('200 exchanges and 40 arriving replies', async () => {
     commit(Array.from({ length: 200 }, (_, n) => [question(n), reply(n)]).flat()); await settle();
-    list().scrollTop = list().scrollHeight / 2; await settle(); const saved = anchor();
+    await scrollTo(list().scrollHeight / 2); const saved = anchor();
     const start = performance.now();
     for (let i = 0; i < 20; i++) append();
     const duration = performance.now() - start;
-    await settle(); unchanged(saved);
-    check(jump()?.textContent === '40 new replies', 'large history loses or recounts arrivals');
+    await settle(); await unchanged(saved);
+    await until(() => jump()?.textContent === '40 new replies', 'large history loses or recounts arrivals');
     passed.push(`large-history burst commit time: ${Math.round(duration)}ms`);
   });
 
@@ -396,7 +414,7 @@ async function runDockStressTests() {
         navigate();
         check(observing.size === 1, 'opening must have exactly one container observer');
       }
-      await settle(); check(bottom() <= 1 && !jump(), 'reopening must follow without stale arrivals');
+      await settle(); await until(() => bottom() <= 1 && !jump(), 'reopening must follow without stale arrivals');
     });
   } finally { window.ResizeObserver = NativeObserver; }
 
@@ -422,16 +440,16 @@ async function runDockStressTests() {
       } else if (action === 5) {
         navigate(); following = true; expected.clear();
       } else {
-        list().scrollTop = 200 + random() % 200;
+        await scrollTo(200 + random() % 200);
         following = false;
       }
       await settle();
-      if (following) check(bottom() <= 1 && !jump(), `step ${step}: following stopped`);
+      if (following) await until(() => bottom() <= 1 && !jump(), `step ${step}: following stopped`);
       else {
-        if (action !== 6) unchanged(saved);
+        if (action !== 6) await unchanged(saved);
         const count = current.filter((it) => expected.has(it.id) && it.kind === 'michael' && !it.notes).length;
         const label = count ? i18n.t('dock.newReplies', { count }) : expected.size ? i18n.t('dock.jumpToLatest') : null;
-        check((jump()?.textContent ?? null) === label, `step ${step}: expected ${label}, got ${jump()?.textContent}`);
+        await until(() => (jump()?.textContent ?? null) === label, `step ${step}: expected ${label}, got ${jump()?.textContent}`);
       }
     }
   });
