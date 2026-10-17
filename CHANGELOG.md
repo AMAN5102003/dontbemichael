@@ -6,7 +6,72 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
-## [Unreleased]
+## [0.2.2] (2026-10-16)
+
+### Added
+
+- **Pulse: what the office got done and what it costs.** A new Pulse tab beside Tasks shows ways to save first (run a check less often when it mostly finds nothing; try a lighter or stronger model when the work shows it), each with the numbers behind it, applied only when you click Apply and undone with Undo. Below: what got done and who did it; Kept safe, what the trust layer kept off the internet, the web answers it cleaned of instructions to AI agents, anything held because it could not be checked, and the steps your settings stopped; Learning, what the team learned in the period and whether it asks you less than before; your plan use and your time; and Team at work, how busy each member is next to the others and what their work costs. Pulse fills in the eight weeks before it started from the office log, members' sessions and the cost ledger, so it never starts at zero. On a Claude plan, every cost is your plan's real price for the period (found in your Claude account, or the price you set in Settings > Agents) split by each member's share of the work, with what the same work would cost per use behind the (i). Savings are measured from the office's own records after a week. The numbers come from a new store only the app writes, in its own data folder, which no team member can reach.
+
+- **Ask me cards you can answer with a click.** When Michael offers choices, they show as rows to pick, with his recommendation tagged; when he asks several things, each question gets its own line, and a question can carry its own small choices. Nothing is sent until you press Reply, which says what it will send ("Reply with option 1", "Reply to 2 of 5"), and a box for your own answer or a note stays on every card. Michael gets your answer in words ("Picked: …", "1: … Not answered: 3"), never a bare number. Asks written the old way look as they did. (Agent behavior: Michael writes choices and questions as fields, and a to-do gets "Done, I did it" as its first option.)
+
+- **Delete a team member for good.** Edit agent has a Danger zone under the engine with a Delete button. After one confirm, the team member stops, their schedules pause, work bound to them goes back to the teammates it was taken from, and they leave the floor with no way back. Michael's roster skips them from then on. Their open questions leave Ask me (kept on the card, marked withdrawn because they were deleted), and Michael gets one note listing their open cards to give to someone else or close. Requests they filed that Michael had not worked yet are set aside, so you are never asked something on behalf of someone you deleted. Michael, his assistant and Research have no Delete (Research is turned off in Settings). Before this, no hire could leave the team: the old close button was hidden on 2026-09-24. (Agent behavior: who Michael can route to, and a new note to Michael when you delete someone.)
+
+### Changed
+
+- **Every office on the floor says what it does.** A small plate in front of the chairs names the department (Finance, Sales, HR, IT and so on), so you can tell who does what without knowing the show. The People department is now called HR.
+- **Glass monitors.** The desk monitors, Michael's too, are clear glass panes instead of thick black screens: plain glass when idle, tinted with scrolling lines while someone works.
+- **A team member stuck on a prompt is restarted, not handed to you.** When a member's session stops on a question only a person could answer, the app restarts them once and tells them to carry on with their work, and Michael checks that they picked it back up; he no longer asks you to open a 1:1 chat. If the restart does not take, or the prompt comes back within half an hour, Michael moves their work to a teammate and tells you plainly that they are stuck, once. (Agent behavior: a new note to the member, and what Michael is told and asks.)
+- **You never have to answer every question on a card.** Reply settles the ask with whatever you answered; the questions you left blank go through Michael to the team member who raised them, who works out what they can and comes back only for what they still need. Before, Michael asked you again at once. (Agent behavior: Michael and every team member.)
+
+### Security
+
+- **Hook events carry a secret for each start (issue #61).** Every team member's events (a turn starting, a tool used, a turn finished, its cost) now carry a secret the app gives it when it starts, and the app takes the sender from that secret. An event with no secret, someone else's, or one from an earlier start reaches nothing, and a tool check from it is refused. Behavior change for agents: none in what they do; an engine bridge that drops the secret loses its hook features until fixed. Known limit: the secret is in each member's environment, which another program running as you can read, so a member that deliberately looks there could act as a teammate on this channel; moving it out of the environment is next. Thanks to @codedbygo, who built the same design independently in #327.
+
+### Fixed
+
+- **Ask me cards with choices now show as rows to pick.** Some of Michael's instructions still told him to write choices as a numbered list, so new asks kept arriving as plain text with one reply box. Those instructions now all point to options and separate questions, and when a new ask still comes in as a list, Michael is reminded to rewrite it. Asks written before you update keep their look.
+- **Pete no longer stops on a permission prompt for his own work.** Since Research stopped loading your Claude settings (for privacy), Claude Code ran him in normal permission mode, so every shell command waited for an approval nobody could give. His tools are now allowed in his own settings; his walls are unchanged.
+- **Pete's privacy check answers at launch.** When the office opened with a dozen team members starting at once, the check's question could sit unsent in its window, so messages to Pete waited and then came back refused. The app now presses Enter again until the question is taken.
+- **The app never answers a permission prompt for an agent.** The inbox nudge typed into an open prompt after five minutes, and its Enter approved it. It now waits until the agent moves on, however long that takes.
+- **Yesterday means yesterday** in the Messages tab, also on the nights the clocks change (contributed in #331).
+- Release notes in the update toast and What's new show &, <, > and quotes as written instead of codes like `&amp;` (contributed in #333).
+- A damaged saved notice about a paused Send only mailbox no longer keeps Michael from hearing about it (contributed in #336).
+- The close buttons on Needs you and dialogs show feedback when you point at them (contributed in #322).
+- Setup's Street address shows an example like the other fields (contributed in #334), and setup suggests your local currency for eight more regions (contributed in #339).
+
+## [0.2.1] (2026-10-14)
+
+### Added
+
+- **Pete joins the office's idle time fun.** When he is on and free, Pete says lines of his own and trades paper plane conversations with the rest of the office: Andy calling him Plop, being the New Jim, reciting Die Hard for Erin, Poor Richard's after work, Kelly's old desk, and the office sizing up the new guys. The lines are written in his voice from his story in the show, the way the other running gags are, not quoted from scripts, and none of them uses his name, so they still fit if you rename him. The first conversation after you turn him on is one of his, once each time you turn him on.
+- Search the Skills list by meaning, and find a skill despite a typo (contributed in #177).
+
+### Changed
+
+- Pete's old idle lines about looking things up are gone; his lines come from the show like everyone else's.
+- **Michael hears every message the privacy check keeps from Pete:** who sent it, its subject, why, and what to do next (for a privacy refusal, that what stays private is set in Settings, Research & privacy), so his ask can tell you exactly what was stopped. Before, only the sender was told. When the check itself could not run, the sender is told it is not about the wording and Michael that it is an app problem, instead of "ask again in plainer words". (Agent behavior: what the team and Michael are told.)
+- **An Ask me card that needs you to do something on a website links straight to it.** When you need to sign in, accept terms or pay, the team member who found it now passes on the email's own link for it, and Michael puts it in the ask as a named link, so you no longer dig the email out of your mailbox. Only a link on the sender's own site, never a tracking or shortened one; when there is none, the ask says where to go. (Agent behavior: team members and Michael.)
+- **A new, retimed or turned on schedule waits for its next time** instead of running at once for a time that already passed today (contributed in #316). A time missed while the app was closed still runs once.
+- A click outside Settings asks before it drops unsaved changes (contributed in #292).
+- The update toasts and chips are translated (contributed in #290).
+- A `claude` a team member starts from its own shell loads none of your Claude account's connectors (contributed in #325).
+
+### Fixed
+
+- **The privacy check no longer stops everything going to Pete.** Its answer was thrown away as unreadable whenever it added a sentence after its verdict, so every question to Pete, and the app's closing and office open notices, came back refused.
+- **Reset & start over now starts truly fresh.** It used to erase only the team's memory and the office's work, so Pete's research desk and threads, Memory & Knowledge, saved keys, the history and mail and Slack files carried into the next office. Now everything the app made for the office goes, and setup opens as a new owner sees it. Your team's folders and the files in them, your Claude sign in and the saved copies of your team list stay, and so do your own files in the office folder. The confirm screen says what is erased and what is kept.
+- **In the communication only mode, only a plain status question skips your approval.** A webhook message goes straight through only when it is one short question that names no address, link or amount and asks nobody to act, like "Is the test suite green?". Anything else waits for you, however politely it is worded ("Can you pay the invoice?", contributed in #180, "Any chance you could...", "Is it ok to..."), and the sender can no longer skip that by labelling the message as chatter or by putting the request in its title.
+- Clicking a dotfile an agent names in its terminal, such as `.gitignore`, `.env` or `.npmrc`, opens it for editing instead of only showing it in Finder.
+- Pete's card on the office floor shows the name the app gave him, also in an office that saved him as Research.
+- Uploaded documents are read in a process of their own, so a big or broken file can't freeze the window (contributed in #287), and a PDF is read a page at a time, up to 500 pages (contributed in #289).
+- Installing a skill keeps its PDFs, fonts and images intact (contributed in #323).
+- An Excel file exported from accounting, payroll or other business systems is read instead of refused as empty (contributed in #324), and PowerPoint text keeps slide order (contributed in #171).
+- When the Claude Code check fails during setup, it says so with Try again instead of checking forever (contributed in #314).
+- An Ask me headline is no longer cut at abbreviations like Mr. or Inc. (contributed in #312).
+- A finished tool is no longer shown as running (contributed in #288), and a blocked tool call shows no detail (contributed in #234).
+- Out of range mail send times are rejected (contributed in #286); a pi team member starts with the office's rules (contributed in #309).
+- A hook judges a link to a file that isn't there yet by where it leads (contributed in #238), and the app's helper scripts are rewritten only when they changed (contributed in #297).
+- Settings warnings read in dark mode (contributed in #306); a Markdown link to a path with spaces becomes a file chip (contributed in #307); release notes keep inline code (contributed in #308); a count just under a million reads 1M (contributed in #293); flying paper planes stay hidden until they move (contributed in #310).
 
 ## [0.2.0] (2026-10-13)
 

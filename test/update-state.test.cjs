@@ -240,3 +240,22 @@ test('just-updated is quiet on the badge and loses to a newer available release'
   );
   assert.equal(next.state, 'available');
 });
+
+test('hyphenated prerelease identifiers retain their full release order', () => {
+  // Value: protects=update offers for hyphenated prereleases; fails_when=beta-a.1 and beta-z.1 collapse to the same version; seam=none
+  const { isNewerRelease, pendingVersion, reduceStatus } = loadTs('src/shared/updateState.ts');
+  const older = '0.1.1-beta-a.1';
+  const newer = '0.1.1-beta-z.1';
+  assert.equal(isNewerRelease(newer, older), true);
+  assert.equal(isNewerRelease(older, newer), false);
+  assert.equal(isNewerRelease(newer, newer), false);
+  assert.equal(isNewerRelease('0.1.1', newer), true);
+  assert.equal(isNewerRelease(newer, '0.1.1'), false);
+  assert.equal(isNewerRelease('v0.1.1-beta-z.2+build.7', newer), true);
+  assert.equal(isNewerRelease('0.1.1-beta-z.1+build.8', newer), false);
+
+  const available = { state: 'available', version: newer };
+  assert.equal(pendingVersion(available, older), newer);
+  assert.equal(reduceStatus({ state: 'downloaded', version: older }, available), available);
+  assert.equal(isNewer(newer, older), false, 'CLI and model floor comparisons still ignore prereleases');
+});

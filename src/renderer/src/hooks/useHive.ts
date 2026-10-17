@@ -1413,12 +1413,21 @@ export function useHive(config: HarnessConfig | null): void {
     void window.cth.connectorsPendingRestarts?.().then((ids) => ids.forEach(queue)).catch(() => {});
     return window.cth.onConnectorsRestartNeeded?.(({ agentId }) => queue(agentId));
   }, [config?.onboardingComplete]);
+  // A member stopped on a prompt the owner can't answer: restart now, which
+  // clears it; they resume where they left off (owner, 2026-10-15).
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    return window.cth.onAgentRestartStuck?.(({ agentId }) => {
+      const a = useStore.getState().agents.find((x) => x.id === agentId);
+      if (a?.ptyId) useStore.getState().setPendingRestart(agentId, { at: Date.now(), reason: 'stuck', now: true });
+    });
+  }, [config?.onboardingComplete]);
   useEffect(() => {
     if (!config?.onboardingComplete) return;
     const CEILING_MS = 10 * 60_000;
     const POLL_MS = 5_000;
     const BUSY = new Set(['thinking', 'working', 'compacting', 'looping']);
-    const WHY = { email: 'turn on email', connectors: 'apply its connectors', engine: 'start on Claude Code' } as const;
+    const WHY = { email: 'turn on email', connectors: 'apply its connectors', engine: 'start on Claude Code', stuck: 'clear a stuck prompt' } as const;
     const inFlight = new Set<string>();
     const tick = (): void => {
       const { pendingRestart, agents, setPendingRestart, updateAgent } = useStore.getState();

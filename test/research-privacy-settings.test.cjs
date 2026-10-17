@@ -97,7 +97,7 @@ test('Research copy has no dashes', () => {
 });
 
 test('the Research member reads as Research everywhere the owner sees it, under the name they gave it', () => {
-  // Value: protects=the setup card shows its role, its locked engine stays labelled for screen readers, its name is the owner's to edit, and the floor never calls it Ryan; fails_when=the card drops the role, the name locks again, or it joins the in character banter; why_new=design review, owner ship 2 D17; seam=source
+  // Value: protects=the setup card shows its role, its locked engine stays labelled for screen readers, its name is the owner's to edit, and Pete, in his own face, takes part in the studio's idle talk; fails_when=the card drops the role, the name locks again, or the floor filters Research out of idle talk again; why_new=design review, owner ship 2 D17, owner 2026-10-13 (Pete joins idle time fun); seam=source
   const wiz = read('src/renderer/src/components/OnboardingWizard.tsx');
   assert.match(wiz, /name=\{`\$\{researchName\} · \$\{t\('research\.title'\)\}`\}/, 'its current name (third ship)');
   assert.match(wiz, /character="pete"/, 'Pete, its own face, not Ryan (owner, third ship D4)');
@@ -105,6 +105,6 @@ test('the Research member reads as Research everywhere the owner sees it, under 
   assert.doesNotMatch(modal, /readOnly value=\{agent\.name\}/, 'the name is editable (ship 2 D17)');
   assert.match(modal, /info=\{isResearch \? t\('editAgent\.researchName', \{ name: researchName \}\) : undefined\}/);
   assert.match(modal, /<input readOnly value=\{providerLabel\} aria-label=\{t\('editAgent\.provider'\)\} style=\{lockedValueStyle\} \/>/);
-  assert.match(read('src/renderer/src/scene/studio/StudioStage.tsx'), /\.filter\(\(p\) => p\.id !== RESEARCH_ID\)/);
+  assert.doesNotMatch(read('src/renderer/src/scene/studio/StudioStage.tsx'), /\.filter\(\(p\) => p\.id !== RESEARCH_ID\)/, 'Pete joins idle talk (owner, 2026-10-13)');
   // The hook program's big call handling is driven for real in test/hook-frame-paths.test.cjs.
 });

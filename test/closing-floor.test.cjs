@@ -76,5 +76,5 @@ test('nobody who has gone home trades banter, and a closed office has none', () 
   assert.deepEqual(ids(['pam', 'jim', 'oscar', 'kevin', 'toby']), []);
   const stage = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/scene/studio/StudioStage.tsx'), 'utf8');
   assert.match(stage, /const closing = useClosingLights\(\);\n\s+const quote = useIdleQuote\(plan\.pods, paused \|\| !!closing\?\.all, life\.throwNote, accentOf, closing\?\.out \?\? NOBODY\);/);
-  assert.match(stage, /const quietPeople = \(\) => chatCandidates\(live\.current\.pods, live\.current\.gone, ACTIVE, ACTION_CLOCKING_IN\)\.filter\(\(p\) => p\.id !== RESEARCH_ID\);/);
+  assert.match(stage, /const quietPeople = \(\) => chatCandidates\(live\.current\.pods, live\.current\.gone, ACTIVE, ACTION_CLOCKING_IN\);/);
 });

@@ -33,7 +33,7 @@ test('an installed engine is installed, whatever its installer story', () => {
 
 test('a missing engine with an installer installs on first run and does not block', () => {
   const s = statusesFor([]);
-  for (const id of ['claude', 'codex', 'opencode', 'crush', 'pi', 'copilot']) {
+  for (const id of ['claude', 'codex', 'qwen', 'opencode', 'crush', 'pi', 'copilot']) {
     const a = classifyEngineAvailability(s, id);
     assert.equal(a.state, 'installs-on-first-run', id);
     assert.ok(a.installCommand.length > 0, id);
@@ -41,20 +41,29 @@ test('a missing engine with an installer installs on first run and does not bloc
   }
 });
 
-test('the repro: grok, antigravity and qwen are offered by the wizard but cannot install', () => {
+test('grok and antigravity have no installer, so the wizard blocks but links to the docs', () => {
   const s = statusesFor([]);
   const offered = AGENT_PROVIDER_PRESETS.filter((p) => canReceiveInbox(p.id)).map((p) => p.id);
-  for (const id of ['grok', 'antigravity', 'qwen']) {
+  for (const id of ['grok', 'antigravity']) {
     assert.ok(offered.includes(id), `${id} is on the picker`);
     const a = classifyEngineAvailability(s, id);
     assert.equal(a.state, 'not-installable', id);
     assert.equal(engineBlocksOnboarding(a), true, id);
+    assert.match(a.docsUrl ?? '', /^https:\/\//, `${id} links to install instructions`);
     assert.equal(engineAvailabilityBadge(a), 'NOT INSTALLED');
     const msg = engineAvailabilityMessage(a, 'Grok');
     assert.match(msg, /not installed/);
     assert.match(msg, /check again/);
     assert.match(msg, /Claude Code/);
     assert.doesNotMatch(msg, /[–—-]/, 'no dashes in user facing prose');
+  }
+});
+
+test('every engine the wizard offers links to install instructions', () => {
+  const s = statusesFor([]);
+  for (const p of AGENT_PROVIDER_PRESETS.filter((p) => canReceiveInbox(p.id) && p.id !== 'custom')) {
+    const a = classifyEngineAvailability(s, p.id);
+    assert.match(a.docsUrl ?? '', /^https:\/\//, `${p.id} has a docs link`);
   }
 });
 

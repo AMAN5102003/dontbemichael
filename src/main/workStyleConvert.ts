@@ -1,10 +1,10 @@
 /**
  * Converts a work style between the owner's plain description and the agent's
- * instructions (src/shared/workStyleText.ts). A hidden Claude call with no
+ * instructions (src/shared/workStyleText.ts). A hidden model call with no
  * tools does the rewrite; when it can't, the plain-text fallback answers and
  * says so, so hiring never waits on a sign-in problem.
  */
-import { runHiddenClaude } from './hiddenClaude';
+import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
 import {
   cleanAnswer,
   focusCheckPrompt,
@@ -27,7 +27,7 @@ const INSTRUCTIONS_MODEL = 'claude-sonnet-5';
 const TIMEOUT_MS = 90_000;
 const MAX_TEXT = 8000;
 
-export interface ConvertDeps {
+export interface ConvertDeps extends HiddenModelEngine {
   cwd: string;
   command: string;
   env?: Record<string, string>;
@@ -66,7 +66,9 @@ export async function convertWorkStyle(req: ConvertRequest, deps: ConvertDeps): 
   const fallback = () => (req.to === 'plain' ? plainFallback(req.text, roleLabel(req.ctx.title)) : instructionsFallback(req.text, req.ctx));
   try {
     const prompt = req.to === 'plain' ? toPlainPrompt(req.text, req.ctx) : toInstructionsPrompt(req.text, req.ctx, req.previous);
-    const result = await runHiddenClaude(prompt, {
+    const result = await runHiddenModel(prompt, {
+      engine: deps.engine,
+      engineModel: deps.engineModel,
       model: req.to === 'plain' ? PLAIN_MODEL : INSTRUCTIONS_MODEL,
       cwd: deps.cwd,
       command: deps.command,
@@ -122,7 +124,9 @@ export function readFocusCheckRequest(v: unknown): FocusCheckRequest | null {
  */
 export async function checkFocusArea(req: FocusCheckRequest, deps: ConvertDeps): Promise<{ checked: boolean; conflict?: string }> {
   try {
-    const result = await runHiddenClaude(focusCheckPrompt(req), {
+    const result = await runHiddenModel(focusCheckPrompt(req), {
+      engine: deps.engine,
+      engineModel: deps.engineModel,
       model: PLAIN_MODEL,
       cwd: deps.cwd,
       command: deps.command,
@@ -175,7 +179,9 @@ export async function suggestWorkStyle(
   live?: { onText?: (text: string) => void; signal?: AbortSignal }
 ): Promise<{ text: string; cancelled?: boolean }> {
   try {
-    const result = await runHiddenClaude(suggestWorkStylePrompt(req), {
+    const result = await runHiddenModel(suggestWorkStylePrompt(req), {
+      engine: deps.engine,
+      engineModel: deps.engineModel,
       model: INSTRUCTIONS_MODEL,
       cwd: deps.cwd,
       command: deps.command,
