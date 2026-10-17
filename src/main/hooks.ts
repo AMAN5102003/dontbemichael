@@ -1017,8 +1017,9 @@ export class HookServer {
   /** agentId → its stuck episode: when the app restarted it for a prompt,
    *  whether the new session started, and whether Michael was told it is
    *  still stuck. It ends when the member moves on, so there is one automatic
-   *  restart per episode and no raise and withdraw loop on Ask me. */
-  private stuckEpisodes = new Map<string, { at: number; text: string; restarted: boolean; confirmed: boolean; escalated: boolean }>();
+   *  restart per episode and no raise and withdraw loop on Ask me. timedOut:
+   *  Michael heard the new session never started, so a late start is news too. */
+  private stuckEpisodes = new Map<string, { at: number; text: string; restarted: boolean; confirmed: boolean; escalated: boolean; timedOut?: boolean }>();
   /** agentId → when the app last restarted it for a prompt; outlives the episode. */
   private stuckRestartAt = new Map<string, number>();
 
@@ -1064,7 +1065,7 @@ export class HookServer {
     const now = this.now();
     for (const [agentId, ep] of this.stuckEpisodes) {
       if (ep.restarted && !ep.confirmed && !ep.escalated && now - ep.at >= STUCK_CONFIRM_MS) {
-        ep.escalated = this.relayStuckToMichael(agentId, ep.text, false);
+        ep.escalated = ep.timedOut = this.relayStuckToMichael(agentId, ep.text, false);
       }
     }
   }
@@ -1078,6 +1079,15 @@ export class HookServer {
       ep.confirmed = true;
       const name = this.displayName(agentId);
       this.tellMichael(agentId, `${name} was restarted`, `${name}'s session stopped on a prompt only a person could answer${ep.text ? ` ("${ep.text}")` : ''}, so the app restarted ${name} and told them to carry on with their current work. Check that ${name} picks their work back up. This is not for the owner's Ask me board: if you asked the owner whether ${name} is stuck, withdraw that question.`);
+    } else if (event === 'SessionStart' && ep.timedOut) {
+      // Michael heard the restart never took, but it did: tell him once, and a
+      // prompt that comes back after this is news for him again.
+      ep.timedOut = false;
+      ep.confirmed = true;
+      ep.escalated = false;
+      this.relayedPrompts.delete(agentId);
+      const name = this.displayName(agentId);
+      this.tellMichael(agentId, `${name} was restarted after all`, `${name}'s session started again after all, so the restart went through and ${name} is not stuck. Leave ${name}'s open work with them, and if you asked the owner whether ${name} is stuck, withdraw that question.`);
     } else if (STUCK_MOVED_ON.has(event)) {
       this.stuckEpisodes.delete(agentId);
     }
