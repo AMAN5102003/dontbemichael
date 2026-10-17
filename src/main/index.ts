@@ -6559,7 +6559,10 @@ ipcMain.handle('claude:plan', () => {
   return { label: id ? PLAN_LABELS[id] : null, listMonthly: id ? PLAN_PRICES[id] : null };
 });
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown) => {
-  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) pulseProcessor.tick(office); } catch (e) { console.error('[pulse] snapshot tick', e); }
+  // Opening Pulse starts the backfill too, not only the 30 s beat, so a first
+  // look right after an update gets the past weeks (the view refreshes when
+  // they land).
+  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) { pulseBackfillOnce(office); pulseProcessor.tick(office); } } catch (e) { console.error('[pulse] snapshot tick', e); }
   return pulse.snapshot(PULSE_PERIODS.includes(String(period)) ? (period as Period) : 'this-week');
 });
 ipcMain.handle('pulse:apply', (_evt, id: unknown, expected: unknown) => (typeof id === 'string' ? pulse.apply(id, expected) : { ok: false, error: 'stale' }));
