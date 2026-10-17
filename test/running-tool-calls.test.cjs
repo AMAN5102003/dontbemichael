@@ -69,7 +69,7 @@ test('an agent reports a failed call, so the floor ends it by its id', async (t)
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-tool-failure-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const hive = new HiveManager(() => home);
-  const inj = await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const inj = await hive.ensureAgent({ id: 'pam', name: 'Pam', cwd: home });
   const hooks = JSON.parse(fs.readFileSync(inj.args[inj.args.indexOf('--settings') + 1], 'utf8')).hooks;
   assert.equal(hooks.PostToolUseFailure[0].matcher, '*');
   assert.equal(hooks.PostToolUseFailure[0].hooks[0].command, hooks.PostToolUse[0].hooks[0].command, 'the same hook program');
