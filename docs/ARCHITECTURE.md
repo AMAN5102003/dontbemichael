@@ -46,7 +46,7 @@ src/
     index.ts                 window, IPC handlers, quit guard
     pty.ts                   node-pty manager (spawn/write/resize/kill/stream)
     hive.ts                  on-disk multi-agent layer (memory, mailboxes, router)
-    hooks.ts                 hook server + provider hook shims (`cth-hook`, `agy-hook`)
+    hooks.ts                 hook server + provider hook shims (`cth-hook`, `agy-hook`); takes each frame's sender from its per start secret (HIVE_HOOK_SEAL, #61) and refuses frames without a valid one
     hookShell.ts             the shell Claude Code runs hooks and the status line in (bash, or PowerShell on Windows
                              without Git Bash), and each hook command written for it
     memory.ts                semantic memory layer (CLI wrapper, degrade-to-noop)
@@ -62,7 +62,16 @@ src/
     usage.ts / pricing.ts    UsageProvider seam + per-model cost attribution
     breaker.ts / control.ts  cost/runaway circuit breaker (steer/constrain/stop) + HITL gate / steer / stop
     reflect.ts               MemoryReflector — memory condensation
-    db.ts                    SQLite durable store (window bounds + history) + durable cost ledger
+    db.ts                    SQLite durable store (window bounds + history) + durable cost ledger + Pulse's
+                             telemetry tables (telemetry_events and its rollups)
+    telemetryStore.ts        Pulse's isolated store (docs/designs/team-performance.md): only the main process writes
+                             it, in harness.db; agents' activity arrives through their hook events, never prompt text
+    telemetryProcessor.ts    folds Pulse's points into daily totals and scheduled runs every 30 seconds
+    pulse.ts                 the Pulse service: the snapshot the view shows, and Apply, Undo and Not now on a way to
+                             save, only from the owner's click; pulseBackfill.ts fills the weeks before Pulse began
+                             from the office log, members' sessions and the cost ledger
+    teamMemory.ts            the dates and sources of each member's memory notes, for Pulse's Learning tiles
+    claudeAccount.ts         which Claude plan the owner's account is on (plan fields of Claude Code's account record only)
     github.ts                GitHub issue + CI run ingestion via the gh CLI
     shellEnv.ts              resolve PATH and shell env for child processes
     mail.ts                  IMAP/SMTP client for connected mailboxes; the broker calls it for md-mail tool calls
@@ -86,6 +95,9 @@ src/
                              goes in to him; anything unsure, slow or failing is refused
     researchGoal.ts          Pete's Work style and jobs, as the trust layer passed them (his built in text until then)
     researchNotes.ts         Pete's notes for the shared memory: plain files inside his own folder only
+    factoryReset.ts          what Settings, Reset & start over erases (app:resetAll in index.ts): everything the app
+                             made for the office, in the office folder and the app's data folder; team folders,
+                             roster backups, the owner's own files and the Claude sign in stay
     closingTime.ts           Closing Time shutdown protocol (the office reopens on next launch, shared/officeOpen.ts)
                              The closing time bar (ClosingTimeBar) lists who is still working (hook `detail` from hooks.ts toolDetail),
                              with Remind and Close without them (never pty:kill: that archives the agent).
@@ -132,7 +144,9 @@ src/
     agentProfile.ts          splits an agent's role line into the parts its Profile tab shows
     messageView.ts           the Messages tab as a day-grouped history, office notices counted on one line
     askMeRouting.ts          where an owner's Ask me answer goes: the agent that raised the question, and
-                             Michael as a request to route the follow up; Report cards are entries of kind report
+                             Michael as a request to route the follow up; Report cards are entries of kind report;
+                             an ask's options or several questions, and the owner's answer in words
+                             (docs/designs/ask-me-options.md)
     ownerRequests.ts         Michael's open requests from the owner, Blocked cards with nothing asked, the launch
                              catch-up and "hasn't moved this" in office hours (docs/designs/card-lifecycle.md), and
                              the owner's questions in Michael's conversation dock (docs/designs/michael-replies.md)
@@ -156,6 +170,11 @@ src/
                              patterns the trust layer marks them with
     webAccess.ts             who may use web pages and search (the Research agent alone, in every office), and the empty
                              shell network list everyone else's sandbox gets, Michael included
+    teamPerformance.ts       Pulse's measures (docs/designs/team-performance.md); teamAdvice.ts its ways to save,
+                             teamLearning.ts its Learning tiles, pulseSafety.ts its Kept safe tiles, pulseView.ts
+                             what the view receives
+    claudePlan.ts            the owner's Claude plan and its monthly price, for Pulse's costs on a plan
+    costFold.ts              the cost running total rule the lifetime ledger and Pulse share
   preload/                   contextBridge → typed window.cth API
   renderer/src/
     App.tsx                  top-level layout + wiring
@@ -165,7 +184,9 @@ src/
                              History once a webhook exists; Advanced holds Monitor and Activity). Office schedule is a
                              read-only list of every enabled job
     AskMeTab,                the Ask me cards on the Needs you board, agents' schedule requests included, and
-                             Report cards (cleared with Got it)
+                             Report cards (cleared with Got it); AskAnswerFields draws an ask's options and
+                             several questions
+    pulse/PulseView,         Pulse, the office's performance and cost view (branding/DESIGN.md 7.27)
     GetMichaelReady,         setup's Ready step: the Claude Code and Claude account rows, and Use an API key;
                              EngineSetupCard puts the same rows on Ask me while Michael can't start
     MailProposalCards,       Ask me cards for emails waiting on approval (edit, Approve, Ask for changes, Don't send,
@@ -190,6 +211,7 @@ src/
     WorkStyleUpdateCards,    Ask me cards offering a newer default job description (Use the new one / Keep mine)
     ScheduledJobs,           an agent's scheduled jobs and their focus areas, shown with its Work style
     AddAgentModal,           the hire wizard (Who, Job, Role, Finalize); EditAgentModal edits the plain work style
+                             and holds the Danger zone's Delete (shell/deleteTeamMember.ts)
     ResearchPrivacySettings, Settings > Research & privacy: Pete's on and off row and what the team may send him;
                              shell/research.ts starts and stops it, in every office, and gives its current name
     ErrorBoundary,           a crash in the window shows a recovery screen with Reload, not a blank window
@@ -212,8 +234,10 @@ src/
     scene/studio/            the office studio: isometric SVG stage, pods, Michael's office, life layer (branding/DESIGN.md 8)
     scene/office/            the cast, the idle lines, and each character's prop and department icon (props.tsx,
                              PersonAvatar)
-    shell/                   top bar (view tabs: Office, Tasks, Who talks to whom, then file tabs), bottom bar, Needs you board,
+    shell/                   top bar (view tabs: Office, Tasks, Pulse, Who talks to whom, then file tabs), bottom bar, Needs you board,
                              panel chrome, dialogs; releaseBindings.ts gives a leaving hire's work back to teammates,
+                             deleteTeamMember.ts deletes a team member for good (pauses their schedules, gives
+                             their work back, stops them),
                              typedFirstTask.ts sends a First task the owner typed to Michael as a card,
                              MichaelDock.tsx is Michael's conversation dock above the Talk to Michael box, and
                              ownerSend.ts files a question for it (a known slash command still types into his terminal)

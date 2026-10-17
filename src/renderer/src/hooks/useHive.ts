@@ -729,6 +729,9 @@ export function useHive(config: HarnessConfig | null): void {
       } else if (e.event === 'PostCompact') {
         if (!breakerArmed) updateAgent(e.agentId, { status: 'working', action: 'resumed', carrying: undefined, actionDetail: undefined, actionAt: Date.now() });
       } else if (e.event === 'PreToolUse' && e.tool) {
+        // A blocked event means the hook denied this call; nothing ran.
+        // Do not update the agent's working state or count a tool use for it.
+        if (e.blocked) return;
         const m = stationForTool(e.tool);
         // Each tool call restarts the clock the closing-time rows show.
         if (!breakerArmed) updateAgent(e.agentId, { status: 'working', currentStation: m.station, carrying: m.carry, action: `using ${e.tool}`, actionDetail: e.detail, actionAt: Date.now() });
@@ -743,6 +746,8 @@ export function useHive(config: HarnessConfig | null): void {
         // With parallel calls, the row goes back to the latest one still running.
         const running = e.event === 'PostToolUse' ? runningCalls.end(e.agentId, e.toolUseId) : undefined;
         if (running && !breakerArmed) updateAgent(e.agentId, { action: `using ${running.tool}`, actionDetail: running.detail, actionAt: running.at });
+        // Nothing still running: the row stops naming the tool that finished.
+        else if (e.event === 'PostToolUse' && !breakerArmed) updateAgent(e.agentId, { action: 'thinking' });
         // The prompt landed: a submit waiting on it stops pressing Enter.
         if (e.event === 'UserPromptSubmit') { promptSubmits.note(e.agentId); runningCalls.clear(e.agentId); }
       } else if (e.event === 'PreInvocation') {
@@ -1408,12 +1413,21 @@ export function useHive(config: HarnessConfig | null): void {
     void window.cth.connectorsPendingRestarts?.().then((ids) => ids.forEach(queue)).catch(() => {});
     return window.cth.onConnectorsRestartNeeded?.(({ agentId }) => queue(agentId));
   }, [config?.onboardingComplete]);
+  // A member stopped on a prompt the owner can't answer: restart now, which
+  // clears it; they resume where they left off (owner, 2026-10-15).
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    return window.cth.onAgentRestartStuck?.(({ agentId }) => {
+      const a = useStore.getState().agents.find((x) => x.id === agentId);
+      if (a?.ptyId) useStore.getState().setPendingRestart(agentId, { at: Date.now(), reason: 'stuck', now: true });
+    });
+  }, [config?.onboardingComplete]);
   useEffect(() => {
     if (!config?.onboardingComplete) return;
     const CEILING_MS = 10 * 60_000;
     const POLL_MS = 5_000;
     const BUSY = new Set(['thinking', 'working', 'compacting', 'looping']);
-    const WHY = { email: 'turn on email', connectors: 'apply its connectors', engine: 'start on Claude Code' } as const;
+    const WHY = { email: 'turn on email', connectors: 'apply its connectors', engine: 'start on Claude Code', stuck: 'clear a stuck prompt' } as const;
     const inFlight = new Set<string>();
     const tick = (): void => {
       const { pendingRestart, agents, setPendingRestart, updateAgent } = useStore.getState();

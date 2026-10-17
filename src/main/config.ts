@@ -280,6 +280,9 @@ export interface HarnessConfig {
    *  secret store under `apikey:anthropic` and handed to each Claude agent as
    *  ANTHROPIC_API_KEY at start. */
   claudeAuth?: 'account' | 'apiKey';
+  /** What the owner pays for their Claude plan a month, in USD (Settings > Agents).
+   *  Unset: the detected plan's list price. Pulse splits it by share of the work. */
+  planPriceMonthly?: number;
   /** The model GOD runs on. Unset falls back to the provider preset's
    *  `recommendedOrchestratorModel`, then MODEL_GOD. Default 'claude-opus-5-5'. */
   godModel?: string;

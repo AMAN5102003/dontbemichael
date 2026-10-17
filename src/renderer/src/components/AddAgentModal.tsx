@@ -44,6 +44,7 @@ import {
   hireAgentId,
   hireFolderName,
   hireRole,
+  safeFolder,
   jobFor,
   overlapsByRules,
   ownJob,
@@ -111,12 +112,6 @@ function samePath(a: string, b: string): boolean {
 }
 const basename = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 const joinPath = (root: string, name: string) => `${root.replace(/[\\/]+$/, '')}/${name}`;
-/** One folder name, safe on every system: no path separators or characters
- *  Windows forbids, no leading dots, at most 60 characters. "AR/AP Clerk"
- *  becomes "AR-AP Clerk", never a folder inside a folder. */
-function safeFolder(raw: string): string {
-  return raw.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').trim().slice(0, 60);
-}
 
 const TOPIC_MAX = 120;
 

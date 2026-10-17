@@ -99,6 +99,8 @@ test('a finished tool call leaves the row: its detail clears and the clock resta
   const hive = read('src/renderer/src/hooks/useHive.ts');
   assert.match(hive, /e\.event === 'PostToolUse' \|\| e\.event === 'UserPromptSubmit'[\s\S]{0,400}updateAgent\(e\.agentId, \{ status: 'working', actionDetail: undefined, actionAt: Date\.now\(\) \}\)/);
   assert.match(hive, /action: 'thinking', actionDetail: undefined, actionAt: Date\.now\(\)/);
+  // Value: protects=a finished tool is not named as still running; fails_when=PostToolUse with nothing running keeps "using <tool>"; why_new=TODOS "Row still names a finished tool"; seam=source pin
+  assert.match(hive, /else if \(e\.event === 'PostToolUse' && !breakerArmed\) updateAgent\(e\.agentId, \{ action: 'thinking' \}\);/);
 });
 
 test('the non-English "terminal ended" hint names the buttons as they appear on screen', () => {

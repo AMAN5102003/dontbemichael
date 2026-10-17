@@ -37,6 +37,9 @@ const MAX_ENTRY_BYTES = 50 * 1024 * 1024;
 /** Across every entry we would inflate. Many entries just under the per entry guard add up. */
 const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 const MAX_ENTRIES = 5000;
+/** A longer PDF is read up to here, one page at a time, so a huge one never
+ *  holds every page's text at once. */
+export const MAX_PDF_PAGES = 500;
 
 const WORD = new Set(['docx', 'docm', 'dotx', 'dotm']);
 const SLIDES = new Set(['pptx', 'pptm', 'ppsx', 'potx']);
@@ -253,7 +256,11 @@ function drawingParagraphs(xml: string): string {
 }
 
 function readSheets(files: Record<string, Uint8Array>): string {
-  const xml = (name: string) => (files[name] ? strFromU8(files[name]) : '');
+  // Excel writes SpreadsheetML as the default namespace (<row>), but the Open
+  // XML SDK and ClosedXML, which many business systems export with, write the
+  // same elements with a prefix (<x:row>). The patterns below match bare names,
+  // so without this a workbook from those systems reads as having no text.
+  const xml = (name: string) => (files[name] ? localNames(strFromU8(files[name])) : '');
 
   // Shared strings: most text cells hold an index into this table. Phonetic
   // guides (<rPh>) are furigana, not content.
@@ -276,7 +283,7 @@ function readSheets(files: Record<string, Uint8Array>): string {
     const name = decodeXml(attr(m[1], 'name') ?? 'Sheet');
     const path = targets.get(attr(m[1], 'r:id') ?? '');
     if (!path || !files[path]) continue;
-    const rows = sheetRows(strFromU8(files[path]), shared);
+    const rows = sheetRows(xml(path), shared);
     if (rows.length) out.push(`Sheet: ${name}\n${rows.join('\n')}`);
   }
   return out.join('\n\n');
@@ -326,14 +333,19 @@ function columnIndex(ref: string | null): number | null {
 // ─── PDF ─────────────────────────────────────────────────────────────────────
 
 async function readPdf(srcPath: string): Promise<DocExtraction> {
-  let pages: string[];
+  const pages: string[] = [];
+  let total: number;
   try {
     // unpdf is ESM-only; main already loads ESM packages this way (tunnelmole,
     // electron-updater). It bundles a Node-ready PDF.js — no pdftotext needed.
-    const { getDocumentProxy, extractText } = await import('unpdf');
+    const { getDocumentProxy } = await import('unpdf');
     const pdf = await getDocumentProxy(new Uint8Array(readFileSync(srcPath)));
-    const res = await extractText(pdf, { mergePages: false });
-    pages = Array.isArray(res.text) ? res.text : [String(res.text)];
+    total = pdf.numPages;
+    // Each page's text the way unpdf's extractText joins it.
+    for (let i = 1; i <= Math.min(total, MAX_PDF_PAGES); i++) {
+      const { items } = await (await pdf.getPage(i)).getTextContent();
+      pages.push(items.map((item) => ('str' in item ? item.str + (item.hasEOL ? '\n' : '') : '')).join(''));
+    }
   } catch (e) {
     const msg = e instanceof Error ? `${e.name} ${e.message}` : String(e);
     return {
@@ -350,7 +362,10 @@ async function readPdf(srcPath: string): Promise<DocExtraction> {
       .filter(Boolean)
       .join('\n\n')
   );
-  if (text) return { kind: 'text', text, extractor: 'pdfjs@1', modality: 'pdf', mime: MIME.pdf };
+  if (text) {
+    const note = total > MAX_PDF_PAGES ? `\n\n[Only the first ${MAX_PDF_PAGES} pages of this PDF were read.]` : '';
+    return { kind: 'text', text: text + note, extractor: 'pdfjs@1', modality: 'pdf', mime: MIME.pdf };
+  }
 
   // No text layer: common for a small business — a scanned receipt, a signed
   // contract. Read the page images with the Mac's built-in OCR (macOcr.ts).
@@ -442,6 +457,13 @@ function looksBinary(srcPath: string): boolean {
 function attr(tag: string, name: string): string | null {
   const m = tag.match(new RegExp(`(?:^|\\s)${name.replace(':', '\\:')}="([^"]*)"`));
   return m ? m[1] : null;
+}
+
+/** Every tag reduced to its local name: `<x:row>` reads as `<row>`. Only the
+ *  name right after `<` or `</` changes, so attributes such as `r:id` keep
+ *  their prefix, and text is untouched because it cannot hold a raw `<`. */
+function localNames(xml: string): string {
+  return xml.replace(/<(\/?)[\w.-]+:/g, '<$1');
 }
 
 function decodeXml(s: string): string {

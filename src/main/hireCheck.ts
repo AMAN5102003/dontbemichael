@@ -4,12 +4,12 @@
  * job description is sufficiently distinct or particular such as bound to a
  * specific mailbox or specific topic").
  *
- * A hidden Claude call (Haiku, no tools: it only reads text) compares the new
+ * A hidden model call (no tools: it only reads text) compares the new
  * job with every teammate's profile and answers JSON. When the call fails or
  * answers junk, the instant rules decide instead and the verdict says so, so a
  * sign-in problem never blocks hiring for good.
  */
-import { runHiddenClaude } from './hiddenClaude';
+import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
 import {
   distinctPrompt,
   parseDistinctAnswer,
@@ -22,7 +22,7 @@ const CHECK_MODEL = 'claude-haiku-4-5';
 const CHECK_TIMEOUT_MS = 60_000;
 const MAX_TEAM = 40;
 
-export interface HireCheckDeps {
+export interface HireCheckDeps extends HiddenModelEngine {
   cwd: string;
   command: string;
   env?: Record<string, string>;
@@ -57,7 +57,9 @@ export async function checkDistinct(job: JobProfile, teamIn: JobProfile[], deps:
   const team = teamIn.slice(0, MAX_TEAM);
   if (team.length === 0) return { distinct: true, overlapsWith: [], why: '', source: 'rules' };
   try {
-    const result = await runHiddenClaude(distinctPrompt(job, team), {
+    const result = await runHiddenModel(distinctPrompt(job, team), {
+      engine: deps.engine,
+      engineModel: deps.engineModel,
       model: CHECK_MODEL,
       cwd: deps.cwd,
       command: deps.command,

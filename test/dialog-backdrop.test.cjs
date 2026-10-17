@@ -28,6 +28,16 @@ test('the backdrop closes only when the press and the click are both on it', () 
   }
 });
 
+// A click outside Settings closed it straight away and dropped staged changes,
+// while Esc and the close button asked first.
+test('the Settings backdrop asks before dropping unsaved changes, like Esc and close', () => {
+  const src = read('src/renderer/src/components/SettingsModal.tsx');
+  assert.match(src, /const backdrop = useBackdropClose\(\(\) => closeFnRef\.current\(\)\);/);
+  assert.match(src, /<div\n      \{\.\.\.backdrop\}\n      style=\{\{\n        position: 'fixed', inset: 0,/);
+  assert.doesNotMatch(src, /onClick=\{busy \? undefined : onClose\}/, 'the backdrop must not skip the unsaved changes check');
+  assert.match(src, /closeFnRef\.current = busy \? \(\) => \{\} : requestClose;/, 'busy still blocks every close');
+});
+
 test('Escape in a field, list or info bubble does not close a dialog', () => {
   assert.match(read('src/renderer/src/shell/useDialog.ts'), /if \(e\.defaultPrevented \|\| escapeBelongsToField\(e\.target\)\) return;/);
   const { escapeBelongsToField } = loadTs('src/renderer/src/hooks/useBackdropClose.ts');

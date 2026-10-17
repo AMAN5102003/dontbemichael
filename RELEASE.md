@@ -1,13 +1,14 @@
-# Don't Be Michael v0.2.0
+# Don't Be Michael v0.2.2
 
 **An AI office for your small business.** Pick your kind of business, pick your team, and Michael, your office manager, runs the floor while you run the business.
 
-## What's new in 0.2.0
+## What's new in 0.2.2
 
-- **Pete, the one team member on the internet.** In every office only Pete, the Research team member, opens web pages and searches; everyone else asks them. Pete is off until you turn them on in Settings, Research & privacy.
-- **A trust layer between Pete and your team.** Every message to Pete is checked against the kinds of data you keep private, and Pete's answers are cleaned of instructions before your team reads them.
-- **The office stops when your Claude account can't work**, out of credit or signed out, and says why.
-- **Links name what they open**, and a web or mail link in a reply opens with a click.
+- **Pulse: what your office got done and what it costs.** A new tab shows the work done, what the team learned, what was kept safe, your time, and each member's share of the cost. On a Claude plan, cost is your plan's real price split by each member's share of the work. Ways to save are applied only when you click Apply, and undone with Undo.
+- **Ask me cards you answer with a click.** Michael's choices show as rows to pick, several questions get a line each, and you never have to answer every one.
+- **Delete a team member for good** from the Danger zone in Edit agent.
+- **Every office on the floor names its department,** and the desk monitors are clear glass.
+- **A team member stuck on a prompt is restarted and carries on,** instead of being handed to you.
 
 Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvivekkumar/dontbemichael/blob/main/docs/FEATURES.md)
 
@@ -15,15 +16,15 @@ Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvi
 
 | Platform | Download |
 |---|---|
-| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.0-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.0-mac-universal.dmg) |
+| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.2-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.2-mac-universal.dmg) |
 
 <!-- windows -->
-**Windows 11 (x64):** [`Dont-Be-Michael-0.2.0-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.0/Dont-Be-Michael-0.2.0-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
+**Windows 11 (x64):** [`Dont-Be-Michael-0.2.2-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.2/Dont-Be-Michael-0.2.2-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
 <!-- /windows -->
 
 Linux will follow.
 
-[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.0.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.0.tar.gz)
+[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.2.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.2.tar.gz)
 
 ## Installing on your Mac
 

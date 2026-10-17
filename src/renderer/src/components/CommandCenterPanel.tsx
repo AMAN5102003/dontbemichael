@@ -40,6 +40,7 @@ import {
 } from '@/store/config';
 import { BUILD_ENGINES, canReceiveInbox } from '@shared/agentProvider';
 import { isComposingKey } from '@shared/imeGuard';
+import { fmtTokens } from '@shared/tokenFormat';
 import { useRtl } from '@/i18n/useDirection';
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
@@ -1225,14 +1226,6 @@ function Sparkline({ series }: { series: number[] }) {
       {text}
     </span>
   );
-}
-
-/** Compact token count: 1K / 10K / 100K / 1M / 100M / 1B (trailing .0 trimmed). */
-function fmtTokens(n: number): string {
-  if (n >= 1e9) return `${+(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${+(n / 1e3).toFixed(1)}K`;
-  return String(Math.round(n));
 }
 
 /** Per-agent token-limit control (top-right of each agent card). Shows the

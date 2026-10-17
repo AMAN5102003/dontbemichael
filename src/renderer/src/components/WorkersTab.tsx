@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { useStore } from '@/store/store';
+import { fmtWorkerTokens } from '@shared/tokenFormat';
 
 /**
  * WORKERS — live god-triggered ephemeral Slack workers (the Phase-1 spawn loop):
@@ -27,12 +28,6 @@ function relAge(ms: number): string {
   if (m < 90) return `${m}m`;
   const h = Math.round(m / 60);
   return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
-}
-
-function fmtTokens(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
-  return `${(n / 1_000_000).toFixed(2)}M`;
 }
 
 const card: React.CSSProperties = {
@@ -143,7 +138,7 @@ export function WorkersTab() {
                     {w.idleMs === null ? t('workersTab.ptyGone') : t('workersTab.idle', { age: relAge(w.idleMs) })}
                   </span>
                   <span title={t('workersTab.tokensTitle')}>
-                    {t('workersTab.tokens', { value: fmtTokens(w.tokensUsed) })}{w.tokenCap !== null ? ` / ${fmtTokens(w.tokenCap)}` : ` · ${t('workersTab.uncapped')}`}
+                    {t('workersTab.tokens', { value: fmtWorkerTokens(w.tokensUsed) })}{w.tokenCap !== null ? ` / ${fmtWorkerTokens(w.tokenCap)}` : ` · ${t('workersTab.uncapped')}`}
                   </span>
                 </div>
               </div>

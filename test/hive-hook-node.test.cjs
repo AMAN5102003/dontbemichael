@@ -53,6 +53,9 @@ function isolatedHomes(t, prefix, root) {
 const launcherIn = (home) =>
   path.join(home, 'hive', 'bin', POSIX ? 'hive-node' : 'hive-node.cmd');
 
+/** The two bundled-node shims: the launcher and the PATH-visible `node`. */
+const shimsIn = (hive, home) => [launcherIn(home), path.join(hive.runtimeBinDir(), POSIX ? 'node' : 'node.cmd')];
+
 /** Every file under `dir`. */
 function walk(dir, out = []) {
   for (const e of fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }) : []) {
@@ -115,8 +118,59 @@ test('ensureHive writes an executable bundled-node launcher', async (t) => {
   assert.equal(fs.existsSync(launcher), true);
   const body = fs.readFileSync(launcher, 'utf8');
   assert.match(body, /ELECTRON_RUN_AS_NODE=1/, 'without this the binary opens a second app window');
-  assert.ok(body.includes(process.execPath), 'execPath is re-baked each bootstrap so an app move/update heals');
+  assert.ok(body.includes(process.execPath), 'execPath is re-baked when it differs, so an app move/update heals');
   if (POSIX) assert.ok(fs.statSync(launcher).mode & 0o111, 'must be executable');
+});
+
+test('a second bootstrap leaves unchanged bundled-node shims alone', async (t) => {
+  // ensureHive runs on every task write and every spawn. On Windows something
+  // holds a running .cmd open while a hook runs through it, so a rewrite of the
+  // same bytes failed with EBUSY and logged an error on every board change. A
+  // read-only file refuses a write the same way on every platform (as a normal
+  // user, which CI is), so it stands in for that lock here: an unchanged shim
+  // must not be written at all.
+  const home = tmpHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  hive.ensureHive();
+  const shims = shimsIn(hive, home);
+  const bodies = shims.map((p) => fs.readFileSync(p, 'utf8'));
+  const before = shims.map((p) => fs.statSync(p).mtimeMs);
+
+  const errors = [];
+  const realError = console.error;
+  console.error = (...args) => { errors.push(args.map(String).join(' ')); };
+  for (const p of shims) fs.chmodSync(p, 0o444);
+  try {
+    hive.ensureHive();
+  } finally {
+    console.error = realError;
+    for (const p of shims) fs.chmodSync(p, 0o644);
+  }
+
+  assert.deepEqual(errors.filter((line) => /writeNodeLauncher|writeRuntimeShims/.test(line)), [], 'no write was attempted');
+  shims.forEach((p, i) => {
+    assert.equal(fs.readFileSync(p, 'utf8'), bodies[i], p);
+    assert.equal(fs.statSync(p).mtimeMs, before[i], `${p} was not touched`);
+  });
+});
+
+test('shims left by another binary are re-baked on the next bootstrap', async (t) => {
+  const home = tmpHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  hive.ensureHive();
+  const shims = shimsIn(hive, home);
+  const bodies = shims.map((p) => fs.readFileSync(p, 'utf8'));
+
+  // An app update or move: the shims on disk name the old executable.
+  shims.forEach((p, i) => fs.writeFileSync(p, bodies[i].replace(process.execPath, path.join(home, 'old-app')), 'utf8'));
+  hive.ensureHive();
+
+  shims.forEach((p, i) => {
+    assert.equal(fs.readFileSync(p, 'utf8'), bodies[i], `execPath is re-baked in ${p} when it differs`);
+    if (POSIX) assert.ok(fs.statSync(p).mode & 0o111, `${p} must still be executable`);
+  });
 });
 
 test('the claude hook + statusLine commands run through the launcher', async (t) => {

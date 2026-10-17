@@ -72,16 +72,27 @@ test('the sign in state is read from claude auth status, and an unreadable one n
 test('the rows follow what main reports and what the step started', () => {
   const f = { installing: false, installFailed: false, browser: false };
   assert.equal(engineSetupPhase(undefined, f), 'checking');
+  assert.equal(engineSetupPhase(undefined, { ...f, statusFailed: true }), 'checkFailed', 'a rejected first status read is actionable');
   assert.equal(engineSetupPhase({ applies: true, installed: false, signedIn: false, needed: true }, { ...f, installing: true }), 'installing');
   assert.equal(engineSetupPhase({ applies: true, installed: false, signedIn: false, needed: true }, { ...f, installFailed: true }), 'installFailed');
   assert.equal(engineSetupPhase({ applies: true, installed: true, signedIn: false, needed: true }, f), 'signin');
   assert.equal(engineSetupPhase({ applies: true, installed: true, signedIn: false, needed: true }, { ...f, browser: true }), 'browser');
   assert.equal(engineSetupPhase({ applies: true, installed: true, signedIn: true, needed: false }, f), 'ready');
   assert.equal(engineSetupPhase({ applies: true, installed: true, signedIn: null, needed: false }, f), 'unknown', 'an unreadable sign in is never a green check');
+  assert.equal(engineSetupPhase({ applies: true, installed: true, signedIn: true, needed: false }, { ...f, statusFailed: true }), 'ready', 'a later failed read keeps a known status');
   const { engineSetupPhaseOpensOffice } = loadTs('src/shared/engineSetup.ts');
   assert.equal(engineSetupPhaseOpensOffice('unknown'), true, '...but it never blocks the office either');
   assert.equal(engineSetupPhaseOpensOffice('ready'), true);
-  for (const p of ['checking', 'installing', 'installFailed', 'signin', 'browser']) assert.equal(engineSetupPhaseOpensOffice(p), false, p);
+  for (const p of ['checking', 'checkFailed', 'installing', 'installFailed', 'signin', 'browser']) assert.equal(engineSetupPhaseOpensOffice(p), false, p);
+});
+
+test('a failed first status read shows a retry instead of an endless checking spinner', () => {
+  const ready = read('src/renderer/src/components/GetMichaelReady.tsx');
+  assert.match(ready, /if \(mine === reads\.current\) setStatusFailed\(true\);/, 'the current read records its own failure');
+  assert.match(ready, /case 'checkFailed': return \([\s\S]*?t\('engineSetup\.checkFailed'\)[\s\S]*?setStatusFailed\(false\); void read\(\)/, 'the failed state explains itself and retries the same read');
+  for (const l of ['en', 'zh-CN', 'ar']) {
+    assert.ok(JSON.parse(read(`src/renderer/src/i18n/locales/${l}.json`)).engineSetup.checkFailed, `${l}: check failure copy exists`);
+  }
 });
 
 test('setup ends on the Ready step with Claude, and Open the office waits for it', () => {

@@ -180,6 +180,41 @@ test('the hook judges the real path too, so a link out of an agent\'s folder is 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a link to a file not there yet is judged by where it leads, so a Write cannot plant a file in a teammate\'s folder (#231)', () => {
+  const { realPathOf } = loadTs('src/main/hooks.ts');
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-dangling link-')));
+  const biz = path.join(dir, 'Biz'), sales = path.join(biz, 'Sales'), finance = path.join(biz, 'Finance');
+  fs.mkdirSync(sales, { recursive: true });
+  fs.mkdirSync(finance);
+  fs.symlinkSync(path.join(finance, 'planted.txt'), path.join(sales, 'notes.txt'));
+  fs.symlinkSync(path.join('..', 'Finance', 'rel.txt'), path.join(sales, 'rel.txt'));
+  fs.symlinkSync(path.join(finance, 'new'), path.join(sales, 'drafts'));
+  fs.mkdirSync(path.join(finance, 'deep'));
+  fs.symlinkSync(path.join(finance, 'deep'), path.join(sales, 'sub'));
+  fs.symlinkSync(['sub', '..', 'planted2.txt'].join(path.sep), path.join(sales, 'trick'));
+  fs.symlinkSync(path.join(sales, 'b'), path.join(sales, 'a'));
+  fs.symlinkSync(path.join(sales, 'a'), path.join(sales, 'b'));
+  assert.equal(realPathOf(path.join(sales, 'notes.txt')), path.join(finance, 'planted.txt'));
+  assert.equal(realPathOf(path.join(sales, 'rel.txt')), path.join(finance, 'rel.txt'), 'a relative link is read from its own folder');
+  assert.equal(realPathOf(path.join(sales, 'drafts', 'june.txt')), path.join(finance, 'new', 'june.txt'), 'a link to a folder not there yet');
+  assert.equal(realPathOf(path.join(sales, 'a')), null, 'links that go round end');
+  assert.equal(realPathOf(path.join(sales, 'plain.txt')), path.join(sales, 'plain.txt'), 'a new file with no link stays where it is');
+  const l = { business: biz, teamFolders: [sales, finance] };
+  const me = { isGod: false, cwd: sales };
+  assert.equal(folderDecision(me, l, 'Write', realPathOf(path.join(sales, 'notes.txt')), true).deny, true);
+  // A link through another link is judged where the system really puts the
+  // file: on macOS and Linux sub/.. goes up from where sub leads (Finance);
+  // Windows reads the .. off the text first (Sales). Judged before the write,
+  // checked against where the write lands.
+  const judged = realPathOf(path.join(sales, 'trick'));
+  fs.writeFileSync(path.join(sales, 'trick'), 'x');
+  const landed = [path.join(finance, 'planted2.txt'), path.join(sales, 'planted2.txt')].find((f) => fs.existsSync(f));
+  assert.equal(judged, landed, 'a link through another link is judged where the write lands');
+  if (process.platform !== 'win32') assert.equal(landed, path.join(finance, 'planted2.txt'));
+  assert.equal(folderDecision(me, l, 'Write', judged, true).deny, landed === path.join(finance, 'planted2.txt'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('a Glob with a path is judged by where its pattern points', () => {
   assert.equal(folderToolTarget('Glob', { pattern: '../Admin/**', path: path.join(B, 'Finance') }, path.join(B, 'Finance')), path.join(B, 'Admin'));
   assert.equal(folderToolTarget('Glob', { pattern: '**/*.md', path: path.join(B, 'Finance', 'docs') }, path.join(B, 'Finance')), path.join(B, 'Finance', 'docs'));

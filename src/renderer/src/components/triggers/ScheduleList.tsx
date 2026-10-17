@@ -639,11 +639,26 @@ export function OfficeSchedules() {
 /** The close confirmation. When the agent has schedules running, it says they
  *  will pause (design 6A); otherwise it is the plain close question. */
 export function closeConfirmText(agentId: string, name: string, t: TFunction): string {
-  // The same ownership rule the close uses to pause them (pauseMissionsOf).
-  const st = useStore.getState();
-  const godId = st.agents.find((a) => a.isGod)?.id ?? GOD_ALIAS;
-  const count = missionsFor(st.missions, agentId, godId).filter((m) => m.enabled).length;
+  const count = schedulesOn(agentId);
   return count > 0
     ? t(count === 1 ? 'agentDetail.killConfirmSchedules' : 'agentDetail.killConfirmSchedulesPlural', { name, count })
     : t('agentDetail.killConfirm', { name });
+}
+
+/** The Danger zone's delete confirmation in Edit agent: final, and it names
+ *  the schedules that pause, like the close. */
+export function deleteConfirmText(agentId: string, name: string, t: TFunction): string {
+  const count = schedulesOn(agentId);
+  return count > 0
+    ? t(count === 1 ? 'editAgent.deleteConfirmSchedules' : 'editAgent.deleteConfirmSchedulesPlural', { name, count })
+    : t('editAgent.deleteConfirm', { name });
+}
+
+/** Their schedules that are on: the same ownership rule a close or a delete
+ *  uses to pause them (pauseMissionsOf). */
+function schedulesOn(agentId: string): number {
+  const st = useStore.getState();
+  const godId = st.agents.find((a) => a.isGod)?.id ?? GOD_ALIAS;
+  const count = missionsFor(st.missions, agentId, godId).filter((m) => m.enabled).length;
+  return count;
 }
