@@ -83,6 +83,8 @@ export class SilentWatch {
   private watches = new Map<string, Watch>();
   private early = new Map<string, number>();
   private episodes = new Map<string, SilentEpisode>();
+  /** Members with no terminal on the last beat (stopped, crashed, not started). */
+  private notRunning = new Set<string>();
 
   constructor(private deps: WatchDeps) {}
 
@@ -93,7 +95,8 @@ export class SilentWatch {
     for (const e of saved) {
       if (!e?.agentId) continue;
       this.episodes.set(e.agentId, e.state === 'kept'
-        ? { ...e, stopped: false }
+        // A keep still waiting on its terminal waits from this launch.
+        ? { ...e, stopped: false, ...(e.waitSince !== undefined ? { waitSince: now } : {}) }
         : { ...e, before: e.state === 'checking' ? e.before ?? 'open' : e.state, state: 'checking', stopped: false, waitSince: now });
     }
     this.publish();
@@ -138,6 +141,7 @@ export class SilentWatch {
       dirty = true;
     }
     for (const id of [...this.watches.keys()]) if (!present.has(id)) this.watches.delete(id);
+    for (const id of [...this.notRunning]) if (!present.has(id)) this.notRunning.delete(id);
 
     for (const m of members) {
       let ep = this.episodes.get(m.id);
@@ -174,7 +178,8 @@ export class SilentWatch {
         if (m.running) this.maybeStop(m, ep);
         dirty = true;
       }
-      if (!m.running || !m.ptyId) continue;
+      if (!m.running || !m.ptyId) { this.notRunning.add(m.id); continue; }
+      this.notRunning.delete(m.id);
       let w = this.watches.get(m.id);
       if (!w || w.ptyId !== m.ptyId || (m.pid !== undefined && w.pid !== undefined && w.pid !== m.pid)) {
         // A new terminal or a new process behind it (a start or a restart from
@@ -305,7 +310,9 @@ export class SilentWatch {
       if (!ep || ep.isResearch) continue;
       // A stopped member is kept only once its terminal is started again;
       // otherwise its card stays, since nothing would reach it.
-      const wasStopped = ep.stopped;
+      // A member with no terminal (stopped by the watch, crashed, or not started
+      // after a relaunch) is started again for the keep.
+      const wasStopped = ep.stopped || this.notRunning.has(id);
       if (wasStopped) {
         if (!this.deps.restart(id, false)) continue;
         this.watches.delete(id);

@@ -424,7 +424,10 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
         rows = oldEntry.term.rows;
       } catch { /* host not sized yet */ }
 
-      const killed = await window.cth.killPty(a.ptyId);
+      // A restart: an isolated member's worktree stays, and it starts again in it
+      // (ship review 2026-10-17).
+      const cwd = a.worktreePath && (await window.cth.gitIsRepo(a.worktreePath)) ? a.worktreePath : a.cwd;
+      const killed = await window.cth.killPty(a.ptyId, { restart: true });
       // A pty that is ALREADY gone is the state this kill was trying to reach, so
       // it is not a failure. This is the single most common way to arrive at
       // "Restart & Continue": the session died on its own — a crash, or Ctrl-C
@@ -454,7 +457,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
       const hive = {
         id: a.id,
         name: a.name,
-        cwd: a.cwd,
+        cwd,
         provider,
         isGod: a.isGod,
         isAssistant: a.isAssistant,
@@ -462,7 +465,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
       };
       const res = await window.cth.spawnPty({
         id: a.ptyId,
-        cwd: a.cwd,
+        cwd,
         command: exe,
         args,
         provider,

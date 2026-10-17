@@ -537,3 +537,21 @@ test('a Keep whose restart never brings a terminal gives the card back', () => {
   run(ok, S.RESTART_WAIT_MS + BEAT, member({ pid: 2, hasOutput: false }), { busy: false });
   assert.equal(ok.watch.episode('kelly').state, 'kept', 'running again: the keep stands');
 });
+
+test('Keep on a member with no terminal starts it again, and a relaunch restarts the wait', () => {
+  // Value: protects=no keep with nothing running after a crash or a relaunch, and no false card right after a relaunch; fails_when=keep looks only at the watch's own stop, or restore keeps a stale wait; why_new=round four verification; seam=none
+  const r = rig({ mayAutoRestart: false });
+  run(r, 60_000 + 2 * BEAT, member());
+  // It crashed: the terminal is gone, though the watch never stopped it.
+  r.clock.t += BEAT; r.watch.beat([member({ running: false, ptyId: '' })]);
+  assert.equal(r.watch.episode('kelly').stopped, false);
+  r.watch.keep(['kelly']);
+  assert.deepEqual(r.log.restarts.at(-1), ['kelly', false], 'started again for the keep');
+  assert.notEqual(r.watch.episode('kelly').waitSince, undefined);
+  const saved = r.watch.list();
+  const re = rig({ mayAutoRestart: false });
+  re.clock.t = r.clock.t + 10 * 60_000;
+  re.watch.restore(saved);
+  re.clock.t += BEAT; re.watch.beat([member({ running: false, ptyId: '' })]);
+  assert.equal(re.watch.episode('kelly').state, 'kept', 'the wait counts from this launch');
+});

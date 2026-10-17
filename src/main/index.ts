@@ -1231,11 +1231,12 @@ function teardownPty(id: string, opts: { keepWorktree?: boolean } = {}): void {
   }
   // A worker whose isolation failed (non-repo cwd) has no worktree to gate above —
   // still clear its tracking entry so the controller stops watching a dead PTY.
-  if (liveWorkers.has(id)) liveWorkers.delete(id);
+  // A restart keeps it, so its later teardown still goes through the gate.
+  if (!opts.keepWorktree && liveWorkers.has(id)) liveWorkers.delete(id);
   // Archive the dead worker's floor card (mirrors killAgent's voice-kill path;
   // the renderer's archiveAgent is a no-op if the card is already gone). NOT
   // done for regular agents: their kill flows already manage their own card.
-  if (wasWorker) {
+  if (wasWorker && !opts.keepWorktree) {
     try { liveWebContents()?.send('hive:agentArchived', { id }); } catch { /* window torn down */ }
   }
   // A terminal that ends during closing time leaves the dialog's list at once.
