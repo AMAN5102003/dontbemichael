@@ -2366,7 +2366,8 @@
   },
   "markdown": {
     "opensInBrowser": "opens in your browser",
-    "opensInEmail": "opens your email app"
+    "opensInEmail": "opens your email app",
+    "copyLinkAddress": "Copy link address"
   },
   "crash": {
     "line": "Something went wrong on this screen.",

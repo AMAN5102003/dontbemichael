@@ -2366,7 +2366,8 @@
   },
   "markdown": {
     "opensInBrowser": "يفتح في متصفحك",
-    "opensInEmail": "يفتح تطبيق البريد"
+    "opensInEmail": "يفتح تطبيق البريد",
+    "copyLinkAddress": "نسخ عنوان الرابط"
   },
   "crash": {
     "line": "حدث خطأ في هذه الشاشة.",

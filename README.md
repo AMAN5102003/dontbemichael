@@ -325,7 +325,7 @@ it.
 
 ### Build from source
 
-You need Node.js 18 or newer, npm, and a C/C++ toolchain for `node-pty` (on a Mac:
+You need Node.js 20 or newer, npm, and a C/C++ toolchain for `node-pty` (on a Mac:
 `xcode-select --install`; on Windows, [`node-pty`'s prerequisites](https://github.com/microsoft/node-pty#dependencies)).
 
 ```bash

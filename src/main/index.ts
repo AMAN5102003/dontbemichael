@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
+import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
 import { execFile, spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
@@ -541,7 +542,11 @@ const memoryTidy = new MemoryTidy(
   () => memory.env(),
   () => isFloorQuiet(300_000),
   (id) => hive.registry().agents[id]?.name ?? id,
-  (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+  (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+  () => {
+    const cfg = readConfig();
+    return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
+  }
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
@@ -878,6 +883,10 @@ const standingFit = standingFitCheck({
     return dir;
   },
   command: () => readConfig().defaultCommand ?? 'claude',
+  modelEngine: () => {
+    const cfg = readConfig();
+    return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
+  },
   env: () => memory.env(),
   log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
 });
@@ -2248,6 +2257,13 @@ function runOfficeBreakTick(): void {
   const r = officeBreak.tick();
   if (!r) { armOfficeBreak(); return; }
   if (r.step === 'over') { endOfficeBreak(r.ended); return; }
+  if (r.step === 'wait') {
+    // A credit or sign in check heard nothing: the stop goes on until a turn finishes.
+    try { hive.appendLog({ kind: 'office-break', step: 'wait', reason: officeBreak.view()?.reason }); } catch { /* best-effort */ }
+    armOfficeBreak();
+    publishOfficeBreak();
+    return;
+  }
   sendOfficeCheck();
 }
 
@@ -3611,6 +3627,15 @@ function createWindow(): BrowserWindow {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
   });
 
+  // Right-click on a web or email link offers "Copy link address": a named link
+  // shows a name, so selecting its text never copies the address. Nothing else
+  // gets a menu.
+  win.webContents.on('context-menu', (_e, params) => {
+    const url = copyableLink(params.linkURL);
+    if (!url) return;
+    Menu.buildFromTemplate([{ label: copyLinkLabel, click: () => clipboard.writeText(url) }]).popup({ window: win });
+  });
+
   // Close interception when live PTYs exist. The red-X destroys the window;
   // intercept it the same way before-quit does so PTY users aren't surprised.
   win.on('close', (e) => {
@@ -4593,6 +4618,9 @@ ipcMain.handle('app:copyToClipboard', (_evt, text: unknown) => {
   try { clipboard.writeText(text); return { ok: true }; }
   catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
 });
+// The link menu's label in the app language (linkMenu.ts), sent by the renderer.
+let copyLinkLabel = DEFAULT_COPY_LINK_LABEL;
+ipcMain.on('app:setCopyLinkLabel', (_evt, label: unknown) => { copyLinkLabel = menuLabel(label); });
 ipcMain.handle('app:readClipboard', () => {
   try { return clipboard.readText(); } catch { return ''; }
 });
@@ -4676,6 +4704,9 @@ ipcMain.handle('providerKey:set', (_evt, payload: unknown) => {
   const p = (payload ?? {}) as { backend?: unknown; key?: unknown };
   if (typeof p.backend !== 'string' || !(p.backend in BACKEND_KEY_ENV)) return { ok: false, error: 'unknown backend' };
   if (typeof p.key !== 'string' || !p.key) return { ok: false, error: 'key required' };
+  // A key this computer cannot encrypt is never saved, so say so (and what to do
+  // about it) before anything else touches it.
+  if (!integrations.canStoreSecrets()) return { ok: false, error: integrations.secretStoreUnavailableReason() };
   const res = integrations.setSecret(providerKeyRef(p.backend), p.key);
   // The same Anthropic key signs Claude in when the owner chose one in Get
   // Michael ready: approve the new one and let the step and the card look again.
@@ -5922,6 +5953,8 @@ ipcMain.handle('hire:checkDistinct', async (_evt, payload: unknown) => {
   if (requestId) checkRuns.set(requestId, stop);
   try {
     return await checkDistinct(job, team, {
+      engine: cfg.godProvider ?? 'claude',
+      engineModel: cfg.godModel,
       cwd: cfg.harnessHome ?? app.getPath('home'),
       command: cfg.defaultCommand ?? 'claude',
       env: memory.env(),
@@ -5951,6 +5984,8 @@ ipcMain.handle('workStyle:suggest', async (evt, payload: unknown) => {
   const cfg = readConfig();
   try {
     return await suggestWorkStyle(req, {
+      engine: cfg.godProvider ?? 'claude',
+      engineModel: cfg.godModel,
       cwd: cfg.harnessHome ?? app.getPath('home'),
       command: cfg.defaultCommand ?? 'claude',
       env: memory.env(),
@@ -5974,6 +6009,8 @@ ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
   if (!req) return { text: '', source: 'rules' };
   const cfg = readConfig();
   return convertWorkStyle(req, {
+    engine: cfg.godProvider ?? 'claude',
+    engineModel: cfg.godModel,
     cwd: cfg.harnessHome ?? app.getPath('home'),
     command: cfg.defaultCommand ?? 'claude',
     env: memory.env(),
@@ -5999,6 +6036,8 @@ ipcMain.handle('workStyle:checkFocus', async (_evt, payload: unknown) => {
     req.sending = req.sending ? `${req.sending}; ${line}` : line;
   }
   return checkFocusArea(req, {
+    engine: cfg.godProvider ?? 'claude',
+    engineModel: cfg.godModel,
     cwd: cfg.harnessHome ?? app.getPath('home'),
     command: cfg.defaultCommand ?? 'claude',
     env: memory.env(),
@@ -7888,7 +7927,7 @@ function bootstrapHiveServices(): void {
   // failure just leaves telemetry off (transcript reconciler stays). No breaker.start():
   // the breaker is POLICY-only, ticked by the heartbeat beat (#1, ships disabled).
   void telemetry.start().then((r) => {
-    if (r.ok && r.endpoint) { hive.setOtelEndpoint(r.endpoint); console.log('[telemetry] collector listening', r.endpoint); }
+    if (r.ok && r.endpoint) { hive.setOtelEndpoint(r.endpoint, (agentId) => telemetry.tokenFor(agentId)); console.log('[telemetry] collector listening', r.endpoint); }
     else console.error('[telemetry] collector failed to start:', r.error);
   });
   memory.start(); // init shared palace + mine loop (no-op without mempalace)

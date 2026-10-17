@@ -12,6 +12,7 @@ import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
 import { useHive } from '@/hooks/useHive';
 import { useGodNameSync } from '@/i18n/useGodNameSync';
 import { useDirectionSync } from '@/i18n/useDirection';
+import { useCopyLinkLabelSync } from '@/i18n/useCopyLinkLabelSync';
 import { useArabicTerminalSync } from '@/terminal/useArabicTerminalSync';
 import { AgentDetailPanel } from '@/components/AgentDetailPanel';
 import { AddAgentModal } from '@/components/AddAgentModal';
@@ -53,6 +54,8 @@ export function App() {
   useGodNameSync();
   // Mirror the document only for a user who has picked an RTL app language.
   useDirectionSync();
+  // Give main the right-click "Copy link address" label in the app language.
+  useCopyLinkLabelSync();
   // Let terminals that are ALREADY open follow a language switch too.
   useArabicTerminalSync();
   const agent = useStore(selectedAgent);

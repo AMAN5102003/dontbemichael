@@ -93,7 +93,7 @@ export function parseVersion(v: string): [number, number, number] | null {
  */
 export function isNewerRelease(candidate: string, current: string): boolean {
   const parse = (v: string) => {
-    const m = String(v ?? '').trim().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.]+))?/);
+    const m = String(v ?? '').trim().replace(/^v/, '').match(/^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?/);
     return m ? { core: [Number(m[1]), Number(m[2]), Number(m[3])], pre: m[4] ? m[4].split('.') : [] } : null;
   };
   const a = parse(candidate);
