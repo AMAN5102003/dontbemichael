@@ -18,6 +18,7 @@ import { TriggerCard } from './triggers/ui';
 import { WorkersTab } from './WorkersTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
+import { areLogsEqual, type LogEntry } from './activityLog';
 import { Icon } from './Icon';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
@@ -1295,8 +1296,6 @@ function TokenLimitEditor({ value, onSet }: { value?: number; onSet: (tokens: nu
 
 // ─── Activity tab — hive event log + board ───────────────────────────────────
 
-interface LogEntry { ts?: number; kind?: string; [k: string]: unknown }
-
 function ActivityTab({ embedded = false }: { embedded?: boolean }) {
   const Wrap = embedded ? Bare : Scroll;
   const { t } = useTranslation();
@@ -1307,17 +1306,9 @@ function ActivityTab({ embedded = false }: { embedded?: boolean }) {
     const refresh = async () => {
       try {
         const next = (await window.cth.hiveLog(60)) as LogEntry[];
-        // Same log as last poll (same length, same first entry): keep the prev
-        // reference so React skips the re-render. IPC returns fresh objects each
-        // time, so compare the first entry by `ts`, not by reference.
-        setLog((prev) => {
-          if (prev.length !== next.length) return next;
-          if (next.length === 0) return prev;
-          const a = prev[0];
-          const b = next[0];
-          const same = a.ts !== undefined || b.ts !== undefined ? a.ts === b.ts : JSON.stringify(a) === JSON.stringify(b);
-          return same ? prev : next;
-        });
+        // Same log as last poll: keep the prev reference so React skips the
+        // re-render. IPC returns fresh objects each time, so compare by value.
+        setLog((prev) => (areLogsEqual(prev, next) ? prev : next));
       } catch { /* noop */ }
       try { setBoard(await window.cth.hiveBoard()); } catch { /* noop */ }
     };
