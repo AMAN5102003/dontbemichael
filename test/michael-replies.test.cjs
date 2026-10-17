@@ -342,18 +342,18 @@ test('Couldn\'t finish without a reason reads "No reason given", and the dock sl
   }
 });
 
-test('More brings the opened reply into view instead of leaving older messages on screen', () => {
-  // Value: protects=a long reply opened with More shows where the owner is reading; fails_when=More expands in place and the list keeps its old scroll, so the new lines land below the fold under older messages; why_new=owner report 2026-10-17; seam=pure scroll math plus source pins (no layout harness)
-  const { revealScroll } = loadTs('src/renderer/src/shell/revealScroll.ts');
-  const view = { top: 0, bottom: 390 };
-  // Measured in Electron 32: scrolled to the latest, the reply sat at 266 to 378 and More grew it to 1364.
-  assert.equal(revealScroll(view, { top: 266, bottom: 1364 }, 12), 254, 'taller than the list: its start goes to the top');
-  assert.equal(revealScroll(view, { top: 266, bottom: 450 }, 12), 72, 'fits: scroll just enough to show all of it');
-  assert.equal(revealScroll(view, { top: 40, bottom: 300 }, 12), 0, 'already in view: no scroll');
-  assert.equal(revealScroll(view, { top: -50, bottom: 900 }, 12), -62, 'its start above the top: back to its start');
+test('More opens only the reply it sits under, even when replies share an id', () => {
+  // Value: protects=More opens one reply and the list stays where the owner clicked; fails_when=replies keyed by message id (an agent may reuse one) so one More opens every reply with that id and the view jumps to older ones; why_new=owner report 2026-10-17, seen in the dev app; seam=pure key helper plus source pins (no layout harness)
+  const { dockKeys } = loadTs('src/renderer/src/shell/dockKeys.ts');
+  const keys = dockKeys([
+    { kind: 'owner', id: 'q1' }, { kind: 'michael', id: 'r' }, { kind: 'owner', id: 'q2' },
+    { kind: 'michael', id: 'r' }, { kind: 'michael', id: 'r' }, { kind: 'owner', id: 'r' }
+  ]);
+  assert.deepEqual(keys, ['owner:q1', 'michael:r', 'owner:q2', 'michael:r#1', 'michael:r#2', 'owner:r']);
+  assert.equal(new Set(keys).size, keys.length, 'every item has its own key');
   const dock = read('src/renderer/src/shell/MichaelDock.tsx');
-  assert.match(dock, /onMore=\{\(\) => \{ reveal\.current = it\.id; setExpanded/);
-  assert.match(dock, /el\.scrollTop \+= revealScroll\(el\.getBoundingClientRect\(\), bubble\.getBoundingClientRect\(\), 12\);\n {2}\}, \[expanded\]\);/,
-    'scrolls the dock list only, once the expanded reply is laid out');
-  assert.match(dock, /<div data-r=\{r\.id\}/);
+  assert.match(dock, /const keys = dockKeys\(dock\.items\);/, 'keyed over the whole conversation, not only what shows');
+  assert.match(dock, /<ReplyBubble key=\{key\}[^\n]*\n\s*expanded=\{!!expanded\[key\]\} onMore=\{\(\) => setExpanded\(\(e\) => \(\{ \.\.\.e, \[key\]: true \}\)\)\}/);
+  assert.doesNotMatch(dock, /expanded\[it\.id\]|key=\{it\.id\}/, 'never keyed by the raw message id');
+  assert.doesNotMatch(dock, /useLayoutEffect|scrollTop \+=/, 'More leaves the scroll alone, so the spot clicked stays in view');
 });

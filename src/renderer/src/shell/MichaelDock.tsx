@@ -1,5 +1,5 @@
 import i18n from '@/i18n';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ownerWorkOrder, type DockItem, type DockQuestion, type DockReply, type OwnerDock, type OwnerQuestionStatus } from '@shared/ownerRequests';
 import { useStore } from '@/store/store';
@@ -7,7 +7,7 @@ import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { AgentAvatar } from '@/components/AgentAvatar';
 import { InfoTip } from '@/components/InfoTip';
 import { FileText } from '@/components/FileChip';
-import { revealScroll } from './revealScroll';
+import { dockKeys } from './dockKeys';
 
 /**
  * Michael's conversation dock (docs/designs/michael-replies.md): it grows up
@@ -129,17 +129,6 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
     else el.scrollTop = el.scrollHeight;
   }, [open, focus, dock.items.length]);
 
-  // More grows the reply below the fold; bring it into view, scrolling the list only.
-  const reveal = useRef<string | null>(null);
-  useLayoutEffect(() => {
-    const id = reveal.current;
-    reveal.current = null;
-    const el = listRef.current;
-    const bubble = id && el?.querySelector(`[data-r="${CSS.escape(id)}"]`);
-    if (!el || !bubble) return;
-    el.scrollTop += revealScroll(el.getBoundingClientRect(), bubble.getBoundingClientRect(), 12);
-  }, [expanded]);
-
   // Closes on Esc with focus inside, or a click on the office floor while the
   // composer is empty (21A). Selecting a person or opening Needs you keeps it.
   useEffect(() => {
@@ -156,6 +145,11 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
   }, [open, draft, setDock, composerRef]);
 
   const items = useMemo(() => visibleItems(dock.items, showEarlier), [dock.items, showEarlier]);
+  // Keyed over the whole conversation, so "Earlier" never shifts which reply is open.
+  const keyOf = useMemo(() => {
+    const keys = dockKeys(dock.items);
+    return new Map(dock.items.map((it, i) => [it, keys[i]]));
+  }, [dock.items]);
   const hasEarlier = items.length < dock.items.length;
   const queued = queue ?? [];
   // Position in Michael's queue: -1 once typed, 0 when next, N with N ahead.
@@ -225,19 +219,20 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
           <button onClick={() => setShowEarlier(true)} style={{ ...quietBtn, alignSelf: 'center' }}>{t('dock.earlier')}</button>
         )}
         {items.map((it) => {
+          const key = keyOf.get(it) ?? `${it.kind}:${it.id}`;
           const day = dayLabel(it.at, t);
-          const divider = day !== lastDay ? <div key={`d-${it.id}`} style={{ textAlign: 'center', fontSize: 11, color: 'var(--cth-ink-3)' }}>{day}</div> : null;
+          const divider = day !== lastDay ? <div key={`d-${key}`} style={{ textAlign: 'center', fontSize: 11, color: 'var(--cth-ink-3)' }}>{day}</div> : null;
           lastDay = day;
           if (it.kind === 'owner') {
             prevQuestion = it.id;
-            return [divider, <OwnerBubble key={it.id} q={it} ahead={ahead(it.id)} onCancel={() => void cancel(it)} onRetry={() => void retry(it)}
+            return [divider, <OwnerBubble key={key} q={it} ahead={ahead(it.id)} onCancel={() => void cancel(it)} onRetry={() => void retry(it)}
               onNudge={() => void window.cth.ownerNudge(it.id).then(refresh)} onAskAgain={() => onFillComposer(it.text)} />];
           }
           const quote = prevQuestion !== it.replyTo ? dock.items.find((q): q is DockQuestion => q.kind === 'owner' && q.id === it.replyTo) : undefined;
           prevQuestion = it.replyTo;
           const question = dock.items.find((q): q is DockQuestion => q.kind === 'owner' && q.id === it.replyTo);
-          return [divider, <ReplyBubble key={it.id} r={it} godId={godId} godName={godName} quote={quote}
-            expanded={!!expanded[it.id]} onMore={() => { reveal.current = it.id; setExpanded((e) => ({ ...e, [it.id]: true })); }}
+          return [divider, <ReplyBubble key={key} r={it} godId={godId} godName={godName} quote={quote}
+            expanded={!!expanded[key]} onMore={() => setExpanded((e) => ({ ...e, [key]: true }))}
             onQuote={() => listRef.current?.querySelector(`[data-q="${CSS.escape(it.replyTo)}"]`)?.scrollIntoView({ block: 'center' })}
             canReply={it.act === 'query' && question?.status === 'waiting-for-you'}
             onReply={() => question && onReply({ inReplyTo: it.id, conversation: question.conversation, text: firstSentence(it.text) })} />];
@@ -312,7 +307,7 @@ function ReplyBubble({ r, godId, godName, quote, expanded, onMore, onQuote, canR
   const text = r.act === 'refuse' && !r.text.trim() ? t('dock.noReason') : r.text;
   const long = text.split('\n').length > lines || text.length > lines * 60;
   return (
-    <div data-r={r.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: '92%' }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: '92%' }}>
       <AgentAvatar id={godId} name={godName} size={22} />
       <div style={{
         minWidth: 0, background: r.notes ? 'var(--cth-card-2)' : 'var(--cth-card)', boxShadow: 'inset 0 0 0 1px var(--cth-line)',
