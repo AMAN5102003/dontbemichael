@@ -63,11 +63,15 @@ test('questions for a Research member that isn\'t reporting wait with Michael (S
   hive.setTrustLayer({ inbound: async (m) => ({ decision: 'pass', subject: m.subject, body: m.body }), outbound: async (m) => ({ decision: 'pass', subject: m.subject, body: m.body }) });
   hive.memberMail = (id) => (id === 'research' ? 'hold' : null);
   fs.writeFileSync(path.join(hive.root(), 'agents', 'pam', 'outbox', 'q.json'), JSON.stringify({ to: 'research', act: 'query', subject: 'Flour prices', body: 'What does flour cost?' }));
-  hive.routeOnce(); await new Promise((r) => setTimeout(r, 30)); hive.routeOnce();
   const dir = (id) => path.join(hive.root(), 'agents', id, 'inbox');
   const msgs = (id) => (fs.existsSync(dir(id)) ? fs.readdirSync(dir(id)).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(dir(id), f), 'utf8'))) : []);
+  const held = () => msgs('god').some((m) => /^\[held: "Pete" isn't reporting to the app/.test(m.subject));
+  // Wait for the outcome, never a fixed time: the trust layer path is async.
+  for (const end = Date.now() + 10_000; !held(); await new Promise((r) => setTimeout(r, 10))) {
+    if (Date.now() > end) assert.fail('the question was never held for Michael');
+    hive.routeOnce();
+  }
   assert.equal(msgs('research').length, 0);
-  assert.ok(msgs('god').some((m) => /^\[held: "Pete" isn't reporting to the app/.test(m.subject)));
 });
 
 test('the card, the tag and the panel line are placed where the design says (SD1, SD14)', () => {

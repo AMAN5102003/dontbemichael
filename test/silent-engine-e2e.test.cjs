@@ -24,6 +24,14 @@ const { mailFor, CHECK_IN_MS } = loadTs('src/shared/silentEngine.ts');
 
 const FAKE = path.join(__dirname, 'fixtures', 'fake-engine.cjs');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Waits for an outcome, never for a fixed time: a slow runner only waits longer.
+const until = async (cond, what, ms = 10_000) => {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await wait(10);
+  }
+};
 const inbox = (hive, id) => {
   const dir = path.join(hive.root(), 'agents', id, 'inbox');
   return fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'))) : [];
@@ -48,7 +56,8 @@ test('fake engines through the real socket, watch and router: card, held mail, l
     changed: () => {}, event: (e) => events.push([e.type, e.episode.agentId])
   });
   hive.memberMail = (id) => mailFor(watch.episode(id));
-  const server = new HookServer(hive, () => null, () => ({ harnessHome: home }), undefined, undefined, undefined, (agentId) => watch.noteHook(agentId));
+  const heard = new Set();
+  const server = new HookServer(hive, () => null, () => ({ harnessHome: home }), undefined, undefined, undefined, (agentId) => { heard.add(agentId); watch.noteHook(agentId); });
   server.start();
   t.after(() => server.stop());
 
@@ -64,8 +73,8 @@ test('fake engines through the real socket, watch and router: card, held mail, l
   };
   t.after(() => { for (const p of engines) p.kill(); });
   run('kelly'); run('dwight', { HOOK_AFTER_MS: '400' }); run('nick');
-  await wait(1200);
-  assert.ok(out.kelly.hasOutput && out.dwight.hasOutput, 'the fake engines print');
+  await until(() => out.kelly.hasOutput && out.dwight.hasOutput && out.nick.hasOutput, 'the fake engines to print');
+  await until(() => heard.has('dwight'), "dwight's check in through the socket");
 
   const snapshot = (id, provider) => ({
     id, ptyId: `p-${id}`, running: true, engine: provider === 'custom' ? 'custom' : 'claude', engineLabel: provider, version: null,
@@ -76,7 +85,7 @@ test('fake engines through the real socket, watch and router: card, held mail, l
 
   beatUntil(CHECK_IN_MS + 16_000, [['kelly', 'claude'], ['dwight', 'claude'], ['nick', 'custom']]);
   run('pam');
-  await wait(400);
+  await until(() => out.pam.hasOutput, 'pam to print');
   beatUntil(16_000, [['kelly', 'claude'], ['dwight', 'claude'], ['nick', 'custom'], ['pam', 'claude']]);
 
   assert.equal(watch.episode('kelly')?.state, 'open', 'never checked in: a card');
@@ -87,17 +96,17 @@ test('fake engines through the real socket, watch and router: card, held mail, l
   // Kelly's new mail is held for Michael; Pam's still reaches Pam.
   post(hive, 'dwight', { to: 'kelly', act: 'inform', subject: 'Invoice 4471', body: 'Please reply to Maria' }, 'm1.json');
   post(hive, 'dwight', { to: 'pam', act: 'inform', subject: 'Board packet', body: 'Numbers are in' }, 'm2.json');
-  hive.routeOnce(); await wait(20); hive.routeOnce();
+  const held = () => inbox(hive, 'god').some((m) => /^\[held: "Kelly" isn't reporting to the app/.test(m.subject) && /Invoice 4471/.test(m.subject));
+  const toPam = () => inbox(hive, 'pam').some((m) => m.subject === 'Board packet');
+  await until(() => { hive.routeOnce(); return held() && toPam(); }, 'both messages to be routed');
   assert.equal(inbox(hive, 'kelly').length, 0);
-  assert.ok(inbox(hive, 'god').some((m) => /^\[held: "Kelly" isn't reporting to the app/.test(m.subject) && /Invoice 4471/.test(m.subject)));
-  assert.ok(inbox(hive, 'pam').some((m) => m.subject === 'Board packet'), 'a healthy member is never held (R4)');
+  assert.ok(held());
+  assert.ok(toPam(), 'a healthy member is never held (R4)');
 
   // Kelly checks in late: the card closes and mail flows again.
   run('kelly', { HOOK_AFTER_MS: '0' });
-  await wait(600);
-  assert.equal(watch.episode('kelly'), undefined);
+  await until(() => watch.episode('kelly') === undefined, "kelly's late check in");
   assert.deepEqual(events.filter((e) => e[1] === 'kelly').map((e) => e[0]), ['opened', 'resolved']);
   post(hive, 'dwight', { to: 'kelly', act: 'inform', subject: 'Follow up', body: 'Thanks' }, 'm3.json');
-  hive.routeOnce(); await wait(20); hive.routeOnce();
-  assert.ok(inbox(hive, 'kelly').some((m) => m.subject === 'Follow up'));
+  await until(() => { hive.routeOnce(); return inbox(hive, 'kelly').some((m) => m.subject === 'Follow up'); }, 'mail to reach kelly again');
 });
