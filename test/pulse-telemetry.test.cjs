@@ -19,8 +19,12 @@ if (!process.env.PULSE_UNDER_ELECTRON) {
   try { bin = require('electron'); } catch { bin = null; }
   const ok = typeof bin === 'string' && fs.existsSync(bin);
   test('telemetry store and processor (run under Electron\'s Node)', { skip: ok ? false : 'no Electron binary' }, () => {
+    // Not as a child of the outer runner: with NODE_TEST_CONTEXT set, the inner
+    // run reports to a parent that isn't listening and exits 0 even when a test fails.
+    const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', PULSE_UNDER_ELECTRON: '1' };
+    delete env.NODE_TEST_CONTEXT;
     const r = spawnSync(bin, ['--test', __filename], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PULSE_UNDER_ELECTRON: '1' },
+      env,
       encoding: 'utf8', timeout: 300_000
     });
     assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
