@@ -52,6 +52,9 @@ test('suggestions are amber soft cards, applied ones green with Undo; no coral a
   assert.doesNotMatch(view, /borderLeft|borderInlineStart/);
   assert.match(view, /window\.cth\.pulseApply\(a\.id, a\.change\)/, 'apply sends what the card showed');
   assert.match(view, /t\('pulse\.notNow'\)/);
+  // PixelButton gives Apply the disabled state of DESIGN.md 7.7, so it no longer looks unchanged while it is busy.
+  assert.match(view, /<PixelButton variant="primary" size="sm" disabled=\{busy === a\.id\}/, 'Apply shows when it is busy');
+  assert.doesNotMatch(view, /\bbtn\(/, 'Pulse actions use PixelButton, not a local button style');
 });
 
 test('line icons, never emoji; Team at work lists everyone on the team busiest first, Michael included, and opens their week', () => {
@@ -83,7 +86,9 @@ test('the layout follows the stage width, and every picture has words', () => {
   assert.match(view, /role="img" aria-label=\{aria\}/);
   assert.match(view, /aria-live="polite"/);
   assert.match(view, /aria-label=\{t\('pulse\.planAria'/);
-  assert.ok((view.match(/<button[^>]*type="button"/g) || []).length >= 6, 'rows and actions are buttons');
+  // PixelButton renders a <button type="button">, so it counts.
+  const buttons = (view.match(/<button[^>]*type="button"/g) || []).length + (view.match(/<PixelButton /g) || []).length;
+  assert.ok(buttons >= 6, 'rows and actions are buttons');
   assert.match(view, /role="listitem"/, 'Team at work rows are a list');
 });
 
