@@ -51,20 +51,24 @@ export interface WatchDeps {
   changed: (episodes: SilentEpisode[]) => void;
   /** A member's story moved on: Michael and the owner hear (SD10, SD12). */
   /** `dropped`: it now runs an engine the app doesn't watch, so its card goes. */
-  event: (e: { type: 'opened' | 'resolved' | 'kept' | 'dropped'; episode: SilentEpisode }) => void;
+  /** `removed`: it left the team, or the owner closed it. */
+  event: (e: { type: 'opened' | 'resolved' | 'kept' | 'dropped' | 'removed'; episode: SilentEpisode }) => void;
 }
 
 interface Watch {
   ptyId: string;
   pid?: number;
   /** Tool calls under way (PreToolUse with no end yet), several at once
-   *  included, and since when the first began: no report comes until they
-   *  end, so it is no sign of silence (LONG_TOOL_MS). */
+   *  included, and when the latest began: no report comes until they end, so
+   *  it is no sign of silence (LONG_TOOL_MS from the latest start, so a call
+   *  the app's gate refused, which never ends, can't use up a later one's). */
   openTools: number;
   toolSince: number | null;
-  /** The last beat that saw this process: a report after it may already be
-   *  the next process's, which is carried over when the restart is noticed. */
+  /** The last beat that saw this process, and the last report's event. A
+   *  SessionStart after that beat is the next process's first report, carried
+   *  over when the restart is noticed; any other report may be the old one's. */
   seenAt: number | null;
+  lastEvent: string | null;
   firstOutputAt: number | null;
   lastHookAt: number | null;
   /** The finding held on the previous beat (two beats in a row, SD9). */
@@ -104,8 +108,9 @@ export class SilentWatch {
     const w = this.watches.get(agentId);
     if (w) {
       w.lastHookAt = at;
+      w.lastEvent = event ?? null;
       w.pending = false;
-      if (event === 'PreToolUse') { if (w.openTools++ === 0) w.toolSince = at; }
+      if (event === 'PreToolUse') { w.openTools++; w.toolSince = at; }
       else if (event === 'PostToolUse' || event === 'PostToolUseFailure') { if (w.openTools > 0 && --w.openTools === 0) w.toolSince = null; }
       else if (event && TURN_ENDS.has(event)) { w.openTools = 0; w.toolSince = null; }
     } else this.early.set(agentId, at);
@@ -124,8 +129,14 @@ export class SilentWatch {
     const now = this.deps.now();
     let dirty = false;
     const present = new Set(members.map((m) => m.id));
-    // A member removed while its card is open drops off the card.
-    for (const id of [...this.episodes.keys()]) if (!present.has(id)) { this.episodes.delete(id); dirty = true; }
+    // A member removed, closed or deleted while its card is open drops off the
+    // card, and Michael hears its mail is his to route (ship review).
+    for (const [id, ep] of [...this.episodes]) {
+      if (present.has(id)) continue;
+      this.episodes.delete(id);
+      this.deps.event({ type: 'removed', episode: ep });
+      dirty = true;
+    }
     for (const id of [...this.watches.keys()]) if (!present.has(id)) this.watches.delete(id);
 
     for (const m of members) {
@@ -159,8 +170,8 @@ export class SilentWatch {
         const fresh = !!w;
         // A report since the old process was last seen came from the new one:
         // it reported before this beat noticed the restart.
-        const carried = w && w.lastHookAt !== null && w.seenAt !== null && w.lastHookAt > w.seenAt ? w.lastHookAt : null;
-        w = { ptyId: m.ptyId, pid: m.pid, firstOutputAt: null, lastHookAt: this.early.get(m.id) ?? carried, pending: false, openTools: 0, toolSince: null, seenAt: null };
+        const carried = w && w.lastHookAt !== null && w.seenAt !== null && w.lastHookAt > w.seenAt && w.lastEvent === 'SessionStart' ? w.lastHookAt : null;
+        w = { ptyId: m.ptyId, pid: m.pid, firstOutputAt: null, lastHookAt: this.early.get(m.id) ?? carried, pending: false, openTools: 0, toolSince: null, seenAt: null, lastEvent: null };
         this.early.delete(m.id);
         this.watches.set(m.id, w);
         // Its card waits on the new process, on the engine it runs now.

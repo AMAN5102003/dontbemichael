@@ -154,8 +154,8 @@ test('the main process watches archived members as not running, stops without ar
   assert.match(pause, /closingTime\.refresh\(agentId\)/);
   assert.match(main, /const agentId = ptyToAgent\.get\(id\) \?\? pausedPty\.get\(id\);/, 'a later teardown still archives a paused member');
   assert.match(main, /ptyToAgent\.set\(opts\.id, opts\.hive\.id\);\n\s*pausedPty\.delete\(opts\.id\);/);
-  // A kept member's mail reached it: Michael is never told to send it again.
-  assert.match(main, /const held = episode\.state === 'kept' \? '' : ` Mail held for/);
+  // Every way a card ends tells Michael held mail is his to send or route.
+  for (const type of ['resolved', 'dropped', 'removed']) assert.match(main, new RegExp(`type === '${type}' && !episode\\.isMichael\\) \\{\\n\\s*silentNoteToMichael\\([^\\n]*resendLine\\(name`), type);
   assert.match(main, /try \{ bin = ptyManager\.commandPath\(command\); \} catch \{ \/\* unknown \*\/ \}\n\s*if \(bin\) void claudeCliVersion\(bin\)/);
 });
 

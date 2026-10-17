@@ -485,3 +485,36 @@ test('Change engine: the restarted member\'s card moves to the engine it runs no
   assert.deepEqual([ep.engine, ep.engineLabel, ep.version], ['codex', 'Codex', '0.40.0']);
   assert.notEqual(S.silentCardKey(ep), before);
 });
+
+test('a tool call the app refused never ends, and still never takes a later call\'s grace', () => {
+  // Value: protects=a long call after a refused one keeps its grace; fails_when=the grace counts from the first open call; why_new=pass 3 review; seam=none
+  const r = rig({ platform: 'win32' });
+  r.watch.beat([member()]);
+  r.watch.noteHook('kelly', 'PreToolUse'); // refused by the app's gate: no PostToolUse
+  for (let i = 0; i < 20; i++) { r.clock.t += 60_000; r.watch.noteHook('kelly', 'PreToolUse'); r.watch.noteHook('kelly', 'PostToolUse'); r.watch.beat([member({ lastOutputAt: r.clock.t - 1000 })]); }
+  r.watch.noteHook('kelly', 'PreToolUse'); // a long build
+  run(r, 10 * 60_000, member());
+  assert.equal(r.watch.list().length, 0, 'the build keeps its grace');
+  assert.deepEqual(r.log.stops, []);
+});
+
+test('only a SessionStart after the last beat carries over to the new process; the old one\'s last tick does not', () => {
+  // Value: protects=a new process that never reports is still flagged; fails_when=any report between the last beat and the restart is credited to the new process; why_new=pass 3 review; seam=none
+  const r = rig({ mayAutoRestart: false });
+  r.watch.beat([member({ pid: 1, engine: 'codex', statusTicks: false })]);
+  r.watch.noteHook('kelly', 'SessionStart');
+  run(r, 2 * 60_000, member({ pid: 1, engine: 'codex', statusTicks: false }), { busy: false });
+  r.clock.t += 1000;
+  r.watch.noteHook('kelly', 'Stop'); // the old process's last report
+  run(r, 60_000 + 3 * BEAT, member({ pid: 2, engine: 'codex', statusTicks: false }));
+  assert.equal(r.watch.episode('kelly')?.kind, 'never', 'the new process never checked in');
+});
+
+test('a card whose member is closed or leaves goes, and Michael hears its mail is his to route', () => {
+  // Value: protects=Michael is never left holding mail for someone gone without a word; fails_when=beat drops the episode silently; why_new=pass 3 review; seam=none
+  const r = rig({ mayAutoRestart: false });
+  run(r, 60_000 + 2 * BEAT, member());
+  r.clock.t += BEAT; r.watch.beat([]);
+  assert.equal(r.watch.list().length, 0);
+  assert.deepEqual(r.log.events.map((e) => e[0]), ['opened', 'removed']);
+});

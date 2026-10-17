@@ -628,17 +628,23 @@ silentWatch = new SilentWatch({
           `${name}'s engine stopped reporting to the app, so the app can't check ${name}'s folders and tools. Until it reports again, ${name}'s new mail comes to you. Give ${name} no new cards; route the work to someone else or let it wait. The owner has a card on Needs you.`);
       }
     } else if (type === 'resolved' && !episode.isMichael) {
-      // A kept member got its mail by its terminal: nothing was held for it.
-      const held = episode.state === 'kept' ? '' : ` Mail held for ${name} while it wasn't reporting came to you: send ${name} what still needs doing.`;
-      silentNoteToMichael(`${name} is reporting again`, `${name} is reporting to the app again. Work can go to ${name} as usual.${held}`);
+      silentNoteToMichael(`${name} is reporting again`, `${name} is reporting to the app again. Work can go to ${name} as usual.${resendLine(name)}`);
     } else if (type === 'dropped' && !episode.isMichael) {
-      const held = episode.state === 'kept' ? '' : ` Mail held for ${name} came to you: send ${name} what still needs doing.`;
-      silentNoteToMichael(`${name} is on an engine the app doesn't watch`, `${name} now runs on an engine that sends the app no reports, so the app no longer watches it. Work can go to ${name} as usual.${held}`);
+      silentNoteToMichael(`${name} is on an engine the app doesn't watch`, `${name} now runs on an engine that sends the app no reports, so the app no longer watches it. Work can go to ${name} as usual.${resendLine(name)}`);
+    } else if (type === 'removed' && !episode.isMichael) {
+      silentNoteToMichael(`${name} left the team`, `${name} was closed or left the team while it wasn't reporting.${resendLine(name, true)}`);
     } else if (type === 'kept') {
-      silentNoteToMichael(`${name} works unchecked`, `The owner chose to keep ${name} working without the app's checks. Work can go to ${name} again; it reaches ${name} through the terminal.`);
+      silentNoteToMichael(`${name} works unchecked`, `The owner chose to keep ${name} working without the app's checks. Work can go to ${name} again; it reaches ${name} through the terminal.${resendLine(name)}`);
     }
   }
 });
+/** Mail for a member that isn't reporting came to Michael (SD12) until it
+ *  was kept: whatever of it still needs doing is his to send or route. */
+function resendLine(name: string, routeOnly = false): string {
+  return routeOnly
+    ? ` If any of ${name}'s mail came to you meanwhile, route what still needs doing to someone else.`
+    : ` If any of ${name}'s mail came to you while it wasn't reporting, send ${name} what still needs doing.`;
+}
 /** The watch's beat: every member in the registry, running or not. */
 function silentBeat(): void {
   if (!silentWatch || !hive.enabled()) return;
