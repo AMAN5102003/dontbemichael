@@ -35,8 +35,8 @@ test('an answer whose request to Michael failed to send reaches him a minute lat
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-owner-retry-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const hive = new HiveManager(() => home);
-  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
-  await hive.ensureAgent({ id: 'nick', name: 'Nick', provider: 'claude', cwd: home });
+  await hive.ensureAgent({ id: 'god', name: 'Michael', cwd: home, isGod: true });
+  await hive.ensureAgent({ id: 'nick', name: 'Nick', cwd: home });
   const card = (id, title, humanQA) => ({ id, title, status: 'blocked', assignee: 'nick', dependsOn: [], priority: 3, createdAt: 'x', humanQA });
   hive.writeTasks([
     card('refund', 'Refund for Northwind Cafe', [{ q: 'Refund?', raisedBy: 'nick' }]),
