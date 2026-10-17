@@ -484,12 +484,12 @@ test('a Claude member\'s transcript total never reaches Pulse cost; an engine wi
 test('a session total that stays quiet for the keep window leaves the saved state', (t) => {
   const { persist, store, proc, clock } = setup(t);
   const state = () => JSON.parse(persist.database().prepare("SELECT value FROM kv WHERE key = 'pulse:state:/office'").get().value);
-  store.cost('pam', 's1', 1.0, 10, 'claude-opus-5-5', clock.now());
+  store.cost('pam', 's1', 1.0, 10, 'model-a', clock.now());
   proc.tick('/office');
   assert.deepEqual(Object.keys(state().costs).sort(), ['pam\ts1', 'pam\ts1#t']);
   // A month and a day later, with another session still spending, the daily prune drops only s1.
   clock.add(31 * 86_400_000);
-  store.cost('jim', 's2', 0.5, 5, 'claude-opus-5-5', clock.now());
+  store.cost('jim', 's2', 0.5, 5, 'model-a', clock.now());
   proc.tick('/office');
   assert.deepEqual(Object.keys(state().costs).sort(), ['jim\ts2', 'jim\ts2#t']);
   assert.deepEqual(Object.keys(state().costsAt).sort(), ['jim\ts2', 'jim\ts2#t']);
