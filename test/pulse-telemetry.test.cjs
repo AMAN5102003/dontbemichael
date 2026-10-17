@@ -480,3 +480,18 @@ test('a Claude member\'s transcript total never reaches Pulse cost; an engine wi
   assert.match(src, /if \(sample && \(sample\.sessionId \|\| \(a\.provider \?\? 'claude'\) !== 'claude'\)\) \{\s*pulseTelemetry\.cost\(id, sample\.sessionId \|\| `transcript:\$\{hive\.lastSession\(id\) \?\? ''\}`/);
   assert.doesNotMatch(src, /pulseTelemetry\.cost\(id, sample\.sessionId \|\| 'transcript'/);
 });
+
+test('a session total that stays quiet for the keep window leaves the saved state', (t) => {
+  const { persist, store, proc, clock } = setup(t);
+  const state = () => JSON.parse(persist.database().prepare("SELECT value FROM kv WHERE key = 'pulse:state:/office'").get().value);
+  store.cost('pam', 's1', 1.0, 10, 'claude-opus-5-5', clock.now());
+  proc.tick('/office');
+  assert.deepEqual(Object.keys(state().costs).sort(), ['pam\ts1', 'pam\ts1#t']);
+  // A month and a day later, with another session still spending, the daily prune drops only s1.
+  clock.add(31 * 86_400_000);
+  store.cost('jim', 's2', 0.5, 5, 'claude-opus-5-5', clock.now());
+  proc.tick('/office');
+  assert.deepEqual(Object.keys(state().costs).sort(), ['jim\ts2', 'jim\ts2#t']);
+  assert.deepEqual(Object.keys(state().costsAt).sort(), ['jim\ts2', 'jim\ts2#t']);
+});
+

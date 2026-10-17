@@ -26,15 +26,41 @@ import { trustKeys, refusalKey, REFUSAL_GATES, type RefusalGate } from '../share
 export const RUN_IDLE_END_MS = 2 * 60_000;
 export const RUN_CAP_MS = 60 * 60_000;
 export const RAW_KEEP_MS = 400 * 86_400_000;
+/** A session's saved running total is dropped once it has not moved for this
+ *  long. Sessions end at closing time, and a new one counts from zero anyway. */
+export const COST_KEY_KEEP_MS = 30 * 86_400_000;
 /** One request's working time counts at most this much (a reply left open overnight is not work). */
 export const TURN_CAP_MS = 60 * 60_000;
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 
 interface AgentState { lastStop: number; lastActivity: number; turnStart?: number }
 interface OpenRun { id: number; agentId: string; missionId: string; dispatched: number; start: number | null; usd: number; work: number; relay: boolean }
-interface FoldState { cursor: number; costs: Record<string, number>; agents: Record<string, AgentState>; away: boolean; lastPrune: number }
+interface FoldState {
+  cursor: number;
+  costs: Record<string, number>;
+  /** When each of `costs` last moved, so a quiet session's total can go. */
+  costsAt: Record<string, number>;
+  agents: Record<string, AgentState>;
+  away: boolean;
+  lastPrune: number;
+}
 
-const emptyState = (): FoldState => ({ cursor: 0, costs: {}, agents: {}, away: false, lastPrune: 0 });
+const emptyState = (): FoldState => ({ cursor: 0, costs: {}, costsAt: {}, agents: {}, away: false, lastPrune: 0 });
+
+/** The saved running totals without the ones that have not moved for
+ *  COST_KEY_KEEP_MS (two keys per agent and session, kept forever before).
+ *  A total from an older save, with no time yet, starts its clock now. */
+export function quietCostsDropped(s: Pick<FoldState, 'costs' | 'costsAt'>, now: number): Pick<FoldState, 'costs' | 'costsAt'> {
+  const costs: Record<string, number> = {};
+  const costsAt: Record<string, number> = {};
+  for (const [k, v] of Object.entries(s.costs)) {
+    const at = s.costsAt[k] ?? now;
+    if (now - at > COST_KEY_KEEP_MS) continue;
+    costs[k] = v;
+    costsAt[k] = at;
+  }
+  return { costs, costsAt };
+}
 
 export class TelemetryProcessor {
   constructor(
@@ -76,7 +102,10 @@ export class TelemetryProcessor {
         for (const r of rows) {
           if (r.kind !== 'cost' || !r.agentId) continue;
           const key = `${r.agentId}\t${String(r.attrs?.s ?? '')}`;
-          for (const k of [key, `${key}#t`]) { const v = fold.lastFor(k); if (v !== undefined) state.costs[k] = v; }
+          for (const k of [key, `${key}#t`]) {
+            const v = fold.lastFor(k);
+            if (v !== undefined) { state.costs[k] = v; state.costsAt[k] = this.now(); }
+          }
         }
         if (rows.length) state.cursor = rows[rows.length - 1].id;
         this.saveState(db, office, state);
@@ -242,7 +271,7 @@ export class TelemetryProcessor {
     try {
       db.prepare('DELETE FROM telemetry_events WHERE id IN (SELECT id FROM telemetry_events WHERE office = ? AND ts < ? ORDER BY id LIMIT 5000)')
         .run(office, this.now() - RAW_KEEP_MS);
-      this.saveState(db, office, { ...state, lastPrune: this.now() });
+      this.saveState(db, office, { ...state, ...quietCostsDropped(state, this.now()), lastPrune: this.now() });
       const pages = db.pragma('page_count', { simple: true }) as number;
       const free = db.pragma('freelist_count', { simple: true }) as number;
       if (pages > 0 && free / pages > 0.5) { db.exec('VACUUM'); db.pragma('wal_checkpoint(TRUNCATE)'); }
