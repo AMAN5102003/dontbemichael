@@ -354,6 +354,7 @@ Rules:
 | `t-view` | 20 / 26 | 600 | View title on the stage ("Office", "Tasks") |
 | `t-panel` | 15 / 20 | 600 | Right column heading, person name in the panel header |
 | `t-ui` | 13 / 18 | 400 to 600 | Base UI: tabs, buttons, inputs, body |
+| `t-read` | 14 / 22 | 400 | Long text boxes in a wide panel only (what a person handles, their work style) |
 | `t-body` | 12 / 16.5 | 400 | Card body text, Michael's questions, descriptions |
 | `t-meta` | 11 / 15 | 400 to 600 | Captions, chips, meta lines, hints |
 | `t-micro` | 10 / 13 | 600 | Uppercase micro labels, status pills, badges |
@@ -393,7 +394,7 @@ One window, four regions. Nothing else is permanent.
 | Top bar (56): lockup, view tabs, clock, version, icons, Needs  |
 +---------------------------------------------+-----------------+
 | Stage (fills)                               | Right column    |
-|   Office / Tasks / Who talks to whom        | (380, resizable)|
+|   Office / Tasks / Who talks to whom        | (420, resizable)|
 |                                             |                 |
 | Bottom bar (50, floats 24 above the edge)   |                 |
 +---------------------------------------------+-----------------+
@@ -403,7 +404,7 @@ One window, four regions. Nothing else is permanent.
 |---|---|---|
 | Top bar | 56 px, ground `chrome` under `card` at 70% | §7.1 |
 | Stage | Fills | The current view (§7.2): Office (studio, §8), Tasks (§7.20), Pulse (§7.27), Who talks to whom (§7.22) |
-| Right column | 380 px default, 340 min, 520 max, drag to resize (SidebarSplitter, double click resets; its grip shows only on hover) | Closed by default: while nothing waits and nobody is open the column is not there and the office takes the window (`bleed` 0, no splitter). Otherwise the Needs you board, the selected person's panel or Michael's panel (§7.6). Work tab widens it to 480. It has no ground of its own (owner, 2026-09-30: a panel behind cards is a layer too many): the Needs you heading and cards, and the person and Michael panels (cards themselves), sit straight on the stage, which runs on underneath (`StudioStage` `bleed`); the scene still fits the space left of it |
+| Right column | 420 px default, 320 min, 1200 max and never closer than 360 px to the window's left edge, drag to resize (SidebarSplitter, double click resets to 420; its grip shows only on hover); a person's or Michael's panel can also open wide in the center (§7.6) | Closed by default: while nothing waits and nobody is open the column is not there and the office takes the window (`bleed` 0, no splitter). Otherwise the Needs you board, the selected person's panel or Michael's panel (§7.6). Work tab widens it to 480. It has no ground of its own (owner, 2026-09-30: a panel behind cards is a layer too many): the Needs you heading and cards, and the person and Michael panels (cards themselves), sit straight on the stage, which runs on underneath (`StudioStage` `bleed`); the scene still fits the space left of it |
 | Bottom bar | 50 px tall, floats 24 px left, 22 px right and 26 px above the stage's bottom edge | Talk to Michael composer, next job chip and Hire (§7.19) |
 
 Rules:
@@ -573,6 +574,24 @@ team to restore. It never opens the column or counts toward Needs you.
 
 Closing a person's or Michael's panel returns to the board while anything waits, and
 collapses the column when nothing does.
+
+**Wide panel** (design review 2026-10-16). A button beside close on a person's and
+Michael's panel, and in Edit agent's header (`expand`, then `minimize`; tooltip and label
+"Open wide" / "Back to the side"), moves the panel to the center of the window: 10% in
+from each side, 12 px under the top bar and above the bottom edge, at every window size.
+The choice is remembered on this computer and applies to every panel that can open wide;
+it is never set by the window's size. The Needs you board and Ask me cards never go wide.
+The column keeps its slot, so the office does not reflow, and dims under the top bar
+(`--cth-backdrop`), so the coral pill stays bright and live; the office and the bottom bar
+are out of reach (inert) and a click on the dimming does nothing. Inside, text is at most
+720 px across and centered; the Work tab's terminal fills the panel. Edit agent lays over
+the wide panel in two columns: the short fields (300 to 360 px) and the work style (up
+to 720 px), titled "Edit {name}" with a 28 px avatar and the role, long boxes in `t-read`.
+Leaving Edit with unsaved changes, by any way out (close, Cancel, Esc, the pill or strip,
+another person, a menu item), asks "Discard changes to {name}?" with Keep editing as the
+default. Esc: a field with text is left first, then the panel goes back to the side, then
+the column closes. The move takes 320 ms (`dur-slow`, transform only), the dimming fades
+in over 200 ms; reduced motion switches at once. In Arabic it mirrors.
 
 ### 7.6a Office stops (OfficeBreakNotice)
 
@@ -1896,6 +1915,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-15 | Ask me: options as rows to pick, with a Recommended tag, and several questions with a line each; picking never sends, Reply on its own row says what it sends, and any question may be left blank (§7.8). |
 | 2026-10-15 | Pulse, a view tab between Tasks and Who talks to whom that takes the whole window: recommendations, what got done, Kept safe, the row of four tiles, Team at work, and trends on Last 4 weeks (§5.2, §7.2, §7.6, §7.27). |
 | 2026-10-16 | Pulse: periods Today, This week, This month, and Compare, two bars per tile against the span before up to the same day, the switch kept in place while a period cannot compare yet; Last week and Last 4 weeks go (§7.27). |
+| 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
 
 ---

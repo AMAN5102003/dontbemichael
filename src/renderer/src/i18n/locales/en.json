@@ -679,6 +679,10 @@
     }
   },
   "editAgent": {
+    "titleWide": "Edit {{name}}",
+    "discardTitle": "Discard changes to {{name}}?",
+    "keepEditing": "Keep editing",
+    "discard": "Discard",
     "title": "Edit agent",
     "cancel": "Cancel",
     "save": "Save changes",
@@ -2132,6 +2136,8 @@
     "welcome": "Welcome, {{name}}"
   },
   "panel": {
+    "openWide": "Open wide",
+    "backToSide": "Back to the side",
     "edit": "Edit",
     "editAria": "Edit {{name}}",
     "close": "Back to Needs you",

@@ -5,6 +5,7 @@ import { PixelBadge, type StatusKind } from '@/components/PixelBadge';
 import { useRtl } from '@/i18n/useDirection';
 import { isComposingKey } from '@shared/imeGuard';
 import { PersonAvatar } from '@/scene/office/props';
+import { Icon } from '@/components/Icon';
 import { closeTarget, columnLocked, focusNeedsYouPill } from './rightColumn';
 import { getNeedsYouFeed } from './useNeedsYou';
 
@@ -45,6 +46,7 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
               <PencilGlyph /> {t('panel.edit')}
             </button>
           )}
+          <WideButton />
           <button onClick={() => { const f = getNeedsYouFeed(); const to = closeTarget(columnLocked(f.status, f.count)); useStore.getState().setRightColumn(to); if (to === 'closed') focusNeedsYouPill(); }} aria-label={t('panel.close')} title={t('panel.close')} style={{ ...headerBtn, width: 32, padding: 0, justifyContent: 'center' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
@@ -53,6 +55,28 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
       {/* Keyed by person, so a half written note never saves onto whoever is picked next. */}
       {withNote && !agent.isGod && <NoteRow key={agent.id} agent={agent} />}
     </div>
+  );
+}
+
+/** Opens the panel wide in the center of the window and back (wide panel WD6,
+ *  WD7). The choice is remembered; the button keeps focus as it switches. */
+export function WideButton({ disabled = false }: { disabled?: boolean }) {
+  const { t } = useTranslation();
+  const wide = useStore((s) => s.panelWide);
+  const label = wide ? t('panel.backToSide') : t('panel.openWide');
+  return (
+    <button
+      type="button"
+      data-wide-button
+      onClick={() => useStore.getState().setPanelWide(!wide)}
+      disabled={disabled}
+      aria-label={label}
+      aria-pressed={wide}
+      title={label}
+      style={{ ...headerBtn, width: 32, padding: 0, justifyContent: 'center', color: 'var(--cth-ink-2)', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+    >
+      <Icon name={wide ? 'minimize' : 'expand'} />
+    </button>
   );
 }
 

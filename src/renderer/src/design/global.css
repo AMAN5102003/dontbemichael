@@ -537,6 +537,14 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 @keyframes cth-col-out { from { transform: none; opacity: 1; } to { transform: translateX(var(--cth-col-shift, 100%)); opacity: 0; } }
 [dir="rtl"] .cth-col-in, [dir="rtl"] .cth-col-out { --cth-col-shift: -100%; }
 @media (prefers-reduced-motion: reduce) { .cth-col-in, .cth-col-out { animation: none; } }
+/* The wide panel (wide panel WD2, WD8): its text at most 720 px across and
+   centered, the terminal across the whole panel; the office dims behind it.
+   Padding, not a max width, so a tab's own ground still fills the panel; it
+   wins over the tab's inline padding. */
+[data-wide-panel] [data-panel-body]:not([data-tab="terminal"]) > * { padding-inline: max(16px, calc((100% - 720px) / 2)) !important; }
+.cth-wide-scrim { animation: cth-wide-fade 200ms var(--cth-ease) both; }
+@keyframes cth-wide-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cth-wide-scrim { animation: none; } }
 /* A pod's "for you" chip is a button (D11). */
 .cth-for-you { background: var(--cth-coral-soft); }
 .cth-for-you:hover { background: color-mix(in srgb, var(--cth-coral-base) 22%, var(--cth-card)); }

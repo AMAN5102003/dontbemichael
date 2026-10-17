@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useStore, selectedAgent, ROSTER_BOOT_HOME, ACTION_CLOCKING_IN } from '@/store/store';
 import { rosterNeedsReload } from '@/store/rosterSource';
 import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
@@ -42,6 +42,8 @@ import { columnAfterGoneHome } from '@/shell/closingFloor';
 import { watchReturningBindings } from '@/shell/releaseBindings';
 import { NEEDS_YOU_PILL_ID, columnEscAction, columnLocked, focusNeedsYouPill } from '@/shell/rightColumn';
 import { BottomBar } from '@/shell/BottomBar';
+import { PANEL_MOVE_EVENT } from '@/shell/Dialog';
+import { afterLeave } from '@/store/leaveGuard';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
 declare const __APP_VERSION__: string;
@@ -64,6 +66,7 @@ export function App() {
   const { t } = useTranslation();
   const rightColumn = useStore(s => s.rightColumn);
   const sidebarWidth = useStore(s => s.sidebarWidth);
+  const panelWide = useStore(s => s.panelWide);
   const setSidebarWidth = useStore(s => s.setSidebarWidth);
   const ideOpen = useStore(s => s.ideOpen);
   const setIdeOpen = useStore(s => s.setIdeOpen);
@@ -326,7 +329,7 @@ export function App() {
     const next = columnAfterGoneHome(st.rightColumn, st.selectedId, goneHome, locked);
     if (!next) return;
     st.setRightColumn(next);
-    document.querySelector<HTMLElement>('[data-closing-bar]')?.focus({ preventScroll: true });
+    afterLeave(() => document.querySelector<HTMLElement>('[data-closing-bar]')?.focus({ preventScroll: true }));
   }, [goneHome, locked]);
   const columnOpen = rightColumn !== 'closed';
   // Tasks and Who talks to whom take the whole window (owner, 2026-10-03). The
@@ -341,7 +344,50 @@ export function App() {
   const columnShown = columnOpen && columnView;
   const barHidden = floorView === 'pulse' || floorView === 'file';
   const columnRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const lastColumnMode = useRef<'board' | 'person'>('board');
+  // The wide panel (wide panel WD1, WD6): a person's or Michael's panel, when
+  // the owner chose wide, moves to the center of the window, 10% in from each
+  // side. Same element restyled, so a terminal or a half written reply
+  // survives; its slot in the row stays, so the office never reflows (eng 2).
+  const wide = panelWide && columnShown && rightColumn === 'person' && !!agent;
+  // While wide the office and the bottom bar are out of reach (WD13).
+  useEffect(() => { stageRef.current?.toggleAttribute('inert', wide); }, [wide]);
+  // The move (WD9): the column takes its new place at once and a transform
+  // carries it there from the old one over 320 ms. Boxes are read without
+  // transforms (offset*), kept current as the column is dragged or the window
+  // resizes, so a resize never animates. Reduced motion switches at once.
+  const columnBox = useRef<{ l: number; t: number; w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = columnRef.current;
+    if (!el) return;
+    const keep = (): void => { columnBox.current = { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }; };
+    keep();
+    const ro = new ResizeObserver(keep);
+    ro.observe(el);
+    window.addEventListener('resize', keep);
+    return () => { ro.disconnect(); window.removeEventListener('resize', keep); columnBox.current = null; };
+  }, [columnOpen]);
+  useLayoutEffect(() => {
+    const el = columnRef.current;
+    const from = columnBox.current;
+    // Closing slides the column out instead (D9).
+    if (!el || !columnOpen) return;
+    const to = { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+    columnBox.current = to;
+    if (!from || !from.w || !to.w || !to.h || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (from.l === to.l && from.t === to.t && from.w === to.w && from.h === to.h) return;
+    el.style.transition = 'none';
+    el.style.transformOrigin = '0 0';
+    el.style.transform = `translate(${from.l - to.l}px, ${from.t - to.t}px) scale(${from.w / to.w}, ${from.h / to.h})`;
+    void el.offsetWidth;
+    el.style.transition = 'transform var(--cth-dur-slow) var(--cth-ease)';
+    el.style.transform = '';
+    window.dispatchEvent(new CustomEvent(PANEL_MOVE_EVENT, { detail: { ms: 320 } }));
+    const done = (): void => { el.style.transition = ''; el.style.transformOrigin = ''; };
+    const timer = setTimeout(done, 360);
+    return () => { clearTimeout(timer); done(); };
+  }, [wide]);
   // An ask arriving, or waiting at launch, opens the board. Focus stays put.
   useEffect(() => {
     if (locked && useStore.getState().rightColumn === 'closed') useStore.getState().setRightColumn('board');
@@ -418,7 +464,8 @@ export function App() {
       defaultPrevented: e.defaultPrevented || !!target.closest('.xterm'),
       inColumn: e.currentTarget.contains(target),
       fieldHasText: !!field?.value.trim(),
-      locked
+      locked,
+      wide
     });
     if (action === 'none') return;
     e.preventDefault();
@@ -427,6 +474,8 @@ export function App() {
       e.currentTarget.querySelector<HTMLElement>('[data-needs-you-heading]')?.focus();
       return;
     }
+    // Back to the side first; focus stays where it is (WD13).
+    if (action === 'collapse') { useStore.getState().setPanelWide(false); return; }
     useStore.getState().setRightColumn('closed');
     focusNeedsYouPill();
   };
@@ -453,7 +502,7 @@ export function App() {
       <TopBar onOpenSettings={() => { setSettingsSection(undefined); setSettingsOpen(true); }} />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
-        <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', background: 'var(--cth-bg)' }}>
+        <div ref={stageRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', background: 'var(--cth-bg)' }}>
           <StudioStage config={config} bleed={columnShown ? sidebarWidth + 10 : 0} />
           {/* Over the office only, never over Tasks or the graph (DESIGN.md 7.6). */}
           {floorView === 'office' && <RestoreTeamBanner config={config} />}
@@ -532,15 +581,19 @@ export function App() {
           <div
             ref={columnRef}
             data-right-column
+            data-wide-panel={wide || undefined}
             onKeyDown={onColumnKey}
             aria-hidden={columnOpen ? undefined : true}
             className={columnOpen ? 'cth-col-in' : 'cth-col-out'}
             style={{
-              width: sidebarWidth, flexShrink: 0, minHeight: 0, zIndex: 60,
+              width: wide ? 'auto' : sidebarWidth, flexShrink: 0, minHeight: 0, zIndex: wide ? 200 : 60,
               display: columnView ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
-              ...(columnOpen
-                ? { position: 'relative', margin: '4px 6px 0 0' }
-                : { position: 'absolute', top: 4, bottom: 0, insetInlineEnd: 6 })
+              ...(wide
+                // 10% of the window in from each side, under the top bar (WD2).
+                ? { position: 'absolute', top: 12, bottom: 12, left: '10%', right: '10%', margin: 0 }
+                : columnOpen
+                  ? { position: 'relative', margin: '4px 6px 0 0' }
+                  : { position: 'absolute', top: 4, bottom: 0, insetInlineEnd: 6 })
             }}
           >
             {columnMode === 'board' || !agent ? (
@@ -555,6 +608,11 @@ export function App() {
             )}
           </div>
         )}
+        {/* While wide: the office dims under the top bar, so the coral pill
+            stays bright, and a click on it does nothing (WD4, WD8); the
+            column's slot stays, so the office keeps its size (eng 2). */}
+        {wide && <div aria-hidden className="cth-wide-scrim" style={{ position: 'absolute', inset: 0, zIndex: 190, background: 'var(--cth-backdrop)' }} />}
+        {wide && <div aria-hidden style={{ width: sidebarWidth + 6, flexShrink: 0 }} />}
       </div>
 
       {addAgentOpen && (

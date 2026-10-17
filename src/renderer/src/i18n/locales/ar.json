@@ -679,6 +679,10 @@
     }
   },
   "editAgent": {
+    "titleWide": "تعديل {{name}}",
+    "discardTitle": "هل تريد تجاهل التغييرات على {{name}}؟",
+    "keepEditing": "متابعة التعديل",
+    "discard": "تجاهل",
     "title": "تعديل العضو",
     "cancel": "إلغاء",
     "save": "حفظ التغييرات",
@@ -2132,6 +2136,8 @@
     "welcome": "أهلًا بك، {{name}}"
   },
   "panel": {
+    "openWide": "فتح بعرض أكبر",
+    "backToSide": "العودة إلى الجانب",
     "edit": "تعديل",
     "editAria": "تعديل {{name}}",
     "close": "العودة إلى ما يحتاجك",

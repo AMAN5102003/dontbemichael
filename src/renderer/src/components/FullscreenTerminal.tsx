@@ -549,7 +549,7 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
             <>
               <Header agent={agent} onEdit={() => setEditAgentOpen(true)} />
               {editAgentOpen && (
-                <EditAgentModal agent={agent} onClose={() => setEditAgentOpen(false)} />
+                <EditAgentModal agent={agent} onClose={() => setEditAgentOpen(false)} docked={false} />
               )}
 
               {/* #7C — pause / halt / steer. These only existed in the docked

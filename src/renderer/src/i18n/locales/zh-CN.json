@@ -679,6 +679,10 @@
     }
   },
   "editAgent": {
+    "titleWide": "编辑 {{name}}",
+    "discardTitle": "放弃对 {{name}} 的修改？",
+    "keepEditing": "继续编辑",
+    "discard": "放弃",
     "title": "编辑成员",
     "cancel": "取消",
     "save": "保存更改",
@@ -2132,6 +2136,8 @@
     "welcome": "欢迎，{{name}}"
   },
   "panel": {
+    "openWide": "居中放大",
+    "backToSide": "放回侧边",
     "edit": "编辑",
     "editAria": "编辑 {{name}}",
     "close": "返回“需要你处理”",

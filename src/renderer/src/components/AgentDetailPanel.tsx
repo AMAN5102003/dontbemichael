@@ -143,8 +143,9 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
       {/* Tabs */}
       <SidebarTabs current={sidebarTab} accent={agent.accent} onChange={setSidebarTab} />
 
-      {/* Active tab body — fills remaining space */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      {/* Active tab body — fills remaining space. data-panel-body: a wide
+          panel keeps its text at most 720 px across, the terminal full width. */}
+      <div data-panel-body data-tab={sidebarTab} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         {sidebarTab === 'terminal' && (
           isReal && agent.ptyId ? (
             isFullscreenedHere ? (
