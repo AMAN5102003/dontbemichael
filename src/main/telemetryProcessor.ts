@@ -29,6 +29,10 @@ export const RAW_KEEP_MS = 400 * 86_400_000;
 /** One request's working time counts at most this much (a reply left open overnight is not work). */
 export const TURN_CAP_MS = 60 * 60_000;
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
+/** A tick reads this many points a pass, for at most this many passes, so a
+ *  backfill's weeks drain over a few ticks instead of holding the main thread. */
+export const TICK_BATCH = 5000;
+export const TICK_PASSES = 2;
 
 interface AgentState { lastStop: number; lastActivity: number; turnStart?: number }
 interface OpenRun { id: number; agentId: string; missionId: string; dispatched: number; start: number | null; usd: number; work: number; relay: boolean }
@@ -63,9 +67,9 @@ export class TelemetryProcessor {
     const db = this.db();
     if (!db) return 0;
     let read = 0;
-    for (let pass = 0; pass < 20; pass++) {
+    for (let pass = 0; pass < TICK_PASSES; pass++) {
       const state = this.loadState(db, office);
-      const rows = this.store.eventsAfter(office, state.cursor, 5000);
+      const rows = this.store.eventsAfter(office, state.cursor, TICK_BATCH);
       const n = db.transaction(() => {
         const fold = new CostFold();
         for (const [k, v] of Object.entries(state.costs)) fold.seed(k, v);
@@ -83,7 +87,7 @@ export class TelemetryProcessor {
         return rows.length;
       })();
       read += n;
-      if (n < 5000) break;
+      if (n < TICK_BATCH) break;
     }
     this.prune(db, office);
     return read;
@@ -235,11 +239,13 @@ export class TelemetryProcessor {
     }
   }
 
-  /** E4: raw points older than 400 days go, a few thousand at a time, once a day. */
+  /** E4: raw points and runs older than 400 days go, a few thousand at a time, once a day. */
   private prune(db: Database.Database, office: string): void {
     const state = this.loadState(db, office);
     if (this.now() - state.lastPrune < 86_400_000) return;
     try {
+      db.prepare('DELETE FROM telemetry_runs WHERE id IN (SELECT id FROM telemetry_runs WHERE office = ? AND dispatched < ? ORDER BY id LIMIT 5000)')
+        .run(office, this.now() - RAW_KEEP_MS);
       db.prepare('DELETE FROM telemetry_events WHERE id IN (SELECT id FROM telemetry_events WHERE office = ? AND ts < ? ORDER BY id LIMIT 5000)')
         .run(office, this.now() - RAW_KEEP_MS);
       this.saveState(db, office, { ...state, lastPrune: this.now() });

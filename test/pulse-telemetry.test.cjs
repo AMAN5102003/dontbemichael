@@ -33,7 +33,7 @@ const electron = require.resolve('electron');
 require.cache[electron] = { id: electron, filename: electron, loaded: true, exports: { app: { getPath: () => os.tmpdir() } } };
 const { PersistStore } = loadTs('src/main/db.ts');
 const { TelemetryStore } = loadTs('src/main/telemetryStore.ts');
-const { TelemetryProcessor, RUN_IDLE_END_MS, RUN_CAP_MS } = loadTs('src/main/telemetryProcessor.ts');
+const { TelemetryProcessor, RUN_IDLE_END_MS, RUN_CAP_MS, RAW_KEEP_MS, TICK_BATCH, TICK_PASSES } = loadTs('src/main/telemetryProcessor.ts');
 
 function setup(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-pulse-'));
@@ -335,6 +335,33 @@ test('the backfill reads the office log, sessions and cost ledger once, before t
   const { keptSafe } = loadTs('src/shared/pulseSafety.ts');
   const ks = keptSafe(proc.safetyRows('/office', '2000-01-01', '2999-01-01'));
   assert.deepEqual([ks.webAnswers.clean, ks.rules.quickbooks], [1, 1]);
+});
+
+test('a backfill drains over a few ticks, a batch at a time, to the same totals', (t) => {
+  // Value: protects=the main thread on the first launch after an update; fails_when=one tick folds every backfilled point at once, or a drained point is lost or counted twice; why_new=ship performance review 2026-10-16; seam=points written straight to the table as runBackfill writes them; no_claim=how long a batch takes
+  const { proc, persist } = setup(t);
+  const db = persist.database();
+  const cap = TICK_BATCH * TICK_PASSES;
+  const ts = new Date(2026, 9, 1, 12).getTime();
+  const ins = db.prepare("INSERT INTO telemetry_events (office, agent_id, kind, ts, value, attrs) VALUES ('/office', 'pam', 'busy', ?, 60000, '{\"bf\":1}')");
+  db.transaction(() => { for (let i = 0; i < cap + 1000; i++) ins.run(ts); })();
+  assert.equal(proc.tick('/office'), cap, 'one tick folds a batch');
+  assert.equal(proc.tick('/office'), 1000, 'the next one folds the rest');
+  assert.equal(proc.tick('/office'), 0);
+  const d = db.prepare('SELECT busy_ms, turns FROM telemetry_daily WHERE agent_id = ?').get('pam');
+  assert.deepEqual([d.turns, d.busy_ms], [cap + 1000, (cap + 1000) * 60000]);
+});
+
+test('runs older than 400 days are pruned with the raw points; newer ones stay', (t) => {
+  // Value: protects=E4 storage bound; fails_when=a run older than the raw keep window stays forever, or a recent run is pruned; why_new=ship performance review 2026-10-16; seam=none; no_claim=VACUUM timing
+  const { store, proc, clock, persist } = setup(t);
+  const now = clock.now();
+  store.record({ agentId: 'toby', kind: 'run-dispatch', ts: now - RAW_KEEP_MS - 86_400_000, attrs: { mission: 'old' } });
+  store.record({ agentId: 'pam', kind: 'run-dispatch', ts: now - 86_400_000, attrs: { mission: 'new' } });
+  proc.tick('/office');
+  const db = persist.database();
+  assert.deepEqual(db.prepare('SELECT mission_id FROM telemetry_runs').all().map((r) => r.mission_id), ['new']);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM telemetry_events').get().n, 1, 'the old point went too');
 });
 
 test("on a plan, each member's cost is their part of the plan's cost so far this period; on an API key nothing is split", (t) => {

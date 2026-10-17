@@ -550,7 +550,7 @@ const pulseTelemetry = new TelemetryStore(() => persist.database(), pulseOffice)
 const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTelemetry);
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
- *  ledger. The view refreshes when it lands. */
+ *  ledger. The 30 s tick folds it a batch at a time and refreshes the view. */
 let pulseBackfilling: string | null = null;
 function pulseBackfillOnce(office: string): void {
   const db = persist.database();
@@ -559,10 +559,7 @@ function pulseBackfillOnce(office: string): void {
   pulseBackfilling = office;
   pulseTelemetry.flush();
   void runBackfill({ db, office, hiveRoot: root, projectsRoot: claudeProjectsRoot(), members: new Set(Object.keys(hive.registry().agents ?? {})), now: Date.now() })
-    .then((n) => {
-      console.log(`[pulse] backfill wrote ${n} points for ${office}`);
-      if (n > 0 && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
-    })
+    .then((n) => console.log(`[pulse] backfill wrote ${n} points for ${office}`))
     .catch((e) => console.error('[pulse] backfill:', e))
     .finally(() => { if (pulseBackfilling === office) pulseBackfilling = null; });
 }

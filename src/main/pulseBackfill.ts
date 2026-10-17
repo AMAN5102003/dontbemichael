@@ -30,6 +30,8 @@ import type { TelemetryEvent } from './telemetryStore';
 export const BACKFILL_DAYS = 56;
 /** One request's working time counts at most this much. */
 const TURN_CAP_MS = 60 * 60_000;
+/** Lines read between breaks for the event loop. */
+const LINES_PER_BREAK = 500;
 const BF = { bf: 1 } as const;
 
 const markerKey = (office: string): string => `pulse:backfill:${office}`;
@@ -57,16 +59,22 @@ export function gateOfTool(tool: string, reason: string): RefusalGate | null {
   return null;
 }
 
+/** Lets hook frames and timers run before reading on. */
+const pause = (): Promise<void> => new Promise((r) => setImmediate(r));
+
 /** Working time and refused steps from one session's transcript lines: a
  *  request (a user line that is not a tool result) runs to the last line
- *  before the next request, at most an hour. */
-export function readTranscript(lines: Iterable<string>, since: number, until: number): { turns: Array<{ ts: number; ms: number }>; refused: Array<{ ts: number; gate: RefusalGate }> } {
+ *  before the next request, at most an hour. Lines go in one at a time, with a
+ *  break every few hundred. */
+export async function readTranscript(lines: AsyncIterable<string> | Iterable<string>, since: number, until: number): Promise<{ turns: Array<{ ts: number; ms: number }>; refused: Array<{ ts: number; gate: RefusalGate }> }> {
   const turns: Array<{ ts: number; ms: number }> = [];
   const refused: Array<{ ts: number; gate: RefusalGate }> = [];
   const seen = new Set<string>();
-  let start = 0, last = 0;
+  const isResult = (x: unknown): x is { type: string; tool_use_id?: string; content?: unknown } => !!x && typeof x === 'object' && (x as { type?: unknown }).type === 'tool_result';
+  let start = 0, last = 0, n = 0;
   const close = (): void => { if (start && start >= since && start < until) turns.push({ ts: start, ms: Math.min(Math.max(0, last - start), TURN_CAP_MS) }); start = 0; };
-  for (const line of lines) {
+  for await (const line of lines) {
+    if (++n % LINES_PER_BREAK === 0) await pause();
     if (!line || line[0] !== '{') continue;
     let e: { type?: string; timestamp?: string; message?: { content?: unknown } };
     try { e = JSON.parse(line); } catch { continue; }
@@ -74,13 +82,14 @@ export function readTranscript(lines: Iterable<string>, since: number, until: nu
     if (!Number.isFinite(t)) continue;
     const content = e.message?.content;
     if (e.type === 'user') {
-      const results = Array.isArray(content) ? content.filter((x): x is { type: string; tool_use_id?: string; content?: unknown } => !!x && typeof x === 'object' && (x as { type?: unknown }).type === 'tool_result') : [];
-      if (typeof content === 'string' || (Array.isArray(content) && !results.length)) { close(); start = t; last = t; continue; }
+      if (typeof content === 'string' || (Array.isArray(content) && !content.some(isResult))) { close(); start = t; last = t; continue; }
       last = Math.max(last, t);
-      for (const r of results) {
+      // Only a refusal inside the window counts, so a result outside it is never searched.
+      if (t < since || t >= until || !Array.isArray(content)) continue;
+      for (const r of content.filter(isResult)) {
         const text = typeof r.content === 'string' ? r.content : JSON.stringify(r.content ?? '');
         const m = /PreToolUse:([A-Za-z0-9_.-]+) hook (?:error|blocking error)[^:]*:\s*(.{0,200})/.exec(text);
-        if (!m || t < since || t >= until) continue;
+        if (!m) continue;
         const id = r.tool_use_id ?? `${t}:${m[1]}`;
         if (seen.has(id)) continue;
         seen.add(id);
@@ -159,7 +168,9 @@ async function* lines(file: string): AsyncGenerator<string> {
 }
 
 async function* jsonLines(file: string): AsyncGenerator<Record<string, unknown>> {
+  let n = 0;
   for await (const l of lines(file)) {
+    if (++n % LINES_PER_BREAK === 0) await pause();
     if (!l || l[0] !== '{') continue;
     try { yield JSON.parse(l) as Record<string, unknown>; } catch { /* a torn line */ }
   }
@@ -184,14 +195,12 @@ export async function runBackfill(d: BackfillDeps): Promise<number> {
   const points: TelemetryEvent[] = [];
 
   // The office log: work, trust layer decisions, and which session is whose.
-  const logEntries: Record<string, unknown>[] = [];
+  // Each entry becomes its points as it is read, so the log is never held.
   const sessions = new Map<string, string>();
   for await (const e of jsonLines(join(d.hiveRoot, 'log.jsonl'))) {
     if (e.kind === 'session' && typeof e.sessionId === 'string' && typeof e.agentId === 'string') sessions.set(e.sessionId, e.agentId);
-    const ts = Number(e.ts);
-    if (Number.isFinite(ts) && ts >= since && ts < until) logEntries.push(e);
+    points.push(...logPoints([e], since, until, d.members));
   }
-  points.push(...logPoints(logEntries, since, until, d.members));
 
   // Members' sessions: working time and refused steps.
   const files = new Map<string, string>();
@@ -205,9 +214,7 @@ export async function runBackfill(d: BackfillDeps): Promise<number> {
   for (const [sid, file] of files) {
     try { if (statSync(file).mtimeMs < since) continue; } catch { continue; }
     const agent = sessions.get(sid)!;
-    const buf: string[] = [];
-    for await (const l of lines(file)) buf.push(l);
-    const r = readTranscript(buf, since, until);
+    const r = await readTranscript(lines(file), since, until);
     for (const t of r.turns) points.push({ agentId: agent, kind: 'busy', ts: t.ts, value: t.ms, attrs: { ...BF } });
     for (const x of r.refused) points.push({ agentId: agent, kind: 'refused', ts: x.ts, attrs: { gate: x.gate, ...BF } });
   }
