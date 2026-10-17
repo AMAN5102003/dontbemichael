@@ -459,14 +459,14 @@ const hookServer = new HookServer(
   control,
   breaker,
   standingGoalFor,
-  (agentId, event, message, toolName) => {
+  (agentId, event, message, toolName, subagent) => {
     // Pulse: turns and tool uses (authenticated frames only, #61).
     if (agentId) {
       if (event === 'UserPromptSubmit') pulseTelemetry.record({ agentId, kind: 'prompt', ts: Date.now() });
       else if (event === 'PostToolUse') pulseTelemetry.record({ agentId, kind: 'tool', ts: Date.now(), attrs: { tool: toolName ?? '' } });
       else if (event === 'Stop') pulseTelemetry.record({ agentId, kind: 'stop', ts: Date.now() });
     }
-    workerWake.noteHook(agentId, event, message);
+    workerWake.noteHook(agentId, event, message, Date.now(), subagent);
     safeClearer.noteHook(agentId, event, message);
     if (agentId && event === 'UserPromptSubmit') promptSubmits.note(agentId);
     if (agentId && (event === 'Notification' || event === 'PermissionRequest')) promptSubmits.noteAttention(agentId);

@@ -22,9 +22,10 @@
  *    renderer's bootGraceUntil),
  *  - delivery paused / agent paused / halted → no nudge (ControlRegistry),
  *  - a permission/HITL notification blocks nudges until the agent moves on
- *    (its next tool call, reply, prompt or session), so an open prompt is never
- *    typed into: the nudge's Enter answered it "Yes" once a timed block ran
- *    out (owner, 2026-10-15),
+ *    (its next tool call, reply, prompt or session, never a subagent's), so an
+ *    open prompt is never typed into: the nudge's Enter answered it "Yes" once
+ *    a timed block ran out (owner, 2026-10-15). A long ceiling frees a member
+ *    whose prompt was escaped with no event after it,
  *  - a per-worker cooldown (NUDGE_COOLDOWN_MS) so the watchdog and the renderer
  *    nudge don't stack on top of each other.
  *
@@ -44,9 +45,15 @@ export const WORKER_WAKE_IDLE_MS = 12_000;
 export const WORKER_WAKE_BOOT_GRACE_MS = 35_000;
 /** Minimum gap between two watchdog nudges of the same worker. */
 export const WORKER_WAKE_COOLDOWN_MS = 60_000;
+/** A prompt hold ends on its own after this long. A prompt escaped with no
+ *  event after it would otherwise keep the member from ever being nudged; the
+ *  stuck restart clears a real prompt within minutes, so this is a last resort. */
+export const WORKER_WAKE_PROMPT_HOLD_MS = 2 * 60 * 60_000;
 /** Hook events that mean the agent moved past a prompt: a new session ends a
  *  dismissed one; an idle notice does not, since Claude Code can send one while
- *  a permission prompt is still open (the same rule as safeClearer.ts). */
+ *  a permission prompt is still open (the same rule as safeClearer.ts). Only the
+ *  main session's events count: a Task subagent's tool calls go on under an
+ *  open prompt. */
 const MOVED_ON_EVENTS = new Set(['SessionStart', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop']);
 
 /** A hook event message that means "the agent needs the human" — permission /
@@ -107,11 +114,12 @@ export class WorkerWakeWatchdog {
     this.spawnedAt.set(ptyId, at);
   }
 
-  /** Feed hook events (from HookServer) so a HITL prompt blocks nudges. */
-  noteHook(agentId: string | undefined, event: string | undefined, message: string | undefined, at = Date.now()): void {
+  /** Feed hook events (from HookServer) so a HITL prompt blocks nudges.
+   *  `subagent` is true for a Task subagent's frame. */
+  noteHook(agentId: string | undefined, event: string | undefined, message: string | undefined, at = Date.now(), subagent = false): void {
     if (!agentId) return;
     if (classifyHook(event, message) === 'needsHuman') this.lastHumanNeedsAt.set(agentId, at);
-    else if (event && MOVED_ON_EVENTS.has(event)) this.lastMovedOnAt.set(agentId, at);
+    else if (!subagent && event && MOVED_ON_EVENTS.has(event)) this.lastMovedOnAt.set(agentId, at);
   }
 
   /** Forget per-agent state (e.g. the agent's PTY was closed). */
@@ -141,8 +149,9 @@ export class WorkerWakeWatchdog {
       if (now - f.lastOutputAt < WORKER_WAKE_IDLE_MS) continue; // mid-turn
       const spawned = this.spawnedAt.get(f.ptyId) ?? 0;
       if (spawned > 0 && now - spawned < WORKER_WAKE_BOOT_GRACE_MS) continue;
-      // Waiting at a prompt: never typed into, however long it waits.
-      if ((this.lastHumanNeedsAt.get(f.agentId) ?? 0) > (this.lastMovedOnAt.get(f.agentId) ?? 0)) continue;
+      // Waiting at a prompt: never typed into until the long ceiling.
+      const heldAt = this.lastHumanNeedsAt.get(f.agentId) ?? 0;
+      if (heldAt > (this.lastMovedOnAt.get(f.agentId) ?? 0) && now - heldAt < WORKER_WAKE_PROMPT_HOLD_MS) continue;
       const announced = this.announcedInboxIds.get(f.agentId);
       if (announced && !Array.from(inboxIds).some((id) => !announced.has(id))) continue;
       const lastNudge = this.lastNudgeAt.get(f.agentId) ?? 0;
