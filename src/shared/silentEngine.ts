@@ -97,12 +97,27 @@ export interface SilentCard {
 
 const RANK: Record<SilentState, number> = { failed: 4, open: 3, checking: 2, restarting: 1, kept: 0 };
 
+/** The card an episode sits on (SD3): one per engine, version and reason
+ *  (never checked in, or went quiet mid work), so each card's time line is
+ *  true for every name on it; Michael has his own (SD6). */
+export function silentCardKey(e: Pick<SilentEpisode, 'isMichael' | 'engine' | 'version' | 'kind'>): string {
+  return e.isMichael ? 'michael' : `${e.engine}@${e.version ?? ''}:${e.kind}`;
+}
+
+/** Whether a newly opened episode gets Michael's desktop notice (SD10): only
+ *  when it starts a card, never for a name joining a card already shown. The
+ *  watch sends no notice on Done or on Keep. */
+export function noticeForOpened(opened: SilentEpisode, episodes: SilentEpisode[]): boolean {
+  const key = silentCardKey(opened);
+  return !episodes.some((e) => e.agentId !== opened.agentId && e.state !== 'kept' && silentCardKey(e) === key);
+}
+
 /** The cards Needs you shows: kept members have none; Michael's card first. */
 export function silentCards(episodes: SilentEpisode[]): SilentCard[] {
   const groups = new Map<string, SilentEpisode[]>();
   for (const e of episodes) {
     if (e.state === 'kept') continue;
-    const key = e.isMichael ? 'michael' : `${e.engine}@${e.version ?? ''}`;
+    const key = silentCardKey(e);
     groups.set(key, [...(groups.get(key) ?? []), e]);
   }
   const cards = [...groups.entries()].map(([key, list]): SilentCard => {

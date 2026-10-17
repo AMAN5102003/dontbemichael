@@ -209,11 +209,39 @@ test('cards group by engine and version, Michael first, and show the state that 
   // Value: protects=one card per cause (SD3) and Michael's own card (SD6); fails_when=grouping splits a shared cause or hides a failed member; why_new=SD3; seam=none; no_claim=none beyond protects
   const ep = (agentId, over = {}) => ({ agentId, kind: 'never', state: 'open', engine: 'gemini', engineLabel: 'Gemini CLI', version: '0.63.0', stopped: false, isMichael: false, since: 1, lastCheckInAt: null, startedAt: 1, ...over });
   const cards = S.silentCards([ep('kelly'), ep('dwight', { state: 'failed' }), ep('oscar', { state: 'kept' }), ep('god', { isMichael: true, engine: 'claude' }), ep('pam', { engine: 'claude', version: '2.1.0' })]);
-  assert.deepEqual(cards.map((c) => c.key), ['michael', 'gemini@0.63.0', 'claude@2.1.0']);
+  assert.deepEqual(cards.map((c) => c.key), ['michael', 'gemini@0.63.0:never', 'claude@2.1.0:never']);
   assert.deepEqual(cards[1].agentIds, ['kelly', 'dwight']);
   assert.equal(cards[1].state, 'failed');
   assert.deepEqual(S.silentButtons(cards[1]), ['changeEngine', 'keep']);
   assert.deepEqual(S.silentButtons(cards[0]), ['restart']);
+});
+
+test('a member that never checked in and one that went quiet get a card each, so each card\'s time line is true for every name (SD3)', () => {
+  // Value: protects=SD3's own card per reason; fails_when=the card key drops the reason and a never member shows a last check in; why_new=the grouping test above uses one reason only; seam=none; no_claim=the renderer's lines (SilentEngine.tsx reads kind and lastCheckInAt)
+  const ep = (agentId, over = {}) => ({ agentId, kind: 'never', state: 'open', engine: 'claude', engineLabel: 'Claude Code', version: '2.1.0', stopped: false, isMichael: false, since: 1, lastCheckInAt: null, startedAt: 1, ...over });
+  const cards = S.silentCards([ep('kelly'), ep('dwight', { kind: 'quiet', lastCheckInAt: 500 }), ep('oscar')]);
+  assert.deepEqual(cards.map((c) => [c.key, c.agentIds, c.kind, c.lastCheckInAt]), [
+    ['claude@2.1.0:never', ['kelly', 'oscar'], 'never', null],
+    ['claude@2.1.0:quiet', ['dwight'], 'quiet', 500]
+  ]);
+  assert.equal(S.silentCardKey(ep('god', { isMichael: true, kind: 'quiet' })), 'michael', 'Michael has one card whatever the reason');
+});
+
+test('Michael\'s desktop notice goes once per card: for the name that opens it, never for one joining it (SD10)', () => {
+  // Value: protects=one notice per card; fails_when=every name on a card sends a notice, a kept member blocks a new card's notice, or another reason's card blocks it; why_new=no test covered the notice rule (plan N7, E7); seam=none; no_claim=the Notification call and the notifications setting (index.ts silentNotice)
+  const ep = (agentId, over = {}) => ({ agentId, kind: 'never', state: 'open', engine: 'gemini', engineLabel: 'Gemini CLI', version: '0.63.0', stopped: false, isMichael: false, since: 1, lastCheckInAt: null, startedAt: 1, ...over });
+  const kelly = ep('kelly');
+  assert.equal(S.noticeForOpened(kelly, [kelly]), true, 'the first name opens the card');
+  assert.equal(S.noticeForOpened(ep('dwight'), [kelly, ep('dwight')]), false, 'a second name joins the card shown');
+  assert.equal(S.noticeForOpened(ep('dwight'), [ep('kelly', { state: 'kept' })]), true, 'a kept member has no card');
+  assert.equal(S.noticeForOpened(ep('dwight', { kind: 'quiet' }), [kelly]), true, 'another reason is another card');
+  assert.equal(S.noticeForOpened(ep('dwight', { version: '0.64.0' }), [kelly]), true, 'another version is another card');
+  assert.equal(S.noticeForOpened(ep('god', { isMichael: true }), [kelly]), true, "Michael's own card");
+  // Only an opened card sends one: Done (resolved) and Keep send none.
+  const main = require('node:fs').readFileSync(require('node:path').resolve(__dirname, '..', 'src/main/index.ts'), 'utf8');
+  assert.match(main, /if \(type === 'opened'\) \{[^]*?if \(noticeForOpened\(episode, silentWatch\?\.list\(\) \?\? \[\]\)\) silentNotice\(episode\);/);
+  assert.equal((main.match(/silentNotice\(episode\)/g) ?? []).length, 1, 'no notice on resolved or kept');
+  assert.match(main, /function silentNotice\(e: SilentEpisode\): void \{\n\s*if \(!readConfig\(\)\.notifications\) return;/, 'only with notifications on');
 });
 
 test('known never reporting versions, one row per entry; versions compare by number', () => {

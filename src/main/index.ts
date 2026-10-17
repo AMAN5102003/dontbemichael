@@ -135,7 +135,7 @@ import { fetchHireManifest, readHireManifestFiles } from './hire';
 import { parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
 import { SilentWatch, type WatchMember } from './silentWatch';
-import { mailFor, type SilentEpisode } from '../shared/silentEngine';
+import { mailFor, noticeForOpened, type SilentEpisode } from '../shared/silentEngine';
 import {
   argsWithAutoModeFlag,
   bridgeOf,
@@ -613,9 +613,7 @@ silentWatch = new SilentWatch({
   event: ({ type, episode }) => {
     const name = silentName(episode.agentId);
     if (type === 'opened') {
-      const key = (e: SilentEpisode): string => (e.isMichael ? 'michael' : `${e.engine}@${e.version ?? ''}`);
-      const others = (silentWatch?.list() ?? []).filter((e) => e.agentId !== episode.agentId && e.state !== 'kept' && key(e) === key(episode));
-      if (!others.length) silentNotice(episode);
+      if (noticeForOpened(episode, silentWatch?.list() ?? [])) silentNotice(episode);
       if (!episode.isMichael) {
         silentNoteToMichael(`${name} isn't reporting to the app`,
           `${name}'s engine stopped reporting to the app, so the app can't check ${name}'s folders and tools. Until it reports again, ${name}'s new mail comes to you. Give ${name} no new cards; route the work to someone else or let it wait. The owner has a card on Needs you.`);
