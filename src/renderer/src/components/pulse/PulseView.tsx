@@ -830,6 +830,7 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
             </div>
             {body(r, k)}
             {r.cut && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.checked.cut')}</div>}
+            {r.found && r.outcome === 'clean' && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.checked.found')}</div>}
             {(r.kinds?.length || r.flagged) && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 11, color: 'var(--cth-ink-3)' }}>
               {r.kinds?.length ? <>{r.outcome === 'stop' ? t('pulse.checked.needed') : t('pulse.checked.takenOut')} {r.kinds.map((id) => <span key={id} style={chip(r.outcome === 'stop')}>{kindName(id)}</span>)}</> : null}
               {r.flagged && <span style={chip(true)}>{t('pulse.safe.flagged')}</span>}

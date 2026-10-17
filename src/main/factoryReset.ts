@@ -53,7 +53,8 @@ export const PRIVATE_ENTRIES = [
   // Pulse's questions and answers lists and their archive (eng D3: a reset
   // erases both; nothing else deletes the archive).
   'checked.jsonl',
-  'checked-archive'
+  'checked-archive',
+  'checked-backfill.json'
 ] as const;
 
 /** The privacy and standing approval checks' own empty folders (index.ts). */

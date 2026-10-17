@@ -2622,6 +2622,7 @@
       "showWholeAnswer": "Show the whole answer ({{n}} characters)",
       "showLess": "Show less",
       "cut": "Cut at 4,000 characters",
+      "found": "Put together later from the office's files: what kind of detail was taken out wasn't recorded then.",
       "needed": "Needed:",
       "takenOut": "Taken out:",
       "firstOpenNow_one": "Words are kept from now on. The {{count}} counted in this period came before that, so its words weren't saved.",

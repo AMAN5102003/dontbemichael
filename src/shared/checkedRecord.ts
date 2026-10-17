@@ -37,6 +37,9 @@ export interface CheckedRow {
   flagged?: boolean;
   /** A text was longer than CHECKED_TEXT_MAX and was cut. */
   cut?: boolean;
+  /** Put together later from the office's files, for a check made before the
+   *  lists kept words: the kinds taken out and any flag were not recorded. */
+  found?: boolean;
 }
 
 /** A span's rows for one list, and the time of the first row ever kept for
@@ -71,7 +74,8 @@ export function parseChecked(line: string): CheckedRow | null {
       ...(isText(r.sent) ? { sent: r.sent } : {}),
       ...(Array.isArray(r.kinds) ? { kinds: r.kinds.filter((k): k is string => typeof k === 'string') } : {}),
       ...(r.flagged === true ? { flagged: true } : {}),
-      ...(r.cut === true ? { cut: true } : {})
+      ...(r.cut === true ? { cut: true } : {}),
+      ...(r.found === true ? { found: true } : {})
     };
   } catch { return null; }
 }

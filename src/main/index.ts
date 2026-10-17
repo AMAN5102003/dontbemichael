@@ -23,7 +23,7 @@ import {
 import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
-import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_WORK_STYLE } from '../shared/research';
+import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -39,6 +39,7 @@ import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
 import { CHECKED_FILE } from '../shared/checkedRecord';
+import { ensureCheckedBackfill } from './checkedBackfill';
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
 import { normalizeTimes, timesDelayMs } from '../shared/scheduleTimes';
 import {
@@ -611,6 +612,16 @@ const pulse = new PulseService({
   readChecked: () => {
     const home = readConfig().harnessHome;
     if (!home) return '';
+    // Checks from before the lists kept words, put together once from the
+    // office's files (owner, 2026-10-16: "still not saying changed message").
+    try {
+      const reg = hive.registry();
+      ensureCheckedBackfill(privateRoot(home), {
+        hiveRoot: hive.root() ?? join(home, 'hive'), researchId: RESEARCH_ID,
+        researchNames: Array.from(new Set([hive.researchName(), RESEARCH_NAME])),
+        nameOf: (id) => (id === 'human' || id === 'system' ? null : id === RESEARCH_ID ? hive.researchName() : reg.agents?.[id]?.name?.trim() || (['god', 'michael'].includes(id) ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : null))
+      });
+    } catch (e) { console.error('[pulse] filling in earlier checks', e); }
     // No file yet is an empty record; any other failure is the list's error (DD5).
     try { return readFileSync(join(privateRoot(home), CHECKED_FILE), 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; }
   }
