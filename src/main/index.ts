@@ -35,7 +35,7 @@ import { terminalLaunches } from './terminalAtFolder';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
 import { answerMessages, cardConversation, mergeHumanQA, MICHAEL_ID, raiserOf } from '../shared/askMeRouting';
 import { FIRST_TASK_EDITED_MAX, firstTaskCard, firstTaskCardFromText } from '../shared/firstTask';
-import { answerKey, catchUpRequests, ownerWorkOrder } from '../shared/ownerRequests';
+import { answerKey, catchUpRequests, OwnerAnswerRetry, ownerWorkOrder } from '../shared/ownerRequests';
 import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
@@ -1479,6 +1479,14 @@ function catchUpOwnerAnswers(): void {
     console.error('[owner answers catch-up]', e);
   }
 }
+/** The catch-up again a minute after the owner answers on Ask me, in case the
+ *  renderer's request to Michael never went (ownerRequests.ts OwnerAnswerRetry).
+ *  It sends only what the renderer would have, so it need not wait for Michael. */
+const ownerAnswerRetry = new OwnerAnswerRetry(() => {
+  ownerCatchUpDone = false;
+  catchUpOwnerAnswers();
+  return ownerCatchUpDone;
+});
 
 function standupOnOfficeOpen(): void {
   if (standupFiredThisLaunch || !hive.enabled()) return;
@@ -5559,7 +5567,7 @@ ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
   if (!added.length) return { ok: true, landed: false };
   const ok = hive.patchTask(id, { humanQA: humanQA as HiveTask['humanQA'] });
   const keys = answerKeysOf(id, added.map((i) => humanQA[i]));
-  if (ok && keys.length) recordOwnerAnswerKeys(keys);
+  if (ok && keys.length) { recordOwnerAnswerKeys(keys); ownerAnswerRetry.answered(Date.now()); }
   return { ok, landed: ok };
 });
 /** The most recorded owner answers kept: far more than any office has open. */
@@ -7950,6 +7958,7 @@ function armAlwaysOnBeats(): void {
   const fleetBeat = (): void => {
     writeFleetSnapshot();
     try { if (hive.enabled()) hive.refreshOwnerRequests(); } catch (e) { console.error('[owner requests]', e); }
+    ownerAnswerRetry.tick(Date.now());
   };
   fleetBeat();
   fleetTimer = setInterval(fleetBeat, 8_000);
