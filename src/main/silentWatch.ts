@@ -57,17 +57,23 @@ export interface WatchDeps {
 interface Watch {
   ptyId: string;
   pid?: number;
-  /** A tool call under way since then (PreToolUse with no end yet): no report
-   *  comes until it ends, so it is no sign of silence (LONG_TOOL_MS). */
+  /** Tool calls under way (PreToolUse with no end yet), several at once
+   *  included, and since when the first began: no report comes until they
+   *  end, so it is no sign of silence (LONG_TOOL_MS). */
+  openTools: number;
   toolSince: number | null;
+  /** The last beat that saw this process: a report after it may already be
+   *  the next process's, which is carried over when the restart is noticed. */
+  seenAt: number | null;
   firstOutputAt: number | null;
   lastHookAt: number | null;
   /** The finding held on the previous beat (two beats in a row, SD9). */
   pending: boolean;
 }
 
-/** Hook events that end a tool call (or the turn around it). */
-const TOOL_ENDS: ReadonlySet<string> = new Set(['PostToolUse', 'PostToolUseFailure', 'Stop', 'StopFailure', 'SubagentStop', 'SessionStart', 'SessionEnd', 'UserPromptSubmit']);
+/** Hook events that end the turn, and with it any tool call left open (one
+ *  the app's own gate refused gets no PostToolUse). */
+const TURN_ENDS: ReadonlySet<string> = new Set(['Stop', 'StopFailure', 'SessionStart', 'SessionEnd', 'UserPromptSubmit']);
 
 export class SilentWatch {
   private watches = new Map<string, Watch>();
@@ -99,8 +105,9 @@ export class SilentWatch {
     if (w) {
       w.lastHookAt = at;
       w.pending = false;
-      if (event === 'PreToolUse') w.toolSince = at;
-      else if (event && TOOL_ENDS.has(event)) w.toolSince = null;
+      if (event === 'PreToolUse') { if (w.openTools++ === 0) w.toolSince = at; }
+      else if (event === 'PostToolUse' || event === 'PostToolUseFailure') { if (w.openTools > 0 && --w.openTools === 0) w.toolSince = null; }
+      else if (event && TURN_ENDS.has(event)) { w.openTools = 0; w.toolSince = null; }
     } else this.early.set(agentId, at);
     const ep = this.episodes.get(agentId);
     if (ep) {
@@ -150,13 +157,19 @@ export class SilentWatch {
         // A new terminal or a new process behind it (a start or a restart from
         // anywhere) checks in afresh.
         const fresh = !!w;
-        w = { ptyId: m.ptyId, pid: m.pid, firstOutputAt: null, lastHookAt: this.early.get(m.id) ?? null, pending: false, toolSince: null };
+        // A report since the old process was last seen came from the new one:
+        // it reported before this beat noticed the restart.
+        const carried = w && w.lastHookAt !== null && w.seenAt !== null && w.lastHookAt > w.seenAt ? w.lastHookAt : null;
+        w = { ptyId: m.ptyId, pid: m.pid, firstOutputAt: null, lastHookAt: this.early.get(m.id) ?? carried, pending: false, openTools: 0, toolSince: null, seenAt: null };
         this.early.delete(m.id);
         this.watches.set(m.id, w);
         // Its card waits on the new process, on the engine it runs now.
         if (fresh && ep && ep.state !== 'kept') dirty = this.restarted(m, ep, now) || dirty;
         else if (ep?.stopped) { ep.stopped = false; dirty = true; }
+        // A restored member's wait counts from its start, not the app's.
+        if (ep?.state === 'checking') ep.waitSince = now;
       } else if (w.pid === undefined && m.pid !== undefined) w.pid = m.pid;
+      w.seenAt = now;
       // The clock starts at the first real output, not at spawn (outside voice 1).
       if (m.hasOutput && w.firstOutputAt === null) w.firstOutputAt = now;
       const kind = this.silence(m, w, now);
@@ -202,8 +215,9 @@ export class SilentWatch {
     if (kind === 'never' && neverReports(m.engine, m.version)) {
       // Known never to report: no restart that can't help (R6).
       fresh.state = 'failed';
-    } else if (kind === 'never' && !m.isMichael && this.deps.mayAutoRestart(m.id) && this.deps.restart(m.id, true)) {
+    } else if (kind === 'never' && !m.isMichael && !m.isResearch && this.deps.mayAutoRestart(m.id) && this.deps.restart(m.id, true)) {
       // Michael restarts it once on his own (SD11); the card waits on the result.
+      // Not Research: it is stopped until the owner restarts it (2026-10-17).
       // The restart reuses the terminal id, so its watch starts afresh.
       fresh.state = 'restarting';
       fresh.restartTried = true;

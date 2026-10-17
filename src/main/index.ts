@@ -628,9 +628,12 @@ silentWatch = new SilentWatch({
           `${name}'s engine stopped reporting to the app, so the app can't check ${name}'s folders and tools. Until it reports again, ${name}'s new mail comes to you. Give ${name} no new cards; route the work to someone else or let it wait. The owner has a card on Needs you.`);
       }
     } else if (type === 'resolved' && !episode.isMichael) {
-      silentNoteToMichael(`${name} is reporting again`, `${name} is reporting to the app again. Work can go to ${name} as usual. Mail held for ${name} while it wasn't reporting came to you: send ${name} what still needs doing.`);
+      // A kept member got its mail by its terminal: nothing was held for it.
+      const held = episode.state === 'kept' ? '' : ` Mail held for ${name} while it wasn't reporting came to you: send ${name} what still needs doing.`;
+      silentNoteToMichael(`${name} is reporting again`, `${name} is reporting to the app again. Work can go to ${name} as usual.${held}`);
     } else if (type === 'dropped' && !episode.isMichael) {
-      silentNoteToMichael(`${name} is on an engine the app doesn't watch`, `${name} now runs on an engine that sends the app no reports, so the app no longer watches it. Work can go to ${name} as usual. Mail held for ${name} came to you: send ${name} what still needs doing.`);
+      const held = episode.state === 'kept' ? '' : ` Mail held for ${name} came to you: send ${name} what still needs doing.`;
+      silentNoteToMichael(`${name} is on an engine the app doesn't watch`, `${name} now runs on an engine that sends the app no reports, so the app no longer watches it. Work can go to ${name} as usual.${held}`);
     } else if (type === 'kept') {
       silentNoteToMichael(`${name} works unchecked`, `The owner chose to keep ${name} working without the app's checks. Work can go to ${name} again; it reaches ${name} through the terminal.`);
     }
@@ -642,9 +645,9 @@ function silentBeat(): void {
   const reg = hive.registry();
   const sessions = new Map(ptyManager.list().map((s) => [s.id, s]));
   const godId = reg.godId ?? 'god';
-  // Archived members too, as not running: a card outlives a relaunch, a break
-  // or a closed tab (SD8), and goes only with the member.
-  const members: WatchMember[] = Object.entries(reg.agents ?? {}).filter(([, a]) => a && !a.isAssistant).map(([id, a]) => {
+  // Archived members too, as not running: a card outlives a relaunch or a
+  // break (SD8). One the owner closed or deleted is gone, and so is its card.
+  const members: WatchMember[] = Object.entries(reg.agents ?? {}).filter(([, a]) => a && !a.isAssistant && !(a.archived && a.closedByOwner)).map(([id, a]) => {
     const ptyId = ptyForAgent(id) ?? '';
     const s = ptyId && !a.archived ? sessions.get(ptyId) : undefined;
     const provider = (a.provider ?? 'claude') as AgentProvider;
@@ -1138,6 +1141,10 @@ const preservedWorktrees = new Map<string, PreservedWorktree>();
  * step is wrapped so a teardown error can never crash the caller (an IPC
  * handler or node-pty's onExit).
  */
+/** Terminals the not reporting watch stopped, by terminal id: still this
+ *  member's, so a later teardown (a closed tab, a delete) archives it. */
+const pausedPty = new Map<string, string>();
+
 /** A terminal stopped by the not reporting watch (issue #326, R1): what
  *  counts it as live goes (its mail token, the map that makes it live for the
  *  breaker, the roster and fleet.json, the watchdog and breaker state), but
@@ -1148,11 +1155,15 @@ function pausePty(id: string): void {
   try { integrationBroker.revoke(id); } catch { /* best-effort */ }
   if (!agentId) return;
   ptyToAgent.delete(id);
+  pausedPty.set(id, agentId);
   try { workerWake.forget(agentId, id); } catch { /* best-effort */ }
   try { breaker.forget(agentId); } catch { /* best-effort */ }
   // The restart is a new terminal with its own usage counter.
   try { telemetry.forgetAgent(agentId); } catch { /* best-effort */ }
   try { hive.stopProxyBridge(agentId); } catch { /* best-effort */ }
+  // Closing time stops waiting for it; the keep awake follows the terminals.
+  try { closingTime.refresh(agentId); } catch (e) { console.error('[closing-time] refresh:', e); }
+  syncKeepAwake();
 }
 
 function teardownPty(id: string): void {
@@ -1162,7 +1173,9 @@ function teardownPty(id: string): void {
   // (workers card via the hive:agentSpawned broadcast in processSpawnRequest).
   // pty id == worker id == agent id for workers.
   const wasWorker = liveWorkers.has(id);
-  const agentId = ptyToAgent.get(id);
+  // A terminal the watch stopped is still its member's (pausePty).
+  const agentId = ptyToAgent.get(id) ?? pausedPty.get(id);
+  pausedPty.delete(id);
   // 0) Drop the md-mail MCP file that holds this agent's broker token (#63),
   //    then revoke this id's broker capability (if any). File first so a sibling
   //    cannot read a live path after revoke races a slow delete. Idempotent +
@@ -4428,6 +4441,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // live terminal means active — ensureAgent above already cleared `archived`.
   if (opts.hive?.id) {
     ptyToAgent.set(opts.id, opts.hive.id);
+    pausedPty.delete(opts.id);
     // Worker inbox-wake watchdog (#151): boot grace starts at spawn so the
     // initial orientation prompt is never mistaken for an idle agent.
     workerWake.noteSpawn(opts.id);

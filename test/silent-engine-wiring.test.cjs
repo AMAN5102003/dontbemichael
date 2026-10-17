@@ -140,7 +140,7 @@ test('the main process watches archived members as not running, stops without ar
   // Value: protects=cards survive a relaunch; a stopped member is not live to the breaker or the roster; versions are known so the never reports rule applies; fails_when=archived members are filtered out, the stop skips pausePty, or the bare command reaches the probe; why_new=red team and core review; seam=source pin; no_claim=runtime order at launch
   const main = read('src/main/index.ts');
   const beat = main.slice(main.indexOf('function silentBeat(): void {'), main.indexOf('silentWatch.beat(members);'));
-  assert.match(beat, /\.filter\(\(\[, a\]\) => a && !a\.isAssistant\)/);
+  assert.match(beat, /\.filter\(\(\[, a\]\) => a && !a\.isAssistant && !\(a\.archived && a\.closedByOwner\)\)/, 'a member the owner closed or deleted is gone');
   assert.doesNotMatch(beat, /!a\.archived &&/);
   assert.match(beat, /const s = ptyId && !a\.archived \? sessions\.get\(ptyId\) : undefined;/);
   assert.match(beat, /running: !!s, pid: s\?\.pid,/);
@@ -150,6 +150,12 @@ test('the main process watches archived members as not running, stops without ar
   assert.match(pause, /ptyToAgent\.delete\(id\);/);
   assert.match(pause, /breaker\.forget\(agentId\)/);
   assert.doesNotMatch(pause, /setArchived|removeWorktree/, 'not archived, its worktree kept');
+  assert.match(pause, /pausedPty\.set\(id, agentId\);/);
+  assert.match(pause, /closingTime\.refresh\(agentId\)/);
+  assert.match(main, /const agentId = ptyToAgent\.get\(id\) \?\? pausedPty\.get\(id\);/, 'a later teardown still archives a paused member');
+  assert.match(main, /ptyToAgent\.set\(opts\.id, opts\.hive\.id\);\n\s*pausedPty\.delete\(opts\.id\);/);
+  // A kept member's mail reached it: Michael is never told to send it again.
+  assert.match(main, /const held = episode\.state === 'kept' \? '' : ` Mail held for/);
   assert.match(main, /try \{ bin = ptyManager\.commandPath\(command\); \} catch \{ \/\* unknown \*\/ \}\n\s*if \(bin\) void claudeCliVersion\(bin\)/);
 });
 
