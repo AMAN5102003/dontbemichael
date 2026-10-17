@@ -180,14 +180,18 @@ test('the owner\'s Restart: the card waits on it, a stopped member starts again,
 });
 
 test('reopening the app: Checking until the restored member starts, then Done or back as it was (SD8)', () => {
-  // Value: protects=no stale alarm and no lost one after a relaunch; fails_when=a restored member is flagged before it starts, or a still silent one is forgotten; why_new=SD8, outside voice 6; seam=none; no_claim=the KV store (faked)
+  // Value: protects=no stale alarm and no lost one after a relaunch; fails_when=a restored member is flagged before it starts, a still silent one is forgotten, or one never started keeps a card with no buttons; why_new=SD8, outside voice 6, ship review 2026-10-17; seam=none; no_claim=the KV store (faked)
   const r = rig({ mayAutoRestart: false });
   r.watch.restore([{ agentId: 'kelly', kind: 'never', state: 'failed', engine: 'gemini', engineLabel: 'Gemini CLI', version: '0.63.0', stopped: true, isMichael: false, since: 1, lastCheckInAt: null, startedAt: 1 }]);
   assert.equal(r.watch.episode('kelly').state, 'checking');
-  run(r, 5 * 60_000, member({ running: false, hasOutput: false, engine: 'gemini', version: '0.63.0', statusTicks: false }), { busy: false });
+  run(r, 2 * 60_000, member({ running: false, hasOutput: false, engine: 'gemini', version: '0.63.0', statusTicks: false }), { busy: false });
   assert.equal(r.watch.episode('kelly').state, 'checking', 'not started yet: still Checking');
-  run(r, 60_000 + 2 * BEAT, member({ engine: 'gemini', version: '0.63.0', statusTicks: false }));
-  assert.equal(r.watch.episode('kelly').state, 'failed');
+  run(r, S.RESTART_WAIT_MS, member({ running: false, hasOutput: false, engine: 'gemini', version: '0.63.0', statusTicks: false }), { busy: false });
+  assert.equal(r.watch.episode('kelly').state, 'failed', 'never started: back as it was, with its buttons');
+  const late = rig({ mayAutoRestart: false });
+  late.watch.restore([{ agentId: 'kelly', kind: 'never', state: 'failed', engine: 'gemini', engineLabel: 'Gemini CLI', version: '0.63.0', stopped: true, isMichael: false, since: 1, lastCheckInAt: null, startedAt: 1 }]);
+  run(late, 60_000 + 2 * BEAT, member({ engine: 'gemini', version: '0.63.0', statusTicks: false }));
+  assert.equal(late.watch.episode('kelly').state, 'failed', 'started and still silent: back as it was');
   const ok = rig();
   ok.watch.restore([{ agentId: 'kelly', kind: 'quiet', state: 'open', engine: 'claude', engineLabel: 'Claude Code', version: '2.1.0', stopped: false, isMichael: false, since: 1, lastCheckInAt: 1, startedAt: 1 }]);
   ok.watch.noteHook('kelly');
@@ -253,4 +257,171 @@ test('known never reporting versions, one row per entry; versions compare by num
   assert.equal(S.neverReports('gemini', null), false, 'unknown keeps the restart');
   assert.equal(S.neverReports('claude', '9.0.0'), false);
   assert.equal(S.versionAtLeast('0.100.0', '0.60.0'), true);
+});
+
+// ── Ship review 2026-10-17: the watch across relaunches, restarts and engines ──
+
+test('an archived member keeps its card across beats; only leaving the roster ends it (SD8)', () => {
+  // Value: protects=a relaunch, a break or a closed tab never erases a card or a Keep; fails_when=beat drops episodes of members passed as not running; why_new=red team: the launch archived every member and the first beat erased all cards; seam=none; no_claim=index.ts passing archived members (pinned in silent-engine-wiring)
+  const r = rig({ mayAutoRestart: false });
+  r.watch.restore([
+    { agentId: 'kelly', kind: 'never', state: 'failed', engine: 'claude', engineLabel: 'Claude Code', version: '2.1.0', stopped: false, isMichael: false, since: 1, lastCheckInAt: null, startedAt: 1 },
+    { agentId: 'dwight', kind: 'quiet', state: 'kept', engine: 'claude', engineLabel: 'Claude Code', version: '2.1.0', stopped: false, isMichael: false, since: 1, lastCheckInAt: 1, startedAt: 1 }
+  ]);
+  for (let i = 0; i < 5; i++) { r.clock.t += BEAT; r.watch.beat([member({ running: false, ptyId: '' }), member({ id: 'dwight', running: false, ptyId: '' })]); }
+  assert.equal(r.watch.episode('kelly')?.state, 'checking');
+  assert.equal(r.watch.episode('dwight')?.state, 'kept', 'the owner\'s Keep survives');
+  r.watch.beat([member({ id: 'dwight', running: false, ptyId: '' })]);
+  assert.equal(r.watch.episode('kelly'), undefined, 'deleted from the roster: the card goes');
+});
+
+test('a restart from outside the card checks in afresh: the card waits on it, and a stop holds again (R1)', () => {
+  // Value: protects=Restart and Continue, a stuck restart or Change engine never keeps the dead process's watch; fails_when=the watch is keyed by terminal id only, or a stopped member that runs again stays marked stopped; why_new=state machine and red team review; seam=none
+  const r = rig({ platform: 'win32', mayAutoRestart: false });
+  run(r, 60_000 + 2 * BEAT, member({ pid: 100 }));
+  assert.deepEqual(r.log.stops, ['kelly'], 'unguarded on Windows: stopped');
+  assert.equal(r.watch.episode('kelly').stopped, true);
+  r.clock.t += BEAT; r.watch.beat([member({ running: false, pid: undefined })]);
+  // The owner starts it again from its panel: same terminal id, a new process.
+  r.clock.t += BEAT; r.watch.beat([member({ pid: 200, hasOutput: false })]);
+  const ep = r.watch.episode('kelly');
+  assert.equal(ep.state, 'restarting');
+  assert.equal(ep.stopped, false, 'its terminal runs again');
+  run(r, 60_000 + 2 * BEAT, member({ pid: 200 }));
+  assert.equal(r.watch.episode('kelly').state, 'failed');
+  assert.deepEqual(r.log.stops, ['kelly', 'kelly'], 'still silent and unguarded: stopped again');
+});
+
+test('an idle member restarted gets no false card before its new session reports', () => {
+  // Value: protects=no quiet card from the old process's last report; fails_when=the old watch is kept after a restart, so start up output reads as three minutes of silence; why_new=red team review; seam=none
+  const r = rig();
+  r.watch.beat([member({ pid: 1 })]);
+  r.watch.noteHook('kelly');
+  run(r, 10 * 60_000, member({ pid: 1 }), { busy: false });
+  // Restarted after ten idle minutes: busy at once, the new session reports soon.
+  run(r, 2 * BEAT, member({ pid: 2 }));
+  assert.equal(r.watch.list().length, 0, 'no card on the new process\'s first beats');
+  r.watch.noteHook('kelly', 'SessionStart');
+  run(r, 2 * 60_000, member({ pid: 2 }));
+  assert.equal(r.watch.list().length, 0);
+});
+
+test('a member moved to an engine with no reports drops its card, and Michael hears its mail can go to it again', () => {
+  // Value: protects=no card stuck for good, no mail held for ever; fails_when=beat skips a non reporting member before looking at its episode; why_new=state machine review; seam=none
+  const r = rig({ mayAutoRestart: false });
+  run(r, 60_000 + 2 * BEAT, member());
+  assert.equal(r.watch.episode('kelly').state, 'open');
+  r.clock.t += BEAT; r.watch.beat([member({ reports: false, engine: 'custom' })]);
+  assert.equal(r.watch.episode('kelly'), undefined);
+  assert.deepEqual(r.log.events.map((e) => e[0]), ['opened', 'dropped']);
+});
+
+test('a Restart that never brings the terminal back fails in time, so the card offers its buttons again', () => {
+  // Value: protects=no card left spinning with no buttons; fails_when=restarting has no deadline; why_new=testing, state machine and red team reviews; seam=none
+  const r = rig({ mayAutoRestart: false });
+  run(r, 60_000 + 2 * BEAT, member());
+  r.watch.restart(['kelly']);
+  assert.equal(r.watch.episode('kelly').state, 'restarting');
+  run(r, S.RESTART_WAIT_MS - BEAT, member({ running: false, ptyId: '' }), { busy: false });
+  assert.equal(r.watch.episode('kelly').state, 'restarting', 'still in time');
+  run(r, 2 * BEAT, member({ running: false, ptyId: '' }), { busy: false });
+  const ep = r.watch.episode('kelly');
+  assert.equal(ep.state, 'failed');
+  assert.notDeepEqual(S.silentButtons(S.silentCards([ep])[0]), [], 'the card has buttons again');
+});
+
+test('one long tool call is no silence; past the ceiling it is', () => {
+  // Value: protects=a five minute build or test run never raises a false card (or a stop on Windows); fails_when=a PreToolUse with no end yet is ignored by the quiet rule; why_new=red team review; seam=none; no_claim=Claude's real status tick rate during a tool call
+  const r = rig({ platform: 'win32' });
+  r.watch.beat([member()]);
+  r.watch.noteHook('kelly', 'PreToolUse');
+  run(r, 10 * 60_000, member());
+  assert.equal(r.watch.list().length, 0, 'ten minutes in one tool call: no card');
+  assert.deepEqual(r.log.stops, []);
+  r.watch.noteHook('kelly', 'PostToolUse');
+  run(r, S.QUIET_MS + 3 * BEAT, member());
+  assert.equal(r.watch.episode('kelly')?.kind, 'quiet', 'after the tool call ends, silence counts again');
+  const long = rig();
+  long.watch.beat([member()]);
+  long.watch.noteHook('kelly', 'PreToolUse');
+  run(long, S.LONG_TOOL_MS + 3 * BEAT, member());
+  assert.equal(long.watch.episode('kelly')?.kind, 'quiet', 'longer than any tool call: silence');
+});
+
+test('Research not reporting is stopped even on a Mac, has its own card, and is never kept unchecked', () => {
+  // Value: protects=a silent Research never works with unguarded file tools and the internet; fails_when=Research is treated as sandbox guarded, shares a card with others, or Keep applies to it; why_new=owner 2026-10-17 (D3.2); seam=none
+  const r = rig({ platform: 'darwin', mayAutoRestart: false });
+  const pete = member({ id: 'research', isResearch: true });
+  run(r, 60_000 + 2 * BEAT, pete);
+  assert.deepEqual(r.log.stops, ['research']);
+  const ep = r.watch.episode('research');
+  assert.equal(ep.isResearch, true);
+  r.watch.keep(['research']);
+  assert.equal(r.watch.episode('research').state, 'open', 'Keep does nothing for Research');
+  const cards = S.silentCards([ep, { ...ep, agentId: 'kelly', isResearch: undefined }]);
+  assert.deepEqual(cards.map((c) => c.key).sort(), ['claude@2.1.0:never', 'research']);
+  const card = cards.find((c) => c.research);
+  assert.deepEqual(S.silentButtons(card), ['restart']);
+  assert.deepEqual(S.silentButtons({ ...card, state: 'failed' }), ['restart']);
+  assert.equal(S.guardedWithoutReports('claude', 'darwin', true), false);
+  assert.equal(S.guardedWithoutReports('claude', 'darwin'), true);
+});
+
+test('Keep on a stopped member waits until its terminal can start again', () => {
+  // Value: protects=no member marked kept while nothing runs to take its mail; fails_when=keep marks it kept when the restart was not sent; why_new=state machine review; seam=none
+  const r = rig({ platform: 'win32', mayAutoRestart: false, restartOk: false });
+  run(r, 60_000 + 2 * BEAT, member());
+  assert.equal(r.watch.episode('kelly').stopped, true);
+  r.watch.keep(['kelly']);
+  assert.equal(r.watch.episode('kelly').state, 'open', 'the card stays');
+  assert.equal(r.log.events.filter((e) => e[0] === 'kept').length, 0);
+});
+
+test('a quiet member: Restart, Keep, a check in and Check again behave as for a never one', () => {
+  // Value: protects=the quiet column of the watch's state table; fails_when=any action treats quiet episodes differently; why_new=state machine review, untested cells; seam=none
+  const quiet = () => {
+    const r = rig({ mayAutoRestart: false });
+    r.watch.beat([member()]);
+    r.watch.noteHook('kelly');
+    run(r, S.QUIET_MS + 3 * BEAT, member());
+    assert.equal(r.watch.episode('kelly').kind, 'quiet');
+    return r;
+  };
+  const a = quiet();
+  a.watch.restart(['kelly']);
+  assert.equal(a.watch.episode('kelly').state, 'restarting');
+  run(a, 60_000 + 3 * BEAT, member());
+  assert.equal(a.watch.episode('kelly').state, 'failed');
+  const b = quiet();
+  b.watch.keep(['kelly']);
+  assert.equal(b.watch.episode('kelly').state, 'kept');
+  assert.equal(S.silentCards(b.watch.list()).length, 0);
+  assert.equal(S.mailFor(b.watch.episode('kelly')), 'handoff');
+  b.watch.noteHook('kelly');
+  assert.equal(b.watch.list().length, 0, 'a report ends the keep');
+  const c = quiet();
+  c.watch.noteHook('kelly');
+  assert.equal(c.watch.list().length, 0);
+  assert.deepEqual(c.log.events.map((e) => e[0]), ['opened', 'resolved']);
+  const d = quiet();
+  d.watch.keep(['kelly']);
+  d.watch.checkAgain('kelly');
+  assert.equal(d.watch.list().length, 0);
+  d.watch.noteHook('kelly');
+  run(d, S.QUIET_MS + 3 * BEAT, member());
+  assert.equal(d.watch.episode('kelly')?.kind, 'quiet', 'watched afresh');
+});
+
+test('a restored kept member stays kept; a restored restart waits, then is back as open', () => {
+  // Value: protects=restore() for kept and restarting rows; fails_when=a kept member is put back to Checking or a restarting one never settles; why_new=testing review; seam=none
+  const k = rig({ mayAutoRestart: false });
+  k.watch.restore([{ agentId: 'kelly', kind: 'never', state: 'kept', engine: 'claude', engineLabel: 'Claude Code', version: '2.1.0', stopped: true, isMichael: false, since: 1, lastCheckInAt: null, startedAt: 1 }]);
+  run(k, 60_000 + 3 * BEAT, member());
+  assert.equal(k.watch.episode('kelly').state, 'kept');
+  assert.equal(k.watch.episode('kelly').stopped, false);
+  const rs = rig({ mayAutoRestart: false });
+  rs.watch.restore([{ agentId: 'kelly', kind: 'never', state: 'restarting', engine: 'claude', engineLabel: 'Claude Code', version: '2.1.0', stopped: false, isMichael: false, since: 1, lastCheckInAt: null, startedAt: 1 }]);
+  assert.equal(rs.watch.episode('kelly').state, 'checking');
+  run(rs, 60_000 + 3 * BEAT, member());
+  assert.equal(rs.watch.episode('kelly').state, 'open');
 });

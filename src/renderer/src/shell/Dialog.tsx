@@ -127,6 +127,8 @@ export function Dialog({ title, onClose, busy = false, width = 520, footer, chil
 /** Sent on window when the right column starts moving between the side and
  *  the center; `detail.ms` is how long the move takes (App.tsx). */
 export const PANEL_MOVE_EVENT = 'cth:panel-move';
+/** How long that move takes: --cth-dur-slow in tokens.css (keep the two equal). */
+export const PANEL_MOVE_MS = 320;
 
 /** Extracted so it can hold its own hover state without polluting Dialog. */
 function CloseButton({ onClose, busy, label }: { onClose: () => void; busy: boolean; label: string }) {

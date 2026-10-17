@@ -44,9 +44,10 @@ import { join, dirname, basename, isAbsolute, relative, resolve, sep } from 'nod
 import { homedir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash, createHmac } from 'node:crypto';
+import { readMessageFile, researchDeliveredId } from './messageFile';
 import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
 import { CHECKED_ARCHIVE_DIR, CHECKED_FILE, keepText, splitForArchive, type CheckedOutcome, type CheckedRow } from '../shared/checkedRecord';
-import { heldWaits, heldWhy, tidy, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
+import { heldWaits, heldWhy, tidy, HELD_FILE, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
 import {
@@ -356,7 +357,7 @@ export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPa
     ...(briefing ? ['', '## The business', briefing] : []),
     '',
     '## Routing work',
-    'The team roster (every team member\'s name, role and what they handle) arrives at the start of each session and again when the team changes. Route by those descriptions. You are the only one who assigns work: a team member never hands a job to another, and when one asks another to do something, the app delivers it to you marked as a handoff, so decide who does it. Team members may ask each other for facts directly, and so do you: each member\'s notes and inbox are its own, so to learn what one knows or how its work stands, send it a query and read its card and the work it publishes. Never open a member\'s folder or notes. The roster is the only current list of the team, and when the owner names someone, send the work to them. Use one team member by default and several only for truly independent parts, because each hand-off costs the owner time and money. Each hand-off states the objective, what to send back and in what form, where to look (a file path, an earlier message, the task card), and what is out of scope. When a team member reports back, trust the result and relay it; redoing routine work doubles the cost. A team member marked busy gets new work after the current task; one on hold is talking with the owner, so keep their work until the hold ends.',
+    'The team roster (every team member\'s name, role and what they handle) arrives at the start of each session and again when the team changes. Route by those descriptions. You are the only one who assigns work: a team member never hands a job to another, and when one asks another to do something, the app delivers it to you marked as a handoff, so decide who does it. Team members may ask each other for facts directly, and so do you: each member\'s notes and inbox are its own, so to learn what one knows or how its work stands, send it a query and read its card and the work it publishes. Never open a member\'s hive folder (agents/<id>/ in the hive), its notes or its inbox; the work folders and files a member hands off stay yours to read and check. The roster is the only current list of the team, and when the owner names someone, send the work to them. Use one team member by default and several only for truly independent parts, because each hand-off costs the owner time and money. Each hand-off states the objective, what to send back and in what form, where to look (a file path, an earlier message, the task card), and what is out of scope. When a team member reports back, trust the result and relay it; redoing routine work doubles the cost. A team member marked busy gets new work after the current task; one on hold is talking with the owner, so keep their work until the hold ends.',
     '',
     '## Doing it yourself',
     'Answer small things yourself: a fact you know, a short reply, a quick lookup. Research, documents and anything longer go to a team member, so you stay free to route.',
@@ -423,7 +424,7 @@ export function teamMemberInstructions(name: string, role: string, michael: stri
     '',
     `When you finish or get stuck, message ${michael} with what you did, what you found and what you need. ${michael} passes your words to the owner, who reads them on a phone, so lead with the result, keep it to a few plain sentences, and use commas, colons and periods instead of dashes, which the owner prefers.`,
     '',
-    `Only ${michael} assigns work. If you need a fact from a teammate to do your job, ask them directly: write to their id (listed in registry.json in ${p.hiveRoot}) with "act": "query", and answer a teammate's query the same way with "act": "inform". If they cannot help, or you need someone else to do something, tell ${michael} and he hands it off. Never give a teammate work yourself. A teammate\'s notes and folder are theirs: never open them, ask instead.`,
+    `Only ${michael} assigns work. If you need a fact from a teammate to do your job, ask them directly: write to their id (listed in registry.json in ${p.hiveRoot}) with "act": "query", and answer a teammate's query the same way with "act": "inform". If they cannot help, or you need someone else to do something, tell ${michael} and he hands it off. Never give a teammate work yourself. A teammate\'s hive folder (agents/<id>/ in the hive), notes and inbox are theirs: never open them, ask instead. Files a teammate hands off or keeps in a shared work folder are fine to read.`,
     '',
     `Act on each message in your inbox (${p.inbox}), then move it to ${p.inboxDone}. To message ${michael}, write a JSON file to your outbox (${p.outbox}) with "to": "michael", "act" (done, inform or query), "subject" and "body". A message sent by the scheduler names a job from your Work style: do it, and if there is nothing to do, stop without messaging anyone. Its replies about your schedule requests (subject "Schedule request", "Schedule change approved" or "Schedule change declined") are notices, not jobs: read them and do nothing else. Never ask the owner in your terminal (nobody answers it): file the question in the triage folder.${p.docText ? ` To read a Word, Excel or PowerPoint file, run ${p.docText} "<file>".` : ''} ${p.protocol} has the full message format.`
   ].join('\n');
@@ -516,24 +517,6 @@ function shortRand(): string {
   return randomBytes(3).toString('hex');
 }
 
-/** The most a message file may hold for the app to read it. */
-const MAX_MESSAGE_FILE_BYTES = 4 * 1024 * 1024;
-
-/** A message file read without following a link or waiting on a pipe: an
- *  agent's own folder may hold either, and the app reads with the owner's
- *  rights (red team, third ship). Null for anything but a plain file. */
-function readMessageFile(path: string): string | null {
-  let fd = -1;
-  try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    const st = fstatSync(fd);
-    if (!st.isFile() || st.size > MAX_MESSAGE_FILE_BYTES) return null;
-    return readFileSync(fd, 'utf8');
-  } catch { return null; } finally {
-    if (fd >= 0) try { closeSync(fd); } catch { /* closed */ }
-  }
-}
-
 /** Write over an agent's own file in place, only when it is a plain file
  *  with one name: never through a link or a second name it made for a file
  *  of someone else's (red team, third ship). Throws otherwise. */
@@ -549,7 +532,9 @@ function rewriteOwnFile(path: string, text: string): void {
 
 /** Non-memory files `mempalace mine` must not ingest (Claude Code hooks config,
  *  cursor, raw inbox/outbox JSON). `mempalace mine` honors .gitignore, so we drop
- *  one in each agent dir; written on birth here and refreshed by the mine loop.
+ *  one in each agent dir; written on birth here and refreshed once per process
+ *  (untrackCodexHomes). The palace mines company knowledge only now (owner,
+ *  2026-10-16), so the file's lasting job is keeping .codex out of git.
  *
  *  `.codex/` is here for a second reason as well, and it is the load-bearing one:
  *  a Codex worker's CODEX_HOME lives INSIDE its agent dir (see installCodexHooks —
@@ -1155,7 +1140,6 @@ export class HiveManager {
   async ensureAgent(
     meta: AgentMeta,
     opts: {
-      semanticMemory?: boolean;
       knowledgeGraph?: boolean;
       /** ABSOLUTE path to the Knowledge-Graph CLI (`knowledge.env().KG_CLI`), baked
        *  into the agent's prompt instead of a `$KG_CLI` shell reference — `$VAR` is
@@ -1331,7 +1315,7 @@ export class HiveManager {
     if (!isHiveAwareProvider(meta.provider)) {
       const preset = providerPreset(meta.provider ?? 'claude');
       const flag = preset.initialPromptFlag;
-      const prompt = this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
+      const prompt = this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
       // agy, codex, and grok expose a Claude-style lifecycle-hook surface, so each
       // gets the SAME live status + Stop→inbox-drain Claude does — selected by the
       // preset's `hookBridge`. agy needs a translating shim (its hook stdin/stdout
@@ -1488,7 +1472,7 @@ export class HiveManager {
     const args: string[] = [];
     if (!claudeProvider) return { args, env };
 
-    args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business));
+    args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business));
 
     // Phase 1 — autonomy: attach lifecycle hooks via --settings (no edits to the
     // user's repo) so the agent reports activity and drains its inbox on Stop.
@@ -2116,7 +2100,7 @@ export class HiveManager {
    *
    * 🔒 PROMPT-CACHE INVARIANT — keep this prefix VOLATILE-FREE. It interpolates
    * only values stable for an agent's whole lifetime (name, id, dir, root,
-   * semanticMemory). Do NOT add dates, UUIDs, counters, board/registry state, or
+   * the knowledge settings). Do NOT add dates, UUIDs, counters, board/registry state, or
    * any `Date.now()`-derived text here: a prefix that changes per spawn defeats
    * Anthropic's prompt cache (re-priming the whole system prompt every turn).
    * Volatile context belongs on the live channels — the inbox (hive messages) and
@@ -2137,7 +2121,6 @@ export class HiveManager {
     meta: AgentMeta,
     dir: string,
     root: string,
-    semanticMemory: boolean,
     knowledgeGraph: boolean,
     kgCliPath?: string,
     businessFolder?: string,
@@ -2162,12 +2145,10 @@ export class HiveManager {
 
     // Each member's memory is its own (owner, 2026-10-16): nobody, Michael
     // included, opens another's notes; they ask. Company knowledge is the one
-    // store everyone searches (knowledgeLine). `semanticMemory` now only means
-    // search by meaning over company knowledge, which knowledgeLine carries.
-    void semanticMemory;
+    // store everyone searches (knowledgeLine).
     const memoryLine = meta.isGod
-      ? 'PRIVATE MEMORY: each team member\'s notes, memory and inbox are its own. Never open a team member\'s folder, notes or inbox, or the office\'s change history. To learn what one knows or how its work stands, send it a "query", and read its card on the board and the work it publishes.'
-      : 'PRIVATE MEMORY: your notes and memory are yours alone, and each teammate\'s are theirs. Never open another team member\'s folder, notes or inbox, or the office\'s change history. To learn what a teammate knows, ask them with a "query" message. The one store everyone searches is company knowledge.';
+      ? 'PRIVATE MEMORY: each team member\'s notes, memory and inbox are its own. Never open a team member\'s hive folder (agents/<id>/), its notes or inbox, or the hive\'s change history (.git). To learn what one knows or how its work stands, send it a "query", and read its card on the board and the work it publishes; its work folder and the files it hands off stay yours to read.'
+      : 'PRIVATE MEMORY: your notes and memory are yours alone, and each teammate\'s are theirs. Never open another team member\'s hive folder (agents/<id>/), its notes or inbox, or the hive\'s change history (.git). To learn what a teammate knows, ask them with a "query" message; files a teammate hands off are fine to read. The one store everyone searches is company knowledge.';
     // Company knowledge (on by default). Volatile-free: the bundled-node launcher
     // and the KG CLI are both fixed absolute paths for an install, so baking them
     // keeps the prefix prompt-cache-stable while making the command runnable in
@@ -2613,15 +2594,17 @@ export class HiveManager {
       subject: tidy(asText(subject), HELD_SUBJECT_MAX), opening: tidy(asText(body), HELD_OPENING_MAX),
       why, ...(error ? { error: tidy(error, 200) } : {}), told
     };
-    const file = join(privateRoot(home), 'held.jsonl');
+    const file = join(privateRoot(home), HELD_FILE);
     try {
       mkdirSync(privateRoot(home), { recursive: true });
       appendFileSync(file, `${JSON.stringify(row)}\n`, 'utf8');
       // Once a day, rows past the keep window go (Pulse keeps raw events as long).
       if (row.at - this.heldPrunedAt > 86_400_000) {
         this.heldPrunedAt = row.at;
-        const keep = readFileSync(file, 'utf8').split('\n').filter((l) => { try { return l && (JSON.parse(l) as HeldRow).at >= row.at - HELD_KEEP_MS; } catch { return false; } });
-        writeFileSync(file, keep.length ? `${keep.join('\n')}\n` : '', 'utf8');
+        const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
+        const keep = lines.filter((l) => { try { return (JSON.parse(l) as HeldRow).at >= row.at - HELD_KEEP_MS; } catch { return false; } });
+        // Written again only when a row went.
+        if (keep.length !== lines.length) writeFileSync(file, keep.length ? `${keep.join('\n')}\n` : '', 'utf8');
       }
     } catch { /* best effort: the count still shows, and the list says what it cannot show */ }
   }
@@ -2728,6 +2711,12 @@ export class HiveManager {
       return 'denied';
     };
     if (!on) return deny(REFUSAL_OFF);
+    // Research not reporting (SD16): the question waits with Michael as it is,
+    // before any check is paid for, and nobody is told it reached Research.
+    if (this.memberMail?.(RESEARCH_ID) === 'hold') {
+      this.holdForMichael({ ...msg, from: senderId }, [RESEARCH_ID], this.registry().godId ?? 'god');
+      return 'sent';
+    }
     if (hasAttachments(partial)) return deny(REFUSAL_FILES);
     if (!this.trustLayer) return deny(REFUSAL_CHECK_FAILED, { why: 'no-layer' });
     const layer = this.trustLayer;
@@ -2816,6 +2805,9 @@ export class HiveManager {
       this.researchQueued--;
       if (!fromAgent) this.researchPending(msg, false);
       try {
+        // The owner changed what stays private meanwhile: checked again under
+        // the new settings, as a check that answered is (ship review 2026-10-17).
+        if (this.researchOn() && this.policyOf(layer) !== policy) { this.queueForResearch(msg); return; }
         if (!this.researchOn()) refuse(REFUSAL_OFF, 'research-off');
         else { refuse(REFUSAL_CHECK_FAILED, 'failed'); held('failed'); }
       } catch { /* logged above */ }
@@ -2981,7 +2973,7 @@ export class HiveManager {
     const out = this.normalize({
       // The app's id, the same for the same file, so an answer delivered
       // again after a crash replaces itself instead of arriving twice.
-      id: `research-${createHash('sha256').update(fileKey).digest('hex').slice(0, 24)}`,
+      id: researchDeliveredId(fileKey),
       to: msg.to,
       act: 'inform',
       subject: v.subject,
@@ -3170,7 +3162,7 @@ export class HiveManager {
     // through the trust layer first, in the background (ship review D2.1).
     // Research not reporting: its questions wait with Michael like anyone's (SD16).
     if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && this.memberMail?.(RESEARCH_ID) === 'hold') {
-      this.holdForMichael(msg, RESEARCH_ID, godId);
+      this.holdForMichael(msg, [RESEARCH_ID], godId);
       return;
     }
     if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && !this.researchCleared.has(msg.id)) {
@@ -3190,6 +3182,8 @@ export class HiveManager {
     // Targets that actually took delivery. The log below reports these instead of
     // intent, so a bounced or dropped message can never read as delivered.
     const delivered: string[] = [];
+    // Members not reporting whose copy goes to Michael, as one held copy.
+    const held: string[] = [];
     for (const t of targets) {
       // The send-only prep assistant must never be a delivery target: it doesn't
       // drain an inbox, so direct mail to it would rot unread (observed live: a
@@ -3206,9 +3200,9 @@ export class HiveManager {
       }
       // Not reporting (issue #326): held for Michael, or by terminal when kept.
       const silent = t !== godId ? this.memberMail?.(t) ?? null : null;
-      if (silent === 'hold') { this.holdForMichael(msg, t, godId); continue; }
+      if (silent === 'hold') { held.push(t); continue; }
       if (silent === 'handoff') {
-        if (!this.emitTerminalHandoff(msg, t)) this.holdForMichael(msg, t, godId);
+        if (!this.emitTerminalHandoff(msg, t)) held.push(t);
         else delivered.push(t);
         continue;
       }
@@ -3258,6 +3252,7 @@ export class HiveManager {
         }, godId);
       }
     }
+    if (held.length) this.holdForMichael(msg, held, godId);
     this.appendLog({ kind: 'message', from: msg.from, to: msg.to, act: msg.act, subject: msg.subject, id: msg.id, delivered });
     this.lastRouted = { id: msg.id, delivered };
     this.emitMessage(msg, targets);
@@ -4420,10 +4415,19 @@ export class HiveManager {
    *  kept it working unchecked ('handoff'); null flows as usual. Set by index.ts. */
   memberMail: ((agentId: string) => 'hold' | 'handoff' | null) | null = null;
   /** Mail for a member that isn't reporting goes to Michael instead (SD12). */
-  private holdForMichael(msg: HiveMessage, t: string, godId: string): void {
-    const name = this.registry().agents[t]?.name ?? t;
-    this.appendLog({ kind: 'message-held-not-reporting', to: t, id: msg.id });
-    this.deliver({ ...msg, to: godId, subject: `[held: "${name}" isn't reporting to the app; route this to someone else or let it wait] ${msg.subject}` }, godId);
+  /** One copy for Michael per message, naming every member it was held for,
+   *  under its own id so it never replaces his own copy of a broadcast or
+   *  another held one (ship review 2026-10-17). The note when a member reports
+   *  again tells him to send what still needs doing. */
+  private holdForMichael(msg: HiveMessage, ids: readonly string[], godId: string): void {
+    const reg = this.registry();
+    const names = ids.map((t) => (t === RESEARCH_ID ? this.researchName() : reg.agents[t]?.name ?? t));
+    for (const t of ids) this.appendLog({ kind: 'message-held-not-reporting', to: t, id: msg.id });
+    const who = names.map((n) => `"${n}"`).join(', ');
+    const what = names.length === 1
+      ? `${who} isn't reporting to the app; route this to someone else, or send it to ${names[0]} again once ${names[0]} reports`
+      : `${who} aren't reporting to the app; route this to someone else, or send it to them again once they report`;
+    this.deliver({ ...msg, id: `${msg.id}-held`, to: godId, subject: `[held: ${what}] ${msg.subject}` }, godId);
   }
   onOwnerReply(cb: ((msg: HiveMessage) => void) | null): void { this.ownerReplyListener = cb; }
 
@@ -5532,8 +5536,8 @@ export class HiveManager {
    * record (those carry user.email / account / org / hashed-user-id). The sample
    * is PII-free by construction upstream (the provider's normalize step), so we
    * add no redaction here; we just must not widen what we write. The file lives
-   * at the hive ROOT, so `mempalace mine` (which only scans per-agent dirs) never
-   * ingests it — no palace noise, no MINE_IGNORE entry needed.
+   * at the hive ROOT, which the palace never mines (it holds company knowledge
+   * only), so no MINE_IGNORE entry is needed.
    *
    * Like appendLog: append to disk now (durable immediately), let it ride the
    * next natural commit. Best-effort — never throws into the beat.
@@ -5647,8 +5651,7 @@ export class HiveManager {
    * predates that ignore line goes on committing every SQLite and transcript
    * revision exactly as before — the .gitignore reads as a fix while the repo
    * keeps growing. This closes that: once per process, refresh every agent's
-   * ignore file (agents that are not running never pass through spawn, and the
-   * mine loop only reaches them if mempalace is installed) and drop any tracked
+   * ignore file (agents that are not running never pass through spawn) and drop any tracked
    * `.codex` path from the index. The files stay on disk, so `codex --resume`
    * is unaffected; only their history stops.
    */

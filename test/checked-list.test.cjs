@@ -217,18 +217,22 @@ test('both tiles open their list, the lists follow the approved design, and ever
   assert.equal(en.held.earlier, '{{count}} more without details.');
 });
 
-test('the list reads one way, in its span, and says from when words are kept', () => {
+test('the list reads one way, in its span, and says from when words are kept', async () => {
   // Value: protects=design DD4 and the way filter; fails_when=answers show among questions or the first kept time is lost; why_new=new reader; seam=readChecked dep; no_claim=none beyond protects
   const { PulseService } = loadTs('src/main/pulse.ts');
   const row = (at, way) => JSON.stringify({ at, way, from: 'pam', to: 'research', outcome: 'pass', wrote: { subject: '', body: String(at) } });
   const text = [row(100, 'in'), row(200, 'out'), row(300, 'in'), 'junk'].join('\n');
   const svc = Object.create(PulseService.prototype);
   svc.d = { readChecked: () => text };
-  const got = svc.checked(150, 400, 'in');
+  const got = await svc.checked(150, 400, 'in');
   assert.deepEqual(got.rows.map((r) => r.at), [300]);
   assert.equal(got.since, 100);
   svc.d = { readChecked: () => { throw new Error('EACCES'); } };
-  assert.throws(() => svc.checked(0, 1, 'in'), 'a read that fails reaches the list as an error');
+  await assert.rejects(() => svc.checked(0, 1, 'in'), 'a read that fails reaches the list as an error');
+  svc.d = { readChecked: async () => text };
+  assert.deepEqual((await svc.checked(150, 400, 'in')).rows.map((r) => r.at), [300], 'read without blocking, the same list');
+  svc.d = { readChecked: () => Promise.reject(new Error('EACCES')) };
+  await assert.rejects(() => svc.checked(0, 1, 'in'), 'an async read that fails reaches the list as an error too');
 });
 
 test('before any words were kept, the list says "from now on" and how many changed or stopped are among them', () => {
@@ -293,4 +297,74 @@ test('checks from before the lists kept words are put together once from the off
   assert.match(read('src/main/homeFolder.ts'), /'checked-archive', 'checked-backfill\.json'\]/);
   assert.match(read('src/main/index.ts'), /ensureCheckedBackfill\(privateRoot\(home\), \{/);
   assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.checked.found, "Put together later from the office's files: what kind of detail was taken out wasn't recorded then.");
+});
+
+// ── Ship review 2026-10-17 ──
+
+test('the backfill rebuilds nothing from after the lists began keeping words', (t) => {
+  // Value: protects=a check made after keeping began shows once, not twice; fails_when=ensureCheckedBackfill ignores `until` and reads up to now; why_new=testing review: no fixture was dated after the kept row; seam=temporary office folders
+  const B = loadTs('src/main/checkedBackfill.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-backfill-late-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hiveRoot = path.join(home, 'hive');
+  const priv = path.join(home, 'private');
+  const dir = (...p) => { const d = path.join(...p); fs.mkdirSync(d, { recursive: true }); return d; };
+  const now = Date.UTC(2026, 9, 16, 23, 0);
+  const keptAt = now - 3_600_000;
+  fs.mkdirSync(priv, { recursive: true });
+  fs.writeFileSync(path.join(priv, 'checked.jsonl'), `${JSON.stringify({ at: keptAt, way: 'in', from: 'pam', to: 'research', outcome: 'pass', wrote: { subject: 'kept', body: 'kept' } })}\n`);
+  const late = keptAt + 60_000;
+  const sent = path.join(dir(hiveRoot, 'agents', 'pam', 'outbox', '.sent'), 'late.json');
+  fs.writeFileSync(sent, JSON.stringify({ to: 'research', act: 'query', subject: 'Late', body: 'Late question' }));
+  fs.utimesSync(sent, late / 1000, late / 1000);
+  fs.writeFileSync(path.join(dir(hiveRoot, 'agents', 'research', 'inbox', '.done'), 'late.json'), JSON.stringify({ id: 'late', from: 'pam', to: 'research', subject: 'Late', body: 'Late question', created_at: new Date(late + 1000).toISOString() }));
+  B.ensureCheckedBackfill(priv, { hiveRoot, researchId: 'research', researchNames: ['Pete'], nameOf: () => null }, now);
+  const got = rows(home);
+  assert.equal(got.length, 1, 'only the kept row');
+  assert.ok(!got.some((r) => r.found));
+});
+
+test('the backfill never follows a link or waits on a pipe left in an agent\'s folder', { skip: process.platform === 'win32' ? 'pipes and links' : false }, (t) => {
+  // Value: protects=a steered Research can't freeze the app or make it read a file outside the office (probe 005 froze); fails_when=the backfill reads with a plain readFileSync or walks a linked folder; why_new=security review and QA probe, ship review 2026-10-17; seam=temporary office folders; no_claim=Windows (no FIFOs)
+  const { execFileSync, spawnSync } = require('node:child_process');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-backfill-safe-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hiveRoot = path.join(home, 'hive');
+  const done = path.join(hiveRoot, 'agents', 'research', 'inbox', '.done');
+  fs.mkdirSync(done, { recursive: true });
+  execFileSync('mkfifo', [path.join(done, 'pipe.json')]);
+  // An owner file outside the office, reached through a link and a linked folder.
+  const secret = path.join(home, 'outside');
+  fs.mkdirSync(secret);
+  fs.writeFileSync(path.join(secret, 'tax.json'), JSON.stringify({ id: 'x', from: 'pam', to: 'research', subject: 'Owner secret', body: 'secret', created_at: new Date().toISOString() }));
+  fs.symlinkSync(path.join(secret, 'tax.json'), path.join(done, 'link.json'));
+  fs.mkdirSync(path.join(hiveRoot, 'agents', 'pam', 'outbox'), { recursive: true });
+  fs.symlinkSync(secret, path.join(hiveRoot, 'agents', 'pam', 'outbox', '.sent'));
+  // In a child, so a blocking read fails the test instead of hanging it.
+  const script = `const B = require(${JSON.stringify(path.join(__dirname, 'load-ts.cjs'))})('src/main/checkedBackfill.ts');
+    const rows = B.backfillChecked({ hiveRoot: ${JSON.stringify(hiveRoot)}, researchSentDir: null, researchId: 'research', researchNames: ['Pete'], from: 0, until: Date.now() + 1e9, nameOf: () => null });
+    process.stdout.write(JSON.stringify(rows));`;
+  const r = spawnSync(process.execPath, ['-e', script], { cwd: path.join(__dirname, '..'), encoding: 'utf8', timeout: 10_000 });
+  assert.equal(r.signal, null, 'returned instead of waiting on the pipe');
+  assert.equal(r.status, 0, r.stderr);
+  assert.doesNotMatch(r.stdout, /Owner secret/, 'nothing read through a link');
+  assert.deepEqual(JSON.parse(r.stdout), []);
+});
+
+test('word changes put back together give both texts, whatever is shared at the ends', () => {
+  // Value: protects=the faster comparison (shared opening and ending taken off first) still marks every change; fails_when=a word is lost or doubled at the edges of the changed middle; why_new=performance fix, ship review 2026-10-17; seam=none
+  const { wordChanges } = loadTs('src/shared/checkedRecord.ts');
+  const words = ['flour', 'price', 'for', 'Rosa', 'Diaz', 'at', 'Acme', 'Bakery', 'this', 'month', 'a', 'customer', 'the', 'supplier', '7%'];
+  let seed = 7;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const text = () => Array.from({ length: 3 + rnd(12) }, () => words[rnd(words.length)]).join(' ');
+  for (let k = 0; k < 300; k++) {
+    const a = text();
+    const b = k % 3 ? a.replace(words[rnd(words.length)], words[rnd(words.length)]) : text();
+    const parts = wordChanges(a, b);
+    const sq = (s) => s.replace(/\s+/g, ' ');
+    assert.equal(sq(parts.filter((p) => p.op !== 'ins').map((p) => p.text).join('')), sq(a), `old side ${k}`);
+    assert.equal(sq(parts.filter((p) => p.op !== 'del').map((p) => p.text).join('')), sq(b), `new side ${k}`);
+  }
+  assert.deepEqual(wordChanges('same words here', 'same words here'), [{ op: 'same', text: 'same words here' }]);
 });

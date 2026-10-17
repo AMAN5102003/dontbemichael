@@ -24,6 +24,8 @@ const { HiveManager } = loadTs('src/main/hive.ts');
 const R = loadTs('src/shared/research.ts');
 const { heldWaits } = loadTs('src/shared/heldRecord.ts');
 
+// The real gaps, kept for the test that reads them.
+const realDelay = HiveManager.trustRetryDelayMs;
 // Tried again at once, so the tests need no clock.
 HiveManager.trustRetryDelayMs = () => 0;
 
@@ -76,8 +78,7 @@ test('the gaps grow from 30 seconds to every 5 minutes, and the wait is 30 minut
   // Value: protects=the owner's D1 window and a paced retry that never hammers the check; fails_when=the window or gaps change; why_new=owner 2026-10-16 wait; seam=none
   const fresh = loadTs('src/main/hive.ts').HiveManager;
   assert.equal(fresh.TRUST_WAIT_MS, 30 * 60_000);
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/hive.ts'), 'utf8');
-  assert.match(src, /static trustRetryDelayMs\(tries: number\): number \{ return Math\.min\(5 \* 60_000, 30_000 \* 2 \*\* Math\.max\(0, tries\)\); \}/);
+  assert.deepEqual([0, 1, 2, 3, 4, 9].map((n) => realDelay(n)), [30_000, 60_000, 120_000, 240_000, 300_000, 300_000]);
 });
 
 test('a teammate\'s question waits in its outbox while the check cannot run, then reaches Pete; nobody is told it failed', async (t) => {
@@ -155,4 +156,56 @@ test('Pete\'s answer waits for the check too, then reaches the teammate who aske
   assert.equal(msgsIn(hive, 'pam').filter((m) => m.subject === R.ANSWER_UNCHECKED_SUBJECT).length, 0);
   assert.equal(heldRows(home).length, 0);
   assert.deepEqual(log(hive, 'trust-wait').map((e) => e.way), ['out', 'out']);
+});
+
+test('a check that could not run is not paid for again before its gap', async (t) => {
+  // Value: protects=a down check costs one call per gap, not one per routing tick; fails_when=the retryAt guard in trustCheck goes; why_new=the delay was stubbed to 0 in every other test (ship review 2026-10-17); seam=fake layer
+  HiveManager.trustRetryDelayMs = () => 60_000;
+  t.after(() => { HiveManager.trustRetryDelayMs = () => 0; });
+  const layer = flakyLayer(99);
+  const { hive } = await office(t, layer);
+  send(hive, 'pam', { to: 'research', act: 'query', subject: 'Flour', body: 'Flour prices this month' });
+  await route(hive, 6);
+  assert.equal(layer.calls.inbound, 1, 'no second paid check inside the gap');
+  assert.equal(msgsIn(hive, 'research').filter((m) => m.from === 'pam').length, 0, 'still waiting, nothing went out unchecked');
+});
+
+test('Research turned off while a note waits on a check that could not run: refused as off, never listed as held', async (t) => {
+  // Value: protects=an off Research is not counted as a privacy hold and stops being retried; fails_when=the off guards in queueForResearch go; why_new=no test turned Research off mid wait (ship review 2026-10-17); seam=fake layer
+  let on = true;
+  let calls = 0;
+  let fire;
+  const before = HiveManager.trustRetryDelayMs;
+  HiveManager.trustRetryDelayMs = () => 0;
+  const layer = { inbound: async () => { calls++; if (calls === 2) await new Promise((r) => { fire = r; }); return NO_ANSWER; }, outbound: async (m) => pass(m) };
+  const { hive, home } = await office(t, layer);
+  t.after(() => { HiveManager.trustRetryDelayMs = before; });
+  hive.setResearchEnabled(() => on);
+  hive.rememberOwnerNote('research', 'Focus on flour');
+  await settle();
+  assert.equal(calls, 2, 'the second try is running');
+  on = false;
+  fire();
+  await settle();
+  assert.equal(calls, 2, 'not tried again once Research is off');
+  assert.ok(msgsIn(hive, 'god').some((m) => m.subject === R.NOT_SENT_SUBJECT && m.body.includes(R.researchText(R.REFUSAL_OFF, 'Pete').replace(/^Not sent( to [^:]+)?: /, '').slice(0, 20))), 'Michael hears Research is off');
+  assert.equal(heldRows(home).length, 0, 'an off Research is no privacy hold');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'private', 'research-pending.json'), 'utf8')), []);
+});
+
+test('a note whose check keeps failing is checked again under new privacy settings, never held', async (t) => {
+  // Value: protects=a settings change while the check is down loses no owner note; fails_when=the rejection branch refuses on a policy change; why_new=state machine review, queued x policy change (ship review 2026-10-17); seam=fake layer whose check throws
+  let policy = 'loose';
+  let calls = 0;
+  const layer = {
+    policyKey: () => policy,
+    inbound: async (m) => { calls++; if (calls === 1) { policy = 'strict'; throw new Error('check crashed'); } return pass(m); },
+    outbound: async (m) => pass(m)
+  };
+  const { hive, home } = await office(t, layer);
+  hive.rememberOwnerNote('research', 'Focus on flour');
+  await settle(); await settle();
+  assert.equal(calls, 2, 'checked again under the new settings');
+  assert.ok(msgsIn(hive, 'research').some((m) => /Focus on flour/.test(m.body)));
+  assert.equal(heldRows(home).length, 0);
 });

@@ -413,7 +413,7 @@ test('every office tells every agent the rule with the Research agent\'s current
   assert.doesNotMatch(hive.houseRules(), /Pete/);
   const prompt = hive['injectedPrompt'](
     { id: 'research', name: 'Robin', cwd: '/w/desk', isResearch: true },
-    path.join(hive.root(), 'agents', 'research'), hive.root(), true, true, '/kg', '/w/Biz', undefined, '/kg-root', undefined, { name: 'Harbor Pizza', city: 'Austin', typeName: 'Restaurant', briefing: 'secret plans' }
+    path.join(hive.root(), 'agents', 'research'), hive.root(), true, '/kg', '/w/Biz', undefined, '/kg-root', undefined, { name: 'Harbor Pizza', city: 'Austin', typeName: 'Restaurant', briefing: 'secret plans' }
   );
   assert.match(prompt, /You are Robin, the Research team member at Harbor Pizza in Austin, the one who uses the internet/);
   assert.match(prompt, /cleaned or more general version/);

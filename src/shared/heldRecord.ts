@@ -41,6 +41,8 @@ export interface HeldRow {
 }
 
 /** Rows are kept as long as Pulse keeps raw events (400 days). */
+/** The owner's private record of holds, in the office's private folder. */
+export const HELD_FILE = 'held.jsonl';
 export const HELD_KEEP_MS = 400 * 86_400_000;
 export const HELD_SUBJECT_MAX = 80;
 export const HELD_OPENING_MAX = 300;

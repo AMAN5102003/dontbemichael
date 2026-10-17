@@ -12,6 +12,14 @@
 export const CHECK_IN_MS = 60_000;
 /** Mid work silence, Claude only: its terminal busy, no report this long (SD9). */
 export const QUIET_MS = 3 * 60_000;
+/** One tool call (a long build or test run) sends no report until it ends, so
+ *  a member inside one is not quiet until it has run this long, longer than
+ *  Claude Code's longest shell command (ship review 2026-10-17). */
+export const LONG_TOOL_MS = 15 * 60_000;
+/** A restart, or a member restored after a relaunch, that has not checked in
+ *  this long is settled: a restart that never came back failed, and a restored
+ *  card goes back to how it was, so the card offers its buttons again. */
+export const RESTART_WAIT_MS = 3 * CHECK_IN_MS;
 
 /** Engine versions known never to report to the app (R6): no automatic restart,
  *  the card opens in its "a restart didn't help" state. One test per entry. */
@@ -41,9 +49,11 @@ export function neverReports(engine: string, version: string | null): boolean {
 
 /** Whether anything besides the reports guards a member's files (R2, SD13):
  *  Claude and Codex run in an OS sandbox on a Mac and Linux; Windows has none
- *  (Codex's there is unproven, finding 5); Gemini has none anywhere. */
-export function guardedWithoutReports(engine: string, platform: string): boolean {
-  if (platform === 'win32') return false;
+ *  (Codex's there is unproven, finding 5); Gemini has none anywhere. Research's
+ *  file tools have the reports as their only wall, and it has the internet, so
+ *  a Research that isn't reporting is never left running (owner, 2026-10-17). */
+export function guardedWithoutReports(engine: string, platform: string, isResearch = false): boolean {
+  if (platform === 'win32' || isResearch) return false;
   return engine === 'claude' || engine === 'codex';
 }
 
@@ -71,6 +81,8 @@ export interface SilentEpisode {
   /** A restart was really tried, so the card may say it didn't help. */
   restartTried?: boolean;
   isMichael: boolean;
+  /** Research, the one member with the internet: its own card, no Keep. */
+  isResearch?: boolean;
   since: number;
   /** When the app last heard from it; null when it never checked in. */
   lastCheckInAt: number | null;
@@ -78,12 +90,15 @@ export interface SilentEpisode {
   startedAt: number | null;
   /** The state before the app reopened, while `checking` (SD8). */
   before?: SilentState;
+  /** When a restart or a relaunch began the wait for its check in. */
+  waitSince?: number;
 }
 
 /** One card on Needs you: one engine and version (SD3), or Michael (SD6). */
 export interface SilentCard {
   key: string;
   michael: boolean;
+  research: boolean;
   agentIds: string[];
   state: SilentState;
   kind: SilentKind;
@@ -100,8 +115,8 @@ const RANK: Record<SilentState, number> = { failed: 4, open: 3, checking: 2, res
 /** The card an episode sits on (SD3): one per engine, version and reason
  *  (never checked in, or went quiet mid work), so each card's time line is
  *  true for every name on it; Michael has his own (SD6). */
-export function silentCardKey(e: Pick<SilentEpisode, 'isMichael' | 'engine' | 'version' | 'kind'>): string {
-  return e.isMichael ? 'michael' : `${e.engine}@${e.version ?? ''}:${e.kind}`;
+export function silentCardKey(e: Pick<SilentEpisode, 'isMichael' | 'isResearch' | 'engine' | 'version' | 'kind'>): string {
+  return e.isMichael ? 'michael' : e.isResearch ? 'research' : `${e.engine}@${e.version ?? ''}:${e.kind}`;
 }
 
 /** Whether a newly opened episode gets Michael's desktop notice (SD10): only
@@ -127,6 +142,7 @@ export function silentCards(episodes: SilentEpisode[]): SilentCard[] {
     return {
       key,
       michael: key === 'michael',
+      research: key === 'research',
       agentIds: list.map((e) => e.agentId),
       state: lead.state,
       kind: list.every((e) => e.kind === 'never') ? 'never' : 'quiet',
@@ -141,10 +157,11 @@ export function silentCards(episodes: SilentEpisode[]): SilentCard[] {
   return cards.sort((a, b) => Number(b.michael) - Number(a.michael));
 }
 
-/** The buttons a card offers (SD4, SD5, SD13, R3). */
-export function silentButtons(card: Pick<SilentCard, 'state' | 'stopped' | 'michael'>): Array<'restart' | 'changeEngine' | 'keep'> {
+/** The buttons a card offers (SD4, SD5, SD13, R3). Research is never kept
+ *  working unchecked: Restart is its way back (owner, 2026-10-17). */
+export function silentButtons(card: Pick<SilentCard, 'state' | 'stopped' | 'michael'> & { research?: boolean }): Array<'restart' | 'changeEngine' | 'keep'> {
   if (card.state === 'restarting' || card.state === 'checking' || card.state === 'kept') return [];
-  if (card.michael) return ['restart'];
+  if (card.michael || card.research) return ['restart'];
   if (card.state === 'failed') return ['changeEngine', 'keep'];
   return card.stopped ? ['restart', 'keep'] : ['restart'];
 }

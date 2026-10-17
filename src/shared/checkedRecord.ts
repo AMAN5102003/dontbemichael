@@ -97,7 +97,8 @@ export function splitForArchive(lines: string[], now: number): { keep: string[];
     const r = parseChecked(l);
     if (!r || r.at >= now - CHECKED_KEEP_MS) { keep.push(l); continue; }
     const m = archiveMonth(r.at);
-    archive.set(m, [...(archive.get(m) ?? []), l]);
+    const list = archive.get(m);
+    if (list) list.push(l); else archive.set(m, [l]);
   }
   return { keep, archive };
 }
@@ -106,31 +107,46 @@ export function splitForArchive(lines: string[], now: number): { keep: string[];
 
 export type ChangePart = { op: 'same' | 'del' | 'ins'; text: string };
 
-/** Words and the gaps between them; Intl.Segmenter splits Chinese too. */
+/** Words and the gaps between them; Intl.Segmenter splits Chinese too. One
+ *  segmenter for every call. */
+let segmenter: { segment: (s: string) => Iterable<{ segment: string }> } | null | undefined;
 function tokens(text: string): string[] {
-  const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment: (s: string) => Iterable<{ segment: string }> } }).Segmenter;
-  if (Seg) return Array.from(new Seg(undefined, { granularity: 'word' }).segment(text), (s) => s.segment);
+  if (segmenter === undefined) {
+    const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment: (s: string) => Iterable<{ segment: string }> } }).Segmenter;
+    segmenter = Seg ? new Seg(undefined, { granularity: 'word' }) : null;
+  }
+  if (segmenter) return Array.from(segmenter.segment(text), (s) => s.segment);
   return text.match(/\s+|[^\s]+/g) ?? [];
 }
 
 /** Above this many words a side, no word comparison: the two texts are shown. */
 const MAX_TOKENS = 2500;
 
+/** Spacing only changes count as the same. */
+const keyOf = (t: string): string => (/^\s+$/.test(t) ? ' ' : t);
+
 /** The changes from `a` to `b`, or null when the texts are too long to
- *  compare. Spacing only changes count as the same. */
+ *  compare. Spacing only changes count as the same. The shared opening and
+ *  ending are taken off first, since a cleaned text differs in a few spots,
+ *  and each word's key is worked out once (ship review 2026-10-17). */
 export function wordChanges(a: string, b: string): ChangePart[] | null {
   const x = tokens(a);
   const y = tokens(b);
   if (x.length > MAX_TOKENS || y.length > MAX_TOKENS) return null;
-  const key = (t: string): string => (/^\s+$/.test(t) ? ' ' : t);
-  const n = x.length;
-  const m = y.length;
-  // Longest common run, filled from the end.
+  const kx = x.map(keyOf);
+  const ky = y.map(keyOf);
+  let head = 0;
+  while (head < x.length && head < y.length && kx[head] === ky[head]) head++;
+  let tail = 0;
+  while (tail < x.length - head && tail < y.length - head && kx[x.length - 1 - tail] === ky[y.length - 1 - tail]) tail++;
+  const n = x.length - head - tail;
+  const m = y.length - head - tail;
+  // Longest common run of the middle, filled from the end.
   const w = m + 1;
   const len = new Uint16Array((n + 1) * w);
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {
-      len[i * w + j] = key(x[i]) === key(y[j]) ? len[(i + 1) * w + j + 1] + 1 : Math.max(len[(i + 1) * w + j], len[i * w + j + 1]);
+      len[i * w + j] = kx[head + i] === ky[head + j] ? len[(i + 1) * w + j + 1] + 1 : Math.max(len[(i + 1) * w + j], len[i * w + j + 1]);
     }
   }
   const out: ChangePart[] = [];
@@ -138,15 +154,17 @@ export function wordChanges(a: string, b: string): ChangePart[] | null {
     const last = out[out.length - 1];
     if (last && last.op === op) last.text += text; else out.push({ op, text });
   };
+  for (let k = 0; k < head; k++) push('same', y[k]);
   let i = 0;
   let j = 0;
   while (i < n && j < m) {
-    if (key(x[i]) === key(y[j])) { push('same', y[j]); i++; j++; }
-    else if (len[(i + 1) * w + j] >= len[i * w + j + 1]) { push('del', x[i]); i++; }
-    else { push('ins', y[j]); j++; }
+    if (kx[head + i] === ky[head + j]) { push('same', y[head + j]); i++; j++; }
+    else if (len[(i + 1) * w + j] >= len[i * w + j + 1]) { push('del', x[head + i]); i++; }
+    else { push('ins', y[head + j]); j++; }
   }
-  while (i < n) push('del', x[i++]);
-  while (j < m) push('ins', y[j++]);
+  while (i < n) push('del', x[head + i++]);
+  while (j < m) push('ins', y[head + j++]);
+  for (let k = y.length - tail; k < y.length; k++) push('same', y[k]);
   return out;
 }
 

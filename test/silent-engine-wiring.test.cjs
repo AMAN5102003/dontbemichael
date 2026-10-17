@@ -19,7 +19,7 @@ const read = (rel) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8'
 test('the main process feeds the watch every hook event, the fleet beat and the owner\'s keystrokes, and restores it after the store opens', () => {
   // Value: protects=the watch hears check ins, sees members and leaves typing alone; fails_when=one feed is dropped or the restore runs before the store opens; why_new=new wiring; seam=source pin; no_claim=runtime timing (e2e covers the socket path)
   const main = read('src/main/index.ts');
-  assert.match(main, /workerWake\.noteHook\(agentId, event, message\);\n\s*\/\/ Any event, a Claude status tick included, is a check in \(issue #326\)\.\n\s*silentWatch\?\.noteHook\(agentId\);/);
+  assert.match(main, /workerWake\.noteHook\(agentId, event, message\);\n\s*\/\/ Any event, a Claude status tick included, is a check in \(issue #326\);\n[^\n]*\n\s*silentWatch\?\.noteHook\(agentId, event\);/);
   assert.match(main, /writeFleetSnapshot\(\);\n\s*try \{ silentBeat\(\); \}/);
   assert.match(main, /ptyInputAt\.set\(id, Date\.now\(\)\);\n\s*return ptyManager\.write\(id, data\);/);
   const open = main.indexOf('try { persist.open(); }');
@@ -132,4 +132,57 @@ test('the card\'s words exist in every language, with no dashes, names only (SD2
   assert.equal(en.stillWorking, "{{name}} is still working. The app can't check {{name}}'s folder and tool limits.");
   assert.equal(en.keep, 'Keep working unchecked');
   assert.match(en.info, /^While \{\{name\}\} works, \{\{name\}\}'s AI engine sends the app small reports\./);
+});
+
+// ── Ship review 2026-10-17 ──
+
+test('the main process watches archived members as not running, stops without archiving, and resolves each engine to its binary for the version', () => {
+  // Value: protects=cards survive a relaunch; a stopped member is not live to the breaker or the roster; versions are known so the never reports rule applies; fails_when=archived members are filtered out, the stop skips pausePty, or the bare command reaches the probe; why_new=red team and core review; seam=source pin; no_claim=runtime order at launch
+  const main = read('src/main/index.ts');
+  const beat = main.slice(main.indexOf('function silentBeat(): void {'), main.indexOf('silentWatch.beat(members);'));
+  assert.match(beat, /\.filter\(\(\[, a\]\) => a && !a\.isAssistant\)/);
+  assert.doesNotMatch(beat, /!a\.archived &&/);
+  assert.match(beat, /const s = ptyId && !a\.archived \? sessions\.get\(ptyId\) : undefined;/);
+  assert.match(beat, /running: !!s, pid: s\?\.pid,/);
+  assert.match(beat, /isResearch: id === RESEARCH_ID,/);
+  assert.match(main, /stop: \(m\) => \{ if \(m\.ptyId\) \{ try \{ ptyManager\.kill\(m\.ptyId\); \} catch \{ \/\* already gone \*\/ \} pausePty\(m\.ptyId\); \} \},/);
+  const pause = main.slice(main.indexOf('function pausePty(id: string): void {'), main.indexOf('function teardownPty(id: string): void {'));
+  assert.match(pause, /ptyToAgent\.delete\(id\);/);
+  assert.match(pause, /breaker\.forget\(agentId\)/);
+  assert.doesNotMatch(pause, /setArchived|removeWorktree/, 'not archived, its worktree kept');
+  assert.match(main, /try \{ bin = ptyManager\.commandPath\(command\); \} catch \{ \/\* unknown \*\/ \}\n\s*if \(bin\) void claudeCliVersion\(bin\)/);
+});
+
+test('held copies for Michael: one per message naming every silent member, under its own id, and a silent Research costs no check', async (t) => {
+  // Value: protects=no held copy replaces Michael's own broadcast copy or another held one; a question for a silent Research waits with Michael before any paid check and nobody is told it was sent; fails_when=held copies reuse the message id, one copy is made per member, or the inbound gate checks first; why_new=red team review; seam=fake trust layer
+  const electron = require.resolve('electron');
+  require.cache[electron] = { id: electron, filename: electron, loaded: true, exports: { Notification: class { show() {} static isSupported() { return false; } } } };
+  const { HiveManager } = loadTs('src/main/hive.ts');
+  const R = loadTs('src/shared/research.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-silent-held-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  for (const [id, name] of [['kelly', 'Kelly'], ['dwight', 'Dwight'], ['pam', 'Pam']]) await hive.ensureAgent({ id, name, provider: 'claude', cwd: home });
+  await hive.ensureAgent({ id: 'research', name: 'Pete', provider: 'claude', cwd: path.join(home, 'desk'), isResearch: true });
+  hive.setResearchEnabled(() => true);
+  let checks = 0;
+  hive.setTrustLayer({ inbound: async (m) => { checks++; return { decision: 'pass', subject: m.subject, body: m.body }; }, outbound: async (m) => ({ decision: 'pass', subject: m.subject, body: m.body, flagged: false }) });
+  hive.memberMail = (id) => (['kelly', 'dwight', 'research'].includes(id) ? 'hold' : null);
+  const dir = (id) => path.join(hive.root(), 'agents', id, 'inbox');
+  const msgs = (id) => (fs.existsSync(dir(id)) ? fs.readdirSync(dir(id)).filter((f) => f.endsWith('.json')).map((f) => ({ file: f, ...JSON.parse(fs.readFileSync(path.join(dir(id), f), 'utf8')) })) : []);
+  hive.send({ to: 'broadcast', act: 'inform', subject: 'Office closes early', body: 'At 3 pm today' }, 'human');
+  const forMichael = msgs('god').filter((m) => /Office closes early/.test(m.subject));
+  const held = forMichael.filter((m) => m.subject.startsWith('[held:'));
+  assert.equal(held.length, 1, 'one held copy for the two silent members');
+  assert.match(held[0].subject, /^\[held: "Kelly", "Dwight" aren't reporting to the app; route this to someone else, or send it to them again once they report\]/);
+  assert.ok(held[0].id.endsWith('-held'));
+  assert.ok(forMichael.some((m) => !m.subject.startsWith('[held:')), 'Michael\'s own copy of the broadcast is still there');
+  assert.ok(msgs('pam').some((m) => m.subject === 'Office closes early'));
+  fs.writeFileSync(path.join(hive.root(), 'agents', 'pam', 'outbox', 'q.json'), JSON.stringify({ to: 'research', act: 'query', subject: 'Flour', body: 'Flour prices' }));
+  hive.routeOnce(); await new Promise((r) => setTimeout(r, 20)); hive.routeOnce();
+  assert.equal(checks, 0, 'no check paid for a question Research can\'t take now');
+  assert.ok(msgs('god').some((m) => /^\[held: "Pete" isn't reporting to the app/.test(m.subject) && /Flour/.test(m.subject)));
+  assert.equal(msgs('pam').filter((m) => m.subject === R.SENT_AS_SUBJECT).length, 0, 'Pam is not told it reached Pete');
+  assert.equal(msgs('research').length, 0);
 });

@@ -63,7 +63,9 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
 
 /** Opens the panel wide in the center of the window and back (wide panel WD6,
  *  WD7). The choice is remembered; the button keeps focus as it switches. */
-export function WideButton({ disabled = false }: { disabled?: boolean }) {
+/** `size` matches the header it sits in: 32 in a panel header, 30 beside a
+ *  dialog's close button (design review). */
+export function WideButton({ disabled = false, size = 32 }: { disabled?: boolean; size?: number }) {
   const { t } = useTranslation();
   const wide = useStore((s) => s.panelWide);
   const label = wide ? t('panel.backToSide') : t('panel.openWide');
@@ -76,7 +78,7 @@ export function WideButton({ disabled = false }: { disabled?: boolean }) {
       aria-label={label}
       aria-pressed={wide}
       title={label}
-      style={{ ...headerBtn, width: 32, padding: 0, justifyContent: 'center', color: 'var(--cth-ink-2)', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+      style={{ ...headerBtn, width: size, height: size, padding: 0, justifyContent: 'center', color: 'var(--cth-ink-2)', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}
     >
       <Icon name={wide ? 'minimize' : 'expand'} />
     </button>

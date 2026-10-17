@@ -2612,6 +2612,7 @@
       },
       "inAll": "{{notes}} notes and {{procedures}} written ways of working in all",
       "tooFewRate": "Too few requests to tell yet.",
+      "tooFewBefore": "{{before}} had too few requests to tell.",
       "counts": "{{asks}} questions in {{turns}} requests"
     },
     "work": {
@@ -2693,7 +2694,8 @@
         "head": {
           "clean": "{{who}} to {{research}} had private parts taken out",
           "stop": "{{who}} to {{research}} was stopped",
-          "pass": "{{who}} to {{research}} went as written"
+          "pass": "{{who}} to {{research}} went as written",
+          "rewritten": "{{who}} to {{research}} was mostly rewritten"
         },
         "next": {
           "clean": {

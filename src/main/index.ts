@@ -8,6 +8,7 @@ import {
   unlinkSync, mkdirSync, renameSync, createWriteStream, copyFileSync, lstatSync,
   readlinkSync, symlinkSync, realpathSync, watch as watchFs
 } from 'node:fs';
+import { promises as fsPromises } from 'node:fs';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { join, resolve, sep, basename, dirname, isAbsolute } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
@@ -40,6 +41,7 @@ import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
 import { CHECKED_FILE } from '../shared/checkedRecord';
+import { HELD_FILE } from '../shared/heldRecord';
 import { ensureCheckedBackfill } from './checkedBackfill';
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
 import { normalizeTimes, timesDelayMs } from '../shared/scheduleTimes';
@@ -474,8 +476,9 @@ const hookServer = new HookServer(
       else if (event === 'Stop') pulseTelemetry.record({ agentId, kind: 'stop', ts: Date.now() });
     }
     workerWake.noteHook(agentId, event, message);
-    // Any event, a Claude status tick included, is a check in (issue #326).
-    silentWatch?.noteHook(agentId);
+    // Any event, a Claude status tick included, is a check in (issue #326);
+    // the event name tells it when a long tool call starts and ends.
+    silentWatch?.noteHook(agentId, event);
     safeClearer.noteHook(agentId, event, message);
     if (agentId && event === 'UserPromptSubmit') promptSubmits.note(agentId);
     if (agentId && (event === 'Notification' || event === 'PermissionRequest')) promptSubmits.noteAttention(agentId);
@@ -556,14 +559,19 @@ const persist = new PersistStore();
 const SILENT_KV_KEY = 'silent.episodes';
 /** pty id → the owner's last keystroke into it (pty:write). */
 const ptyInputAt = new Map<string, number>();
-/** Engine versions per resolved binary path, probed once in the background. */
+/** Engine versions per command, probed once in the background. A terminal
+ *  keeps the bare command it was started with ('claude', 'gemini'), so it is
+ *  resolved to its binary the way the spawn resolved it; the probe reads only
+ *  a real path (ship review 2026-10-17: versions were always unknown). */
 const silentVersions = new Map<string, string | null>();
-function silentVersion(bin: string): string | null {
-  if (!silentVersions.has(bin)) {
-    silentVersions.set(bin, null);
-    void claudeCliVersion(bin).then((v) => { silentVersions.set(bin, v); }).catch(() => { /* unknown */ });
+function silentVersion(command: string): string | null {
+  if (!silentVersions.has(command)) {
+    silentVersions.set(command, null);
+    let bin: string | null = null;
+    try { bin = ptyManager.commandPath(command); } catch { /* unknown */ }
+    if (bin) void claudeCliVersion(bin).then((v) => { silentVersions.set(command, v); }).catch(() => { /* unknown */ });
   }
-  return silentVersions.get(bin) ?? null;
+  return silentVersions.get(command) ?? null;
 }
 function silentName(agentId: string): string {
   try { return hive.registry().agents[agentId]?.name || agentId; } catch { return agentId; }
@@ -576,7 +584,7 @@ function silentNoteToMichael(subject: string, body: string): void {
 function silentNotice(e: SilentEpisode): void {
   if (!readConfig().notifications) return;
   const name = silentName(e.agentId);
-  const title = e.isMichael ? (readConfig().businessName || "Don't Be Michael") : michaelName();
+  const title = e.isMichael ? (readConfig().businessName || APP_NAME) : michaelName();
   const body = `${name} isn't reporting to the app. ${name} is still working, but the app can't check ${name}'s folders and tools.`;
   try {
     if (!Notification.isSupported()) return;
@@ -603,9 +611,10 @@ silentWatch = new SilentWatch({
     }
     return true;
   },
-  // End its terminal (R1). Only the process: teardownPty would archive the
-  // member and drop it off its own card; Restart & Continue tears down on resume.
-  stop: (m) => { if (m.ptyId) { try { ptyManager.kill(m.ptyId); } catch { /* already gone */ } } },
+  // End its terminal (R1) and everything that counts it as live (the breaker,
+  // the roster, fleet.json, its mail token), but not teardownPty's archive,
+  // which would drop it off its own card; Restart & Continue starts it again.
+  stop: (m) => { if (m.ptyId) { try { ptyManager.kill(m.ptyId); } catch { /* already gone */ } pausePty(m.ptyId); } },
   changed: (episodes) => {
     try { persist.setKv(SILENT_KV_KEY, episodes); } catch { /* the store may not be open yet */ }
     try { liveWebContents()?.send('silent:changed', episodes); } catch { /* window gone */ }
@@ -619,7 +628,9 @@ silentWatch = new SilentWatch({
           `${name}'s engine stopped reporting to the app, so the app can't check ${name}'s folders and tools. Until it reports again, ${name}'s new mail comes to you. Give ${name} no new cards; route the work to someone else or let it wait. The owner has a card on Needs you.`);
       }
     } else if (type === 'resolved' && !episode.isMichael) {
-      silentNoteToMichael(`${name} is reporting again`, `${name} is reporting to the app again. Work can go to ${name} as usual.`);
+      silentNoteToMichael(`${name} is reporting again`, `${name} is reporting to the app again. Work can go to ${name} as usual. Mail held for ${name} while it wasn't reporting came to you: send ${name} what still needs doing.`);
+    } else if (type === 'dropped' && !episode.isMichael) {
+      silentNoteToMichael(`${name} is on an engine the app doesn't watch`, `${name} now runs on an engine that sends the app no reports, so the app no longer watches it. Work can go to ${name} as usual. Mail held for ${name} came to you: send ${name} what still needs doing.`);
     } else if (type === 'kept') {
       silentNoteToMichael(`${name} works unchecked`, `The owner chose to keep ${name} working without the app's checks. Work can go to ${name} again; it reaches ${name} through the terminal.`);
     }
@@ -631,17 +642,20 @@ function silentBeat(): void {
   const reg = hive.registry();
   const sessions = new Map(ptyManager.list().map((s) => [s.id, s]));
   const godId = reg.godId ?? 'god';
-  const members: WatchMember[] = Object.entries(reg.agents ?? {}).filter(([, a]) => a && !a.archived && !a.isAssistant).map(([id, a]) => {
+  // Archived members too, as not running: a card outlives a relaunch, a break
+  // or a closed tab (SD8), and goes only with the member.
+  const members: WatchMember[] = Object.entries(reg.agents ?? {}).filter(([, a]) => a && !a.isAssistant).map(([id, a]) => {
     const ptyId = ptyForAgent(id) ?? '';
-    const s = ptyId ? sessions.get(ptyId) : undefined;
+    const s = ptyId && !a.archived ? sessions.get(ptyId) : undefined;
     const provider = (a.provider ?? 'claude') as AgentProvider;
     const claude = isClaudeProvider(provider);
     return {
-      id, ptyId, running: !!s,
+      id, ptyId, running: !!s, pid: s?.pid,
       engine: claude ? 'claude' : provider,
       engineLabel: providerPreset(provider).label,
       version: s?.command ? silentVersion(s.command) : null,
       isMichael: id === godId,
+      isResearch: id === RESEARCH_ID,
       reports: claude || !!bridgeOf(provider),
       statusTicks: claude,
       hasOutput: !!s?.hasOutput,
@@ -725,7 +739,7 @@ const pulse = new PulseService({
     const home = readConfig().harnessHome;
     if (!home) return '';
     // The same path the hive writes to (hive.ts recordHeld uses the home as configured).
-    try { return readFileSync(join(privateRoot(home), 'held.jsonl'), 'utf8'); } catch { return ''; }
+    try { return readFileSync(join(privateRoot(home), HELD_FILE), 'utf8'); } catch { return ''; }
   },
   readChecked: () => {
     const home = readConfig().harnessHome;
@@ -741,7 +755,8 @@ const pulse = new PulseService({
       });
     } catch (e) { console.error('[pulse] filling in earlier checks', e); }
     // No file yet is an empty record; any other failure is the list's error (DD5).
-    try { return readFileSync(join(privateRoot(home), CHECKED_FILE), 'utf8'); } catch (e) { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; }
+    // Read without blocking the main process (ship review 2026-10-17).
+    return fsPromises.readFile(join(privateRoot(home), CHECKED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
   }
 });
 // The office log kinds Pulse counts, and the board each tick reads.
@@ -1123,6 +1138,23 @@ const preservedWorktrees = new Map<string, PreservedWorktree>();
  * step is wrapped so a teardown error can never crash the caller (an IPC
  * handler or node-pty's onExit).
  */
+/** A terminal stopped by the not reporting watch (issue #326, R1): what
+ *  counts it as live goes (its mail token, the map that makes it live for the
+ *  breaker, the roster and fleet.json, the watchdog and breaker state), but
+ *  it is not archived and its worktree stays, since it is started again. */
+function pausePty(id: string): void {
+  const agentId = ptyToAgent.get(id);
+  try { removeMdMailMcp(agentId ?? id); } catch { /* best-effort */ }
+  try { integrationBroker.revoke(id); } catch { /* best-effort */ }
+  if (!agentId) return;
+  ptyToAgent.delete(id);
+  try { workerWake.forget(agentId, id); } catch { /* best-effort */ }
+  try { breaker.forget(agentId); } catch { /* best-effort */ }
+  // The restart is a new terminal with its own usage counter.
+  try { telemetry.forgetAgent(agentId); } catch { /* best-effort */ }
+  try { hive.stopProxyBridge(agentId); } catch { /* best-effort */ }
+}
+
 function teardownPty(id: string): void {
   // Ephemeral-worker flag, read BEFORE the cleanup below deletes the entry. All
   // worker deaths (done-release, idle/token reap, manual stop, crash) funnel
@@ -4137,7 +4169,6 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           // Research's walls (eng review R1): no shared memory, no company
           // knowledge, no business folder, no default servers, no connectors;
           // the business's name, type and city only.
-          semanticMemory: false,
           knowledgeGraph: false,
           theme: readConfig().terminalTheme ?? 'light',
           mcpDefaults: Object.fromEntries(MCP_CATALOG.map((m) => [m.id, { enabled: false }])),
@@ -4159,7 +4190,6 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
             homedir()
           )
         } : {
-          semanticMemory: memory.active(),
           knowledgeGraph: knowledge.active(),
           // Bake the ABSOLUTE KG CLI path into the agent's prompt. The prompt used
           // to spell it `$KG_CLI`, which is POSIX-only: under cmd.exe/PowerShell it

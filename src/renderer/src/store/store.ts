@@ -23,7 +23,7 @@ import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
 import { canOpen } from '../shell/closingFloor';
 import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
-import { attemptLeave } from './leaveGuard';
+import { afterLeave, attemptLeave } from './leaveGuard';
 
 export type ToolKind =
   | 'Read' | 'Edit' | 'Write' | 'Bash' | 'WebFetch' | 'WebSearch'
@@ -349,6 +349,8 @@ interface State {
    *  Change engine, issue #326): its panel opens and Edit with it. */
   editAgentRequest: { agentId: string; engine: boolean; seq: number } | null;
   requestEditAgent: (agentId: string, opts?: { engine?: boolean }) => void;
+  /** Edit opened for the request: it is used once (ship review 2026-10-17). */
+  clearEditAgentRequest: () => void;
   closeTaskDetail: () => void;
   /** One-shot prefill for the Command Center's dispatch box (a task detail's
    *  "assign" from anywhere in the app). seq-keyed like ccTabRequest. */
@@ -1219,8 +1221,11 @@ export const useStore = create<State>((set, get) => ({
   editAgentRequest: null,
   requestEditAgent: (agentId, opts) => {
     get().select(agentId);
-    set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, seq: (s.editAgentRequest?.seq ?? 0) + 1 } }));
+    // After the select applies, so Keep editing drops the request with it; the
+    // panel clears it once it opens Edit (ship review 2026-10-17).
+    afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
   },
+  clearEditAgentRequest: () => set({ editAgentRequest: null }),
   closeTaskDetail: () => set({ taskDetailId: null }),
   dispatchSeedRequest: null,
   requestDispatchSeed: (text) =>

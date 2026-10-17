@@ -377,6 +377,8 @@ export function PulseView() {
             </div>
             {/* A span under 20 requests draws no bar and reads "…" (eng O2). */}
             {pl && (pl.per100 !== null || rate !== null) && pair(pl.per100, rate, t('pulse.learning.questionsSub'), 'var(--cth-ink-2)', (v) => v.toFixed(1))}
+            {/* The earlier bar's "…" says why (pulse compare v2). */}
+            {pl && pl.per100 === null && rate !== null && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.tooFewBefore', { before: pairLabels[0] })}</div>}
           </div>
           {/* One total (owner, 2026-10-15): who spent what is Team at work's job.
               Plan use sits at the foot of the same tile, as a bar, so the tile
@@ -751,6 +753,9 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
   const [whole, setWhole] = useState<Set<number>>(new Set());
   const when = whenOf(i18n.language);
   const rows = data?.rows ?? [];
+  // Each changed row's word comparison, once per list read, not on every
+  // redraw (ship review 2026-10-17).
+  const diffs = useMemo(() => new Map((data?.rows ?? []).filter((r) => r.sent).map((r) => [r, wordChanges(joinText(r.wrote), joinText(r.sent!))] as const)), [data]);
   const asWritten = (r: CheckedRow): boolean => r.outcome === 'pass' && !r.flagged;
   const top = rows.filter((r) => !asWritten(r));
   const rest = rows.filter(asWritten);
@@ -760,7 +765,9 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
       const research = r.toName ?? r.to;
       const who = r.from === 'human' ? t('pulse.checked.q.who.you') : r.from === 'system' ? t('pulse.checked.q.who.app')
         : r.from === 'god' ? t('pulse.checked.q.who.michael') : t('pulse.checked.q.who.member', { from: r.fromName ?? r.from });
-      return t(`pulse.checked.q.head.${r.outcome}`, { who, research });
+      // A question shown as two texts was mostly rewritten (checked lists v2).
+      const rewritten = r.outcome === 'clean' && !!r.sent && !showAsMarks(diffs.get(r) ?? null);
+      return t(`pulse.checked.q.head.${rewritten ? 'rewritten' : r.outcome}`, { who, research });
     }
     const research = r.fromName ?? r.from;
     const toName = ['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to;
@@ -778,7 +785,7 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
   };
   const body = (r: CheckedRow, k: number): ReactNode => {
     if (!r.sent) return <div dir="auto" style={textStyle}>{joinText(r.wrote)}</div>;
-    const parts = wordChanges(joinText(r.wrote), joinText(r.sent));
+    const parts = diffs.get(r) ?? null;
     if (!showAsMarks(parts)) {
       // Mostly rewritten, or too long to compare: the two texts (DD1).
       const sender = way === 'in' ? (r.fromName ?? (r.from === 'human' ? t('pulse.checked.q.who.you') : t('pulse.checked.q.who.app'))) : (r.fromName ?? r.from);

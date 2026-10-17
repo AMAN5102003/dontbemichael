@@ -448,7 +448,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       title={wide ? (
         <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <PersonAvatar who={agent} size={28} />
-          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('editAgent.titleWide', { name: agent.name })}</span>
+          <span style={{ fontSize: 15, letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('editAgent.titleWide', { name: agent.name })}</span>
           <span style={{ fontSize: 12, fontWeight: 400, letterSpacing: 0, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleOf(agent)}</span>
         </span>
       ) : t('editAgent.title')}
@@ -464,7 +464,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       // the margins does nothing (WD4, WD8).
       below={wide}
       dim={!wide}
-      actions={inColumn ? <WideButton disabled={busy} /> : undefined}
+      actions={inColumn ? <WideButton disabled={busy} size={30} /> : undefined}
       footer={(
         <>
           <PixelButton variant="ghost" size="md" onClick={requestClose}>{t('editAgent.cancel')}</PixelButton>
@@ -529,6 +529,9 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
         onClose={keepEditing}
         width={380}
         zIndex={600}
+        // Wide, the Needs you pill stays bright above it, as it does above
+        // the wide panel (WD8).
+        below={wide}
         footer={(
           <>
             <PixelButton variant="ghost" size="md" onClick={discard}>{t('editAgent.discard')}</PixelButton>

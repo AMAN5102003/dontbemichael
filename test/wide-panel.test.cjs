@@ -155,8 +155,11 @@ test('the move animates a transform only, snaps with reduced motion, and the dia
   // Value: protects=WD9 and eng 1, Edit never left at the side box; fails_when=the move animates layout, runs with reduced motion, or Dialog stops following the panel; why_new=new motion; seam=source pin, motion is a live check
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /window\.matchMedia\?\.\('\(prefers-reduced-motion: reduce\)'\)\.matches\) return;/);
-  assert.match(app, /el\.style\.transition = 'transform var\(--cth-dur-slow\) var\(--cth-ease\)';/);
-  assert.match(app, /window\.dispatchEvent\(new CustomEvent\(PANEL_MOVE_EVENT, \{ detail: \{ ms: 320 \} \}\)\);/);
+  assert.match(app, /el\.style\.transition = `transform \$\{PANEL_MOVE_MS\}ms var\(--cth-ease\)`;/);
+  assert.match(app, /window\.dispatchEvent\(new CustomEvent\(PANEL_MOVE_EVENT, \{ detail: \{ ms: PANEL_MOVE_MS \} \}\)\);/);
+  // The move's length is the slow motion token's, so Dialog follows the real move.
+  const ms = Number(/export const PANEL_MOVE_MS = (\d+);/.exec(read('src/renderer/src/shell/Dialog.tsx'))?.[1]);
+  assert.equal(`${ms}ms`, /--cth-dur-slow: (\d+ms);/.exec(read('src/renderer/src/design/tokens.css'))?.[1]);
   assert.match(app, /const keep = \(\): void => \{ columnBox\.current = \{ l: el\.offsetLeft/, 'boxes read without transforms, so a resize never animates');
   const dialog = read('src/renderer/src/shell/Dialog.tsx');
   assert.match(dialog, /window\.addEventListener\(PANEL_MOVE_EVENT, onMove\);/);
@@ -172,7 +175,7 @@ test('Edit agent: wide in two columns with who it is in the title, the question 
   assert.match(src, /onClose=\{requestClose\}/, '✕ and Esc ask');
   assert.match(src, /<PixelButton variant="ghost" size="md" onClick=\{requestClose\}>\{t\('editAgent\.cancel'\)\}/, 'Cancel asks');
   assert.match(src, /below=\{wide\}\s*dim=\{!wide\}/, 'wide: under the top bar, margins never close');
-  assert.match(src, /actions=\{inColumn \? <WideButton disabled=\{busy\} \/> : undefined\}/, 'busy disables the switch too');
+  assert.match(src, /actions=\{inColumn \? <WideButton disabled=\{busy\} size=\{30\} \/> : undefined\}/, 'busy disables the switch too');
   assert.match(src, /t\('editAgent\.titleWide', \{ name: agent\.name \}\)/);
   assert.match(src, /<PersonAvatar who=\{agent\} size=\{28\} \/>/);
   assert.match(src, /<PixelButton variant="primary" size="md" onClick=\{keepEditing\} autoFocus>\{t\('editAgent\.keepEditing'\)\}/, 'Keep editing is the default');
@@ -194,4 +197,32 @@ test('the wide panel strings exist in every language, with no dashes', () => {
     assert.match(j.editAgent.titleWide, /\{\{name\}\}/);
     assert.match(j.editAgent.discardTitle, /\{\{name\}\}/);
   }
+});
+
+test('a focus move waits with the panel change: Keep editing drops both, a released guard runs both in order', () => {
+  // Value: protects=focus never leaves Edit for a panel that did not open, and follows one that did; fails_when=afterLeave runs past a held change or is kept after Keep editing; why_new=state machine review, two untested cells (ship review 2026-10-17); seam=none
+  const state = { dirty: true, asked: 0 };
+  let release = editGuard(state);
+  const done = [];
+  guard.attemptLeave(toBoard, () => done.push('board'));
+  guard.afterLeave(() => done.push('focus'));
+  guard.answerLeave(false);
+  assert.deepEqual(done, [], 'Keep editing drops the focus move too');
+  guard.afterLeave(() => done.push('later'));
+  assert.deepEqual(done, ['later'], 'with nothing waiting, it runs at once');
+  release();
+  done.length = 0;
+  release = editGuard(state);
+  guard.attemptLeave(toBoard, () => done.push('board'));
+  guard.afterLeave(() => done.push('focus'));
+  release();
+  assert.deepEqual(done, ['board', 'focus']);
+});
+
+test('Change engine\'s Edit request waits with the select and is used once', () => {
+  // Value: protects=Keep editing never leaves an Edit request that opens later by itself, and a request opens Edit once; fails_when=requestEditAgent sets the request outside the guarded path, or the panel never clears it; why_new=maintainability and state machine reviews (ship review 2026-10-17); seam=source pin, the store needs a window
+  const store = read('src/renderer/src/store/store.ts');
+  assert.match(store, /requestEditAgent: \(agentId, opts\) => \{\n\s*get\(\)\.select\(agentId\);\n(\s*\/\/[^\n]*\n)*\s*afterLeave\(\(\) => set\(\(s\) => \(\{ editAgentRequest: \{ agentId, engine: !!opts\?\.engine/);
+  assert.match(store, /clearEditAgentRequest: \(\) => set\(\{ editAgentRequest: null \}\),/);
+  assert.match(read('src/renderer/src/components/AgentDetailPanel.tsx'), /setEditEngine\(editRequest\.engine\); setEditOpen\(true\); clearEditRequest\(\); \}/);
 });

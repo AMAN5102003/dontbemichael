@@ -8,18 +8,23 @@
  * Every side effect is passed in, so the tests drive it with a fake clock.
  * Built on PR #345's watchdog (thanks to its author), with the owner's rules.
  */
-import { CHECK_IN_MS, QUIET_MS, neverReports, guardedWithoutReports, type SilentEpisode, type SilentState } from '../shared/silentEngine';
+import { CHECK_IN_MS, LONG_TOOL_MS, QUIET_MS, RESTART_WAIT_MS, neverReports, guardedWithoutReports, type SilentEpisode, type SilentState } from '../shared/silentEngine';
 
 export interface WatchMember {
   id: string;
   /** Its terminal id; '' when it has none. */
   ptyId: string;
-  /** False when no terminal runs now (stopped, or not started yet). */
+  /** False when no terminal runs now (stopped, archived, or not started yet). */
   running: boolean;
+  /** The process behind the terminal: a new one (a restart from anywhere, the
+   *  terminal id is kept) checks in afresh (ship review 2026-10-17). */
+  pid?: number;
   engine: string;
   engineLabel: string;
   version: string | null;
   isMichael: boolean;
+  /** Research: stopped wherever it isn't reporting, never kept (owner, 2026-10-17). */
+  isResearch?: boolean;
   /** Its engine has a bridge that reports to the app; a hookless custom command
    *  is never watched (R4). */
   reports: boolean;
@@ -45,16 +50,24 @@ export interface WatchDeps {
   /** Episodes changed: save them and tell the window. */
   changed: (episodes: SilentEpisode[]) => void;
   /** A member's story moved on: Michael and the owner hear (SD10, SD12). */
-  event: (e: { type: 'opened' | 'resolved' | 'kept'; episode: SilentEpisode }) => void;
+  /** `dropped`: it now runs an engine the app doesn't watch, so its card goes. */
+  event: (e: { type: 'opened' | 'resolved' | 'kept' | 'dropped'; episode: SilentEpisode }) => void;
 }
 
 interface Watch {
   ptyId: string;
+  pid?: number;
+  /** A tool call under way since then (PreToolUse with no end yet): no report
+   *  comes until it ends, so it is no sign of silence (LONG_TOOL_MS). */
+  toolSince: number | null;
   firstOutputAt: number | null;
   lastHookAt: number | null;
   /** The finding held on the previous beat (two beats in a row, SD9). */
   pending: boolean;
 }
+
+/** Hook events that end a tool call (or the turn around it). */
+const TOOL_ENDS: ReadonlySet<string> = new Set(['PostToolUse', 'PostToolUseFailure', 'Stop', 'StopFailure', 'SubagentStop', 'SessionStart', 'SessionEnd', 'UserPromptSubmit']);
 
 export class SilentWatch {
   private watches = new Map<string, Watch>();
@@ -66,11 +79,12 @@ export class SilentWatch {
   /** Episodes saved before the app quit (SD8): kept ones stay kept; the rest
    *  wait for the restored member to check in. */
   restore(saved: SilentEpisode[]): void {
+    const now = this.deps.now();
     for (const e of saved) {
       if (!e?.agentId) continue;
       this.episodes.set(e.agentId, e.state === 'kept'
         ? { ...e, stopped: false }
-        : { ...e, before: e.state === 'checking' ? e.before ?? 'open' : e.state, state: 'checking', stopped: false });
+        : { ...e, before: e.state === 'checking' ? e.before ?? 'open' : e.state, state: 'checking', stopped: false, waitSince: now });
     }
     this.publish();
   }
@@ -79,10 +93,15 @@ export class SilentWatch {
   episode(agentId: string): SilentEpisode | undefined { return this.episodes.get(agentId); }
 
   /** Every validated hook event, Claude's status ticks included (hooks.ts onEvent). */
-  noteHook(agentId: string | undefined, at = this.deps.now()): void {
+  noteHook(agentId: string | undefined, event?: string, at = this.deps.now()): void {
     if (!agentId) return;
     const w = this.watches.get(agentId);
-    if (w) { w.lastHookAt = at; w.pending = false; } else this.early.set(agentId, at);
+    if (w) {
+      w.lastHookAt = at;
+      w.pending = false;
+      if (event === 'PreToolUse') w.toolSince = at;
+      else if (event && TOOL_ENDS.has(event)) w.toolSince = null;
+    } else this.early.set(agentId, at);
     const ep = this.episodes.get(agentId);
     if (ep) {
       this.episodes.delete(agentId);
@@ -91,7 +110,9 @@ export class SilentWatch {
     }
   }
 
-  /** The fleet beat (every 8 s): every non archived member, running or not. */
+  /** The fleet beat (every 8 s): every member in the registry, archived ones
+   *  included (not running), so a card outlives a relaunch, a break or a closed
+   *  tab and goes only with the member (SD8; ship review 2026-10-17). */
   beat(members: readonly WatchMember[]): void {
     const now = this.deps.now();
     let dirty = false;
@@ -101,21 +122,41 @@ export class SilentWatch {
     for (const id of [...this.watches.keys()]) if (!present.has(id)) this.watches.delete(id);
 
     for (const m of members) {
-      if (!m.reports) continue;
-      const ep = this.episodes.get(m.id);
+      let ep = this.episodes.get(m.id);
+      if (!m.reports) {
+        // Now on an engine the app doesn't watch: no report can end its card.
+        this.watches.delete(m.id);
+        if (ep) { this.episodes.delete(m.id); this.deps.event({ type: 'dropped', episode: ep }); dirty = true; }
+        continue;
+      }
       // A kept member's choice ends when its engine version changes (SD5).
       if (ep?.state === 'kept' && m.version && ep.version && m.version !== ep.version) {
         this.episodes.delete(m.id);
+        ep = undefined;
+        dirty = true;
+      }
+      // A restart that never came back, or a restored member never started:
+      // settled, so the card offers its buttons again.
+      if (ep && (ep.state === 'restarting' || ep.state === 'checking') && ep.waitSince !== undefined && now - ep.waitSince >= RESTART_WAIT_MS) {
+        if (ep.state === 'restarting') { ep.state = 'failed'; ep.restartTried = true; }
+        else { ep.state = ep.before && ep.before !== 'restarting' && ep.before !== 'checking' ? ep.before : 'open'; delete ep.before; }
+        delete ep.waitSince;
+        if (m.running) this.maybeStop(m, ep);
         dirty = true;
       }
       if (!m.running || !m.ptyId) continue;
       let w = this.watches.get(m.id);
-      if (!w || w.ptyId !== m.ptyId) {
-        // A new terminal (a start or a restart) checks in afresh.
-        w = { ptyId: m.ptyId, firstOutputAt: null, lastHookAt: this.early.get(m.id) ?? null, pending: false };
+      if (!w || w.ptyId !== m.ptyId || (m.pid !== undefined && w.pid !== undefined && w.pid !== m.pid)) {
+        // A new terminal or a new process behind it (a start or a restart from
+        // anywhere) checks in afresh.
+        const fresh = !!w;
+        w = { ptyId: m.ptyId, pid: m.pid, firstOutputAt: null, lastHookAt: this.early.get(m.id) ?? null, pending: false, toolSince: null };
         this.early.delete(m.id);
         this.watches.set(m.id, w);
-      }
+        // Its card waits on the new process, on the engine it runs now.
+        if (fresh && ep && ep.state !== 'kept') dirty = this.restarted(m, ep, now) || dirty;
+        else if (ep?.stopped) { ep.stopped = false; dirty = true; }
+      } else if (w.pid === undefined && m.pid !== undefined) w.pid = m.pid;
       // The clock starts at the first real output, not at spawn (outside voice 1).
       if (m.hasOutput && w.firstOutputAt === null) w.firstOutputAt = now;
       const kind = this.silence(m, w, now);
@@ -131,6 +172,7 @@ export class SilentWatch {
       return w.firstOutputAt !== null && now - w.firstOutputAt >= CHECK_IN_MS ? 'never' : null;
     }
     if (!m.statusTicks) return null;
+    if (w.toolSince !== null && now - w.toolSince < LONG_TOOL_MS) return null;
     const busy = m.lastOutputAt > w.lastHookAt && now - m.lastOutputAt < QUIET_MS;
     const typing = m.lastInputAt > 0 && now - m.lastInputAt < QUIET_MS;
     return busy && !typing && now - w.lastHookAt >= QUIET_MS ? 'quiet' : null;
@@ -154,7 +196,7 @@ export class SilentWatch {
     }
     const fresh: SilentEpisode = {
       agentId: m.id, kind, state: 'open', engine: m.engine, engineLabel: m.engineLabel, version: m.version,
-      stopped: false, isMichael: m.isMichael, since: now, lastCheckInAt: w.lastHookAt, startedAt: w.firstOutputAt
+      stopped: false, isMichael: m.isMichael, ...(m.isResearch ? { isResearch: true } : {}), since: now, lastCheckInAt: w.lastHookAt, startedAt: w.firstOutputAt
     };
     this.episodes.set(m.id, fresh);
     if (kind === 'never' && neverReports(m.engine, m.version)) {
@@ -165,10 +207,25 @@ export class SilentWatch {
       // The restart reuses the terminal id, so its watch starts afresh.
       fresh.state = 'restarting';
       fresh.restartTried = true;
+      fresh.waitSince = now;
       this.watches.delete(m.id);
     }
     this.deps.event({ type: 'opened', episode: fresh });
     this.maybeStop(m, fresh);
+    return true;
+  }
+
+  /** A member started again outside its card (Restart and Continue, a stuck
+   *  restart, Change engine): its card waits on the new process like a
+   *  restart, and a stop no longer holds, since its terminal runs again. */
+  private restarted(m: WatchMember, ep: SilentEpisode, now: number): boolean {
+    ep.stopped = false;
+    if (ep.state === 'checking') return true;
+    if (ep.state !== 'restarting') { ep.state = 'restarting'; ep.restartTried = true; }
+    ep.engine = m.engine;
+    ep.engineLabel = m.engineLabel;
+    if (m.version) ep.version = m.version;
+    ep.waitSince = now;
     return true;
   }
 
@@ -182,7 +239,7 @@ export class SilentWatch {
    *  R2). Never Michael, never while a restart runs. */
   private maybeStop(m: WatchMember, ep: SilentEpisode): boolean {
     if (ep.stopped || ep.isMichael || (ep.state !== 'open' && ep.state !== 'failed')) return false;
-    if (guardedWithoutReports(m.engine, this.deps.platform)) return false;
+    if (guardedWithoutReports(m.engine, this.deps.platform, m.isResearch)) return false;
     this.deps.stop(m);
     ep.stopped = true;
     return true;
@@ -197,6 +254,7 @@ export class SilentWatch {
       ep.state = 'restarting';
       ep.restartTried = true;
       ep.stopped = false;
+      ep.waitSince = this.deps.now();
       this.watches.delete(id);
     }
     this.publish();
@@ -206,11 +264,18 @@ export class SilentWatch {
   keep(agentIds: string[]): void {
     for (const id of agentIds) {
       const ep = this.episodes.get(id);
-      if (!ep) continue;
-      if (ep.stopped && this.deps.restart(id, false)) this.watches.delete(id);
+      // Research is never kept unchecked: Restart is its way back (owner, 2026-10-17).
+      if (!ep || ep.isResearch) continue;
+      // A stopped member is kept only once its terminal is started again;
+      // otherwise its card stays, since nothing would reach it.
+      if (ep.stopped) {
+        if (!this.deps.restart(id, false)) continue;
+        this.watches.delete(id);
+      }
       ep.state = 'kept';
       ep.stopped = false;
       delete ep.before;
+      delete ep.waitSince;
       this.deps.event({ type: 'kept', episode: ep });
     }
     this.publish();

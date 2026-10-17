@@ -39,8 +39,10 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   // Change engine on a not reporting card opens Edit here, the engine open (issue #326).
   const [editEngine, setEditEngine] = useState(false);
   const editRequest = useStore(s => s.editAgentRequest);
+  const clearEditRequest = useStore(s => s.clearEditAgentRequest);
   useEffect(() => {
-    if (editRequest && editRequest.agentId === agent.id) { setEditEngine(editRequest.engine); setEditOpen(true); }
+    // Used once: a later visit to this panel never opens Edit by itself.
+    if (editRequest && editRequest.agentId === agent.id) { setEditEngine(editRequest.engine); setEditOpen(true); clearEditRequest(); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editRequest?.seq]);
 

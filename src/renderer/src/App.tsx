@@ -43,7 +43,7 @@ import { columnAfterGoneHome } from '@/shell/closingFloor';
 import { watchReturningBindings } from '@/shell/releaseBindings';
 import { NEEDS_YOU_PILL_ID, columnEscAction, columnLocked, focusNeedsYouPill } from '@/shell/rightColumn';
 import { BottomBar } from '@/shell/BottomBar';
-import { PANEL_MOVE_EVENT } from '@/shell/Dialog';
+import { PANEL_MOVE_EVENT, PANEL_MOVE_MS } from '@/shell/Dialog';
 import { afterLeave } from '@/store/leaveGuard';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
@@ -386,11 +386,12 @@ export function App() {
     el.style.transformOrigin = '0 0';
     el.style.transform = `translate(${from.l - to.l}px, ${from.t - to.t}px) scale(${from.w / to.w}, ${from.h / to.h})`;
     void el.offsetWidth;
-    el.style.transition = 'transform var(--cth-dur-slow) var(--cth-ease)';
+    el.style.transition = `transform ${PANEL_MOVE_MS}ms var(--cth-ease)`;
     el.style.transform = '';
-    window.dispatchEvent(new CustomEvent(PANEL_MOVE_EVENT, { detail: { ms: 320 } }));
+    window.dispatchEvent(new CustomEvent(PANEL_MOVE_EVENT, { detail: { ms: PANEL_MOVE_MS } }));
     const done = (): void => { el.style.transition = ''; el.style.transformOrigin = ''; };
-    const timer = setTimeout(done, 360);
+    // A little past the move, so the cleanup never cuts its last frame.
+    const timer = setTimeout(done, PANEL_MOVE_MS + 40);
     return () => { clearTimeout(timer); done(); };
   }, [wide]);
   // An ask arriving, or waiting at launch, opens the board. Focus stays put.

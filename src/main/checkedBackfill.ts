@@ -16,14 +16,16 @@
  * Rows found this way are marked `found`: the kinds of detail taken out and
  * any flag to Michael were never recorded. A question or answer whose other
  * half can't be found is left out; the list counts it as without details.
- * Read only; the caller writes the rows once (index.ts).
+ * backfillChecked only reads; ensureCheckedBackfill writes the rows and its
+ * mark once. Every file is read the safe way (messageFile.ts): an agent's own
+ * folder may hold a link or a pipe, and this runs with the owner's rights.
  */
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { CHECKED_FILE, CHECKED_KEEP_MS, keepText, parseChecked, type CheckedRow } from '../shared/checkedRecord';
 import { OFFICE_OPEN_SUBJECT } from '../shared/officeOpen';
 import { RESEARCH_REPLY_LABEL, researchText } from '../shared/research';
+import { readMessageFile, realFolderIn, researchDeliveredId } from './messageFile';
 
 export interface BackfillInput {
   hiveRoot: string;
@@ -38,15 +40,22 @@ export interface BackfillInput {
   nameOf: (id: string) => string | null;
 }
 
-const readJson = (file: string): Record<string, unknown> | null => {
-  try { const v = JSON.parse(readFileSync(file, 'utf8')) as unknown; return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null; } catch { return null; }
+const parseJson = (raw: string | null): Record<string, unknown> | null => {
+  if (raw === null) return null;
+  try { const v = JSON.parse(raw) as unknown; return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null; } catch { return null; }
 };
+const readJson = (file: string): Record<string, unknown> | null => parseJson(readMessageFile(file));
 const str = (v: unknown): string => (typeof v === 'string' ? v : v === undefined || v === null ? '' : JSON.stringify(v));
-const jsonFiles = (dir: string): string[] => { try { return readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => join(dir, f)); } catch { return []; } };
+/** The .json files in `parts` under `base`, only while each step is a real folder. */
+const jsonFiles = (base: string, ...parts: string[]): string[] => {
+  const dir = realFolderIn(base, ...parts);
+  if (!dir) return [];
+  try { return readdirSync(dir).filter((f) => f.endsWith('.json')).map((f) => join(dir, f)); } catch { return []; }
+};
 const timeOf = (m: Record<string, unknown>, file: string): number => {
   const t = Date.parse(str(m.created_at));
   if (Number.isFinite(t)) return t;
-  try { return statSync(file).mtimeMs; } catch { return NaN; }
+  try { return lstatSync(file).mtimeMs; } catch { return NaN; }
 };
 
 /** A text pair as a row keeps it. */
@@ -89,17 +98,17 @@ export function backfillChecked(i: BackfillInput): CheckedRow[] {
   const sentBy = new Map<string, Array<{ file: string; at: number; m: Record<string, unknown> }>>();
   const sentOf = (id: string) => {
     if (!sentBy.has(id)) {
-      sentBy.set(id, jsonFiles(join(agentsDir, id, 'outbox', '.sent')).flatMap((file) => {
+      sentBy.set(id, jsonFiles(agentsDir, id, 'outbox', '.sent').flatMap((file) => {
         const m = readJson(file);
         if (!m || !names.has(str(m.to).trim().toLowerCase())) return [];
         let at = NaN;
-        try { at = statSync(file).mtimeMs; } catch { /* skipped */ }
+        try { at = lstatSync(file).mtimeMs; } catch { /* skipped */ }
         return Number.isFinite(at) ? [{ file, at, m }] : [];
       }));
     }
     return sentBy.get(id)!;
   };
-  const researchInbox = [...jsonFiles(join(agentsDir, i.researchId, 'inbox')), ...jsonFiles(join(agentsDir, i.researchId, 'inbox', '.done'))];
+  const researchInbox = [...jsonFiles(agentsDir, i.researchId, 'inbox'), ...jsonFiles(agentsDir, i.researchId, 'inbox', '.done')];
   for (const file of researchInbox) {
     const m = readJson(file);
     if (!m) continue;
@@ -130,19 +139,18 @@ export function backfillChecked(i: BackfillInput): CheckedRow[] {
   const delivered = new Map<string, { m: Record<string, unknown>; file: string }>();
   for (const id of (() => { try { return readdirSync(agentsDir); } catch { return []; } })()) {
     if (id === i.researchId) continue;
-    for (const file of [...jsonFiles(join(agentsDir, id, 'inbox')), ...jsonFiles(join(agentsDir, id, 'inbox', '.done'))]) {
+    for (const file of [...jsonFiles(agentsDir, id, 'inbox'), ...jsonFiles(agentsDir, id, 'inbox', '.done')]) {
       const m = readJson(file);
       if (m && str(m.id).startsWith('research-') && str(m.from) === i.researchId) delivered.set(str(m.id), { m, file });
     }
   }
   const labels = i.researchNames.map((n) => `${researchText(RESEARCH_REPLY_LABEL, n)}\n\n`);
-  const sentAnswers = [...(i.researchSentDir ? jsonFiles(i.researchSentDir) : []), ...jsonFiles(join(agentsDir, i.researchId, 'outbox', '.sent'))];
+  const sentAnswers = [...(i.researchSentDir ? jsonFiles(i.researchSentDir) : []), ...jsonFiles(agentsDir, i.researchId, 'outbox', '.sent')];
   for (const file of sentAnswers) {
-    let raw: string;
-    try { raw = readFileSync(file, 'utf8'); } catch { continue; }
-    const m = readJson(file);
-    if (!m) continue;
-    const id = `research-${createHash('sha256').update(`${basename(file)}\n${raw}`).digest('hex').slice(0, 24)}`;
+    const raw = readMessageFile(file);
+    const m = parseJson(raw);
+    if (!m || raw === null) continue;
+    const id = researchDeliveredId(`${basename(file)}\n${raw}`);
     const d = delivered.get(id);
     if (!d) continue;
     const at = timeOf(d.m, d.file);

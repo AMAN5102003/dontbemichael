@@ -50,7 +50,7 @@ export interface PulseDeps {
   /** The held list's private record as text (private/held.jsonl), '' when none. */
   readHeld?: () => string;
   /** private/checked.jsonl, the lists of what the check let through or stopped. */
-  readChecked?: () => string;
+  readChecked?: () => string | Promise<string>;
   now?: () => number;
 }
 
@@ -214,8 +214,10 @@ export class PulseService {
 
   /** What the check let through or stopped in a span, one way, newest first.
    *  Throws when the record can't be read, so the list says so (DD5). */
-  checked(fromMs: number, toMs: number, way: 'in' | 'out'): CheckedList {
-    const text = this.d.readChecked?.() ?? '';
+  /** Read off the main thread's hot path: the file holds whole texts for 62
+   *  days (ship review 2026-10-17). */
+  async checked(fromMs: number, toMs: number, way: 'in' | 'out'): Promise<CheckedList> {
+    const text = (await this.d.readChecked?.()) ?? '';
     const all = text.split('\n').map(parseChecked).filter((r): r is CheckedRow => !!r && r.way === way);
     // The first kept row says from when words are kept (design DD4).
     const since = all.reduce<number | null>((m, r) => (m === null || r.at < m ? r.at : m), null);

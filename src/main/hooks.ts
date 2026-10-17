@@ -1185,9 +1185,14 @@ export class HookServer {
       // Who its start time Read rules cover, against the roster now: a
       // member hired since is refused only to a search over everyone's folders.
       const roster = { members: Object.keys(reg.agents ?? {}), walled: this.hive.walledMembersOf?.(agentId) ?? null };
-      for (const t of both) {
-        const r = memberWallDecision(hiveRoot, agentId, tool, t, ci, nameOf, roster);
-        if (r.deny) return r;
+      // Each target judged against the hive as named and as the folder it
+      // really is, as the Research wall is: an office under a linked folder
+      // must not let a link in a member's own folder through (ship review).
+      for (const root of withReal([hiveRoot])) {
+        for (const t of both) {
+          const r = memberWallDecision(root, agentId, tool, t, ci, nameOf, roster);
+          if (r.deny) return r;
+        }
       }
     }
     // While Research is on, nobody saves into the shared temp folders its

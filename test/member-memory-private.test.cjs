@@ -124,10 +124,10 @@ test('both prompts say memory is private and to ask, and nothing says to search 
   const hive = new HiveManager(() => home);
   const god = promptOf(await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true }));
   const pam = promptOf(await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home }));
-  assert.match(god, /PRIVATE MEMORY: each team member's notes, memory and inbox are its own\. Never open a team member's folder/);
+  assert.match(god, /PRIVATE MEMORY: each team member's notes, memory and inbox are its own\. Never open a team member's hive folder \(agents\/<id>\/\)/);
   assert.match(god, /send it a "query", and read its card on the board and the work it publishes/);
   assert.match(pam, /PRIVATE MEMORY: your notes and memory are yours alone/);
-  assert.match(pam, /ask them with a "query" message\. The one store everyone searches is company knowledge\./);
+  assert.match(pam, /ask them with a "query" message; files a teammate hands off are fine to read\. The one store everyone searches is company knowledge\./);
   for (const p of [god, pam]) assert.doesNotMatch(p, /across the team|team's shared memory|other agents' memor/i);
   const protocol = fs.readFileSync(path.join(hive.root(), 'PROTOCOL.md'), 'utf8');
   assert.match(protocol, /## Private memory/);
@@ -158,4 +158,22 @@ test('the palace keeps company knowledge only: any other section clears it once'
   const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/memory.ts'), 'utf8');
   assert.match(src, /await this\.keepCompanyOnly\(\);\n\s+await this\.indexCompanyKnowledge\(\);/);
   assert.doesNotMatch(src, /mineAgent|setNotesFilter/, 'no agent folder is mined');
+});
+
+test('an office under a linked folder: a link in a member\'s own folder to a teammate\'s is refused (ship review)', posix, async (t) => {
+  // Value: protects=the wall holds when the app's home path has a linked part; fails_when=memberWallDecision judges the real target only against the hive root as named; why_new=security review 2026-10-17; seam=HookServer.handle
+  const real = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-private-real-')));
+  const link = path.join(fs.realpathSync.native(os.tmpdir()), `md-private-link-${process.pid}-${Date.now()}`);
+  fs.symlinkSync(real, link);
+  t.after(() => { fs.rmSync(link, { force: true }); fs.rmSync(real, { recursive: true, force: true }); });
+  const hive = new HiveManager(() => link);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: link, isGod: true });
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: link });
+  await hive.ensureAgent({ id: 'kelly', name: 'Kelly', provider: 'claude', cwd: link });
+  // Kelly links a folder of her own to Pam's.
+  fs.symlinkSync(path.join(hive.root(), 'agents', 'pam'), path.join(hive.root(), 'agents', 'kelly', 'peek'));
+  const server = new HookServer(hive, () => null, () => ({ harnessHome: link }));
+  const out = server.handle({ agent_id: 'kelly', hook_event_name: 'PreToolUse', cwd: link, tool_name: 'Read', tool_input: { file_path: path.join(hive.root(), 'agents', 'kelly', 'peek', 'memory.md') } }).hookSpecificOutput;
+  assert.equal(out?.permissionDecision, 'deny');
+  assert.match(out.permissionDecisionReason, /Pam's own folder/);
 });
