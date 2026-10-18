@@ -4,7 +4,7 @@
  * rights, so a link Research made would reach what Research can't (Codex
  * review). Anything else is skipped.
  */
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, opendirSync, openSync, readSync, realpathSync, rmSync, statSync, type Stats } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, opendirSync, openSync, readSync, realpathSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 /** The most one note file may hold; a bigger one is skipped, not read whole
@@ -76,8 +76,15 @@ export function ownResearchDir(agentDir: string, ...parts: string[]): string | n
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return null;
     }
     if (st && !st.isDirectory()) {
-      // rm never follows a link: only the link itself goes.
-      try { rmSync(cur, { force: true }); } catch { return null; }
+      // Only the link or file itself goes, never what a link points at:
+      // unlink, or rmdir for a link to a folder on Windows, which can't be
+      // unlinked. Not rmSync: newer Node (24 here) refuses a link to a folder
+      // with ERR_FS_EISDIR, so a planted link was never replaced.
+      try { unlinkSync(cur); } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'ENOENT') {
+          try { rmdirSync(cur); } catch { return null; }
+        }
+      }
       st = null;
     }
     if (!st) { try { mkdirSync(cur); } catch { return null; } }

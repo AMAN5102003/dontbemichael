@@ -297,6 +297,24 @@ test('rendered HTML from the atom feed never yields CSS', () => {
   }
 });
 
+test('HTML entities from rendered notes read as the characters they stand for', () => {
+  assert.equal(stripMarkdown('Mail &amp; calendar now sync together'), 'Mail & calendar now sync together');
+  assert.equal(stripMarkdown('Say &quot;hi&quot; to the manager'), 'Say "hi" to the manager');
+  // Decoded after the tag rule, so an escaped placeholder is text, not a tag.
+  assert.equal(stripMarkdown('Pick a model with <code>--model &lt;id&gt;</code>'), 'Pick a model with --model <id>');
+  // `&amp;` is decoded last, so an escaped entity stays as written.
+  assert.equal(stripMarkdown('Write &amp;lt; for a less-than sign'), 'Write &lt; for a less-than sign');
+
+  const digest = summarizeReleaseNotes([
+    '<h2>What&#39;s new</h2>',
+    '<ul>',
+    '<li>Mail &amp; calendar now sync together</li>',
+    '<li>Pick a model with <code>--model &lt;id&gt;</code></li>',
+    '</ul>'
+  ].join('\n'));
+  assert.deepEqual(digest, ['Mail & calendar now sync together', 'Pick a model with --model <id>']);
+});
+
 test('rendered HTML yields the actual news, not the preamble or the downloads', () => {
   const digest = summarizeReleaseNotes(RENDERED_ATOM_HTML);
 

@@ -39,11 +39,11 @@ own memory, working on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.2.1: a real fresh start, and Michael hears what the privacy check stops.**
-> Reset & start over now erases everything the app made for your office and keeps your own files.
-> Michael is told about every message the privacy check keeps from Pete, and why. Pete joins the
-> office's idle chatter, and webhooks hold anything but a plain status question for your approval.
-> In 0.2.0, Pete became the one team member on the internet.
+> **New in 0.2.2: Pulse, and Ask me cards you answer with a click.**
+> Pulse shows what the office got done, what it costs (on a Claude plan, your plan's real price
+> split by each member's share of the work), what the team learned and what was kept safe, with
+> ways to save you apply with one click. Michael's choices show as rows to pick, and you can delete
+> a team member for good. In 0.2.1, Reset & start over started truly fresh.
 
 ## Contents
 
@@ -162,7 +162,8 @@ job: one a teammate does today, one from your Office Pack, one from any other ki
 a new one you write. Before you hire, the app checks the new job against every teammate's so no
 two do the same work; an overlap has to be tied to its own mailbox or topic first. The work style
 is plain words you can edit. Each hire gets its own folder inside your business folder and starts
-working.
+working. To let someone go, Delete in the Danger zone of Edit agent removes them for good, and
+Michael hands on their open work.
 
 </td>
 <td width="50%">
@@ -189,7 +190,8 @@ merges and updates them, so memory gets better instead of piling up.
 ### You stay in charge
 
 Spending money, deleting things and changes of scope come to you. A team member that loops or
-keeps failing is steered, then held, then stopped. Each one works under house rules: state only
+keeps failing is steered, then held, then stopped, and one stuck on a prompt is restarted by the
+app instead of handed to you. Each one works under house rules: state only
 what it can trace to a source, say when it doesn't know, and never make up people, customers or
 quotes.
 
@@ -205,7 +207,9 @@ quotes.
 
 Desks light up as team members clock in and go dark at closing time. Envelopes fly between pods
 as work moves, Michael points before he hands a job out, scheduled jobs ring his wall clock, and
-idle teammates trade lines across the office. Click any pod to see that team member's work live.
+idle teammates trade lines across the office. A plate in front of each pod names its department,
+and the monitors are clear glass that tint while someone works. Click any pod to see that team
+member's work live.
 
 </td>
 <td width="50%">
@@ -239,13 +243,13 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 </table>
 
 **Running the office**
-- **Needs you.** When the team needs a decision, Michael puts it on the Needs you board. Your answer goes back to whoever asked, and they remember it. Michael gets it too, as work he routes and then closes.
+- **Needs you.** When the team needs a decision, Michael puts it on the Needs you board. Your answer goes back to whoever asked, and they remember it. Michael gets it too, as work he routes and then closes. Choices show as rows you pick with a click, and several questions get a line each; answer only some, and the rest go back to whoever asked.
 - **Michael answers in the app.** A question you type in the Talk to Michael box opens a conversation above it. Each question shows where it stands, such as Michael has it, Waiting for you or Answered, and his reply arrives under it, with one count on the box and one notification per answer. Commands such as /clear still go straight to his terminal. Scheduled outcomes, such as a weekly summary, arrive on Needs you as quiet Report cards you clear with Got it.
 - **Schedules.** Each team member's jobs on a clock live in the On a schedule section of its Access tab. Say when and which job ("Follow up on unpaid invoices", every weekday at 9), and the team member does it the way its Work style says. One job can have several "when" lines, like every 2 hours on weekdays plus 2 pm on weekends. A team member can ask for a schedule change; Michael decides it, and asks you on Needs you only when he can't settle it. Michael's Office schedule tab lists every job that is on.
 - **A mailbox for each team member.** Connect Gmail, Google Workspace, iCloud, Yahoo, Zoho or any other IMAP mailbox with an app password in Settings, Connections, Mailboxes. The password is tested before it is saved and stays encrypted on your computer. Then add it on a team member's Access tab to watch its inbox, and choose Can send, Send on approval or Draft only. Each mailbox has one team member watching it; others can be added to send only from it. Outlook is not supported yet.
 - **Claude connectors.** Settings, Connections, Claude connectors lists every connector on your Claude account (HubSpot, Google Drive, Gmail, QuickBooks and the rest), read from Claude by itself. Each is off until you turn it on; then give it to the team members who need it on their Access tab. QuickBooks keeps Read only or Can make changes, and Oscar starts on and Read only. Your own Claude Code servers, plugin servers included, never reach the team.
 - **Every team member's panel.** Profile first (the job, its folder and the instructions it works from), then Access (email, Claude connectors, and schedules), Messages as a day by day history, Memory as readable notes, and Work, its session live.
-- **Office, Tasks, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, and who talks to whom. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these, while PDF and Office files open in their own app.
+- **Office, Tasks, Pulse, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, Pulse (what the office got done and what each team member costs, with ways to save that change nothing until you click Apply), and who talks to whom. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these, while PDF and Office files open in their own app.
 - **Webhooks.** Another app sends a webhook (set it up in Settings, Connections) and Michael picks it up; the sender can check on the work and get its result.
 - **A fresh start without losing work.** A team member that has sat idle with a long conversation writes a handoff of anything unfinished, then starts fresh. You can bring the old conversation back.
 
@@ -321,7 +325,7 @@ it.
 
 ### Build from source
 
-You need Node.js 18 or newer, npm, and a C/C++ toolchain for `node-pty` (on a Mac:
+You need Node.js 20 or newer, npm, and a C/C++ toolchain for `node-pty` (on a Mac:
 `xcode-select --install`; on Windows, [`node-pty`'s prerequisites](https://github.com/microsoft/node-pty#dependencies)).
 
 ```bash

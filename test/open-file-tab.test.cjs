@@ -155,14 +155,40 @@ test('CSV and TSV become a table; broken quoting falls back to text (E3)', () =>
   assert.equal(CSV_ROW_LIMIT, 1000);
 });
 
+test('CSV and TSV retain an empty quoted final record without a trailing newline', () => {
+  // Value: protects=an empty quoted final record stays in the preview; fails_when=EOF drops a record whose cell text is empty; why_new=only nonempty cells and completed separators were checked at EOF; seam=none
+  for (const sep of [',', '\t']) {
+    for (const ending of ['\n', '\r\n', '\r']) {
+      assert.deepEqual(parseDelimited(`name${ending}""`, sep), [['name'], ['']]);
+    }
+    assert.deepEqual(parseDelimited('""', sep), [['']]);
+    assert.deepEqual(parseDelimited('\ufeff""', sep), [['']], 'a BOM does not hide the empty quoted record');
+    assert.deepEqual(parseDelimited(`name${sep}note\nA${sep}""`, sep), [['name', 'note'], ['A', '']]);
+    assert.equal(parseDelimited('name\n"', sep), null, 'unclosed quotes still fall back to text');
+  }
+});
+
+test('CSV and TSV do not invent final records for empty files or trailing line endings', () => {
+  // Value: protects=the EOF fix does not add a phantom row; fails_when=an empty file or completed line ending produces an extra record; why_new=guards the record-start boundary used for quoted empty fields; seam=none
+  for (const sep of [',', '\t']) {
+    assert.deepEqual(parseDelimited('', sep), []);
+    assert.deepEqual(parseDelimited('\ufeff', sep), []);
+    for (const ending of ['\n', '\r\n', '\r']) {
+      assert.deepEqual(parseDelimited(`name${ending}`, sep), [['name']]);
+      assert.deepEqual(parseDelimited(`name${ending}""${ending}`, sep), [['name'], ['']]);
+      assert.deepEqual(parseDelimited(`""${ending}`, sep), [['']]);
+    }
+  }
+});
+
 test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, watchers dropped on reload', () => {
   // Value: protects=the owner's tab and column behavior and the watcher cap; fails_when=the column hides on a file tab, a restart lands on a file tab, or watchers leak; why_new=all new; seam=none
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /if \(view === 'file'\) \{ set\(\{ floorView: view \}\); return; \}/, 'a file tab is never written to cth.floorView');
-  assert.match(store, /if \(view === 'office' \|\| view === 'file'\) return \{\};/, 'opening the column on a file tab stays on it (F1)');
+  assert.match(store, /if \(view === 'office' \|\| view === 'file'\) return \{\};/, 'opening the column on a file tab (or Pulse) stays on it (F1, D14)');
   const app = read('src/renderer/src/App.tsx');
-  assert.match(app, /const columnShown = columnOpen && \(floorView === 'office' \|\| floorView === 'file'\);/);
-  assert.match(app, /display: floorView === 'office' \|\| floorView === 'file' \? 'flex' : 'none'/, 'the column style too, not only columnShown');
+  assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
+  assert.match(app, /display: columnView \? 'flex' : 'none'/, 'the column style too, not only columnShown');
   assert.match(app, /\{floorView === 'file' && <FileTabView \/>\}/);
   assert.match(read('src/renderer/src/components/FileTabView.tsx'), /<div ref=\{scroller\} className="cth-file-tab"/);
   assert.match(read('src/renderer/src/design/global.css'), /\.cth-file-tab \.cth-md-preview \{ max-width: none; \}/, 'a report fills the file tab, no 72ch cap');

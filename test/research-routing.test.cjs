@@ -1161,3 +1161,85 @@ test('an owner or app note checked under settings the owner then changed is chec
   release(); await tick(); await tick();
   assert.equal(msgsIn(hive, 'research').length, 1);
 });
+
+test('a checked note for Research whose delivery fails stays pending and is delivered on a later pass, without a second check', posixOnly('folder modes'), async (t) => {
+  // Value: protects=a disk error never drops an owner or app note for Research; fails_when=the pending row is removed before delivery and the error is only logged; why_new=TODOS.md "A checked message for Pete is never dropped when delivery fails" (Codex review, mit/named-links ship); seam=read only Research inbox
+  if (process.getuid?.() === 0) return t.skip('root ignores folder modes');
+  const { hive, layer } = await office(t);
+  const inbox = path.join(hive.root(), 'agents', 'research', 'inbox');
+  const file = path.join(path.dirname(hive.root()), 'private', 'research-pending.json');
+  fs.chmodSync(inbox, 0o555);
+  try {
+    hive.rememberOwnerNote('research', 'Focus on flour');
+    await tick();
+    assert.equal(msgsIn(hive, 'research').length, 0, 'the write failed');
+    assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).length, 1, 'still pending');
+    assert.equal(hive.researchWaiting(), 1, 'counted as waiting');
+  } finally { fs.chmodSync(inbox, 0o755); }
+  hive.routeOnce();
+  const got = msgsIn(hive, 'research');
+  assert.equal(got.length, 1, 'delivered on the next pass');
+  assert.match(got[0].body, /Focus on flour/);
+  assert.equal(layer.calls.inbound.length, 1, 'the verdict is reused, not paid for again');
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), []);
+  assert.equal(notes(hive, 'god', R.NOT_SENT_SUBJECT).length, 0, 'nothing to tell Michael');
+});
+
+test('a checked note that still can\'t be delivered after its tries is told to Michael once, and nothing stays pending', posixOnly('folder modes'), async (t) => {
+  // Value: protects=a delivery that keeps failing ends with Michael knowing, not a silent loss or an endless retry; fails_when=a failed delivery is only logged, or retried forever; why_new=TODOS.md "A checked message for Pete is never dropped when delivery fails"; seam=read only Research inbox
+  if (process.getuid?.() === 0) return t.skip('root ignores folder modes');
+  const { hive } = await office(t);
+  const inbox = path.join(hive.root(), 'agents', 'research', 'inbox');
+  fs.chmodSync(inbox, 0o555);
+  try {
+    hive.rememberOwnerNote('research', 'Focus on flour');
+    await tick();
+    for (let i = 0; i < HiveManager.RESEARCH_DELIVERY_TRIES + 2; i++) hive.routeOnce();
+  } finally { fs.chmodSync(inbox, 0o755); }
+  const told = notes(hive, 'god', R.NOT_SENT_SUBJECT);
+  assert.equal(told.length, 1, 'told once');
+  assert.match(told[0].body, /^A note from the owner for Pete \("A note from the owner"\) was not sent: the app could not deliver it after its privacy check\./);
+  assert.match(told[0].body, /This is an app problem/);
+  assert.equal(msgsIn(hive, 'research').length, 0);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(path.dirname(hive.root()), 'private', 'research-pending.json'), 'utf8')), []);
+  assert.equal(hive.researchWaiting(), 0);
+});
+
+test('a checked note still waiting to be delivered when the app closes is told to Michael at the next start as not delivered', posixOnly('folder modes'), async (t) => {
+  // Value: protects=Michael hears what really happened to a note that passed its check; fails_when=the next start says it was being checked; why_new=TODOS.md "A checked message for Pete is never dropped when delivery fails"; seam=read only Research inbox
+  if (process.getuid?.() === 0) return t.skip('root ignores folder modes');
+  const { hive } = await office(t);
+  const inbox = path.join(hive.root(), 'agents', 'research', 'inbox');
+  const home = path.dirname(hive.root());
+  fs.chmodSync(inbox, 0o555);
+  try {
+    hive.rememberOwnerNote('research', 'Focus on flour');
+    await tick();
+  } finally { fs.chmodSync(inbox, 0o755); }
+  const [row] = JSON.parse(fs.readFileSync(path.join(home, 'private', 'research-pending.json'), 'utf8'));
+  assert.equal(row.checked, true, 'marked as past its check');
+  const again = new HiveManager(() => home);
+  again.setResearchEnabled(() => true);
+  again.setTrustLayer(fakeLayer());
+  again.routeOnce();
+  const told = notes(again, 'god', R.NOT_SENT_SUBJECT);
+  assert.equal(told.length, 1);
+  assert.match(told[0].body, /^A note from the owner for Pete \("A note from the owner"\) was not sent: the app closed while it was being delivered\./);
+});
+
+test('a checked note that reached Research is never sent twice when a step after the write fails', async (t) => {
+  // Value: protects=a retry never hands Research a second copy of a note already in its inbox; fails_when=any error after the inbox write counts as a failed delivery; why_new=TODOS.md "A checked message for Pete is never dropped when delivery fails" (self review: the floor's envelope event runs after the write); seam=an emit that throws
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-research-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home, (channel) => { if (channel === 'hive:message') throw new Error('window gone'); });
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  await hive.ensureAgent({ id: 'research', name: 'Pete', provider: 'claude', cwd: path.join(home, 'research-desk'), isResearch: true });
+  hive.setResearchEnabled(() => true);
+  hive.setTrustLayer(fakeLayer());
+  hive.rememberOwnerNote('research', 'Focus on flour');
+  await tick();
+  for (let i = 0; i < 3; i++) hive.routeOnce();
+  assert.equal(msgsIn(hive, 'research').length, 1, 'one copy');
+  assert.equal(hive.researchWaiting(), 1, 'only the delivered copy waits');
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(home, 'private', 'research-pending.json'), 'utf8')), []);
+});

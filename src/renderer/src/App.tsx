@@ -6,11 +6,13 @@ import type { HarnessConfig } from '@/store/config';
 import { DEFAULT_ORG_TRIGGER } from '@shared/triggers';
 import { StudioStage } from '@/scene/studio/StudioStage';
 import { TasksKanban } from '@/components/TasksKanban';
+import { PulseView } from '@/components/pulse/PulseView';
 import { FileTabView } from '@/components/FileTabView';
 import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
 import { useHive } from '@/hooks/useHive';
 import { useGodNameSync } from '@/i18n/useGodNameSync';
 import { useDirectionSync } from '@/i18n/useDirection';
+import { useCopyLinkLabelSync } from '@/i18n/useCopyLinkLabelSync';
 import { useArabicTerminalSync } from '@/terminal/useArabicTerminalSync';
 import { AgentDetailPanel } from '@/components/AgentDetailPanel';
 import { AddAgentModal } from '@/components/AddAgentModal';
@@ -50,6 +52,8 @@ export function App() {
   useGodNameSync();
   // Mirror the document only for a user who has picked an RTL app language.
   useDirectionSync();
+  // Give main the right-click "Copy link address" label in the app language.
+  useCopyLinkLabelSync();
   // Let terminals that are ALREADY open follow a language switch too.
   useArabicTerminalSync();
   const agent = useStore(selectedAgent);
@@ -332,8 +336,10 @@ export function App() {
   // column stays mounted there, only hidden, so a person's terminal and a half
   // written reply survive the switch; opening it goes back to the office.
   // A file tab keeps it beside the file, so an Ask me card stays answerable
-  // while its file is read (docs/designs/open-file-tab.md, F1).
-  const columnShown = columnOpen && (floorView === 'office' || floorView === 'file');
+  // while its file is read (docs/designs/open-file-tab.md, F1). Pulse takes the
+  // whole window like Tasks, without the bottom bar either (owner, 2026-10-15).
+  const columnView = floorView === 'office' || floorView === 'file';
+  const columnShown = columnOpen && columnView;
   const columnRef = useRef<HTMLDivElement>(null);
   const lastColumnMode = useRef<'board' | 'person'>('board');
   // An ask arriving, or waiting at launch, opens the board. Focus stays put.
@@ -474,19 +480,21 @@ export function App() {
               position: 'absolute', inset: 0, zIndex: 50,
               display: 'flex', flexDirection: 'column',
               // Room for the floating bottom bar, so it never covers the last cards.
-              paddingBottom: 96,
+              paddingBottom: floorView === 'pulse' ? 0 : 96,
               background: 'var(--cth-bg)'
             }}>
               {floorView === 'tasks' && <TasksKanban />}
+              {floorView === 'pulse' && <PulseView />}
               {floorView === 'file' && <FileTabView />}
               {floorView === 'graph' && (
                 <MemoryGraphPanel godId={godId} onJumpToMemory={(id) => useStore.getState().openAgentMemory(id)} />
               )}
             </div>
           )}
-          {/* The bottom bar stays mounted behind the closing bar, so a Cancel
-              finds Talk to Michael with its attached files still there. */}
-          <div style={{ display: closingOpen ? 'none' : 'contents' }}>
+          {/* The bottom bar stays mounted behind the closing bar and on Pulse,
+              so a Cancel or a tab switch finds Talk to Michael with its
+              attached files still there. */}
+          <div style={{ display: closingOpen || floorView === 'pulse' ? 'none' : 'contents' }}>
             <BottomBar />
           </div>
           {closingOpen && (
@@ -529,7 +537,7 @@ export function App() {
             className={columnOpen ? 'cth-col-in' : 'cth-col-out'}
             style={{
               width: sidebarWidth, flexShrink: 0, minHeight: 0, zIndex: 60,
-              display: floorView === 'office' || floorView === 'file' ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
+              display: columnView ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
               ...(columnOpen
                 ? { position: 'relative', margin: '4px 6px 0 0' }
                 : { position: 'absolute', top: 4, bottom: 0, insetInlineEnd: 6 })

@@ -98,7 +98,7 @@ test('Research can hold no mailbox, connector or schedule', () => {
   assert.match(main, /agentId === RESEARCH_ID \|\| typeof key !== 'string'/, 'connectors');
   assert.match(main, /if \(agentId === RESEARCH_ID\) return \{ ok: false \};\n  const quickbooks/, 'QuickBooks');
   assert.match(main, /if \(mission\.to === RESEARCH_ID\) return \{ ok: false, error: `\$\{hive\.researchName\(\)\} has no schedules` \};/);
-  assert.match(main, /if \(actor === RESEARCH_ID\) return 'You have no schedules/);
+  assert.match(read('src/main/scheduleRequests.ts'), /if \(actor === RESEARCH_ID\) return 'You have no schedules/);
 });
 
 test('Research\'s notes reach the shared memory only as a cleaned copy', () => {

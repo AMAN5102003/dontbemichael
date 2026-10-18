@@ -1,14 +1,14 @@
-# Don't Be Michael v0.2.1
+# Don't Be Michael v0.2.2
 
 **An AI office for your small business.** Pick your kind of business, pick your team, and Michael, your office manager, runs the floor while you run the business.
 
-## What's new in 0.2.1
+## What's new in 0.2.2
 
-- **Excel files exported from accounting, payroll and other business systems are read,** instead of refused as empty, and PowerPoint text keeps slide order.
-- **Reset & start over starts truly fresh.** It erases everything the app made for your office and keeps your team's folders, your own files and your Claude sign in.
-- Webhooks in the communication only mode hold anything but a plain status question for your approval, however it is worded or labelled.
-- Michael hears every message the privacy check keeps from Pete, and why, and an Ask me card that needs you on a website links straight to it.
-- Pete joins the office's idle time fun, with lines and paper plane conversations of his own, and a first day welcome each time you turn him on.
+- **Pulse: what your office got done and what it costs.** A new tab shows the work done, what the team learned, what was kept safe, your time, and each member's share of the cost. On a Claude plan, cost is your plan's real price split by each member's share of the work. Ways to save are applied only when you click Apply, and undone with Undo.
+- **Ask me cards you answer with a click.** Michael's choices show as rows to pick, several questions get a line each, and you never have to answer every one.
+- **Delete a team member for good** from the Danger zone in Edit agent.
+- **Every office on the floor names its department,** and the desk monitors are clear glass.
+- **A team member stuck on a prompt is restarted and carries on,** instead of being handed to you.
 
 Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvivekkumar/dontbemichael/blob/main/docs/FEATURES.md)
 
@@ -16,15 +16,15 @@ Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvi
 
 | Platform | Download |
 |---|---|
-| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.1-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.1-mac-universal.dmg) |
+| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.2-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.2-mac-universal.dmg) |
 
 <!-- windows -->
-**Windows 11 (x64):** [`Dont-Be-Michael-0.2.1-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.1/Dont-Be-Michael-0.2.1-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
+**Windows 11 (x64):** [`Dont-Be-Michael-0.2.2-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.2/Dont-Be-Michael-0.2.2-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
 <!-- /windows -->
 
 Linux will follow.
 
-[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.1.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.1.tar.gz)
+[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.2.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.2.tar.gz)
 
 ## Installing on your Mac
 

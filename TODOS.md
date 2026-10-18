@@ -113,6 +113,188 @@
 **Priority:** P3
 **Depends on:** None
 
+## Team performance (from the CEO review of docs/designs/team-performance.md, 2026-10-15)
+
+### Move the cost ledger into the telemetry store
+
+**What:** Move the circuit breaker and lifetime totals from `hive/cost-ledger.jsonl` onto the telemetry store in harness.db, then stop writing the file.
+
+**Why:** After the team performance build, cost data lives in two places that can drift apart, and the file is agent writable and grows forever (403,830 rows in its first 3 weeks).
+
+**Context:** `db.ts` already reserves a `cost_ledger` table with the file's column names. Readers today: `costLifetime.ts`, `runBreakerBeat` in `index.ts`, `tools/agent-metrics.cjs`. The team performance processor already folds cost points from the store with `src/shared/costFold.ts`. Owner decision D17.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P2
+**Depends on:** The team performance build (telemetry store)
+
+### Give Fable a tier and a price
+
+**What:** Add Fable's tier (top, middle or small) to `modelCatalog.json` and its price rows to `pricing.ts`, from Anthropic's published pricing.
+
+**Why:** Model advice in the Team view needs a tier, so members on Fable, the default model (`config.ts:525`), get no cheaper or stronger model advice until it has one.
+
+**Context:** The team performance build adds `tier` to Claude catalog entries and `knownPrice(model)`; a model without a tier gets no model advice. The remote catalog (`modelCatalog.ts`) must carry the field too. Owner decision D18.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P2
+**Depends on:** The team performance build
+
+### A health readout for the Pulse telemetry (T9)
+
+**What:** Add `telemetry:health` (last batch time, events per batch, failed writes, refused hook frames per member from `HookServer.rejectedFrames()`), one log line per processor batch, and a single warning when the processor stalls.
+
+**Why:** When a Pulse number looks wrong there is no way to see whether points stopped flowing, writes failed or frames were refused; today nothing reads `rejectedFrames()`.
+
+**Context:** Deferred from plan: docs/designs/team-performance.md (T9, E3), owner choice at /ship of mit/delete-team-member, 2026-10-16. The store already counts failed writes per day (D15); the processor runs every 30 s from `index.ts`.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P1
+**Depends on:** None
+
+### Keep Pulse's heavy reads off the main thread
+
+**What:** Read transcripts for the backfill line by line with a yield every few hundred lines, skip lines before the window before parsing tool results, and let the 30 s tick drain backfilled points instead of folding up to 100,000 at once; prune `telemetry_runs` with the events.
+
+**Why:** On the first launch after an update the backfill and its fold can hold the main thread for seconds while every agent starts and sends hook frames; a very large office log or transcript is read whole into memory (Codex review).
+
+**Context:** From the /ship performance review, 2026-10-16. Migration 4 added the indexes the hot reads needed; this is the remaining part. `pulseBackfill.ts` readTranscript and `pulseBackfillOnce` in `index.ts`.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P2
+**Depends on:** None
+
+### An owner's answer is never lost between the card and Michael
+
+**What:** Record the answer on the card and queue Michael's routing request in one main side step, or keep unsent routing requests and retry them in the same launch.
+
+**Why:** If the card patch lands but the message to Michael fails, the ask leaves Ask me and Michael never hears until a restart (the catch up runs once per launch).
+
+**Context:** From the second Codex adversarial review, 2026-10-16. The pattern predates this branch: `AskMeTab.tsx` sendAnswer patches then sends; `index.ts` catchUpOwnerAnswers is gated by ownerCatchUpDone.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P2
+**Depends on:** None
+
+### Pulse reads a card's whole history, not the period's slice
+
+**What:** Keep card lifecycle state (reopened, held time) per card as events arrive, instead of rebuilding it from the period's events only.
+
+**Why:** A card reopened or held before the period and finished in it counts as kept as is and as faster than it was.
+
+**Context:** From the second Codex adversarial review, 2026-10-16. `telemetryProcessor.ts` cards().
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** None
+
+### Backfill when Pulse first opens
+
+**What:** Start `pulseBackfillOnce` from the `pulse:snapshot` handler as well as the 30 s beat.
+
+**Why:** On the first launch after an update, opening Pulse within 30 s shows the office without its past weeks.
+
+**Context:** From the second Codex adversarial review, 2026-10-16. `index.ts` pulse:snapshot and the beat.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** None
+
+### Pulse keeps a card finished just before a quit
+
+**What:** Record card status changes where Michael's board write lands (or persist the last seen board) instead of only diffing the 8 s poll in memory.
+
+**Why:** A card that reaches Done in the seconds before the app quits or crashes is taken as the new baseline on the next launch and never counted in Tasks done.
+
+**Context:** From the Codex adversarial review, 2026-10-16. `telemetryStore.ts` tasks(): the first read of an office only remembers.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** None
+
+### Prune the processor's saved cost totals
+
+**What:** Drop session keys from the processor's saved state (`state.costs`) that have not changed for a long horizon, or keep them in a keyed table.
+
+**Why:** Two keys per agent and session are kept forever and parsed and written every 30 s, so an office with many restarts grows a large kv row.
+
+**Context:** From the Codex adversarial review, 2026-10-16. `telemetryProcessor.ts` saveState.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** None
+
+### Key Pulse by a stable office id, not its folder path
+
+**What:** Store an office id in the office and key telemetry rows by it, or re-key rows when Settings moves the office; resolve the path with realpath meanwhile.
+
+**Why:** Moving the office, or reaching it by another spelling (a symlink, a different case), splits Pulse history and runs the backfill again under the new key.
+
+**Context:** From the /ship red team review, 2026-10-16. `pulseOffice()` in `index.ts` returns `expandTilde(harnessHome)`.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P2
+**Depends on:** None
+
+### Let only the main session release a prompt hold
+
+**What:** Pass whether a hook frame is a subagent's to the worker wake watchdog, and let only the main session's events (or the denial of the prompted tool) end the hold; give the hold a long ceiling.
+
+**Why:** A Task subagent's PostToolUse can end the hold while a permission prompt is still on screen, and a prompt escaped with no follow up event keeps the member from ever being nudged.
+
+**Context:** From the /ship testing and red team reviews, 2026-10-16. The stuck restart now restarts a member on a permission prompt within seconds, which makes both cases rare. `workerWake.ts` MOVED_ON_EVENTS.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P2
+**Depends on:** None
+
+### Bound the refused hook frame counters
+
+**What:** Count a refused frame under its claimed id only when that id is in the registry (else "unknown"), cap the maps, and rate limit the impostor count Pulse records.
+
+**Why:** Any local process that reaches the hook socket without a secret can grow the maps, the office log and the Kept safe impostor tile with made up names.
+
+**Context:** From the /ship red team review, 2026-10-16. `hooks.ts` authenticate (`rejected`, `rejectLogged`, `onRefused('impostor')`).
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** None
+
+### Hand the hook secret over where another process cannot read it
+
+**What:** On engines and platforms where a sibling process can read another's environment (Linux /proc, Windows), pass the hook secret through a 0600 file or descriptor only that agent's sandbox can read, or check the peer on the socket.
+
+**Why:** All agents run as the same OS user, and a sibling's environment is readable: on a Mac, `ps eww` showed a test HIVE_HOOK_SEAL of a node process (checked 2026-10-16). A member that reads a teammate's secret can send hook frames as them (Pulse numbers, a stuck restart), the forgery #61 closes.
+
+**Context:** From the /ship security and Codex adversarial reviews, 2026-10-16; the owner chose to ship 0.2.2 with this named limit. Today the secret is in each agent's env (`hive.ts` HIVE_HOOK_SEAL), read by every bridge shim. A per member file outside the hive, with a sandbox read deny for every other member, or a socket peer check (LOCAL_PEERPID on macOS), would close it; Windows has no sandbox, so it stays weaker there.
+
+**Effort:** M (human) / M (CC)
+**Priority:** P1
+**Depends on:** None
+
+### Tell Michael when a timed out restart worked after all
+
+**What:** When a restarted member's session starts after the 61 s confirm window already told Michael they were stuck, send him a short follow up that the restart went through.
+
+**Why:** Otherwise Michael may move work the member is already doing and keep an Ask me question about a member who is fine.
+
+**Context:** From the /ship fix review, 2026-10-16 (confidence 4). `hooks.ts` checkStuckRestarts and stuckProgress.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** None
+
+### Pulse buttons use PixelButton
+
+**What:** Draw Apply, Not now, Undo and Try again with PixelButton (sm) so they get the hover and the 45% disabled state of DESIGN.md 7.7.
+
+**Why:** Apply looks unchanged while it is busy.
+
+**Context:** From the /ship design review, 2026-10-16. `PulseView.tsx` btn().
+
+**Effort:** S (human) / S (CC)
+**Priority:** P3
+**Depends on:** None
+
 ## Named links (from the eng review of docs/designs/named-links.md, 2026-10-11)
 
 ### Copy a link's address from a card
@@ -212,18 +394,6 @@
 **Context:** Deferred by the owner (ship D5). `src/main/hive.ts` `refreshOwnerRequests` and `ownerMessages`.
 
 **Effort:** M
-**Priority:** P2
-**Depends on:** None
-
-### Authenticate hook events and keep the owner's messages out of the agents' folder
-
-**What:** Give each spawned agent a secret for its hook events and ignore events whose agent id doesn't match, and move the owner's sent messages and dock state (agents/human) out of the hive folder agents can write. The design from issue #61: at spawn, main mints a random token per agent and keeps the token to agent map in memory only, never in the hive folder; each bridge carries it the way it already gets per agent config (the agent's `--settings` hook command, the hooks shim's env or config, the proxy sidecar's env); `HookServer` takes the agent from the token, not from the frame's `agent_id`, drops and logs a frame with a missing, unknown or mismatched token, and honours a `subagent_id` only under its parent's token; the token changes on every respawn and restart.
-
-**Why:** Security reviews: an agent can send a fake Stop or SessionStart event naming Michael (his notes fallback now reads only his session start transcript inside Claude's folder, but another agent's own transcript is there too), and agents can write into agents/human.
-
-**Context:** Owner decision D4 in the ship took the two cheap checks and left this with the existing data folder task. Start in `src/main/hooks.ts` (the hook socket, which reads the agent from the frame today) and `src/main/hive.ts` (`ownerSentDir`, `ownerStatePath`). A forged frame can overwrite another agent's saved session id (so it resumes the wrong conversation), add cost rows for it, or fire its Stop. One test per bridge kind (Claude settings hook, hooks shim, proxy sidecar) sends a frame naming another agent, and one with no token, and passes only when both are dropped. Every engine bridge posts to the same socket, so this is a gate for a second engine (gap 10 under "Make a second engine (Codex first) ready for an office").
-
-**Effort:** L
 **Priority:** P2
 **Depends on:** None
 
@@ -618,7 +788,7 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 7. Michael's first prompt is still written for one engine (`INITIAL_GOD_PROMPT` in `src/renderer/src/hooks/useHive.ts:77`). The spawn prompt and PROTOCOL.md now say "AI agents".
 8. No permission-prompt detection for these engines (no Notification event), which matters only with auto mode off.
 9. The access policy reaches Claude only (issue #48). Folder privacy (`denyRead`/`denyWrite`), connector deny and the MCP list are written into Claude's `--settings` (`hookSettings` in `src/main/hive.ts`); Codex gets its own workspace sandbox and `--add-dir`, but no folder read privacy or connector deny. Before any engine joins `BUILD_ENGINES`: build the one policy into each engine's own settings, record per engine which rules it can enforce, and where it can't, limit that agent (mail Draft only, connectors off) with the reason on its Access tab. A test per engine tries a read of another member's folder, a write outside its own and a denied connector, and passes only when each is blocked or the agent is limited. `test/engine-readiness.test.cjs` checks the preset half today. Issue #139 adds: make it a typed `isolation` capability on each engine preset (OS sandbox plus deny rules, a PreToolUse check only, or none), so `BUILD_ENGINES` refuses an engine that has not proved its kind, and an engine with none never hosts a member who holds a private folder; put the app's private mail token folder (`agentPrivatePaths.ts`, #63) in every engine's denied set; and note the hook gaps: pi has only PreToolUse, and the proxy tier (qwen) has no hooks at all, so its shell is unguarded.
-10. Hook events are not authenticated (issue #61): every engine's bridge posts to the one hook socket, which believes the agent named in the frame. The per agent token in "Authenticate hook events and keep the owner's messages out of the agents' folder" lands first, and the new engine's bridge passes its forged frame test.
+10. Hook events carry a per start secret (issue #61, built with the team performance work): a new engine's bridge must send `HIVE_HOOK_SEAL` in every frame (never a name like a token or key: Claude Code's subprocess scrub strips those) and pass the forged frame checks in `test/hook-auth.test.cjs` before it joins `BUILD_ENGINES`.
 11. No test of a run on each engine (issue #83). With a fake CLI process standing in for the engine (no paid calls), one shared test per engine checks: it starts and finishes a task, reports completion, and handles a sign-in failure, a plan or quota limit, a cancel and its cleanup, each with a plain reason to the owner. It runs in CI on every platform the engine ships for, beside `test/office-privacy-conformance.test.cjs` and `test/engine-readiness.test.cjs`.
 
 A live end-to-end run is required before adding an engine: Gemini has never been run for real, and Codex needs an OpenAI account with credits.

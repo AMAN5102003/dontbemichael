@@ -1,4 +1,4 @@
-- **Pete joins** the office's idle chatter.
-- **Reset & start over** starts truly fresh.
-- **Webhooks** hold all but a plain status question.
-- **Michael hears** what the privacy check stops.
+- **Pulse** shows work done and what it costs.
+- **Ask me** choices answer with a click.
+- **Delete** a team member for good.
+- **Stuck members** restart and carry on.

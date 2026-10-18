@@ -41,6 +41,7 @@ export const PRIVATE_ENTRIES = [
   'owner',
   'card-guard.json',
   'house-rules-seen.json',
+  'ask-list-since.json',
   'research-stamp.key',
   'research-threads.json',
   'research-outbox',

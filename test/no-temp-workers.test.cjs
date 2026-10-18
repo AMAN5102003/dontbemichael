@@ -53,7 +53,8 @@ test('instead, a job no one fits goes to the ASK ME board with suggestions', asy
   assert.match(p, /WHEN NO ONE FITS \(this overrides anything above about spawning a fresh agent: you cannot start one\):/);
   assert.match(p, /do NOT do it yourself and do NOT start a new agent/);
   assert.match(p, /"status": "blocked" and one humanQA ask/);
-  for (const option of ['1. add a team member', '2. hand it to the closest team member', '3. you do it yourself this once', '4. drop it']) {
+  assert.match(p, /give the choices in "options", with "recommended": true on the one you recommend/);
+  for (const option of ['add a team member', 'hand it to the closest team member', 'you do it yourself this once', 'or drop it']) {
     assert.ok(p.includes(option), `offers: ${option}`);
   }
   // It can name the right person: every cast member with their fixed job.

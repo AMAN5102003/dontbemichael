@@ -31,11 +31,16 @@ export type ToolKind =
 export type StationKind =
   | 'shelf' | 'terminal' | 'web' | 'board' | 'mailbox' | 'mcp' | 'desk';
 
+/** An unsent Ask me pick: the option picked on a choice, or each question's
+ *  chip and typed line on an ask with several (docs/designs/ask-me-options.md). */
+export interface AnswerPick { pick?: number; parts?: ({ chip?: number; text?: string } | undefined)[] }
+
 /** Why an agent waits for a restart (store.pendingRestart). */
 export interface PendingRestart {
   at: number;
-  /** engine: Claude Code was just set up (docs/designs/get-michael-ready.md). */
-  reason: 'email' | 'connectors' | 'engine';
+  /** engine: Claude Code was just set up (docs/designs/get-michael-ready.md).
+   *  stuck: the session stopped on a prompt (hooks.ts stuckOnPrompt). */
+  reason: 'email' | 'connectors' | 'engine' | 'stuck';
   /** The owner pressed Restart now: do not wait for idle. */
   now?: boolean;
   /** The last restart attempt failed; it is tried again on the next tick. */
@@ -327,6 +332,8 @@ interface State {
    *  graph no longer sits next to that tab. seq-keyed like ccTabRequest. */
   memoryFocusRequest: { agentId: string; seq: number } | null;
   openAgentMemory: (agentId: string) => void;
+  /** Open a team member's Profile tab (their schedules), from Pulse. */
+  openAgentProfile: (agentId: string) => void;
   /** The task whose detail overlay is open (rendered app-wide over the office
    *  floor — the card content grows: contracts, deps, the human Q&A trail). */
   taskDetailId: string | null;
@@ -340,6 +347,10 @@ interface State {
    *  unmounts the ask-me view) doesn't eat a half-typed answer. */
   answerDrafts: Record<string, string>;
   setAnswerDraft: (taskId: string, text: string) => void;
+  /** The picked option and each question's chip and line on an Ask me card,
+   *  kept like a typed draft (docs/designs/ask-me-options.md, decision 3A). */
+  answerPicks: Record<string, AnswerPick>;
+  setAnswerPick: (key: string, pick: AnswerPick) => void;
   /** Unsent composer drafts, per agent — so switching agents (which remounts the
    *  composer) doesn't eat what the user was typing. */
   drafts: Record<string, string>;
@@ -451,20 +462,20 @@ const LS_FOCUS_MODE = 'cth.prefersFocusMode';
 const LS_FLOOR_VIEW = 'cth.floorView';
 
 /** Opening the right column on purpose (Needs you, a person, Michael's tabs)
- *  goes back to the office: Tasks and Who talks to whom hide the column
- *  (owner, 2026-10-03). A file tab keeps it beside the file, so an Ask me card
- *  stays answerable while its file is read (open-file-tab.md, F1). */
+ *  goes back to the office: Tasks, Pulse and Who talks to whom hide the column
+ *  (owner, 2026-10-03; Pulse 2026-10-15). A file tab keeps it beside the file,
+ *  so an Ask me card stays answerable while its file is read (open-file-tab.md, F1). */
 function officeView(view: FloorView): { floorView?: FloorView } {
   if (view === 'office' || view === 'file') return {};
   try { window.localStorage.setItem(LS_FLOOR_VIEW, 'office'); } catch { /* per-Mac nicety only */ }
   return { floorView: 'office' };
 }
 
-export type FloorView = 'office' | 'tasks' | 'graph' | 'file';
+export type FloorView = 'office' | 'tasks' | 'pulse' | 'graph' | 'file';
 const initialFloorView: FloorView = (() => {
   try {
     const v = window.localStorage.getItem(LS_FLOOR_VIEW);
-    return v === 'tasks' || v === 'graph' ? v : 'office';
+    return v === 'tasks' || v === 'graph' || v === 'pulse' ? v : 'office';
   } catch { return 'office'; }
 })();
 
@@ -907,6 +918,11 @@ export const useStore = create<State>((set, get) => ({
   addAgentOpen: false,
   ccTabRequest: null,
   memoryFocusRequest: null,
+  openAgentProfile: (agentId) => set((s) => {
+    const seq = (s.ccTabRequest?.seq ?? 0) + 1;
+    persistAgents(s.agents, agentId);
+    return { selectedId: agentId, ccTabRequest: { tab: 'profile', seq }, rightColumn: 'person' as const, ...officeView(s.floorView) };
+  }),
   openAgentMemory: (agentId) => set((s) => {
     const god = s.agents.find((a) => a.isGod);
     const seq = (s.ccTabRequest?.seq ?? 0) + 1;
@@ -936,7 +952,7 @@ export const useStore = create<State>((set, get) => ({
   floorView: initialFloorView,
   fileTabs: [],
   activeFileTab: null,
-  lastFixedView: initialFloorView === 'tasks' || initialFloorView === 'graph' ? initialFloorView : 'office',
+  lastFixedView: initialFloorView === 'tasks' || initialFloorView === 'graph' || initialFloorView === 'pulse' ? initialFloorView : 'office',
   ideInitialFile: null,
   ideOpen: false,
   ideAgentId: null,
@@ -1181,6 +1197,9 @@ export const useStore = create<State>((set, get) => ({
   answerDrafts: {},
   setAnswerDraft: (taskId, text) =>
     set((s) => ({ answerDrafts: { ...s.answerDrafts, [taskId]: text } })),
+  answerPicks: {},
+  setAnswerPick: (key, pick) =>
+    set((s) => ({ answerPicks: { ...s.answerPicks, [key]: pick } })),
   drafts: {},
   setDraft: (agentId, text) =>
     set((s) => ({ drafts: { ...s.drafts, [agentId]: text } })),

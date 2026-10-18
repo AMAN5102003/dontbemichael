@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.1). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.2). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -26,11 +26,14 @@ moving, and brings you only the decisions that need you.
   and the whole result leads its details. Only you reopen a Done card, with a short reason.
 - Michael alone keeps the task board. Team members file what their work needs once, in a queue
   only he sees, and he works it in order: answers it, folds it into a card, or puts it on Ask me.
-  One activity's questions arrive as one numbered ask, and a part you leave open comes back.
+  One activity's questions arrive as one ask: choices show as rows you pick with a click, with
+  Michael's recommendation tagged, and several questions get a line each. You never have to
+  answer them all: what you leave blank goes back through Michael to whoever asked, and comes
+  back to you only if they still need it.
 - A To do card shows when its next step is due, in your local time, and its person is reminded
   then, even after the app was closed.
-- A question stays on Ask me until you answer it or Michael withdraws it, and your answer goes only
-  to Michael.
+- A question stays on Ask me until you answer it, Michael withdraws it, or you delete the team
+  member who asked, and your answer goes only to Michael.
 - A file Michael names in a reply, an Ask me card or a task shows as a chip. Markdown, text, JSON,
   CSV and pictures open in an office tab beside Who talks to whom and refresh when the file
   changes; PDF and Office files open in their own app. Only files in the office and team folders
@@ -50,6 +53,9 @@ moving, and brings you only the decisions that need you.
   turns it into the agent's instructions.
 - A new hire's one time first job is a card Michael hands out, not a line in their work style.
 - Every hire gets its own private folder and starts working.
+- Delete a team member for good from the Danger zone in Edit agent: they stop, their schedules
+  pause, work they took goes back to the teammates it came from, and Michael gets their open
+  cards to hand on. Michael, his assistant and Pete can't be deleted.
 
 ### 3. A mailbox for every job
 - Connect as many mailboxes as your business runs on: Gmail, Google Workspace, iCloud, Yahoo, Zoho
@@ -91,20 +97,36 @@ moving, and brings you only the decisions that need you.
   tools, but shell commands are not limited yet.
 - House rules for every agent: say where a fact came from, say when it doesn't know, never make up
   people, customers or quotes. A looping agent is steered, then held, then stopped.
+- A team member stuck on a prompt only a person could answer is restarted by the app, never
+  handed to you for a 1:1. If the restart does not take, or it happens again within half an
+  hour, Michael moves their work to a teammate and tells you once.
 - One team member on the internet: Pete, the Research team member, is the only one who opens web
   pages or searches, in every office. A trust layer checks every message to Pete against the kinds
   of data you keep private and cleans Pete's answers. Pete is off until you turn them on, and sees
   none of your files. On a Mac nobody else's commands reach the internet.
 
 ### 7. An office you can watch
-- A pod for each department around Michael's glass office, each with its painted floor sign, and
-  every team member with a signature prop on their desk and as their avatar. Desks light up as team members clock
+- A pod for each department around Michael's glass office, each with a plate in front of the
+  chairs naming its department (Finance, Sales, HR and so on), and every team member with a
+  signature prop on their desk and as their avatar. The monitors are clear glass, tinted with
+  scrolling lines while someone works. Desks light up as team members clock
   in and go dark at closing time, envelopes fly between pods as work moves, and idle teammates
   trade lines across the office by paper plane. Your message to Michael flies to him as a paper
   plane too.
 - Every team member has a Profile, Access, Messages, Memory and Work tab written for owners, not
   developers. Views for the task board and for who talks to whom, over any time from the last hour
   to the last month.
+- Pulse shows what the office got done and what each team member costs, as pictures:
+  recommendations first (a schedule that mostly finds nothing to do, or a member whose work would
+  suit a lighter model), each with its numbers and applied only by your click, with Undo; what got
+  done and who did it; Kept safe, what the trust layer kept off the internet, the web answers it
+  cleaned of instructions to AI agents, anything held because it could not be checked, and the
+  steps your settings stopped; Learning, what the team learned in the period and whether it asks
+  you less than before; your plan use and your time; and Team at work, how busy each member is next to the
+  others, and what their work costs. On a Claude plan, costs are the plan's real price
+  (found in your Claude account, or the price you set in Settings) split by each member's share
+  of the work, with the pay per use figure one click away. It fills in the weeks before
+  it started from what the office already keeps, so it never starts at zero.
 
 ### 8. Built for small business owners
 - Setup by kind of business: restaurant and food, retail, professional services, home services,
@@ -121,6 +143,24 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.2 (2026-10-16)
+- Pulse, a new tab beside Tasks: recommendations to save (a check run less often, a lighter or
+  stronger model) applied only on Apply and undone with Undo; what got done; what was kept safe;
+  what the team learned and whether it asks you less; what was spent and your time; and Team at
+  work. It fills in the eight weeks before it started. On a Claude plan, cost is your plan's real
+  price split by each member's share of the work, with a price you can set in Settings.
+- Ask me cards with choices as rows to pick and a line per question; you never have to answer
+  every question, and what you leave blank goes back through Michael to whoever asked.
+- Delete a team member for good from the Danger zone in Edit agent.
+- Every office on the floor names its department on a plate, and the desk monitors are glass.
+- A team member stuck on a prompt is restarted and told to carry on, never handed to you.
+- Hook events carry a secret for each start, so a frame with no secret or an old one reaches
+  nothing (issue #61).
+- Pete's privacy check answers at launch, Pete no longer stops on permission prompts, and the app
+  never answers a permission prompt for an agent.
+- Six contributor fixes: Yesterday across clock changes, release notes with &, <, >, a damaged
+  pause notice, close button feedback, a street address example and more local currencies.
 
 ### 0.2.1 (2026-10-14)
 - Reset & start over starts truly fresh: it erases everything the app made for the office (the

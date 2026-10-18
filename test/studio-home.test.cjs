@@ -344,6 +344,7 @@ test('a second pod never takes a slot another department prefers; job titles com
   assert.notEqual(L.roleOf({ id: 'erin', character: 'erin', sourceCard: 'pro-services/kelly' }), L.roleOf({ id: 'erin', character: 'erin' }), 'the hire, not the character');
   assert.equal(L.roleOf({ id: 'x', character: 'nobody', sourceCard: 'pack/unknown', description: 'Handles the books. Also payroll.' }), 'Handles the books');
   assert.equal(L.roleOf({ id: 'y', description: 'Keeps every supplier relationship warm and the shelves full' }), 'Keeps every supplier relat...');
+  assert.equal(L.roleOf({ id: 'r', description: 'Research: looks things up on the internet for the team' }), 'Research', 'a titled line gives its title');
   assert.equal(L.roleOf({ id: 'z' }), '');
   // Mailbox posts spread along the front edge, the first always at the corner.
   assert.deepEqual([L.postGx(0, 1), L.postGx(0, 3), L.postGx(2, 3)], [-4, -4, -1.6]);

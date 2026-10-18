@@ -37,7 +37,7 @@ test('a pasted screenshot is saved in the app folder, not the OS temp folder', (
   const main = fs.readFileSync(path.resolve(__dirname, '..', 'src/main/index.ts'), 'utf8');
   assert.match(main, /savePaste\(pastesDir\(app\.getPath\('userData'\)\), img\.toPNG\(\)\)/);
   assert.doesNotMatch(main, /cth-pastes/);
-  assert.match(main, /sweepOldPastes\(pastesDir\(app\.getPath\('userData'\)\)\);/, 'old pastes are cleared at startup');
+  assert.match(main, /sweepOldPastes\(pastesDir\(app\.getPath\('userData'\)\), PASTE_KEEP_MS, Date\.now\(\), JSON\.stringify\(roster\.read\(\)\?\.queues \?\? \{\}\)\);/, 'old pastes are cleared at startup, but not one a queued message names');
 });
 
 test('startup removes only old pasted screenshots', (t) => {
@@ -61,4 +61,19 @@ test('startup removes only old pasted screenshots', (t) => {
   assert.ok(fs.existsSync(notOurs), 'only paste files are touched');
   // No folder yet (nothing pasted): nothing to do, and no error.
   sweepOldPastes(path.join(dir, 'missing'));
+});
+
+test('an old screenshot a queued message still names is kept', (t) => {
+  const dir = pastesDir(scratch(t));
+  fs.mkdirSync(dir, { recursive: true });
+  const now = Date.now();
+  const old = new Date(now - PASTE_KEEP_MS - DAY);
+  const waiting = path.join(dir, 'paste-111.png');
+  const done = path.join(dir, 'paste-222.png');
+  for (const p of [waiting, done]) { fs.writeFileSync(p, 'x'); fs.utimesSync(p, old, old); }
+  // The saved queues, as main reads them from the roster.
+  const queues = { pam: [{ id: 'q1', text: `Check this\n\nAttached files:\n- ${waiting} (paste-111.png)`, ts: now - PASTE_KEEP_MS - DAY }] };
+  sweepOldPastes(dir, PASTE_KEEP_MS, now, JSON.stringify(queues));
+  assert.ok(fs.existsSync(waiting), 'Pam has not had it yet');
+  assert.equal(fs.existsSync(done), false);
 });

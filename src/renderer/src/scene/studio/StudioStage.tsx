@@ -449,6 +449,7 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
                   // A person who has gone home at closing time has a dark desk (2A).
                   desks={pod.members.map((a) => ({ st: deskState(a), prop: a.character, away: away.has(a.id) || !!closing?.out.has(a.id) }))}
                   c={families[pod.dept]} famKey={pod.dept}
+                  label={t(`studio.dept.${pod.dept}`)}
                   selected={pod.members.some((a) => a.id === selected)}
                   T={T} dark={dark}
                   arriving={pod.members.some((a) => life.arriving.has(a.id))}

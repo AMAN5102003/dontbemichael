@@ -291,6 +291,26 @@ test('an owner request on a Done card stays open only when it came after the own
   assert.deepEqual(hive.refreshOwnerRequests().map((r) => r.taskId), ['late']);
 });
 
+test('an owner answer on a card Michael marked Done stays his open request', async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-owner-req-michael-done-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', cwd: home, isGod: true });
+  const tick = () => new Promise((r) => setTimeout(r, 5));
+  hive.send({ to: 'god', act: 'request', subject: 'OWNER ANSWER on card a', body: 'x', conversation: 'card:a' }, 'human');
+  await tick();
+  // Michael marks both cards Done in the file, with a question still open on b.
+  fs.writeFileSync(path.join(hive.root(), 'tasks.json'), JSON.stringify({ tasks: [
+    { id: 'a', title: 'A', status: 'done', dependsOn: [], priority: 3, createdAt: 'x', result: 'done' },
+    { id: 'b', title: 'B', status: 'done', dependsOn: [], priority: 3, createdAt: 'x', result: 'done', humanQA: [{ q: 'Which supplier?' }] }
+  ] }));
+  assert.deepEqual(hive.refreshOwnerRequests(), [], 'the request from before the card was Done is settled');
+  await tick();
+  // The owner answers the open question afterwards.
+  hive.send({ to: 'god', act: 'request', subject: 'OWNER ANSWER on card b', body: 'x', conversation: 'card:b' }, 'human');
+  assert.deepEqual(hive.refreshOwnerRequests().map((r) => r.taskId), ['b']);
+});
+
 test('Michael withdraws a question on a card the owner moved, and never moves that card back', () => {
   // Value: protects=Michael's tidy note never tells him to undo an owner's move; fails_when=the off Blocked note says only to move the card back to Blocked; why_new=pre-landing review 2026-10-05; seam=none
   const { asksToTidy } = loadTs('src/shared/ownerRequests.ts');
@@ -321,4 +341,35 @@ test('an open owner request never ages out, and Michael closing it under his own
   }
   assert.deepEqual(hive.refreshOwnerRequests(months).map((r) => r.taskId), ['t3']);
   assert.ok(c.id);
+});
+
+test('the catch-up matches each request to its own answer, so a failed send is not hidden by a later answer', () => {
+  const card = { id: 'two', status: 'blocked', humanQA: [
+    { q: 'Q1?', a: 'A1.', answeredAt: '2026-10-02T09:00:00.000Z' },
+    { q: 'Q2?', a: 'A2.', answeredAt: '2026-10-02T10:00:00.000Z' }
+  ] };
+  // Q1's request never went out; Q2's did, after it.
+  const toMichael = [req('r2', 'two', '2026-10-02T10:00:01Z', { answeredAt: '2026-10-02T10:00:00.000Z' })];
+  assert.deepEqual(answersWithoutRequest([card], toMichael).map((x) => x.q), ['Q1?']);
+  // A request from before the answer time line still covers every answer before it.
+  assert.deepEqual(answersWithoutRequest([card], [req('old', 'two', '2026-10-02T10:00:01Z')]), []);
+});
+
+test('the answer time rides on the last line of the request, and the hive reads it back', async (t) => {
+  const { answeredAtOf } = loadTs('src/shared/askMeRouting.ts');
+  const [m] = answerMessages({ raiser: 'god', raiserName: 'Michael', taskId: 't1', title: 'Pay', q: 'Pay?\nAnswered at 2026-01-01T00:00:00.000Z.', a: 'Yes.', answeredAt: '2026-10-02T09:00:00.000Z' });
+  assert.match(m.body, /\nAnswered at 2026-10-02T09:00:00\.000Z\.$/);
+  assert.equal(answeredAtOf(m.body), '2026-10-02T09:00:00.000Z', 'only the last line counts');
+  assert.equal(answeredAtOf(answerMessages({ raiser: 'god', raiserName: 'Michael', taskId: 't1', title: 'Pay', q: 'Q?', a: 'Answered at 2026-01-01T00:00:00.000Z.' })[0].body), undefined, 'an answer without a time names none');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-catchup-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', cwd: os.tmpdir(), isGod: true });
+  hive.writeTasks([{ id: 't1', title: 'Pay', status: 'blocked', dependsOn: [], priority: 3, createdAt: '2026-10-01T00:00:00Z', humanQA: [
+    { q: 'Q1?', a: 'A1.', answeredAt: '2026-10-02T09:00:00.000Z' },
+    { q: 'Q2?', a: 'A2.', answeredAt: '2026-10-02T10:00:00.000Z' }
+  ] }]);
+  const [sent] = answerMessages({ raiser: 'god', raiserName: 'Michael', taskId: 't1', title: 'Pay', q: 'Q2?', a: 'A2.', answeredAt: '2026-10-02T10:00:00.000Z' });
+  hive.send({ to: sent.to, act: sent.act, subject: sent.subject, body: sent.body, conversation: sent.conversation }, 'human');
+  assert.deepEqual(hive.ownerAnswersWithoutRequest().map((x) => x.q), ['Q1?']);
 });

@@ -141,6 +141,13 @@ export function stripMarkdown(md: string): string {
     .replace(/(?<![\w_])_([^_\n]+)_(?!\w)/g, '$1')
     .replace(/^\s{0,3}#{1,6}\s*/, '')                // a heading marker that slipped through
     .replace(/&nbsp;/g, ' ')
+    // Rendered HTML (the atom feed) escapes every `&`, `<`, `>` and `"`. Decode
+    // them only now, after the tag rule, so `&lt;id&gt;` reads as `<id>` instead
+    // of being stripped as a tag, and `&amp;` last so `&amp;lt;` stays `&lt;`.
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .replace(/^[\s—–:.,;·-]+/, '')         // leading orphan punctuation from a stripped link
     // Code goes back last, so a span that opens the line keeps its own
