@@ -203,7 +203,7 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
   }, []);
   // The last thing each waiting agent said, read from its transcript in main,
   // so a long job looks different from a stuck one.
-  const [said, setSaid] = useState<Record<string, string>>({});
+  const [said, setSaid] = useState<Record<string, { text: string; at?: number }>>({});
   const waitingKey = (closing.waiting ?? []).join('\n');
   useEffect(() => {
     if (!waitingKey) return;
@@ -274,7 +274,7 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
               )}
             </div>
             {d.line && <div style={detailStyle}>{d.line}</div>}
-            {said[id] && <div style={detailStyle}>{saidLine(said[id], t)}</div>}
+            {said[id] && <div style={detailStyle}>{saidLine(said[id], now, t)}</div>}
             {confirming === id && (
               <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                 <span>{t('closingTime.confirmClose', { name: nameOf(id) })}</span>

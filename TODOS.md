@@ -253,15 +253,6 @@
 
 ## Closing time (deferred from ship of feat/closing-time-progress, 2026-09-29)
 
-### Feed each row's latest line from the agent's transcript
-
-**What:** Show the last thing each agent said under its row, read from its Claude transcript.
-
-**Why:** The row's "latest line" was removed before release because `recentAssistantText` is only set by `src/renderer/src/mocks/mockEvents.ts`; real agents never fill it. The owner asked for it to tell a long process from a stuck one.
-
-**Effort:** M
-**Priority:** P2
-
 ### Rows in a second window
 
 **What:** Give the closing-time rows names and detail in every window, not only the one that saw the hook events.

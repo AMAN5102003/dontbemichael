@@ -82,7 +82,7 @@ import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, webAccess } from '../shared/webAcce
 import { isQuickBooksConnectorTool, isQuickBooksResourceCall, quickbooksAccess, quickbooksCapability } from '../shared/quickbooks';
 import { handoffContext } from '../shared/safeClear';
 import { ownerQuestionsContext, ownerRequestsContext, stuckCardsContext } from '../shared/ownerRequests';
-import { lastAssistantLine, lastAssistantText } from './transcriptText';
+import { lastAssistantLine, lastAssistantText, type SaidLine } from './transcriptText';
 import { stopReasonFor, type OfficeStopReason } from '../shared/officeBreak';
 
 /** An MCP tool, or Claude Code's tools for MCP resources. */
@@ -356,14 +356,15 @@ export class HookServer {
     return this.transcriptPaths.get(agentId);
   }
 
-  /** The last thing this agent said, as one safe line, for its closing-time
-   *  row. Read only from a transcript in the engine's own folder: the path
+  /** The last thing this agent said, as one safe line, and when, for its
+   *  closing-time row. Read only from a transcript in the engine's own folder: the path
    *  comes from a hook frame, which an agent could write. */
-  latestLine(agentId: string): string | undefined {
+  latestLine(agentId: string): SaidLine | undefined {
     const file = this.transcriptPaths.get(agentId);
     if (!file || !isClaudeTranscript(file)) return undefined;
     const said = lastAssistantLine(file);
-    return said ? safeLine(said) : undefined;
+    const text = said ? safeLine(said.text) : undefined;
+    return text ? { ...said, text } : undefined;
   }
 
   /** The latest context-window accounting for an agent (current tokens + the real

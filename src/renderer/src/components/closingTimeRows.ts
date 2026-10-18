@@ -51,15 +51,25 @@ export function describeRow(
   const what = a.status === 'idle' || a.action === atPrompt ? undefined
     : a.actionDetail === undefined ? caption(a.action, t)
     : t('closingTime.agentWords', { text: agentText(a.actionDetail) });
-  const mins = a.actionAt ? Math.floor((now - a.actionAt) / 60_000) : 0;
-  const line = [what, mins >= 1 ? t('closingTime.minutes', { count: mins }) : ''].filter(Boolean).join(' · ') || undefined;
+  const line = [what, minutesSince(a.actionAt, now, t)].filter(Boolean).join(' · ') || undefined;
   return { state, line };
 }
 
+/** "7 min" since `at`, or '' under a minute or with no valid time. */
+function minutesSince(at: number | undefined, now: number, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  const mins = at && Number.isFinite(at) ? Math.floor((now - at) / 60_000) : 0;
+  return mins >= 1 ? t('closingTime.minutes', { count: mins }) : '';
+}
+
 /** The last thing a waiting agent said (main reads it from its transcript),
- *  quoted so it never reads as the app's own words. */
-export function saidLine(text: string | undefined, t: (key: string, opts?: Record<string, unknown>) => string): string | undefined {
-  return text ? t('closingTime.lastSaid', { text: agentText(text) }) : undefined;
+ *  quoted so it never reads as the app's own words, and how long ago. */
+export function saidLine(
+  said: { text: string; at?: number } | undefined,
+  now: number,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string | undefined {
+  if (!said?.text) return undefined;
+  return [t('closingTime.lastSaid', { text: agentText(said.text) }), minutesSince(said.at, now, t)].filter(Boolean).join(' · ');
 }
 
 /** The message a row shows after Remind or Close without them: none when it

@@ -20,16 +20,19 @@ export function transcriptFile(projectDirPath: string, sessionId: string): strin
 export function lastAssistantText(file: string): string | null {
   try {
     if (!existsSync(file)) return null;
-    return lastTextIn(readFileSync(file, 'utf8').split('\n'));
+    return lastTextIn(readFileSync(file, 'utf8').split('\n'))?.text ?? null;
   } catch { return null; }
 }
 
 /** How much of a transcript's end the latest line is looked for in. */
 const LATEST_TAIL_BYTES = 256 * 1024;
 
-/** The last line of the last thing the agent said, read from the end of its
- *  transcript only (a long session's file is many megabytes), or null. */
-export function lastAssistantLine(file: string, tailBytes = LATEST_TAIL_BYTES): string | null {
+/** One line the agent said, and when (ms), if its record had a valid time. */
+export interface SaidLine { text: string; at?: number }
+
+/** The last worded line of the last thing the agent said, read from the end
+ *  of its transcript only (a long session's file is many megabytes), or null. */
+export function lastAssistantLine(file: string, tailBytes = LATEST_TAIL_BYTES): SaidLine | null {
   let fd: number | undefined;
   try {
     fd = openSync(file, 'r');
@@ -40,19 +43,43 @@ export function lastAssistantLine(file: string, tailBytes = LATEST_TAIL_BYTES): 
     const lines = buf.toString('utf8').split('\n');
     // The first line may start mid record.
     if (len < size) lines.shift();
-    const text = lastTextIn(lines);
-    return text ? text.split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? null : null;
+    const said = lastTextIn(lines);
+    const text = said && lastWordedLine(said.text);
+    if (!text) return null;
+    const at = typeof said.timestamp === 'string' ? Date.parse(said.timestamp) : NaN;
+    return Number.isFinite(at) ? { text, at } : { text };
   } catch { return null; } finally {
     if (fd !== undefined) try { closeSync(fd); } catch { /* gone */ }
   }
 }
 
-/** The last non-empty assistant text block among transcript lines. */
-function lastTextIn(lines: string[]): string | null {
+/** Heading, quote, list and numbered list marks at the start of a line. */
+const LEADING_MARKS = /^(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)+/;
+
+/** The last line of markdown `text` with words in it, as plain words: code
+ *  blocks, their fences and table rule rows are skipped; leading marks, outer
+ *  table pipes and ** or ` around words are dropped. Null if none. */
+export function lastWordedLine(text: string): string | null {
+  let inCode = false;
+  let last: string | null = null;
+  for (const raw of text.split('\n')) {
+    if (/^\s*(```|~~~)/.test(raw)) { inCode = !inCode; continue; }
+    if (inCode) continue;
+    let line = raw.trim().replace(LEADING_MARKS, '');
+    if (line.startsWith('|')) line = line.replace(/^\|\s*|\s*\|$/g, '');
+    line = line.replace(/\*\*|`/g, '').trim();
+    if (/[\p{L}\p{N}]/u.test(line)) last = line;
+  }
+  return last;
+}
+
+/** The last non-empty assistant text block among transcript lines, with its
+ *  record's timestamp. */
+function lastTextIn(lines: string[]): { text: string; timestamp?: unknown } | null {
   for (let i = lines.length - 1; i >= 0; i--) {
     const trimmed = lines[i].trim();
     if (!trimmed) continue;
-    let rec: { type?: unknown; message?: { content?: unknown[] } };
+    let rec: { type?: unknown; timestamp?: unknown; message?: { content?: unknown[] } };
     try { rec = JSON.parse(trimmed); } catch { continue; }
     if (rec.type !== 'assistant') continue;
     const content = rec.message?.content;
@@ -60,7 +87,7 @@ function lastTextIn(lines: string[]): string | null {
     for (let j = content.length - 1; j >= 0; j--) {
       const block = content[j] as { type?: unknown; text?: unknown };
       if (block.type === 'text' && typeof block.text === 'string' && block.text.trim()) {
-        return block.text.trim();
+        return { text: block.text.trim(), timestamp: rec.timestamp };
       }
     }
   }
