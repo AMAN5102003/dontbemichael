@@ -40,6 +40,7 @@
  */
 
 import { createReadStream, statSync } from 'fs';
+import { isCostReset } from '../shared/costFold';
 
 /** Per (agent, session) fold state: closed segments plus the open one. */
 interface Segment {
@@ -49,9 +50,6 @@ interface Segment {
   peak: number;
 }
 
-/** Float noise guard. Real resets drop by cents at minimum, so anything below
- *  this is arithmetic dust rather than a restart. */
-const EPS = 1e-9;
 
 /** Cap per pass so a cold start cannot stall behind one enormous read. The
  *  fold simply resumes on the next call. */
@@ -169,7 +167,7 @@ export class CostLedgerTotals {
     let s = this.seg.get(key);
     if (!s) { s = { committed: 0, peak: 0 }; this.seg.set(key, s); }
 
-    if (usd < s.peak - EPS) {
+    if (isCostReset(s.peak, usd)) {
       // Counter went backwards: the previous segment ended at its peak.
       s.committed += s.peak;
       s.peak = usd;

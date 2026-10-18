@@ -168,18 +168,19 @@ test('two requests from one agent about one job become one card (owner, 2026-09-
   assert.equal(replaced.length, 1);
   assert.equal(replaced[0].op, 'pause');
   const main = read('src/main/index.ts');
-  assert.match(main, /const filed = fileScheduleRequest\(before, built\.request, cfg\.missions \?\? \[\]\);/);
+  assert.match(read('src/main/scheduleRequests.ts'), /const filed = fileScheduleRequest\(before, built\.request, cfg\.missions \?\? \[\]\);/);
   assert.match(main, /const folded = foldScheduleRequests\(pending, cfg\.missions \?\? \[\]\);/);
 });
 
 test('Michael decides team members\' schedule requests; the owner sees only what he passes on (owner, 2026-09-27)', () => {
   const main = read('src/main/index.ts');
-  const intake = main.slice(main.indexOf('function receiveScheduleRequest('), main.indexOf('function tellMichaelAboutRequest('));
+  const requests = read('src/main/scheduleRequests.ts');
+  const intake = requests.slice(requests.indexOf('function receiveScheduleRequest('), requests.indexOf('function tellMichaelAboutRequest('));
   assert.match(intake, /if \(actor === godId && \(op === 'approve' \|\| op === 'decline' \|\| op === 'ask-owner' \|\| op === 'pending'\)\)/);
   assert.match(intake, /tellMichaelAboutRequest\(request, cfg\.missions \?\? \[\]\);/);
   assert.doesNotMatch(intake, /ownerToast/, 'a new request no longer pings the owner');
   assert.match(intake, /if \(actor === godId\) \{[\s\S]{0,200}applyScheduleRequest\(built\.request/, "Michael's own changes apply at once");
-  const decide = main.slice(main.indexOf('function michaelDecides('), main.indexOf('function decideScheduleRequest('));
+  const decide = requests.slice(requests.indexOf('function michaelDecides('), requests.indexOf('function decideScheduleRequest('));
   assert.match(decide, /if \(!note\) return 'Add a "note" saying what you can\\'t settle/);
   assert.match(decide, /escalated: true, escalation: note/);
   assert.match(main, /try \{ sweepScheduleRequests\(\); \}/, 'waiting requests reach Michael, then the owner');
@@ -208,8 +209,9 @@ test('merges keep a rename and a correction as asked; a joined request goes back
   assert.equal(joined.escalated, undefined);
   assert.equal(joined.sentToMichael, undefined);
   const main = read('src/main/index.ts');
-  assert.match(main, /if \(req\.escalated\) return 'That request is with the owner in ASK ME now/);
-  assert.match(main, /const overdue = pending\.filter\(\(r\) => !r\.escalated && r\.sentToMichael && now - \(r\.sentToMichaelAt \?\? r\.createdAt\) > MICHAEL_DECIDES_WITHIN_MS\);/);
+  const requests = read('src/main/scheduleRequests.ts');
+  assert.match(requests, /if \(req\.escalated\) return 'That request is with the owner in ASK ME now/);
+  assert.match(requests, /const overdue = pending\.filter\(\(r\) => !r\.escalated && r\.sentToMichael && at - \(r\.sentToMichaelAt \?\? r\.createdAt\) > MICHAEL_DECIDES_WITHIN_MS\);/);
   assert.match(main, /scheduleSweepTimer = setInterval\(/);
 });
 

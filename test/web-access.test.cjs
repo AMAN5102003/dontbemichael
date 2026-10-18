@@ -98,7 +98,7 @@ test('Research can hold no mailbox, connector or schedule', () => {
   assert.match(main, /agentId === RESEARCH_ID \|\| typeof key !== 'string'/, 'connectors');
   assert.match(main, /if \(agentId === RESEARCH_ID\) return \{ ok: false \};\n  const quickbooks/, 'QuickBooks');
   assert.match(main, /if \(mission\.to === RESEARCH_ID\) return \{ ok: false, error: `\$\{hive\.researchName\(\)\} has no schedules` \};/);
-  assert.match(main, /if \(actor === RESEARCH_ID\) return 'You have no schedules/);
+  assert.match(read('src/main/scheduleRequests.ts'), /if \(actor === RESEARCH_ID\) return 'You have no schedules/);
 });
 
 test('Research\'s notes reach the shared memory only as a cleaned copy', () => {
@@ -140,12 +140,12 @@ test('Research\'s Work style and jobs reach it only as the trust layer passed th
   assert.equal(goal('Call Jane on 555 0100'), 'BUILT IN');
   await new Promise((r) => setImmediate(r));
   assert.equal(goal('Call Jane on 555 0100'), 'BUILT IN', 'a refused text is never used');
-  // No answer is not a refusal: it is checked again after a minute.
+  // A check that could not run is not a refusal: it is checked again after a minute.
   const realNow = Date.now;
   try {
     let now = realNow();
     Date.now = () => now;
-    next = { decision: 'deny', reason: R.REFUSAL_UNSURE };
+    next = { decision: 'deny', reason: R.REFUSAL_CHECK_FAILED };
     assert.equal(goal('Pizza trends'), 'BUILT IN');
     await new Promise((r) => setImmediate(r));
     next = { decision: 'pass', subject: 's', body: 'Pizza trends' };
@@ -154,6 +154,15 @@ test('Research\'s Work style and jobs reach it only as the trust layer passed th
     goal('Pizza trends');
     await new Promise((r) => setImmediate(r));
     assert.equal(goal('Pizza trends'), 'Pizza trends', 'retried after a minute');
+    // A refusal that names no private kind stands, like any refusal.
+    next = { decision: 'deny', reason: R.REFUSAL_UNSURE };
+    assert.equal(goal('Bakery trends'), 'BUILT IN');
+    await new Promise((r) => setImmediate(r));
+    next = { decision: 'pass', subject: 's', body: 'Bakery trends' };
+    now += 61_000;
+    goal('Bakery trends');
+    await new Promise((r) => setImmediate(r));
+    assert.equal(goal('Bakery trends'), 'BUILT IN', 'not checked again');
   } finally { Date.now = realNow; }
   const main = read('src/main/index.ts');
   assert.match(main, /return agentId === RESEARCH_ID \? researchGoal\(text\) : text;/);

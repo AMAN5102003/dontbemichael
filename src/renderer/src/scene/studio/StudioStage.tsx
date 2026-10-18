@@ -10,7 +10,7 @@ import { RESEARCH_ID } from '@shared/research';
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
-import { useStore, actionText, liveActivity, ACTION_CLOCKING_IN, type Agent } from '@/store/store';
+import { useStore, actionText, liveActivity, ACTION_CLOCKING_IN, ROSTER_BOOT_HOME, type Agent } from '@/store/store';
 import type { HarnessConfig } from '@/store/config';
 import { departments, type DepartmentName } from '@/design/tokens';
 import { useAppTheme } from '@/design/theme';
@@ -23,6 +23,7 @@ import { useMissions } from '@/components/triggers/ScheduleList';
 import { openQuestions, parseTasks } from '@/components/TasksKanban';
 import { missionsFor, nextRunAt } from '@shared/missions';
 import { createBanter, createIdleLines } from '@/scene/office/cafeteriaLines';
+import { browserStorage, markWelcomed, welcomeArmed } from '@/scene/office/peteWelcome';
 import { getNeedsYouFeed, newestAskFor, useNeedsYou, useNeedsYouCount } from '@/shell/useNeedsYou';
 import { chatCandidates, stillIn } from '@/shell/closingFloor';
 
@@ -448,6 +449,7 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
                   // A person who has gone home at closing time has a dark desk (2A).
                   desks={pod.members.map((a) => ({ st: deskState(a), prop: a.character, away: away.has(a.id) || !!closing?.out.has(a.id) }))}
                   c={families[pod.dept]} famKey={pod.dept}
+                  label={t(`studio.dept.${pod.dept}`)}
                   selected={pod.members.some((a) => a.id === selected)}
                   T={T} dark={dark}
                   arriving={pod.members.some((a) => life.arriving.has(a.id))}
@@ -1078,10 +1080,9 @@ function useIdleQuote(
     };
     // Someone idle and in (not clocking in, not gone home at closing time), in
     // a pod where nobody still at work is busy, so a bubble never sits on an
-    // open card or a dark office.
-    // The Research member borrows Ryan's character, so it takes no part in the in character
-    // lines and banter that would call him Ryan (ship review).
-    const quietPeople = () => chatCandidates(live.current.pods, live.current.gone, ACTIVE, ACTION_CLOCKING_IN).filter((p) => p.id !== RESEARCH_ID);
+    // open card or a dark office. Pete, the Research member, is one of them:
+    // he wears his own face now, so nobody calls him Ryan (owner, 2026-10-13).
+    const quietPeople = () => chatCandidates(live.current.pods, live.current.gone, ACTIVE, ACTION_CLOCKING_IN);
     const podOfId = (id: string) => live.current.pods.find((p) => p.members.some((m) => m.id === id));
     const pickOne = (people: Agent[]) => {
       const others = people.length > 1 ? people.filter((x) => x.id !== lastSpeaker.current) : people;
@@ -1110,8 +1111,39 @@ function useIdleQuote(
       // The exchange picks the partner, so each side is said by someone who would.
       const pick = banter(a.character, partners.map((x) => x.character));
       if (!pick) return false;
-      const b = partners[pick.partner];
-      const beats = pick.beats;
+      talk(a, partners[pick.partner], pick.beats);
+      return true;
+    };
+
+    // Pete's first day welcome (peteWelcome.ts): after the owner turns Research
+    // on, the first conversation that can be one of Pete's is, with someone in
+    // another pod. Only the timer asks for it, never demo or lab banter, so a
+    // demo cannot use it up. Nothing fits yet: the tick goes on as usual.
+    const welcomeChat = (): boolean => {
+      if (!welcomeArmed(browserStorage(), ROSTER_BOOT_HOME)) return false;
+      const idle = quietPeople();
+      const pete = idle.find((p) => p.id === RESEARCH_ID);
+      if (!pete) return false;
+      const others = idle.filter((b) => podOfId(b.id) !== podOfId(pete.id));
+      const own = others.length ? banter(pete.character, others.map((x) => x.character), pete.character) : null;
+      if (own) {
+        lastSpeaker.current = pete.id;
+        talk(pete, others[own.partner], own.beats, () => markWelcomed(browserStorage(), ROSTER_BOOT_HOME));
+        return true;
+      }
+      for (const a of [...others].sort(() => Math.random() - 0.5)) {
+        const pick = banter(a.character, [pete.character], pete.character);
+        if (!pick) continue;
+        lastSpeaker.current = a.id;
+        talk(a, pete, pick.beats, () => markWelcomed(browserStorage(), ROSTER_BOOT_HOME));
+        return true;
+      }
+      return false;
+    };
+
+    // Plays one exchange between a (who opens) and b; `thrown` runs once the
+    // first beat is in the air.
+    const talk = (a: Agent, b: Agent, beats: readonly string[], thrown?: () => void) => {
       const holdFor = (text: string) => Math.min(3600, Math.max(2000, 1200 + text.length * 50));
       busyUntil = Date.now() + beats.reduce((t, x) => t + FLIGHT_MS + holdFor(x), 0) + 2000;
       const play = (i: number) => {
@@ -1120,6 +1152,7 @@ function useIdleQuote(
         const still = quietPeople().map((x) => x.id);
         if (!still.includes(from.id) || !still.includes(to.id)) { busyUntil = 0; return; }
         if (!live.current.throwNote(from.id, to.id)) { busyUntil = 0; return; }
+        if (i === 0) thrown?.();
         const text = beats[i];
         const last = i === beats.length - 1;
         const hold = holdFor(text);
@@ -1129,7 +1162,6 @@ function useIdleQuote(
         });
       };
       play(0);
-      return true;
     };
 
     // The first comes soon after the office opens, then every 15 to 30 s:
@@ -1137,6 +1169,7 @@ function useIdleQuote(
     let first = true;
     const tick = () => {
       if (Date.now() < busyUntil) return;
+      if (welcomeChat()) return;
       if (Math.random() < 0.55 && chat()) return;
       say();
     };

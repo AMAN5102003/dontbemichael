@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
+import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
 import { execFile, spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
@@ -41,12 +42,11 @@ import {
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
 import { normalizeTimes, timesDelayMs } from '../shared/scheduleTimes';
 import {
-  armPlan, firePayload, upsertMission, deleteMission, setMissionEnabled, pauseMissionsOf,
-  migrateMissions, clampIntervals, buildScheduleRequest, applyScheduleRequest, missionsFor, fileScheduleRequest, foldScheduleRequests,
-  requestSummary, whenWords, cleanFocus, scheduledJobsBlock,
-  type ScheduleRequest
+  armPlan, catchUpFloor, firePayload, upsertMission, deleteMission, setMissionEnabled, pauseMissionsOf,
+  migrateMissions, clampIntervals, foldScheduleRequests, cleanFocus, scheduledJobsBlock
 } from '../shared/missions';
 import { MICHAEL_WORK_STYLE } from '../shared/michaelWorkStyle';
+import { makeScheduleRequests } from './scheduleRequests';
 import {
   getBranch, getStatus, getLog, getBranches, getAheadBehind, isRepo, getDiff, mainRepoRoot,
   addWorktree, removeWorktree, worktreeHasUnintegratedWork, worktreeIsGcSafe,
@@ -68,9 +68,20 @@ import { checkDistinct, readJobProfile } from './hireCheck';
 import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readSuggestRequest, suggestWorkStyle } from './workStyleConvert';
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
+import { TelemetryStore } from './telemetryStore';
+import { TelemetryProcessor } from './telemetryProcessor';
+import { PulseService } from './pulse';
+import { knownPrice } from './pricing';
+import bakedModelCatalog from '../shared/modelCatalog.json';
+import { parseModelCatalog, type ModelCatalog } from '../shared/modelCatalogPayload';
+import type { Period } from '../shared/teamPerformance';
 import { makeResearchGoal } from './researchGoal';
 import { ownResearchDir, readResearchNotes } from './researchNotes';
-import { claudeProjectsRoot, projectDir, readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
+import { backfilled, runBackfill } from './pulseBackfill';
+import { readTeamMemory } from './teamMemory';
+import { readClaudePlan } from './claudeAccount';
+import { planPrice, PLAN_LABELS, PLAN_PRICES } from '../shared/claudePlan';
+import { claudeProjectsRoot, projectDir, projectDirs, readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { listIssues, listCIRuns } from './github';
 import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
 import {
@@ -109,7 +120,8 @@ import { quickbooksAccessToSave } from '../shared/quickbooks';
 import { emailCalendarAllowed } from '../shared/mcpCatalog';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
-import { pastesDir, savePaste, sweepOldPastes } from './pastes';
+import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
+import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
 import { buildWorkerLaunch } from './workerLaunch';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
@@ -377,6 +389,9 @@ const breaker = new CircuitBreaker(() => {
 // heartbeat mission is disabled (it ships off).
 let fleetTimer: ReturnType<typeof setInterval> | null = null;
 let breakerBeatTimer: ReturnType<typeof setInterval> | null = null;
+let pulseFlushTimer: ReturnType<typeof setInterval> | null = null;
+let pulseTickTimer: ReturnType<typeof setInterval> | null = null;
+let pulsePresenceTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
 telemetry.onApiError((agentId) => breaker.recordError(agentId));
@@ -443,7 +458,13 @@ const hookServer = new HookServer(
   control,
   breaker,
   standingGoalFor,
-  (agentId, event, message) => {
+  (agentId, event, message, toolName) => {
+    // Pulse: turns and tool uses (authenticated frames only, #61).
+    if (agentId) {
+      if (event === 'UserPromptSubmit') pulseTelemetry.record({ agentId, kind: 'prompt', ts: Date.now() });
+      else if (event === 'PostToolUse') pulseTelemetry.record({ agentId, kind: 'tool', ts: Date.now(), attrs: { tool: toolName ?? '' } });
+      else if (event === 'Stop') pulseTelemetry.record({ agentId, kind: 'stop', ts: Date.now() });
+    }
     workerWake.noteHook(agentId, event, message);
     safeClearer.noteHook(agentId, event, message);
     if (agentId && event === 'UserPromptSubmit') promptSubmits.note(agentId);
@@ -455,6 +476,15 @@ const hookServer = new HookServer(
   memberPresent,
   (signal) => onPlanSignal(signal)
 );
+// Pulse's Kept safe: each step a setting stopped, by gate (proposal 3).
+hookServer.onRefused = (agentId, gate) => pulseTelemetry.record({ agentId: agentId ?? null, kind: 'refused', ts: Date.now(), attrs: { gate } });
+// A member stopped on a prompt is restarted by the window, the same restart as
+// Restart & Continue (owner, 2026-10-15: no terminals or 1:1 for the owner).
+hookServer.restartStuck = (agentId) => {
+  const wc = liveWebContents();
+  if (!wc) return false;
+  try { wc.send('agent:restartStuck', { agentId }); return true; } catch { return false; }
+};
 const memory = new MemoryManager(
   () => readConfig().harnessHome,
   () => { const c = readConfig(); return { enabled: c.semanticMemory !== false, model: c.embeddingModel ?? 'minilm' }; },
@@ -502,11 +532,95 @@ const memoryTidy = new MemoryTidy(
   () => memory.env(),
   () => isFloorQuiet(300_000),
   (id) => hive.registry().agents[id]?.name ?? id,
-  (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+  (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+  () => {
+    const cfg = readConfig();
+    return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
+  }
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
 const persist = new PersistStore();
+
+// ─── Pulse telemetry (docs/designs/team-performance.md) ─────────────────────
+// The isolated store: written only here, in harness.db, keyed by office.
+const pulseOffice = (): string | null => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; };
+const pulseTelemetry = new TelemetryStore(() => persist.database(), pulseOffice);
+const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTelemetry);
+/** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
+ *  read in the background from the office log, members' sessions and the cost
+ *  ledger. The view refreshes when it lands. */
+let pulseBackfilling: string | null = null;
+function pulseBackfillOnce(office: string): void {
+  const db = persist.database();
+  const root = hive.root();
+  if (!db || !root || pulseBackfilling === office || backfilled(db, office)) return;
+  pulseBackfilling = office;
+  pulseTelemetry.flush();
+  void runBackfill({ db, office, hiveRoot: root, projectsRoot: claudeProjectsRoot(), members: new Set(Object.keys(hive.registry().agents ?? {})), now: Date.now() })
+    .then((n) => {
+      console.log(`[pulse] backfill wrote ${n} points for ${office}`);
+      if (n > 0 && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
+    })
+    .catch((e) => console.error('[pulse] backfill:', e))
+    .finally(() => { if (pulseBackfilling === office) pulseBackfilling = null; });
+}
+/** The model ladder: the remote catalog when cached and valid, else the baked one. */
+function pulseLadder(): Array<{ provider: string; id: string; label: string; tier?: 'top' | 'middle' | 'small' }> {
+  let cat: ModelCatalog = bakedModelCatalog as ModelCatalog;
+  try {
+    const cached = JSON.parse(readFileSync(MODEL_CATALOG_CACHE(), 'utf8')) as { catalog?: unknown };
+    const parsed = parseModelCatalog(cached?.catalog);
+    if (parsed) cat = parsed;
+  } catch { /* the baked catalog */ }
+  return Object.entries(cat.providers).flatMap(([provider, rows]) => rows.filter((r) => r.id).map((r) => ({ provider, id: r.id!, label: r.label, ...(r.tier ? { tier: r.tier } : {}) })));
+}
+/** Each member's provider and model, from the roster the renderer saves. */
+function pulseModels(): Array<{ agentId: string; provider: string; model: string | null }> {
+  const cfg = readConfig();
+  let agents: unknown[] = [];
+  try { agents = roster.read()?.agents ?? []; } catch { agents = []; }
+  const godId = hive.registry().godId;
+  return agents.flatMap((a) => {
+    const o = a as { id?: unknown; provider?: unknown; model?: unknown };
+    if (typeof o.id !== 'string') return [];
+    const provider = typeof o.provider === 'string' ? o.provider : 'claude';
+    const model = typeof o.model === 'string' && o.model ? o.model : (o.id === godId ? cfg.godModel : cfg.defaultModel) ?? null;
+    return [{ agentId: o.id, provider, model }];
+  });
+}
+const pulse = new PulseService({
+  db: () => persist.database(),
+  store: pulseTelemetry,
+  processor: pulseProcessor,
+  office: pulseOffice,
+  members: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id, a]) => ({ id, isGod: !!a.isGod })),
+  godId: () => hive.registry().godId ?? null,
+  tasks: () => { const t = hive.tasks() as { tasks?: unknown }; return Array.isArray(t?.tasks) ? (t.tasks as never) : []; },
+  missions: () => readConfig().missions ?? [],
+  models: pulseModels,
+  ladder: pulseLadder,
+  priceOf: (m) => knownPrice(m),
+  applyMissions: (change) => applyMissions(change),
+  billing: () => (readConfig().claudeAuth === 'apiKey' ? 'apiKey' : 'account'),
+  plan: () => planPrice(readClaudePlan(), readConfig().planPriceMonthly),
+  memory: () => { const root = hive.root(); return root ? readTeamMemory(root, Object.keys(hive.registry().agents ?? {})) : { notes: [], procedures: {} }; }
+});
+// The office log kinds Pulse counts, and the board each tick reads.
+hive.logObserver = (e) => {
+  const kind = e.kind;
+  if (kind === 'message') {
+    const from = typeof e.from === 'string' ? e.from : '';
+    if (from && hive.registry().agents[from]) pulseTelemetry.record({ agentId: from, kind: 'message', ts: e.ts, attrs: { act: typeof e.act === 'string' ? e.act : null } });
+  } else if (kind === 'mail-organize' && typeof e.agentId === 'string') {
+    pulseTelemetry.record({ agentId: e.agentId, kind: 'email', ts: e.ts, value: Array.isArray(e.ids) ? e.ids.length : 1 });
+  } else if (kind === 'mail-sent' && typeof e.agentId === 'string') {
+    pulseTelemetry.record({ agentId: e.agentId, kind: 'sent', ts: e.ts });
+  } else if (kind === 'card-reopen') {
+    pulseTelemetry.record({ agentId: typeof e.agentId === 'string' ? e.agentId : null, kind: 'card-reopen', ts: e.ts, attrs: { id: e.id } });
+  }
+};
+hive.tasksObserver = (tasks) => pulseTelemetry.tasks(tasks as never);
 /** The PRIMARY window — the one running the hive/god orchestration and the sink
  *  for process-global timer events (missions, breaker, Slack ingestion). It is
  *  the most-recently-focused live window, so global events follow the user.
@@ -608,7 +722,8 @@ const mailApprovals = new MailApprovals({
   changed: () => { try { liveWebContents()?.send('mailProposals:updated'); } catch { /* window gone */ } },
   // The late sweep asks Michael only about emails that can go now (a paused
   // or ended grant can't).
-  canSend: (agentId, mailbox, proposalId) => memberPresent(agentId) && mailAccess(readConfig(), agentId, mailbox, 'send', proposalId, { present: memberPresent }).ok
+  canSend: (agentId, mailbox, proposalId) => memberPresent(agentId) && mailAccess(readConfig(), agentId, mailbox, 'send', proposalId, { present: memberPresent }).ok,
+  onDecision: (agentId, decision) => pulseTelemetry.record({ agentId, kind: 'mail-decision', ts: Date.now(), attrs: { decision } })
 });
 
 /** Does an email fit a standing approval: a separate quick model decides, never the agent. */
@@ -616,7 +731,7 @@ const standingFit = standingFitCheck({
   // An empty folder only the app writes, never the office folder agents work
   // in, so no CLAUDE.md or project settings an agent left can sway the check.
   cwd: () => {
-    const dir = join(app.getPath('userData'), 'standing-check');
+    const dir = join(app.getPath('userData'), STANDING_CHECK_DIR);
     mkdirSync(dir, { recursive: true });
     // Trusted up front, as agent folders are at spawn, so the check never
     // stops on Claude Code's "trust this folder" question.
@@ -624,6 +739,10 @@ const standingFit = standingFitCheck({
     return dir;
   },
   command: () => readConfig().defaultCommand ?? 'claude',
+  modelEngine: () => {
+    const cfg = readConfig();
+    return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
+  },
   env: () => memory.env(),
   log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
 });
@@ -641,7 +760,7 @@ function sweepOldCheckTranscripts(): void {
   if (oldCheckTranscriptsSwept) return;
   oldCheckTranscriptsSwept = true;
   const cutoff = Date.now() - 60 * 60_000;
-  for (const folder of ['standing-check', 'trust-check']) {
+  for (const folder of CHECK_FOLDERS) {
     const dir = projectDir(join(app.getPath('userData'), folder));
     let names: string[] = [];
     try { names = readdirSync(dir); } catch { continue; }
@@ -654,7 +773,7 @@ function sweepOldCheckTranscripts(): void {
 const trustLayer = makeTrustLayer({
   run: async (prompt) => {
     sweepOldCheckTranscripts();
-    const dir = join(app.getPath('userData'), 'trust-check');
+    const dir = join(app.getPath('userData'), TRUST_CHECK_DIR);
     mkdirSync(dir, { recursive: true });
     try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
     // Always Claude, whatever engine the office runs on: the check uses
@@ -673,10 +792,17 @@ const trustLayer = makeTrustLayer({
       timeoutMs: TRUST_TIMEOUT_MS,
       dropTranscript: true
     });
+    // Why a check got no answer, beside the layer's own deny line, so the next
+    // failure says what happened (2026-10-15: launch checks lost their Enter).
+    if (!r.ok) { try { hive.appendLog({ kind: 'trust-check-failed', error: r.error ?? 'unknown' }); } catch { /* best-effort */ } }
     return r.ok && r.text ? r.text : null;
   },
   settings: () => dataClassSettings(readConfig().dataClasses),
-  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+  log: (event) => {
+    try { hive.appendLog(event); } catch { /* best-effort */ }
+    // Pulse's Kept safe: the decision only, never the text it judged.
+    if (event.kind === 'trust-layer') pulseTelemetry.record({ agentId: null, kind: 'trust', ts: Date.now(), attrs: { way: event.way, decision: event.decision, by: event.by ?? null, flagged: event.flagged === true } });
+  }
 });
 
 /** Research's notes reach the team's shared memory only as a copy the trust
@@ -1143,6 +1269,8 @@ function sendMission(m: ScheduledMission): void {
   const payload = firePayload(m);
   if (payload && hive.enabled()) {
     hive.send({ to: payload.to, act: 'inform', subject: payload.subject, body: payload.body }, 'scheduler');
+    const to = payload.to === 'god' ? hive.registry().godId ?? payload.to : payload.to;
+    pulseTelemetry.record({ agentId: to, kind: 'run-dispatch', ts: Date.now(), attrs: { mission: m.id, ...(m.relay ? { relay: true } : {}) } });
   }
   // No compaction here: that is Claude Code's own auto compact now, with its
   // window set per agent at spawn (AUTO_COMPACT_WINDOW_TOKENS).
@@ -1196,7 +1324,9 @@ function syncMissions(): void {
       // the worst case is a lost stamp rather than a hot loop.
       const rearm = (justFired: boolean): void => {
         const now = Date.now();
-        const persisted = (readConfig().missions ?? []).find((x) => x.id === m.id)?.lastFiredAt ?? 0;
+        // The later of the last run and when its times took effect (catchUpFloor).
+        const stored = (readConfig().missions ?? []).find((x) => x.id === m.id);
+        const persisted = stored ? catchUpFloor(stored) : 0;
         const floor = justFired ? Math.max(persisted, now) : persisted;
         // Several "when" lines re-arm the same way (src/shared/scheduleTimes.ts).
         const delay = plan.type === 'times' ? timesDelayMs(plan.times, now, floor) : weeklyDelayMs(plan.weekly, now, floor);
@@ -1396,180 +1526,17 @@ function closeAgentByOwner(id: string): { ok: boolean; paused: number } {
   return { ok: res.ok, paused };
 }
 
-/**
- * An agent asked (from its outbox) about one of its schedules. Office
- * management is Michael's (owner, 2026-09-27): a team member's request goes to
- * him to approve or decline, and he passes it to the owner in ASK ME only when
- * the facts can't settle it, sources conflict, or it is sensitive. Michael's
- * own changes apply at once. The return text is the scheduler's reply to the
- * asking agent.
- */
-function receiveScheduleRequest(actor: string, payload: unknown, why = ''): string {
-  if (actor === RESEARCH_ID) return 'You have no schedules: you answer the questions teammates send you.';
-  const cfg = readConfig();
-  const godId = hiveGodId();
-  const op = payload && typeof payload === 'object' ? (payload as { op?: unknown }).op : undefined;
-  // Michael deciding a team member's request.
-  if (actor === godId && (op === 'approve' || op === 'decline' || op === 'ask-owner' || op === 'pending')) {
-    return michaelDecides(payload as { op: string; request?: unknown; note?: unknown });
-  }
-  // "list" is a question, not a change: answer it directly with the ids an
-  // update, pause, resume or delete request needs.
-  if (op === 'list') {
-    const mine = missionsFor(cfg.missions ?? [], actor, godId);
-    return mine.length === 0
-      ? 'You have no schedules.'
-      : ['Your schedules (id: job):', ...mine.map((m) => `${m.id}: ${m.label}, ${whenWords(m)}${m.enabled ? '' : ' (paused)'}`)].join('\n');
-  }
-  const built = buildScheduleRequest(actor, payload, cfg.missions ?? [], godId, Date.now(), `sr_${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`, why);
-  if (!built.ok) return `Schedule request not sent: ${built.reason}`;
-  // Michael's own schedules: he manages the office, so the change applies now.
-  if (actor === godId) {
-    let refused = '';
-    const res = applyMissions((list) => {
-      const applied = applyScheduleRequest(built.request, list, `m_${Date.now().toString(36)}`);
-      if (!applied.ok) { refused = applied.error; return null; }
-      return applied.missions.map((m) => (m.id === applied.missionId ? { ...m, approvedBy: 'michael' as const } : m));
-    });
-    if (refused || !res.ok) return `Schedule not changed: ${refused || (!res.ok ? res.error : '')}.`;
-    return `Done: ${requestSummary(built.request, cfg.missions ?? [])}.`;
-  }
-  // A request about a job this agent already has waiting joins it as one
-  // (owner, 2026-09-27).
-  const before = cfg.scheduleRequests ?? [];
-  const filed = fileScheduleRequest(before, built.request, cfg.missions ?? []);
-  const joined = filed.length === before.length;
-  const request = filed.find((r) => r.id === built.request.id) ?? built.request;
-  writeConfig({ scheduleRequests: filed.map((r) => (r.id === request.id ? { ...r, sentToMichael: true, sentToMichaelAt: Date.now() } : r)) });
-  try { liveWebContents()?.send('scheduleRequests:updated'); } catch { /* window gone */ }
-  tellMichaelAboutRequest(request, cfg.missions ?? []);
-  return joined
-    ? 'This joins or replaces your earlier request about the same job, and Michael decides it as one. Nothing changes until he does; you will get a message either way.'
-    : 'Sent to Michael to decide. Nothing changes until he does; you will get a message either way.';
-}
-
-/** Michael hears about a team member's request, with how to decide it. */
-function tellMichaelAboutRequest(req: ScheduleRequest, missions: ScheduledMission[]): void {
-  if (!hive.enabled()) return;
-  let name = req.agentId;
-  try { name = hive.registry().agents[req.agentId]?.name?.trim() || name; } catch { /* keep the id */ }
-  hive.send({
-    to: hiveGodId(), act: 'request',
-    subject: `Schedule request from ${name}`,
-    body: [
-      `${name} asks to ${requestSummary(req, missions)}.${req.reason ? ` Why: ${req.reason}` : ''}`,
-      `Request id: ${req.id}. You decide it: send the scheduler {"op": "approve", "request": "${req.id}"} or {"op": "decline", "request": "${req.id}", "note": "why"}.`,
-      `Pass it to the owner only when the facts can't settle it, sources conflict, or it is sensitive: {"op": "ask-owner", "request": "${req.id}", "note": "what you can't settle"}.`
-    ].join('\n')
-  }, 'scheduler');
-}
-
-/** How long Michael has to decide a request before it goes to the owner. */
-const MICHAEL_DECIDES_WITHIN_MS = 12 * 60 * 60 * 1000;
-
-/**
- * Keep every waiting schedule request moving: one Michael hasn't heard about
- * (filed before he decided them) is offered to him once, and one he hasn't
- * decided within MICHAEL_DECIDES_WITHIN_MS goes to the owner in ASK ME, so no
- * request is stranded (pre-landing review, 2026-09-27). Runs at launch and
- * every half hour.
- */
-function sweepScheduleRequests(now = Date.now()): void {
-  const cfg = readConfig();
-  const before = cfg.scheduleRequests ?? [];
-  const pending = foldScheduleRequests(before, cfg.missions ?? []);
-  const fresh = pending.filter((r) => !r.escalated && !r.sentToMichael);
-  const overdue = pending.filter((r) => !r.escalated && r.sentToMichael && now - (r.sentToMichaelAt ?? r.createdAt) > MICHAEL_DECIDES_WITHIN_MS);
-  if (!fresh.length && !overdue.length) {
-    if (pending.length !== before.length) writeConfig({ scheduleRequests: pending });
-    return;
-  }
-  for (const r of fresh) tellMichaelAboutRequest(r, cfg.missions ?? []);
-  const note = `${michaelName()} did not decide this within 12 hours.`;
-  writeConfig({
-    scheduleRequests: pending.map((r) => {
-      if (fresh.includes(r)) return { ...r, sentToMichael: true, sentToMichaelAt: now };
-      if (overdue.includes(r)) return { ...r, escalated: true, escalation: note };
-      return r;
-    })
-  });
-  try { liveWebContents()?.send('scheduleRequests:updated'); } catch { /* window gone */ }
-  if (overdue.length) ownerToast(michaelName(), `${overdue.length === 1 ? 'A schedule change needs' : `${overdue.length} schedule changes need`} you in ASK ME.`);
-}
+/** Team members' schedule requests (scheduleRequests.ts): Michael decides
+ *  them, and the owner sees only what he passes on. */
+const scheduleRequests = makeScheduleRequests({
+  readConfig, writeConfig, applyMissions, michaelName, ownerToast,
+  godId: hiveGodId,
+  agentName: (id) => hive.registry().agents[id]?.name,
+  hive: { enabled: () => hive.enabled(), send: (msg, from) => { hive.send(msg, from); } },
+  updated: () => { liveWebContents()?.send('scheduleRequests:updated'); }
+});
+const { receiveScheduleRequest, decideScheduleRequest, sweepScheduleRequests } = scheduleRequests;
 let scheduleSweepTimer: NodeJS.Timeout | null = null;
-
-/** Michael's answer to a request: approve, decline, pass it to the owner, or
- *  list what is waiting. */
-function michaelDecides(p: { op: string; request?: unknown; note?: unknown }): string {
-  const cfg = readConfig();
-  const pending = cfg.scheduleRequests ?? [];
-  if (p.op === 'pending') {
-    const open = pending.filter((r) => !r.escalated);
-    return open.length
-      ? ['Schedule requests waiting for you (id: request):', ...open.map((r) => `${r.id}: ${requestSummary(r, cfg.missions ?? [])}`)].join('\n')
-      : 'No schedule requests are waiting for you.';
-  }
-  const id = typeof p.request === 'string' ? p.request : '';
-  const note = typeof p.note === 'string' ? p.note.replace(/\s+/g, ' ').trim().slice(0, 400) : '';
-  const req = pending.find((r) => r.id === id);
-  if (!req) return 'No waiting request has that id: it may have been decided, or joined with a newer one. Send {"op": "pending"} to see what is waiting.';
-  // Once it is with the owner it is theirs to decide.
-  if (req.escalated) return 'That request is with the owner in ASK ME now; you will hear when they decide.';
-  if (p.op === 'ask-owner') {
-    if (!note) return 'Add a "note" saying what you can\'t settle, for the owner\'s card.';
-    writeConfig({ scheduleRequests: pending.map((r) => (r.id === id ? { ...r, escalated: true, escalation: note } : r)) });
-    try { liveWebContents()?.send('scheduleRequests:updated'); } catch { /* window gone */ }
-    let name = 'A team member';
-    try { name = hive.registry().agents[req.agentId]?.name?.trim() || name; } catch { /* keep the fallback */ }
-    // Only Michael notifies the owner (docs/designs/michael-only-notifications.md).
-    ownerToast(michaelName(), `${name}'s schedule change needs you in ASK ME.`);
-    return 'Passed to the owner in ASK ME. You will hear when they decide.';
-  }
-  const res = decideScheduleRequest(id, p.op === 'approve', 'michael', note);
-  if (!res.ok) {
-    return res.error === 'stale'
-      ? 'That schedule changed since the request was made, so it can\'t be applied. Decline it and ask the team member to send a new one.'
-      : `Not applied: ${res.error}.`;
-  }
-  return p.op === 'approve' ? 'Approved and in place.' : 'Declined. Nothing changed.';
-}
-
-/** A request was approved or declined, by Michael or by the owner in ASK ME.
- *  Approval applies exactly that one change; a request whose schedule changed
- *  since it was asked is refused. The asking agent is told either way. */
-function decideScheduleRequest(id: string, approve: boolean, by: 'owner' | 'michael' = 'owner', note = ''): { ok: true } | { ok: false; error: string } {
-  const cfg = readConfig();
-  const req = (cfg.scheduleRequests ?? []).find((r) => r.id === id);
-  if (!req) return { ok: false, error: 'not found' };
-  // Name the schedule before the change: after an approved delete it's gone.
-  const described = requestSummary(req, cfg.missions ?? []);
-  if (approve) {
-    let refused = '';
-    // Apply against the list as it is when written (applyMissions reads it fresh).
-    const res = applyMissions((list) => {
-      const applied = applyScheduleRequest(req, list, `m_${Date.now().toString(36)}`);
-      if (!applied.ok) { refused = applied.error; return null; }
-      return applied.missions.map((m) => (m.id === applied.missionId ? { ...m, approvedBy: by } : m));
-    });
-    if (refused) return { ok: false, error: refused };
-    if (!res.ok) return res;
-  }
-  writeConfig({ scheduleRequests: (readConfig().scheduleRequests ?? []).filter((r) => r.id !== id) });
-  try { liveWebContents()?.send('scheduleRequests:updated'); } catch { /* window gone */ }
-  if (hive.enabled()) {
-    const who = by === 'michael' ? michaelName() : 'The owner';
-    hive.send({
-      to: req.agentId, act: 'inform',
-      subject: approve ? 'Schedule change approved' : 'Schedule change declined',
-      body: `${who} ${approve ? 'approved' : 'declined'}: ${described}. ${approve ? 'It is in place now.' : 'Nothing changed.'}${note ? ` Note: ${note}` : ''}`
-    }, 'scheduler');
-    // The owner decided one Michael passed on: he hears the outcome too.
-    if (by === 'owner' && req.escalated) {
-      hive.send({ to: hiveGodId(), act: 'inform', subject: `Owner ${approve ? 'approved' : 'declined'} a schedule change`, body: `${described}.` }, 'scheduler');
-    }
-  }
-  return { ok: true };
-}
 
 
 
@@ -1965,6 +1932,7 @@ function cutOffNames(ids: string[]): string {
 function onPlanSignal(signal: PlanSignal): void {
   if (!onClaudePlan(signal.agentId)) return;
   if (signal.kind === 'limits') {
+    pulse.noteRateLimits(signal.rateLimits);
     if (officeBreak.noteRateLimits(signal.rateLimits)) { armOfficeBreak(); publishOfficeBreak(); }
     return;
   }
@@ -1995,6 +1963,13 @@ function runOfficeBreakTick(): void {
   const r = officeBreak.tick();
   if (!r) { armOfficeBreak(); return; }
   if (r.step === 'over') { endOfficeBreak(r.ended); return; }
+  if (r.step === 'wait') {
+    // A credit or sign in check heard nothing: the stop goes on until a turn finishes.
+    try { hive.appendLog({ kind: 'office-break', step: 'wait', reason: officeBreak.view()?.reason }); } catch { /* best-effort */ }
+    armOfficeBreak();
+    publishOfficeBreak();
+    return;
+  }
   sendOfficeCheck();
 }
 
@@ -2087,6 +2062,14 @@ function runBreakerBeat(progressWindowMs: number): void {
     // (aggregateLive picks the most-recent live session id), so this gates on
     // "is there a live session" without changing any live-agent behavior.
     if (sample?.sessionId) hive.appendCostLedger(sample); // ledger covers everyone incl. god
+    // Pulse keeps every engine's cost; a repeat of the last value is not stored.
+    // A transcript fallback (no session id) is the whole session's total, so a
+    // Claude member's is left out: its live numbers and the ledger's past days
+    // already count that spend (ship review, 2026-10-16). An engine with no live
+    // numbers keeps it, under its own session so one session folds as one.
+    if (sample && (sample.sessionId || (a.provider ?? 'claude') !== 'claude')) {
+      pulseTelemetry.cost(id, sample.sessionId || `transcript:${hive.lastSession(id) ?? ''}`, sample.usd, sample.input + sample.output + sample.cacheRead + sample.cacheCreation, sample.model);
+    }
     // Second source for the resume key. recordSession() is otherwise reachable
     // ONLY from the hook shim, so any window where hooks don't land leaves the
     // registry with no sessionId and "Restart & Continue" refuses to continue —
@@ -2862,16 +2845,20 @@ function handleWebhookMessage(msg: WebhookInbound, endpoint: WebhookEndpointRef)
   // 192-bit unguessable token, returned once; only its hash is stored.
   const token = randomBytes(24).toString('hex');
   const tokenHash = hashWebhookToken(token);
-  const full = msg.title ?? msg.message;
-  const title = full.length > 80 ? `${full.slice(0, 79)}…` : full;
-
   const trigger = (readConfig().webhookTriggers ?? []).find((t) => t.id === endpoint.id);
   // An endpoint that vanished between the request and this lookup falls back to
   // the STRICTEST mode, never the most permissive one.
   const mode: TriggerMode = trigger?.mode ?? DEFAULT_TRIGGER_MODE;
-  // The caller's own declaration wins; `classifyInboundKind` is the conservative
-  // guess for callers that don't declare (it leans 'directive' on purpose).
-  const kind: InboundKind = msg.kind ?? classifyInboundKind(msg.message);
+  // A caller may only make a message stricter: 'directive' is honored, but a
+  // 'communication' label is checked like an unlabeled message, so a label can't
+  // skip the approval hold (ship review, 2026-10-14). `classifyInboundKind`
+  // leans 'directive' on purpose.
+  const kind: InboundKind = msg.kind === 'directive' ? 'directive' : classifyInboundKind(msg.message);
+  // Only the message is checked, so a message let through as chatter in
+  // communication only mode takes its title from the message: a caller's title
+  // could otherwise carry the instruction to Michael (ship review, 2026-10-14).
+  const full = mode === 'communication-only' && isAutoAllowed(mode, kind) ? msg.message : (msg.title ?? msg.message);
+  const title = full.length > 80 ? `${full.slice(0, 79)}…` : full;
   const peer = msg.from?.trim() || endpoint.name || endpoint.id;
   // Minted here, not derived from the task id, because a HELD message has no task
   // id yet and must still be pairable with the reply it eventually earns.
@@ -3346,6 +3333,15 @@ function createWindow(): BrowserWindow {
     if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
   });
 
+  // Right-click on a web or email link offers "Copy link address": a named link
+  // shows a name, so selecting its text never copies the address. Nothing else
+  // gets a menu.
+  win.webContents.on('context-menu', (_e, params) => {
+    const url = copyableLink(params.linkURL);
+    if (!url) return;
+    Menu.buildFromTemplate([{ label: copyLinkLabel, click: () => clipboard.writeText(url) }]).popup({ window: win });
+  });
+
   // Close interception when live PTYs exist. The red-X destroys the window;
   // intercept it the same way before-quit does so PTY users aren't surprised.
   win.on('close', (e) => {
@@ -3562,7 +3558,7 @@ ipcMain.handle('pty:spawn', async (evt, opts: AgentSpawnOptions) => {
  *  it can ALSO be invoked by the god-triggered ephemeral-worker watcher (which has
  *  no renderer `evt`). `owner` is the window that should receive this PTY's output
  *  (null → the primary window). Behavior-identical to the prior inline handler. */
-async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebContents | null): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string }> {
+async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebContents | null): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string; name?: string }> {
   // A team member never starts without the hook channel (S1,
   // docs/designs/windows-11-installer.md): it would run unwatched, or report to
   // whatever holds the channel's name.
@@ -4233,6 +4229,8 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   }
   if (res.ok) analytics.track('agent_spawned', { provider });
   else analytics.track('agent_spawn_failed', { provider, reason: spawnFailReason(res.error) });
+  // A team member whose terminal comes back mid-close is waited on again.
+  try { if (res.ok && opts.hive?.id) closingTime.revive(opts.hive.id); } catch (e) { console.error('[closing-time] revive:', e); }
   syncKeepAwake(); // arm the power-save blocker while ≥1 agent PTY is alive (#18)
   // Hand the resolved worktree path back to the renderer so it can persist it on
   // the agent (only set when isolation actually provisioned a worktree above).
@@ -4246,7 +4244,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
     try { hive.tellHouseRules(opts.hive.id, didResume); } catch (e) { console.error('[house-rules]', e); }
   }
   if (res.ok && opts.hive?.isGod) { standupOnOfficeOpen(); catchUpOwnerAnswers(); }
-  return { ...res, cwd: opts.cwd, ...(worktreePath ? { worktreePath } : {}), ...(resumeNotFound ? { resumeNotFound: true } : {}), ...(didResume ? { resumed: true } : {}), ...(seedPrompt ? { seedPrompt } : {}) };
+  // Research's name is the app's, from its settings (ship 2 D17): the floor
+  // takes it from here, so a card saved under an older name follows it.
+  return { ...res, cwd: opts.cwd, ...(worktreePath ? { worktreePath } : {}), ...(resumeNotFound ? { resumeNotFound: true } : {}), ...(didResume ? { resumed: true } : {}), ...(seedPrompt ? { seedPrompt } : {}), ...(isResearch ? { name: hive.researchName() } : {}) };
 }
 ipcMain.handle('pty:write', (_evt, id: string, data: string) => {
   if (typeof id !== 'string' || typeof data !== 'string') return { ok: false, error: 'invalid args' };
@@ -4319,6 +4319,9 @@ ipcMain.handle('app:copyToClipboard', (_evt, text: unknown) => {
   try { clipboard.writeText(text); return { ok: true }; }
   catch (e) { return { ok: false, error: e instanceof Error ? e.message : String(e) }; }
 });
+// The link menu's label in the app language (linkMenu.ts), sent by the renderer.
+let copyLinkLabel = DEFAULT_COPY_LINK_LABEL;
+ipcMain.on('app:setCopyLinkLabel', (_evt, label: unknown) => { copyLinkLabel = menuLabel(label); });
 ipcMain.handle('app:readClipboard', () => {
   try { return clipboard.readText(); } catch { return ''; }
 });
@@ -4402,6 +4405,9 @@ ipcMain.handle('providerKey:set', (_evt, payload: unknown) => {
   const p = (payload ?? {}) as { backend?: unknown; key?: unknown };
   if (typeof p.backend !== 'string' || !(p.backend in BACKEND_KEY_ENV)) return { ok: false, error: 'unknown backend' };
   if (typeof p.key !== 'string' || !p.key) return { ok: false, error: 'key required' };
+  // A key this computer cannot encrypt is never saved, so say so (and what to do
+  // about it) before anything else touches it.
+  if (!integrations.canStoreSecrets()) return { ok: false, error: integrations.secretStoreUnavailableReason() };
   const res = integrations.setSecret(providerKeyRef(p.backend), p.key);
   // The same Anthropic key signs Claude in when the owner chose one in Get
   // Michael ready: approve the new one and let the step and the card look again.
@@ -5366,7 +5372,7 @@ function recordOwnerAnswerKeys(keys: string[]): void {
   writeConfig({ ownerAnswerKeys: [...new Set([...prior, ...keys])].slice(-OWNER_ANSWER_KEYS_MAX) });
 }
 
-ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
+ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown, index: unknown) => {
   if (typeof id !== 'string' || !id || !patch || typeof patch !== 'object' || Array.isArray(patch)) {
     return { ok: false, error: 'invalid task patch' };
   }
@@ -5382,12 +5388,13 @@ ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
   // list, and an entry already on disk may be one an agent wrote.
   const qa = (patch as { humanQA?: unknown }).humanQA;
   if (!Array.isArray(qa)) return { ok: false, landed: false, error: 'no Ask me answers in the patch' };
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return { ok: false, landed: false, error: 'no question picked for the answer' };
   const ledger = hive.tasks() as { tasks?: HiveTask[] };
   const onDisk = (Array.isArray(ledger?.tasks) ? ledger.tasks : []).find((t) => t?.id === id)?.humanQA ?? [];
   // The renderer's list is a few seconds old, so it only adds answers to
   // questions still open on disk: a newer ask, a changed question or a
   // withdrawal written since all stand (askMeRouting.ts mergeHumanQA).
-  const { humanQA, added } = mergeHumanQA(onDisk, qa);
+  const { humanQA, added } = mergeHumanQA(onDisk, qa, index);
   if (!added.length) return { ok: true, landed: false };
   const ok = hive.patchTask(id, { humanQA: humanQA as HiveTask['humanQA'] });
   const keys = answerKeysOf(id, added.map((i) => humanQA[i]));
@@ -5648,6 +5655,8 @@ ipcMain.handle('hire:checkDistinct', async (_evt, payload: unknown) => {
   if (requestId) checkRuns.set(requestId, stop);
   try {
     return await checkDistinct(job, team, {
+      engine: cfg.godProvider ?? 'claude',
+      engineModel: cfg.godModel,
       cwd: cfg.harnessHome ?? app.getPath('home'),
       command: cfg.defaultCommand ?? 'claude',
       env: memory.env(),
@@ -5677,6 +5686,8 @@ ipcMain.handle('workStyle:suggest', async (evt, payload: unknown) => {
   const cfg = readConfig();
   try {
     return await suggestWorkStyle(req, {
+      engine: cfg.godProvider ?? 'claude',
+      engineModel: cfg.godModel,
       cwd: cfg.harnessHome ?? app.getPath('home'),
       command: cfg.defaultCommand ?? 'claude',
       env: memory.env(),
@@ -5700,6 +5711,8 @@ ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
   if (!req) return { text: '', source: 'rules' };
   const cfg = readConfig();
   return convertWorkStyle(req, {
+    engine: cfg.godProvider ?? 'claude',
+    engineModel: cfg.godModel,
     cwd: cfg.harnessHome ?? app.getPath('home'),
     command: cfg.defaultCommand ?? 'claude',
     env: memory.env(),
@@ -5725,6 +5738,8 @@ ipcMain.handle('workStyle:checkFocus', async (_evt, payload: unknown) => {
     req.sending = req.sending ? `${req.sending}; ${line}` : line;
   }
   return checkFocusArea(req, {
+    engine: cfg.godProvider ?? 'claude',
+    engineModel: cfg.godModel,
     cwd: cfg.harnessHome ?? app.getPath('home'),
     command: cfg.defaultCommand ?? 'claude',
     env: memory.env(),
@@ -6094,6 +6109,7 @@ function teardownAndQuit(): void {
   try { stopWebhookServer(); } catch (e) { console.error('[quit] webhook.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[quit] memory.stop:', e); }
   try { memoryTidy.stop(); } catch (e) { console.error('[quit] memoryTidy.stop:', e); }
+  try { pulseTelemetry.flush(); } catch (e) { console.error('[quit] pulse flush:', e); }
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[quit] killAll:', e); }
@@ -6163,22 +6179,39 @@ ipcMain.handle('app:resetAll', () => {
   try { memory.stop(); } catch (e) { console.error('[reset] memory.stop:', e); }
   try { memoryTidy.stop(); } catch (e) { console.error('[reset] memoryTidy.stop:', e); }
   try { persist.close(); } catch (e) { console.error('[reset] persist.close:', e); }
+  // The same stops as quitting (teardownAndQuit): proxy sidecars and the
+  // webhook server would otherwise outlive the relaunch.
+  try { hive.stopAllProxyBridges(); } catch (e) { console.error('[reset] stopAllProxyBridges:', e); }
+  try { stopWebhookServer(); } catch (e) { console.error('[reset] webhook.stop:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[reset] killAll:', e); }
   try { hive.removeExposedCodexData(); } catch (e) { console.error('[reset] removeExposedCodexData:', e); }
-  // Erase the hive (Michael's + every agent's memory, inboxes, tasks, board,
-  // git history) and the semantic-memory palace. Only these harness-created
-  // subdirs are removed — never the user's whole harnessHome folder.
-  for (const dir of [hive.root(), memory.palacePath()]) {
-    if (!dir) continue;
-    try { rmSync(dir, { recursive: true, force: true }); }
-    catch (e) { console.error('[reset] rm', dir, e); }
-  }
   // The roster is the renderer's half of the same state, so it retires with the
   // hive — archived into roster-backups/ rather than deleted, and cleared as the
   // active file so re-selecting this folder later doesn't resurrect agents whose
   // sessions and memory are gone.
   try { roster.archive(); }
   catch (e) { console.error('[reset] roster.archive:', e); }
+  // Erase everything else the app made for this office (factoryReset.ts): the
+  // hive (every agent's memory, inboxes, tasks, board, git history), the
+  // palace, Research's desk and threads, Company knowledge, saved keys and
+  // history, so setup starts as a new owner sees it. Only app-made entries
+  // go, never the whole office folder. Read before resetConfig() forgets it.
+  const resetHome = readConfig().harnessHome;
+  const userData = app.getPath('userData');
+  const kgRoot = knowledge.root();
+  const failed = eraseOfficeData({
+    home: resetHome ? expandTilde(resetHome) : null,
+    userData,
+    // Only folders outside the office folder: the hive, palace and Research's
+    // desk are in its own entries, removed only when it really is an office.
+    extra: [
+      ...(researchDesk() ? projectDirs(researchDesk()!) : []),
+      ...CHECK_FOLDERS.flatMap((f) => projectDirs(join(userData, f)))
+    ],
+    // Company knowledge the owner moved out of the app's data folder.
+    knowledgeRoot: resolve(kgRoot) !== resolve(join(userData, 'knowledge')) ? kgRoot : null
+  });
+  if (failed.length) console.error('[reset] could not remove:', failed);
   // Back to first-run defaults, then relaunch clean so all in-memory services
   // re-bootstrap from scratch and the renderer lands on onboarding.
   resetConfig();
@@ -6355,12 +6388,28 @@ ipcMain.handle('missions:upsert', (_evt, mission: unknown): MissionOpResult => {
     if (!times) return { ok: false, error: 'invalid schedule times' };
     clean = { ...clean, times };
   }
-  return applyMissions((list) => upsertMission(list, clean));
+  return applyMissions((list) => upsertMission(list, clean, Date.now()));
 });
+// ─── IPC: Pulse (docs/designs/team-performance.md) ───────────────────────────
+const PULSE_PERIODS: readonly string[] = ['this-week', 'last-week', '4-weeks'];
+// The detected Claude plan and its list price, for Settings > Agents.
+ipcMain.handle('claude:plan', () => {
+  const id = readClaudePlan();
+  return { label: id ? PLAN_LABELS[id] : null, listMonthly: id ? PLAN_PRICES[id] : null };
+});
+ipcMain.handle('pulse:snapshot', (_evt, period: unknown) => {
+  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) pulseProcessor.tick(office); } catch (e) { console.error('[pulse] snapshot tick', e); }
+  return pulse.snapshot(PULSE_PERIODS.includes(String(period)) ? (period as Period) : 'this-week');
+});
+ipcMain.handle('pulse:apply', (_evt, id: unknown, expected: unknown) => (typeof id === 'string' ? pulse.apply(id, expected) : { ok: false, error: 'stale' }));
+ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from: unknown, to: unknown) =>
+  typeof id === 'string' && typeof agentId === 'string' && typeof to === 'string' ? pulse.modelApplied(id, agentId, typeof from === 'string' ? from : null, to) : 0);
+ipcMain.handle('pulse:undo', (_evt, appliedId: unknown) => (typeof appliedId === 'number' ? pulse.undo(appliedId) : { ok: false, error: 'stale' }));
+ipcMain.handle('pulse:dismiss', (_evt, id: unknown) => (typeof id === 'string' ? pulse.dismiss(id) : false));
 ipcMain.handle('missions:delete', (_evt, id: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => deleteMission(list, id)) : { ok: false, error: 'invalid id' });
 ipcMain.handle('missions:setEnabled', (_evt, id: unknown, on: unknown): MissionOpResult =>
-  typeof id === 'string' ? applyMissions((list) => setMissionEnabled(list, id, on === true)) : { ok: false, error: 'invalid id' });
+  typeof id === 'string' ? applyMissions((list) => setMissionEnabled(list, id, on === true, Date.now())) : { ok: false, error: 'invalid id' });
 
 // ─── IPC: schedule requests (an agent asked, the owner decides in ASK ME) ────
 ipcMain.handle('scheduleRequests:list', () => {
@@ -6397,6 +6446,14 @@ ipcMain.handle('mailStanding:revoke', (_evt, id: unknown) => (typeof id === 'str
 ipcMain.handle('agent:closedByOwner', (_evt, id: unknown): { ok: boolean; paused: number } => {
   if (typeof id !== 'string' || !id) return { ok: false, paused: 0 };
   return closeAgentByOwner(id);
+});
+
+/** The owner deleted this team member for good (Edit agent's Danger zone):
+ *  their open Ask me questions are withdrawn and Michael is told about their
+ *  open cards (hive.memberDeleted). */
+ipcMain.handle('agent:deleted', (_evt, id: unknown): { withdrawn: number; cards: number } => {
+  if (typeof id !== 'string' || !/^[\w-]+$/.test(id) || !hive.enabled()) return { withdrawn: 0, cards: 0 };
+  try { return hive.memberDeleted(id); } catch (e) { console.error('[hive] memberDeleted failed:', e); return { withdrawn: 0, cards: 0 }; }
 });
 
 // ─── IPC: full-text search across hive files (board, tasks, memory) ──────────
@@ -7494,7 +7551,8 @@ function bootstrapHiveServices(): void {
   }
   hive.ensureHive();
   try { sweepOrphanAgentMcp(); } catch (e) { console.error('[mail] orphan agent-mcp sweep failed', e); }
-  sweepOldPastes(pastesDir(app.getPath('userData')));
+  // A screenshot a queued message still points at stays, however long it waits.
+  sweepOldPastes(pastesDir(app.getPath('userData')), PASTE_KEEP_MS, Date.now(), JSON.stringify(roster.read()?.queues ?? {}));
   // Read the Claude account's connectors in the background (D11).
   void refreshClaudeConnectors('start');
   // Waiting schedule requests reach Michael, and ones he leaves undecided
@@ -7570,7 +7628,7 @@ function bootstrapHiveServices(): void {
   // failure just leaves telemetry off (transcript reconciler stays). No breaker.start():
   // the breaker is POLICY-only, ticked by the heartbeat beat (#1, ships disabled).
   void telemetry.start().then((r) => {
-    if (r.ok && r.endpoint) { hive.setOtelEndpoint(r.endpoint); console.log('[telemetry] collector listening', r.endpoint); }
+    if (r.ok && r.endpoint) { hive.setOtelEndpoint(r.endpoint, (agentId) => telemetry.tokenFor(agentId)); console.log('[telemetry] collector listening', r.endpoint); }
     else console.error('[telemetry] collector failed to start:', r.error);
   });
   memory.start(); // init shared palace + mine loop (no-op without mempalace)
@@ -7741,6 +7799,20 @@ function armAlwaysOnBeats(): void {
   workerWakeTimer = setInterval(() => { try { runWorkerWakeBeat(); } catch (e) { console.error('[worker-wake beat]', e); } }, WORKER_WAKE_POLL_MS);
   if (safeClearTimer) clearInterval(safeClearTimer);
   safeClearTimer = setInterval(() => { try { safeClearer.beat(); } catch (e) { console.error('[safe-clear beat]', e); } }, 60_000);
+  // Pulse: write points once a second, fold them every 30 s and refresh an open
+  // view, and note the owner's presence each minute (D11).
+  if (pulseFlushTimer) clearInterval(pulseFlushTimer);
+  pulseFlushTimer = setInterval(() => { try { pulseTelemetry.flush(); } catch (e) { console.error('[pulse] flush', e); } }, 1_000);
+  if (pulseTickTimer) clearInterval(pulseTickTimer);
+  pulseTickTimer = setInterval(() => {
+    try {
+      const office = pulseOffice();
+      if (office) pulseBackfillOnce(office);
+      if (office && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
+    } catch (e) { console.error('[pulse] tick', e); }
+  }, 30_000);
+  if (pulsePresenceTimer) clearInterval(pulsePresenceTimer);
+  pulsePresenceTimer = setInterval(() => { try { pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false); } catch { /* presence is best-effort */ } }, 60_000);
   runWorkerWakeBeat(); // catch-up on arm — power-resume re-arms and drains the backlog
   // A break's timer freezes in system sleep like the beats above.
   armOfficeBreak();
@@ -7889,9 +7961,9 @@ app.whenReady().then(() => {
   // re-arm the scheduler (catching up missed missions ONCE) + beats + keep-awake,
   // then health-check terminals. App-lifetime listeners — powerMonitor outlives
   // every window, so there is nothing to tear down on quit.
-  powerMonitor.on('resume', () => onSystemResume('resume'));
+  powerMonitor.on('resume', () => { try { pulseTelemetry.presence(0, false); } catch { /* best-effort */ } onSystemResume('resume'); });
   powerMonitor.on('unlock-screen', () => onSystemResume('unlock-screen'));
-  powerMonitor.on('suspend', () => { lastSuspendAt = Date.now(); console.log('[power] suspend — system sleeping'); });
+  powerMonitor.on('suspend', () => { lastSuspendAt = Date.now(); console.log('[power] suspend — system sleeping'); try { pulseTelemetry.presence(0, true); } catch { /* best-effort */ } });
   powerMonitor.on('lock-screen', () => { lastSuspendAt = Date.now(); console.log('[power] lock-screen'); });
   // The app's own menu, always: Electron's default carries Reload and the
   // developer tools, which are not for an office owner (owner, 2026-10-03).

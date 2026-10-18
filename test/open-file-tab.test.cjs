@@ -159,10 +159,10 @@ test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, w
   // Value: protects=the owner's tab and column behavior and the watcher cap; fails_when=the column hides on a file tab, a restart lands on a file tab, or watchers leak; why_new=all new; seam=none
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /if \(view === 'file'\) \{ set\(\{ floorView: view \}\); return; \}/, 'a file tab is never written to cth.floorView');
-  assert.match(store, /if \(view === 'office' \|\| view === 'file'\) return \{\};/, 'opening the column on a file tab stays on it (F1)');
+  assert.match(store, /if \(view === 'office' \|\| view === 'file'\) return \{\};/, 'opening the column on a file tab (or Pulse) stays on it (F1, D14)');
   const app = read('src/renderer/src/App.tsx');
-  assert.match(app, /const columnShown = columnOpen && \(floorView === 'office' \|\| floorView === 'file'\);/);
-  assert.match(app, /display: floorView === 'office' \|\| floorView === 'file' \? 'flex' : 'none'/, 'the column style too, not only columnShown');
+  assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
+  assert.match(app, /display: columnView \? 'flex' : 'none'/, 'the column style too, not only columnShown');
   assert.match(app, /\{floorView === 'file' && <FileTabView \/>\}/);
   assert.match(read('src/renderer/src/components/FileTabView.tsx'), /<div ref=\{scroller\} className="cth-file-tab"/);
   assert.match(read('src/renderer/src/design/global.css'), /\.cth-file-tab \.cth-md-preview \{ max-width: none; \}/, 'a report fills the file tab, no 72ch cap');

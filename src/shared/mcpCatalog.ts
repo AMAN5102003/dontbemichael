@@ -145,8 +145,10 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     id: 'search-with-key',
     label: 'Web Search',
     description: 'Keyed web search. Requires a search-provider API key.',
-    // TODO-verify provider package (Brave Search assumed).
-    spec: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-brave-search'], env: { BRAVE_API_KEY: '' } },
+    // Brave's own server. The old @modelcontextprotocol/server-brave-search is
+    // deprecated on npm and no longer maintained; this one speaks stdio by
+    // default and reads the same BRAVE_API_KEY.
+    spec: { command: 'npx', args: ['-y', '@brave/brave-search-mcp-server'], env: { BRAVE_API_KEY: '' } },
     tier: 'secret',
     defaultEnabled: false
   }

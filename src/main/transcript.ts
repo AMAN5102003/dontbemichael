@@ -47,6 +47,16 @@ export function claudeProjectsRoot(): string {
   return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
 }
 
+/** Every folder Claude Code may keep `cwd`'s conversations in: the current
+ *  spelling and the older one, when it names a project. A reset removes both,
+ *  where projectDir picks just one to read or write. */
+export function projectDirs(cwd: string): string[] {
+  const root = claudeProjectsRoot();
+  const legacyKey = legacyProjectKey(cwd);
+  const current = path.join(root, projectKey(cwd));
+  return legacyKey && legacyKey !== projectKey(cwd) ? [current, path.join(root, legacyKey)] : [current];
+}
+
 export function projectDir(cwd: string): string {
   const root = claudeProjectsRoot();
   const current = path.join(root, projectKey(cwd));

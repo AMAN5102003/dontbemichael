@@ -56,7 +56,10 @@ const TABLE: readonly string[] = [
 
 // Every character has lines of their own (owner, 2026-09-27: "add some for
 // everyone"), written in each one's voice from what the show established.
-// Darryl, Erin, Nick and Sadiq were added to this app later.
+// Darryl, Erin, Nick and Sadiq were added to this app later, and Pete, the
+// Research member's face, after them: his lines come from his season 9 story
+// (Andy's "Plop", "New Jim", Die Hard for Erin, Poor Richard's; owner,
+// 2026-10-13, D1), not from his Research job.
 const BY_CHARACTER: Record<OfficeCharacterName, readonly string[]> = {
   michael:  ['I DECLARE… BANKRUPTCY!', "that's what she said", "I'm not superstitious. just a little stitious.", 'no meetings before coffee. that’s the rule.', 'it says World’s Best Boss. on the mug. so.', 'who wants to hear an improv bit?'],
   dwight:   ['FALSE.', 'identity theft is not a joke', 'that mug is regulation', 'this fridge needs a beet drawer', 'Schrute Farms has better coffee', 'I am fully trained in break room safety', 'assistant TO the regional coffee'],
@@ -70,7 +73,7 @@ const BY_CHARACTER: Record<OfficeCharacterName, readonly string[]> = {
   andy:     ['Cornell, ever heard of it?', 'rit-dit-dit, coffee break!', 'Big Tuna, grab a chair', 'I sang a cappella, you know', 'Nard Dog needs caffeine'],
   kelly:    ['did you HEAR what happened??', 'so. much. to tell you.', 'I am the GOSSIP queen', 'Ryan texted me back!!', 'okay who is dating who'],
   ryan:     ['I’m kind of a big deal', 'the temp needs caffeine', 'starting a coffee startup, actually', 'this could be an app', 'I pitched this idea in business school'],
-  pete:     ['let me look that up', 'I found a source for that', 'checking two more sites', 'the internet says otherwise'],
+  pete:     ['Andy still calls me Plop. please don’t.', 'I can do all of Die Hard. every line.', 'customer service. how can I help?', 'everyone keeps calling me New Jim', 'Poor Richard’s after work, anyone?', 'yippee ki yay, coffee machine'],
   toby:     ['I should write that up…', 'HR-wise this break is fine', 'no one ever sits with me', 'please don’t tell Michael I’m in here', 'I miss Costa Rica'],
   creed:    ['which one of you is the new guy?', 'I’ve eaten worse out of that fridge', 'mung beans. under my desk.', 'nobody steals from Creed', 'I sprout my beans on a damp towel'],
   meredith: ['is it 5 o’clock yet?', 'someone spike the coffee?', 'I brought my own mug. don’t ask.', 'my kid says hi'],
@@ -275,6 +278,28 @@ const TWSS_EXCHANGES: readonly Bit[] = [
 // crosswords and Pretzel Day, Creed's past, Bob Vance. Each one says who says
 // which side, so every line goes to someone who would say it.
 const RUNNING_GAGS: readonly Line[] = [
+  // Pete, the new guy of season 9 (owner, 2026-10-13): Plop (the name Andy
+  // gave him), the New Jim who shares nothing with Jim, Die Hard recited for
+  // Erin and checked against the transcript, Poor Richard’s, the customer
+  // service desk Kelly left, the junior Jim of Stanley, Clark the junior of
+  // Dwight, and the office sizing up the new guys. Nobody calls him Pete: the
+  // owner may rename him (ship 2 D17). No straight quotes in these comments:
+  // the tests read every quoted string in this block as a line.
+  bit(['morning, Plop!', 'please stop calling me that.', 'morning, Plop.'], { a: ['andy'], b: ['pete'] }),
+  bit(['can I get a new nickname?', 'you have one. Plop.', 'that’s the problem.'], { a: ['pete'], b: ['andy'] }),
+  bit(['people call me New Jim.', 'we do look alike. pranks?', 'not really.', 'then no.'], { a: ['pete'], b: ['jim'] }),
+  bit(['you’ve never seen Die Hard?', 'is it a Christmas movie?', 'I’ll do the whole thing for you.'], { a: ['pete'], b: ['erin'] }),
+  bit(['I checked your Die Hard online.', 'and?', 'every single word. wow.', 'yippee ki yay.'], { a: ['erin'], b: ['pete'] }),
+  bit(['Poor Richard’s after work?', 'first round’s on me.', 'it’s a date. kind of.'], { a: ['erin'], b: ['pete'] }),
+  bit(['you’re at my old desk.', 'customer service, yeah.', 'it was a GOSSIP desk.', 'I’ll keep it warm.'], { a: ['kelly'], b: ['pete'] }),
+  bit(['you’re a junior Jim.', 'is that bad?', 'one Jim was plenty.'], { a: ['stanley'], b: ['pete'] }),
+  bit(['your junior went on a sales call alone.', 'Clark? without me?', 'he said you’d say that.'], { a: ['pete'], b: ['dwight'] }),
+  bit(['are we cool, about Erin?', 'I’m on a boat, emotionally.', '...okay.'], { a: ['pete'], b: ['andy'] }),
+  bit(['who are you?', 'the new guy. since fall.', 'welcome. don’t sit there.'], { a: ['creed'], b: ['pete'] }),
+  bit(['you’re in Kelly’s old chair.', 'it’s my chair now.', 'technically, yes.'], { a: ['oscar'], b: ['pete'] }),
+  bit(['are you the new guy?', 'one of them.', 'which one has snacks?'], { a: ['kevin'], b: ['pete'] }),
+  bit(['welcome. any HR questions?', 'not yet.', 'nobody ever has any.'], { a: ['toby'], b: ['pete'] }),
+  bit(['are you one of the new guys?', 'that’s me.', 'Bob will want to meet you.'], { a: ['phyllis'], b: ['pete'] }),
   bit(['Toby, why are you here?', 'I work here.', 'still.'], { a: ['michael'], b: ['toby'] }),
   bit(['good morning, Toby.', '...really?', 'no.'], { a: ['michael'], b: ['toby'] }),
   bit(['I moved your desk to the annex.', 'it was already in the annex.', 'deeper in the annex.'], { a: ['michael'], b: ['toby'] }),
@@ -402,6 +427,7 @@ const KEYED_EXCHANGES: Partial<Record<OfficeCharacterName, Exchange>> = {
   nick:     ['hi. Nick. from IT.', 'right. Rick. my printer’s broken.', '...Nick.'],
   sadiq:    ['did you click the cruise link?', 'it said I won!', '…running a scan.'],
   pam:      ['want to see a sketch?', 'is that the vending machine?', 'it’s you, actually.'],
+  pete:     ['can I get a nickname that’s not Plop?', 'no.', '...worth asking.'],
 };
 
 /**
@@ -412,20 +438,38 @@ const KEYED_EXCHANGES: Partial<Record<OfficeCharacterName, Exchange>> = {
  * the reply goes to one of `partners` who fits, and `partner` is their index.
  * No exchange comes back until all have played; null means no partner fits
  * any. `random` is there for tests.
+ *
+ * `must` (Pete's first day welcome, peteWelcome.ts): only a bit where that
+ * person is a named side, with them as the opener or the partner, or their own
+ * signature opener if it has not played; picked at random without touching the
+ * deck, so the welcome never reshuffles it. Null when none fits.
  */
 export function createBanter(random: () => number = Math.random): (
-  opener: OfficeCharacterName, partners: readonly OfficeCharacterName[]
+  opener: OfficeCharacterName, partners: readonly OfficeCharacterName[], must?: OfficeCharacterName
 ) => { beats: Exchange; partner: number } | null {
   const next = deck(PAIR_POOL, random);
   const keyedUsed = new Set<string>();
   const says = (who: Cast | undefined, c: OfficeCharacterName, not?: Cast) => (!who || who.includes(c)) && !not?.includes(c);
-  return (opener, partners) => {
+  return (opener, partners, must) => {
     if (!partners.length) return null;
     const pickFrom = (b?: Cast, not?: Cast) => {
       const fit = partners.map((c, i) => (says(b, c, not) ? i : -1)).filter((i) => i >= 0);
       return fit[Math.floor(random() * fit.length)];
     };
     const keyed = KEYED_EXCHANGES[opener];
+    if (must) {
+      const opens = opener === must;
+      if (!opens && !partners.includes(must)) return null;
+      const own: Bit[] = opens && keyed && !keyedUsed.has(opener) ? [{ beats: keyed }] : [];
+      const named = PAIR_POOL.filter((x) => opens
+        ? !!x.a?.includes(must) && says(x.a, opener, x.not) && partners.some((c) => says(x.b, c, x.not))
+        : !!x.b?.includes(must) && says(x.a, opener, x.not) && says(x.b, must, x.not));
+      const all = [...own, ...named];
+      if (!all.length) return null;
+      const x = all[Math.floor(random() * all.length)];
+      if (x.beats === keyed) { keyedUsed.add(opener); return { beats: keyed, partner: pickFrom() }; }
+      return { beats: x.beats, partner: opens ? pickFrom(x.b, x.not) : partners.indexOf(must) };
+    }
     // A signature bit at most once per person while the studio is open, when they happen to open.
     if (keyed && !keyedUsed.has(opener) && random() < 0.35) { keyedUsed.add(opener); return { beats: keyed, partner: pickFrom() }; }
     const x = next((x) => says(x.a, opener, x.not) && partners.some((c) => says(x.b, c, x.not)));

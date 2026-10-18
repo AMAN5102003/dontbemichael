@@ -83,9 +83,7 @@ export function Dialog({ title, onClose, busy = false, width = 520, footer, chil
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 14px 22px', borderBottom: '1px solid var(--cth-line)', flexShrink: 0 }}>
           <h2 style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)' }}>{title}</h2>
           {closable && (
-            <button type="button" onClick={close} disabled={busy} aria-label={t('common.close')} style={closeBtn}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-            </button>
+            <CloseButton onClose={close} busy={busy} label={t('common.close')} />
           )}
         </div>
         <div style={{ padding: '18px 22px', overflowY: 'auto', minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 14, ...bodyStyle }}>
@@ -99,6 +97,29 @@ export function Dialog({ title, onClose, busy = false, width = 520, footer, chil
       </div>
     </div>
   ), document.body);
+}
+
+/** Extracted so it can hold its own hover state without polluting Dialog. */
+function CloseButton({ onClose, busy, label }: { onClose: () => void; busy: boolean; label: string }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      disabled={busy}
+      aria-label={label}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        ...closeBtn,
+        background: hover && !busy ? 'var(--cth-neutral-soft)' : 'var(--cth-card)',
+        color: hover && !busy ? 'var(--cth-ink)' : 'var(--cth-ink-2)',
+        transition: 'background var(--cth-dur-fast) var(--cth-ease), color var(--cth-dur-fast) var(--cth-ease)'
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+    </button>
+  );
 }
 
 const closeBtn: CSSProperties = {

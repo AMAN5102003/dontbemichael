@@ -314,6 +314,32 @@ export class ClosingTimeController {
     this.emitProgress();
   }
 
+  /**
+   * A waited-on team member's terminal is running again mid-close (restarted,
+   * or brought back from the archive). It is waited on again: the new session
+   * never saw closing time, so it gets the closing note and the steer, and
+   * Michael, if he was told its terminal ended, is told to wait for it after all.
+   */
+  revive(agentId: string): void {
+    if (!this.active || this.concluded || !this.workers.has(agentId)) return;
+    if (this.acked.has(agentId) || this.excused.has(agentId) || !this.getLiveAgentIds().includes(agentId)) return;
+    const name = this.hive.registry().agents[agentId]?.name ?? agentId;
+    try {
+      this.hive.send({ to: agentId, act: 'request', subject: 'Closing time', body: WORKER_STEER }, 'human');
+      if (this.toldEnded.delete(agentId)) {
+        this.hive.send({
+          to: this.godId,
+          act: 'inform',
+          subject: `Closing time: ${name} is back`,
+          body: `${name} (${agentId}) is running again, so wait for their CLOSING-TIME-ACK after all before you send CLOSING-TIME-COMPLETE.`
+        }, 'human');
+      }
+    } catch (e) { console.error('[closing-time] revive mail:', e); }
+    this.control?.removeSteer(agentId, WORKER_STEER);
+    this.control?.steer(agentId, WORKER_STEER);
+    this.emitProgress();
+  }
+
   /** A row update: first tells Michael about any waited-on terminal that
    *  ended, then keeps the "still wrapping up" view once the timeout fired. */
   private emitProgress(): void {

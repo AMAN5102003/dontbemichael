@@ -245,7 +245,7 @@ test('the idle quote belongs to the speaker\'s chip and never covers a card (own
   assert.match(chip.slice(0, 6000), /className=\{i === speakerAt \? 'cth-st-speak' : undefined\}/);
   assert.doesNotMatch(stage, /One in-character line over an idle pod/, 'no free floating bubble');
   // Only someone in a quiet pod (a chip) speaks; never someone clocking in.
-  assert.match(stage, /const quietPeople = \(\) => chatCandidates\(live\.current\.pods, live\.current\.gone, ACTIVE, ACTION_CLOCKING_IN\)\.filter\(\(p\) => p\.id !== RESEARCH_ID\);/);
+  assert.match(stage, /const quietPeople = \(\) => chatCandidates\(live\.current\.pods, live\.current\.gone, ACTIVE, ACTION_CLOCKING_IN\);/);
   assert.match(fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/shell/closingFloor.ts'), 'utf8'), /a\.status === 'idle' && a\.action !== clockingIn/);
   assert.match(stage, /const wait = first \? 8000 \+ Math\.random\(\) \* 7000 : 15_000 \+ Math\.random\(\) \* 15_000;/);
   // Up from the chip, up and leftward, or down under it: the first that covers no card.
@@ -344,6 +344,7 @@ test('a second pod never takes a slot another department prefers; job titles com
   assert.notEqual(L.roleOf({ id: 'erin', character: 'erin', sourceCard: 'pro-services/kelly' }), L.roleOf({ id: 'erin', character: 'erin' }), 'the hire, not the character');
   assert.equal(L.roleOf({ id: 'x', character: 'nobody', sourceCard: 'pack/unknown', description: 'Handles the books. Also payroll.' }), 'Handles the books');
   assert.equal(L.roleOf({ id: 'y', description: 'Keeps every supplier relationship warm and the shelves full' }), 'Keeps every supplier relat...');
+  assert.equal(L.roleOf({ id: 'r', description: 'Research: looks things up on the internet for the team' }), 'Research', 'a titled line gives its title');
   assert.equal(L.roleOf({ id: 'z' }), '');
   // Mailbox posts spread along the front edge, the first always at the corner.
   assert.deepEqual([L.postGx(0, 1), L.postGx(0, 3), L.postGx(2, 3)], [-4, -4, -1.6]);
@@ -357,4 +358,11 @@ test('the selected Michael card keeps its outline down the filled stats row (own
   // stats row covered the outline at the sides.
   assert.doesNotMatch(/<div style=\{\{\n\s*position: 'relative', \.\.\.style[^]*?\}\}>/.exec(hub)[0], /inset/, 'the card itself draws no inset outline');
   assert.match(hub, /<span aria-hidden style=\{\{\n\s*position: 'absolute', inset: 0, borderRadius: 'inherit', pointerEvents: 'none',\n\s*boxShadow: `inset 0 0 0 1px \$\{selected \? 'var\(--cth-ink\)' : 'var\(--cth-line\)'\}`\n\s*\}\} \/>\n\s*<\/div>\n\s*\);\n\}\n$/, 'the outline is the last layer, over the rows');
+});
+
+test('a flying token stays hidden until its motion has begun, so it never sits at the stage corner (issue #300)', () => {
+  const life = read('src/renderer/src/scene/studio/life.tsx');
+  assert.match(life, /const \[launched, setLaunched\] = useState\(false\);/);
+  assert.match(life, /ref\.current\?\.beginElement\(\); setLaunched\(true\);/, 'shown only after beginElement ran');
+  assert.match(life, /<g visibility=\{launched \? 'visible' : 'hidden'\}>\s*<animateMotion ref=\{ref\}/, 'the moving head is hidden before it launches');
 });

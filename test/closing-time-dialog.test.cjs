@@ -72,6 +72,8 @@ test('the clock restarts on hook events only, never from the terminal parser', (
 test('a terminal ending mid-close refreshes the rows, guarded for startup order', () => {
   const main = read('src/main/index.ts');
   assert.match(main, /try \{ if \(agentId\) closingTime\.refresh\(agentId\); \} catch \(e\) \{ console\.error\('\[closing-time\] refresh:', e\); \}/, 'a refresh failure is logged, never hidden, and never breaks teardown');
+  // And one that comes back is waited on again, once its terminal really started.
+  assert.match(main, /try \{ if \(res\.ok && opts\.hive\?\.id\) closingTime\.revive\(opts\.hive\.id\); \} catch \(e\) \{ console\.error\('\[closing-time\] revive:', e\); \}/);
 });
 
 test('Remind and Close without them reach main on the channels main handles', () => {
