@@ -3,9 +3,11 @@
  * ending doesn't blank the closing-time row while another is still running.
  *
  * Every call ends by its own id: a finished one with PostToolUse, a failed one
- * with PostToolUseFailure, and a refused one is never started (#261). So a
- * long call stays on the list while others start and end around it. Anything
- * left without an end (an interrupted turn) goes with the next prompt or stop.
+ * with PostToolUseFailure, and one the app refused is never started (#261).
+ * One the engine refused on its own sends no end of its own: PostToolBatch
+ * names it with the rest of its batch. So a long call stays on the list while
+ * others start and end around it. Anything left without an end (an
+ * interrupted turn) goes with the next prompt or stop.
  */
 export interface RunningCall {
   tool: string;
@@ -23,11 +25,12 @@ export class RunningToolCalls {
     this.calls.set(agentId, mine);
   }
 
-  /** Ends a call and returns the latest one still running, if any. */
-  end(agentId: string, id: string | undefined): RunningCall | undefined {
+  /** Ends a call, or every call a finished batch names, and returns the
+   *  latest one still running, if any. */
+  end(agentId: string, ids: string | readonly string[] | undefined): RunningCall | undefined {
     const mine = this.calls.get(agentId);
-    if (!id || !mine) return undefined;
-    mine.delete(id);
+    if (!ids || !mine) return undefined;
+    for (const id of typeof ids === 'string' ? [ids] : ids) mine.delete(id);
     return [...mine.values()].pop();
   }
 

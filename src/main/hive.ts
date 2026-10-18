@@ -1870,6 +1870,9 @@ export class HiveManager {
         PostToolUse: [entry('*')],
         // A call that failed: the floor ends it by its id, like a finished one.
         PostToolUseFailure: [entry('*')],
+        // A finished batch names every call in it, the ones the engine refused
+        // on its own too (a deny rule, a declined prompt), which send nothing else.
+        PostToolBatch: [entry()],
         UserPromptSubmit: [entry()],
         Notification: [entry()],
         SessionStart: [entry()],
@@ -5789,6 +5792,11 @@ process.stdin.on('end', () => {
   payload.agent_id = me || payload.agent_id || null;
   // The spawn's secret (issue #61): the app works out the sender from it.
   payload.hook_token = process.env.HIVE_HOOK_SEAL || null;
+  // The app reads only which calls ended, never their output: a big output
+  // would make the frame too big to send, and the call would never end.
+  const ev = payload.hook_event_name;
+  if (ev === 'PostToolBatch') payload.tool_calls = (Array.isArray(payload.tool_calls) ? payload.tool_calls : []).filter((c) => c && typeof c.tool_use_id === 'string').map((c) => ({ tool_use_id: c.tool_use_id }));
+  if (ev === 'PostToolUse' || ev === 'PostToolUseFailure') { delete payload.tool_response; delete payload.error; }
   const sock = process.env.HIVE_SOCK;
   if (isStatus) {
     // Status-line mode: Claude Code pipes the session status JSON (incl.

@@ -22,7 +22,7 @@ import type { ControlRegistry } from './control';
 import type { CircuitBreaker } from './breaker';
 import { estimateCostUsd } from './pricing';
 import { claudeProjectsRoot, projectDir } from './transcript';
-import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
+import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, batchToolUseIds, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
 export { TERMINAL_PROMPT_TYPES, isTerminalPrompt };
 import { resolveGodName } from '../shared/godIdentity';
 import { APP_NAME } from '../shared/appName';
@@ -137,6 +137,8 @@ interface HookPayload {
   /** Set by the hook program when it cut a call's long fields to fit a frame. */
   tool_input_trimmed?: boolean;
   tool_use_id?: string;
+  /** PostToolBatch only: the batch's calls, sent by the hook program with only their ids. */
+  tool_calls?: unknown;
   stop_hook_active?: boolean;
   prompt?: string;
   source?: string;
@@ -1235,6 +1237,7 @@ export class HookServer {
       event,
       tool: p.tool_name,
       toolUseId: typeof p.tool_use_id === 'string' ? p.tool_use_id : undefined,
+      toolUseIds: event === 'PostToolBatch' ? batchToolUseIds(p.tool_calls) : undefined,
       notificationType: p.notification_type,
       source: p.source,
       message: p.message,
