@@ -306,7 +306,15 @@ export class HookServer {
         // conn.end() below closes the connection after that single frame is handled.
         const frame = pending.subarray(0, nl).toString('utf8');
         let payload: HookPayload = {};
-        try { payload = JSON.parse(frame); } catch { /* ignore */ }
+        try {
+          const parsed: unknown = JSON.parse(frame);
+          // Valid JSON can be null, an array, a string or a number, but a hook
+          // payload is always an object. Anything else is normalized to {} so
+          // neither handle() nor the catch below dereferences a non-object
+          // (a bare `null` frame threw in both, and the second throw escaped
+          // the data callback, so conn.end() never ran and the socket hung).
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed as HookPayload;
+        } catch { /* ignore */ }
         // The sender is whoever owns the frame's secret (issue #61, eng E3): a
         // frame without one, or naming someone else, reaches no consumer; a
         // tool check from it is refused, never allowed.
