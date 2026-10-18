@@ -42,7 +42,7 @@ import {
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
 import { normalizeTimes, timesDelayMs } from '../shared/scheduleTimes';
 import {
-  armPlan, catchUpFloor, firePayload, upsertMission, deleteMission, setMissionEnabled, pauseMissionsOf,
+  armPlan, catchUpFloor, firePayload, upsertMission, deleteMission, setMissionEnabled, pauseMissionsOf, runNowCheck,
   migrateMissions, clampIntervals, foldScheduleRequests, cleanFocus, scheduledJobsBlock
 } from '../shared/missions';
 import { MICHAEL_WORK_STYLE } from '../shared/michaelWorkStyle';
@@ -6412,6 +6412,26 @@ ipcMain.handle('missions:delete', (_evt, id: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => deleteMission(list, id)) : { ok: false, error: 'invalid id' });
 ipcMain.handle('missions:setEnabled', (_evt, id: unknown, on: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => setMissionEnabled(list, id, on === true, Date.now())) : { ok: false, error: 'invalid id' });
+// Run one job now (docs/designs/schedule-run-now.md): the same send and stamp
+// as its clock (sendMission), read from the config as it is NOW. The timers
+// are re-armed after, because an interval job counts from its last run: left
+// armed, it would fire at the old time while its row says the new one.
+ipcMain.handle('missions:runNow', (_evt, id: unknown): MissionOpResult => {
+  if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
+  // Without an office the send is dropped, so the run must not be stamped.
+  if (!hive.enabled()) return { ok: false, error: 'office not open' };
+  try {
+    const check = runNowCheck(readConfig().missions ?? [], id, Date.now());
+    if (!check.ok) return check;
+    sendMission(check.mission);
+  } catch (e) {
+    console.error('[missions] run now failed', e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  // The job is sent from here on; a failed re-arm is logged, not reported.
+  try { syncMissions(); } catch (e) { console.error('[missions] re-arm failed after run now', e); }
+  return { ok: true };
+});
 
 // ─── IPC: schedule requests (an agent asked, the owner decides in ASK ME) ────
 ipcMain.handle('scheduleRequests:list', () => {

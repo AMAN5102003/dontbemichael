@@ -11,7 +11,7 @@ import {
 } from './ui';
 import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
-import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, type ScheduledMission } from '@shared/missions';
+import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { useRtl } from '@/i18n/useDirection';
 import i18n from '@/i18n';
@@ -234,6 +234,8 @@ function Line({ children, tone = 'plain' }: { children: ReactNode; tone?: 'plain
 
 /* ──────────────────────────────── one row ──────────────────────────────── */
 
+type RunNowState = 'idle' | 'sending' | ReturnType<typeof runNowOutcome>;
+
 interface RowProps {
   mission: ScheduledMission;
   /** Who a `createdBy` agent id is, for "added by Pam". */
@@ -265,12 +267,24 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
   const { busy, failed, setFailed, run } = useSaveOp();
   const focusCheck = useFocusCheck(focusOwner ?? { name: ownerName, workStyle: '', jobs: [] });
   const [confirming, setConfirming] = useState(false);
+  // Run now (docs/designs/schedule-run-now.md): its own state, so a failed run
+  // never reads as a failed save.
+  const [runState, setRunState] = useState<RunNowState>('idle');
   const deleteRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLButtonElement>(null);
+
+  // "Sent" and "ran a moment ago" are a moment's answer; the row's "fired"
+  // line keeps the record. Left up, "less than a minute ago" goes stale.
+  useEffect(() => {
+    if (runState !== 'sent' && runState !== 'justRan') return;
+    const timer = setTimeout(() => setRunState('idle'), 4000);
+    return () => clearTimeout(timer);
+  }, [runState]);
 
   // Seed the draft when the row opens, never on every render, or the scheduler
   // stamping lastFiredAt mid-edit would wipe what you are typing.
   useEffect(() => {
+    setRunState('idle');
     if (!open) return;
     setLabel(mission.label);
     setIntervalMs(mission.intervalMs);
@@ -334,6 +348,17 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
   };
   const toggle = () => { void run(() => window.cth.setMissionEnabled(mission.id, !mission.enabled)); };
   const remove = () => { void run(() => window.cth.deleteMission(mission.id)); };
+  // A job only, never the heartbeat. Main answers with the saved job, so a row
+  // with unsaved edits asks for a save first instead of running the old text.
+  const canRunNow = !heartbeat && (mission.kind ?? 'dispatch') === 'dispatch';
+  const runNow = async () => {
+    setRunState('sending');
+    try {
+      setRunState(runNowOutcome(await window.cth.runMissionNow(mission.id)));
+    } catch {
+      setRunState('failed');
+    }
+  };
   const cancelDelete = () => { setConfirming(false); setTimeout(() => deleteRef.current?.focus(), 0); };
 
   const headerStyle = {
@@ -434,6 +459,16 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
             />
           )}
           {failed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
+          {canRunNow && runState === 'failed' && !dirty && <Line tone="error">{t('schedulesSection.runNowFailed')}</Line>}
+          {/* An unsaved edit is why Run now is off, so it outranks an earlier
+              run's answer. */}
+          {canRunNow && (dirty || runState === 'sent' || runState === 'justRan') && (
+            <div role="status" style={{ fontSize: 14, lineHeight: '20px', padding: '8px 0', color: 'var(--cth-ink-700)' }}>
+              {dirty ? t('schedulesSection.runNowSaveFirst')
+                : runState === 'sent' ? t('schedulesSection.runNowSent', { name: ownerName })
+                  : t('schedulesSection.runNowJustRan')}
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12 }}>
             {confirming ? (
               <>
@@ -445,6 +480,15 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
               <MiniButton tone="danger" onClick={() => setConfirming(true)} buttonRef={deleteRef}>{t('common.delete')}</MiniButton>
             )}
             <span style={{ flex: 1 }} />
+            {canRunNow && (
+              <MiniButton
+                onClick={() => void runNow()}
+                disabled={busy || runState === 'sending' || dirty}
+                label={t('schedulesSection.runNowAria', { job: mission.label })}
+              >
+                {runState === 'sending' ? t('schedulesSection.runNowSending') : t('schedulesSection.runNow')}
+              </MiniButton>
+            )}
             {/* Closing drops unsaved edits: the draft is reseeded on the next open. */}
             <MiniButton onClick={() => { setOpen(false); headerRef.current?.focus(); }}>
               {dirty ? t('common.cancel') : t('common.close')}
