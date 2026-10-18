@@ -9,12 +9,12 @@ import {
   Disclosure, Field, Hint, MiniButton, SchedulePicker, Toggle, fmtInterval, inputStyle, textareaStyle,
   weeklyDraft, weeklyIsUsable, type WeeklyDraft
 } from './ui';
-import { formatWeekly } from '@shared/weeklySchedule';
-import { formatTimes, normalizeTimes } from '@shared/scheduleTimes';
+import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
 import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { useRtl } from '@/i18n/useDirection';
+import i18n from '@/i18n';
 
 /**
  * SCHEDULES, per agent (docs/designs/per-agent-schedules.md).
@@ -189,14 +189,36 @@ function relTime(ms: number, lang: string): string {
   }
 }
 
+/** formatTimes' words in the owner's language. Day names come from Intl, so
+ *  every language gets them without a key per day. Sep 27 2026 is a Sunday. */
+function whenWords(t: TFunction, lang: string): WhenWords {
+  let weekday: Intl.DateTimeFormat;
+  try { weekday = new Intl.DateTimeFormat(lang, { weekday: 'short' }); } catch { weekday = new Intl.DateTimeFormat('en', { weekday: 'short' }); }
+  const sep = t('schedulesSection.whenSep');
+  return {
+    day: (d) => weekday.format(new Date(2026, 8, 27 + d)),
+    everyDay: t('triggersUi.everyDay'),
+    weekdays: t('triggersUi.weekdays'),
+    weekends: t('schedulesSection.whenWeekends'),
+    list: (items) => items.join(sep),
+    and: (items) => (items.length > 1
+      ? t('schedulesSection.whenAnd', { list: items.slice(0, -1).join(sep), last: items[items.length - 1] })
+      : items[0]),
+    at: (days, time) => t('schedulesSection.whenAt', { days, time }),
+    every: (interval) => t('schedulesSection.everyInterval', { interval }),
+    span: (from, to) => t('schedulesSection.whenSpan', { from, to })
+  };
+}
+
 /** When a job runs, in words: the calendar, the interval ("every 4h", like an
  *  every line in formatTimes), or the heartbeat. */
 export function whenText(m: Pick<ScheduledMission, 'kind' | 'weekly' | 'intervalMs' | 'times'>, t: TFunction): string {
   if (m.kind === 'heartbeat') return t('schedulesSection.beat');
+  const words = whenWords(t, i18n.language);
   const times = normalizeTimes(m.times);
-  if (times) return formatTimes(times);
+  if (times) return formatTimes(times, words);
   const w = weeklyDraft(m.weekly);
-  if (w) return formatWeekly(w);
+  if (w) return formatTimes([{ kind: 'at', days: w.days, minute: w.minute }], words);
   const every = fmtInterval(m.intervalMs);
   return /^\d/.test(every) ? t('schedulesSection.everyInterval', { interval: every }) : every;
 }

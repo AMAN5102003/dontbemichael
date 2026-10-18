@@ -503,3 +503,12 @@ test('a put back trusts only the saved Done card: history stays, a new open ques
   hive.refreshOwnerRequests();
   assert.deepEqual([hive.tasks().tasks[0].status, hive.tasks().tasks[0].title], ['todo', 'Renamed by the app']);
 });
+
+test('the guard keeps when a card was first seen Done, across ticks and from an older save', () => {
+  const { guardCards, emptyGuardState } = loadTs('src/shared/cardGuards.ts');
+  let st = guardCards([card('d', { status: 'done' }), card('o', { status: 'doing' })], emptyGuardState('x'), '2026-10-14T09:00:00.000Z').state;
+  st = guardCards([card('d', { status: 'done' }), card('o', { status: 'doing' })], st, '2026-10-14T10:00:00.000Z').state;
+  assert.deepEqual(st.doneAt, { d: '2026-10-14T09:00:00.000Z' }, 'first seen, not the latest tick; open cards have none');
+  const older = { hive: 'x', done: {}, placed: {}, reminders: {} };
+  assert.deepEqual(guardCards([card('d', { status: 'done' })], older, '2026-10-14T11:00:00.000Z').state.doneAt, { d: '2026-10-14T11:00:00.000Z' });
+});
