@@ -90,7 +90,10 @@ export function refusalForClass(id: DataClassId): string {
 }
 export const REFUSAL_FILES = `Not sent to ${RESEARCH_NAME}: files can't be sent to ${RESEARCH_NAME}. Put the question in the message.`;
 export const REFUSAL_OFF = `Not sent: ${RESEARCH_NAME} is off, so nobody can look this up. Work without it.`;
-export const REFUSAL_UNSURE = `Not sent to ${RESEARCH_NAME}: the trust layer could not confirm it holds no private details. Ask again in plainer words, without names, contact details or figures.`;
+export const REFUSAL_UNSURE = `Not sent to ${RESEARCH_NAME}: the privacy check could not confirm it holds no private details. Ask again in plainer words, without names, contact details or figures.`;
+/** The check itself could not run (no answer, an answer it could not read,
+ *  too slow, settings it could not read): still not sent, and not the wording. */
+export const REFUSAL_CHECK_FAILED = `Not sent to ${RESEARCH_NAME}: the privacy check could not run. This is not about the wording, so send it again later.`;
 export const REFUSAL_TOO_LONG = `Not sent to ${RESEARCH_NAME}: it is too long to check. Send the question, not the whole text.`;
 
 /** The subject of the note telling a sender what Research was asked. */

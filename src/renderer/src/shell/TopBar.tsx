@@ -130,6 +130,7 @@ export function ViewTabs() {
     <div role="group" aria-label={t('floorView.label')} style={{ display: 'flex', alignItems: 'center', gap: 4, marginInlineStart: 26, flex: '0 1 auto', minWidth: 0 }}>
       {tab('office', t('floorView.office'))}
       {tab('tasks', t('floorView.tasks'))}
+      {tab('pulse', t('floorView.pulse'))}
       {tab('graph', t('floorView.graph'))}
       {/* Files opened from a reply or a card (docs/designs/open-file-tab.md):
           after a hairline, each a select button and a close button side by

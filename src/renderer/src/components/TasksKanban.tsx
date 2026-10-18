@@ -1,5 +1,5 @@
 import { askTitle, askedAgo } from './askHeadline';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
@@ -16,7 +16,7 @@ import { refreshNeedsYou, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNe
 import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches } from './hiveTasks';
 import { FileText, useAskFileChecks } from './FileChip';
 import { blockedWithNothingAsked, michaelCardState, type WorkHours } from '@shared/ownerRequests';
-import { isAnswered, isWithdrawn } from '@shared/askMeRouting';
+import { askAsText, isAnswered, isWithdrawn, readAskShape } from '@shared/askMeRouting';
 
 type Status = TaskStatus;
 
@@ -391,7 +391,10 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
   const detailGodName = useResolvedGodName();
   // Every file the Q&A trail names, checked in one go rather than per question.
   const qaAssignee = typeof task.assignee === 'string' ? task.assignee : undefined;
-  const qaFiles = useAskFileChecks(task.humanQA, qaAssignee);
+  // Each question as the card shows it, options and parts included, so a file
+  // named in an option gets its chip checked too (ask-me-options.md).
+  const qaShown = useMemo(() => task.humanQA?.map((e) => ({ ...e, q: askAsText(e.q, readAskShape(e)) })), [task.humanQA]);
+  const qaFiles = useAskFileChecks(qaShown, qaAssignee);
   const col = COLUMNS.find((c) => c.key === task.status) ?? COLUMNS[0];
   // Belt + suspenders: parseTasks normalizes these, but the ledger is a
   // hand-written file — never trust a card's shape at the point of use.
@@ -546,7 +549,8 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
                         {ago && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{ago}</span>}
                         {open && <span style={{ marginInlineStart: 'auto', padding: '1px 8px', borderRadius: 999, background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)', fontSize: 10.5, fontWeight: 600 }}>{t('kanban.awaitingAnswer')}</span>}
                       </div>
-                      <FileText source={e.q} who={{ raisedBy: e.raisedBy, assignee: qaAssignee }} checks={qaFiles[e.raisedBy ?? ''] ?? {}} />
+                      {/* With its options or questions, which no longer sit in the text (ask-me-options.md). */}
+                      <FileText source={qaShown?.[i]?.q ?? e.q} who={{ raisedBy: e.raisedBy, assignee: qaAssignee }} checks={qaFiles[e.raisedBy ?? ''] ?? {}} />
                       {isAnswered(e) ? (
                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--cth-line)' }}>
                           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--cth-green-text)', marginBottom: 2 }}>{t('kanban.answer')}</div>
@@ -558,6 +562,8 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
                         <div dir={rtl ? 'auto' : undefined} style={{ marginTop: 6, fontSize: 12, color: 'var(--cth-ink-3)' }}>
                           {e.dismissedBy === 'card-closed'
                             ? t('kanban.askWithdrawnCardClosed')
+                            : e.dismissedBy === 'member-deleted'
+                            ? t('kanban.askWithdrawnMemberDeleted')
                             : e.dismissedReason?.trim()
                               ? t('kanban.askWithdrawnBecause', { reason: `\u2068${e.dismissedReason.trim()}\u2069` })
                               : t('kanban.askWithdrawn')}

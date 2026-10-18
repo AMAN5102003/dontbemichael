@@ -299,6 +299,16 @@ export function hireAgentId(name: string, now: number = Date.now()): string {
   return `${base || 'agent'}-${now.toString(36)}`;
 }
 
+/** One folder name, safe on every system: no path separators or characters
+ *  Windows forbids, no leading dots, at most 60 characters. "AR/AP Clerk"
+ *  becomes "AR-AP Clerk", never a folder inside a folder. The trailing-dot
+ *  and trailing-space strip runs again AFTER the length cut: a name sliced
+ *  mid-word can end in a '.' or ' ' that Windows silently drops, so the
+ *  folder on disk would not match the name the office shows for it. */
+export function safeFolder(raw: string): string {
+  return raw.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').trim().slice(0, 60).replace(/[.\s]+$/, '');
+}
+
 /**
  * The folder a new hire gets (point 2): the job's folder name if nothing uses
  * it yet, else `<Folder>_<Name>`, then `<Folder>_<Name>_2`, ... `taken` answers
@@ -307,7 +317,9 @@ export function hireAgentId(name: string, now: number = Date.now()): string {
 export function hireFolderName(base: string, name: string, taken: (folder: string) => boolean): string {
   const b = base.trim() || name.trim() || 'Team';
   if (!taken(b)) return b;
-  const n = name.trim().replace(/[\\/:*?"<>|]+/g, '');
+  // Trailing dots and spaces come off too: Windows drops them silently, so
+  // "Jim." would land on disk as "Jim" while the office keeps showing "Jim.".
+  const n = name.trim().replace(/[\\/:*?"<>|]+/g, '').replace(/[.\s]+$/, '');
   const first = n ? `${b}_${n}` : `${b}_2`;
   if (!taken(first)) return first;
   for (let i = 2; i < 100; i++) {

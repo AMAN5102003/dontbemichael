@@ -1,4 +1,4 @@
-- **Pete** is the one teammate on the internet.
-- **A trust layer** checks what reaches Pete.
-- **The office stops** when your account can't run.
-- **Links name** the site they open.
+- **Pulse** shows work done and what it costs.
+- **Ask me** choices answer with a click.
+- **Delete** a team member for good.
+- **Stuck members** restart and carry on.

@@ -124,5 +124,5 @@ test('closing time: Cancel always stops it, and the bottom bar keeps its files, 
   assert.doesNotMatch(main, /\bfloorWindows\b|\bisFloor\b|window:newFloor/, 'the second window is gone (ship 2026-10-03)');
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /if \(closing\?\.phase !== 'error'\) cancelClosingTime\(\);/);
-  assert.match(app, /<div style=\{\{ display: closingOpen \? 'none' : 'contents' \}\}>\n\s+<BottomBar \/>/);
+  assert.match(app, /<div style=\{\{ display: closingOpen \|\| floorView === 'pulse' \? 'none' : 'contents' \}\}>\n\s+<BottomBar \/>/);
 });

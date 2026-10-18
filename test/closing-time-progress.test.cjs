@@ -567,3 +567,49 @@ test('a reopen asked for mid-close counts, but a refused re-press never turns it
   g.ct.refresh();
   assert.equal(last(g.events).relaunch, false, 'the refused press changed nothing');
 });
+
+test('a team member whose terminal comes back mid-close is waited on again, and Michael is told (TODOS: an agent respawned mid-close)', (t) => {
+  const f = floor({ t });
+  f.ct.start();
+  f.route('pam', 'CLOSING-TIME-ACK');
+  // Dwight's terminal ends: Michael is told not to wait.
+  f.setLive(['god', 'pam']);
+  f.ct.refresh('dwight');
+  assert.deepEqual(last(f.events).waiting, []);
+  // It comes back: the row returns, the new session gets the closing note and
+  // the steer, and Michael is told to wait after all.
+  f.steers.length = 0;
+  f.setLive(['god', 'pam', 'dwight']);
+  f.ct.revive('dwight');
+  assert.deepEqual(last(f.events).waiting, ['dwight']);
+  assert.ok(f.sent.some((m) => m.to === 'dwight' && m.subject === 'Closing time' && /CLOSING-TIME-ACK/.test(m.body)));
+  assert.deepEqual(f.steers.map((s) => s.id), ['dwight']);
+  const back = f.sent.filter((m) => m.to === 'god' && m.subject === 'Closing time: Dwight is back');
+  assert.equal(back.length, 1);
+  assert.match(back[0].body, /wait for their CLOSING-TIME-ACK after all/);
+  // Michael's early COMPLETE is refused until Dwight confirms.
+  f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);
+  assert.notEqual(last(f.events).phase, 'complete');
+  // If it ends again, Michael hears that again too.
+  f.setLive(['god', 'pam']);
+  f.ct.refresh('dwight');
+  assert.equal(f.sent.filter((m) => /Dwight's terminal ended/.test(m.subject)).length, 2);
+  f.setLive(['god', 'pam', 'dwight']);
+  f.ct.revive('dwight');
+  f.route('dwight', 'CLOSING-TIME-ACK');
+  f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);
+  assert.equal(last(f.events).phase, 'complete');
+});
+
+test('revive leaves alone anyone closing time is not waiting on', (t) => {
+  const f = floor({ t });
+  f.ct.revive('pam');
+  assert.deepEqual([f.sent.length, f.events.length], [0, 0], 'not running');
+  f.ct.start();
+  f.route('pam', 'CLOSING-TIME-ACK');
+  f.ct.revive('pam');
+  assert.deepEqual(f.ct.excuse('dwight'), { ok: true });
+  f.ct.revive('dwight');
+  f.ct.revive('ghost');
+  assert.equal(f.sent.filter((m) => m.subject === 'Closing time').length, 0, 'confirmed, closed without, or never on the list');
+});

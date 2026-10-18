@@ -131,5 +131,5 @@ test('the renderer can patch a card only with Ask me answers; a move goes throug
     }
   }
   collectCallers(path.resolve(__dirname, '..', 'src', 'renderer'));
-  for (const c of callers) assert.match(c, /hivePatchTask\([^,]+, \{ humanQA: [^}]+\}\)/, c);
+  for (const c of callers) assert.match(c, /hivePatchTask\([^,]+, \{ humanQA: [^}]+\}, index\)/, c);
 });

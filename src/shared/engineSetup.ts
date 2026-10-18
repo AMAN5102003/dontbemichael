@@ -33,13 +33,14 @@ export function engineSetupNeeded(installed: boolean, signedIn: boolean | null):
   return !installed || signedIn === false;
 }
 
-export type EngineSetupPhase = 'checking' | 'installing' | 'installFailed' | 'signin' | 'browser' | 'unknown' | 'ready';
+export type EngineSetupPhase = 'checking' | 'checkFailed' | 'installing' | 'installFailed' | 'signin' | 'browser' | 'unknown' | 'ready';
 
 /** What the rows show, from what main reports and what the step started. */
 export function engineSetupPhase(
   status: EngineSetupStatus | undefined,
-  s: { installing: boolean; installFailed: boolean; browser: boolean }
+  s: { installing: boolean; installFailed: boolean; browser: boolean; statusFailed?: boolean }
 ): EngineSetupPhase {
+  if (!status && s.statusFailed) return 'checkFailed';
   if (!status) return 'checking';
   if (!status.installed) return s.installFailed ? 'installFailed' : 'installing';
   if (status.signedIn === false) return s.browser ? 'browser' : 'signin';

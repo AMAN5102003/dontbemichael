@@ -310,7 +310,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
   const { t } = useTranslation();
   const rtl = useRtl();
   const agents = useStore((s) => s.agents);
-  const godName = agents.find((a) => a.isGod)?.name ?? 'the orchestrator';
+  const godName = agents.find((a) => a.isGod)?.name ?? t('common.orchestrator');
   const select = useStore((s) => s.select);
   const updateAgent = useStore((s) => s.updateAgent);
   const toolCounts = useStore((s) => s.toolCounts);

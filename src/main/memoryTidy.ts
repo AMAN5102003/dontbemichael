@@ -29,7 +29,7 @@ import {
   renameSync, rmSync, appendFileSync, openSync, fsyncSync, closeSync
 } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { runHiddenClaude } from './hiddenClaude';
+import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
 import {
   INDEX_BUDGET_TOKENS, INDEX_PRUNE_AT, applyOps, archiveLines, entriesBlock, estimateTokens,
   legacyNotes, parseInbox, parseIndex, renderIndex, validateOps, type MemoryEntry
@@ -73,7 +73,7 @@ export class MemoryTidy {
 
   /**
    * @param getHome      harnessHome, read lazily so the tidy-up follows the office.
-   * @param getCommand   The base `claude` command (only its binary is used).
+   * @param getCommand   The engine command (only its binary is used).
    * @param getEnv       Extra env for the headless call.
    * @param isIdle       Whether the office is quiet right now.
    * @param nameOf       An agent's display name, for the index heading.
@@ -85,7 +85,8 @@ export class MemoryTidy {
     private getEnv: () => Record<string, string>,
     private isIdle: () => boolean,
     private nameOf: (id: string) => string,
-    private appendLog: (event: Record<string, unknown>) => void
+    private appendLog: (event: Record<string, unknown>) => void,
+    private getModelEngine: () => HiddenModelEngine = () => ({})
   ) {}
 
   start(): void {
@@ -242,7 +243,8 @@ export class MemoryTidy {
       notes.length ? notes.map((n) => `- ${n}`).join('\n') : '(none)',
       ...(overBudget ? ['', 'The index is over its budget: merge entries or delete the least useful ones that did not come from the owner.'] : [])
     ].join('\n');
-    const result = await runHiddenClaude(prompt, {
+    const result = await runHiddenModel(prompt, {
+      ...this.getModelEngine(),
       model: TIDY_MODEL,
       cwd: home,
       command: this.getCommand(),

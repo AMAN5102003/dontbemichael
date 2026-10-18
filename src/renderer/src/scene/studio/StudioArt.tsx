@@ -5,7 +5,7 @@
  * over it. Ported from the approved reference generator.
  */
 import { Fragment, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { P, curvePts, dpath, pts, type Pt } from './iso';
+import { P, S, curvePts, dpath, pts, type Pt } from './iso';
 import { Box, EllipseAt, Poly } from './shapes';
 import type { Family, SceneTokens } from './theme';
 import { PROP_ART, hasProp } from '@/scene/office/props';
@@ -77,6 +77,14 @@ export function Platform({ T }: { T: SceneTokens }) {
   );
 }
 
+// Glass monitors (owner, 2026-10-15; docs/designs/office-floor-plates-glass.md):
+// a frameless slab, a faint clear pane when idle, tinted with scrolling lines at work.
+const GLASS_TOP = 'rgba(220,228,246,0.35)';
+const GLASS_LEFT = 'rgba(226,234,250,0.2)';
+const GLASS_RIGHT = 'rgba(200,210,236,0.35)';
+const GLASS_IDLE = 'rgba(226,234,250,0.38)';
+const GLASS_SHINE = 'rgba(255,255,255,0.55)';
+
 /* ── A desk (station) ─────────────────────────────────────────────────────── */
 
 export function Station({ gx, gy, st, sc = 1, plant = false, prop, c, famKey, T, dark }: {
@@ -87,19 +95,23 @@ export function Station({ gx, gy, st, sc = 1, plant = false, prop, c, famKey, T,
   const mz0 = 33;
   const mh = sc >= 1 ? 24 : 21;
   const mw = 0.36 * sc;
-  const iw = mw - 0.04;
-  const scr = [P(gx - iw, gy - 0.37, mz0 + 2.5), P(gx + iw, gy - 0.37, mz0 + 2.5), P(gx + iw, gy - 0.37, mz0 + mh - 2.5), P(gx - iw, gy - 0.37, mz0 + mh - 2.5)];
+  // The pane fills the whole slab: no frame.
+  const iw = mw - 0.008;
+  const inset = 0.6;
+  const scr = [P(gx - iw, gy - 0.37, mz0 + inset), P(gx + iw, gy - 0.37, mz0 + inset), P(gx + iw, gy - 0.37, mz0 + mh - inset), P(gx - iw, gy - 0.37, mz0 + mh - inset)];
   const on = st !== 'idle';
-  const screenFill = st === 'idle' ? T.scrOff
-    : st === 'thinking' || st === 'compacting' ? 'url(#st-scr-think)'
-    : st === 'needs' ? 'url(#st-scr-needs)'
-    : `url(#st-scr-${famKey})`;
+  // Idle glass is clear; at work it takes the color it shows (about 13%).
+  const screenFill = st === 'idle' ? GLASS_IDLE
+    : st === 'thinking' || st === 'compacting' ? 'rgba(124,92,231,0.14)'
+    : st === 'needs' ? 'rgba(255,90,95,0.16)'
+    : `${c.acc}22`;
   const lineColor = st === 'thinking' || st === 'compacting' ? T.violet : st === 'needs' ? T.coral : c.acc;
   const cw = 0.19 * Math.min(sc, 1);
   const lines = st === 'working' || st === 'needs' || st === 'thinking' || st === 'looping' || st === 'success';
-  // While someone works, their screen scrolls: six lines in a repeating
-  // pattern of three, moving up one pattern (15px) per loop, clipped to the screen.
-  const scrolling = st === 'working' || st === 'looping';
+  // While someone works or thinks, their screen scrolls: six lines in a
+  // repeating pattern of three, moving up one pattern (15px) per loop, clipped
+  // to the screen.
+  const scrolling = st === 'working' || st === 'looping' || st === 'thinking' || st === 'compacting';
   const clip = `st-clip-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const [mugX, mugY] = P(gx + 0.38 * sc - 0.03, gy - 0.03, 36);
   return (
@@ -107,9 +119,13 @@ export function Station({ gx, gy, st, sc = 1, plant = false, prop, c, famKey, T,
       <Box gx={gx - 0.5 * sc} gy={gy - 0.48} w={1.0 * sc} d={0.56} h={22} z0={6} top={T.desk} left={c.m} right={c.d} T={T} />
       <Box gx={gx - 0.04} gy={gy - 0.38} w={0.08} d={0.05} h={5} z0={28} top={T.metal[0]} left={T.metal[1]} right={T.metal[2]} rim={false} T={T} />
       <Box gx={gx - 0.14 * sc} gy={gy - 0.42} w={0.28 * sc} d={0.12} h={1.5} z0={28} top={T.kbase} left={T.metal[1]} right={T.metal[2]} rim={false} T={T} />
-      <Box gx={gx - mw} gy={gy - 0.42} w={2 * mw} d={0.05} h={mh} z0={mz0} top={T.mon[0]} left={T.mon[1]} right={T.mon[2]} rim={false} T={T} />
-      {dark && on && <polygon points={pts(scr)} fill={lineColor} opacity={0.75} filter="url(#st-halo)" />}
+      <Box gx={gx - mw} gy={gy - 0.4} w={2 * mw} d={0.02} h={mh} z0={mz0} top={GLASS_TOP} left={GLASS_LEFT} right={GLASS_RIGHT} rim={false} T={T} />
+      {dark && on && <polygon points={pts(scr)} fill={lineColor} opacity={0.25} filter="url(#st-halo)" />}
       <polygon points={pts(scr)} fill={screenFill} />
+      {!on && (
+        // a soft reflection across the glass
+        <polygon points={pts([P(gx - iw * 0.55, gy - 0.37, mz0 + mh - inset), P(gx - iw * 0.2, gy - 0.37, mz0 + mh - inset), P(gx - iw * 0.75, gy - 0.37, mz0 + inset), P(gx - iw, gy - 0.37, mz0 + inset)])} fill={GLASS_SHINE} />
+      )}
       {lines && !scrolling && [[-0.72, 0.33], [-0.72, 0.55], [-0.72, 0.05]].map(([x0, x1], i) => {
         const zz = mz0 + mh - 7 - i * 5;
         const [a, b] = [P(gx + x0 * iw, gy - 0.37, zz), P(gx + x1 * iw, gy - 0.37, zz)];
@@ -284,34 +300,67 @@ export function deskSpots(n: number): { dx: number; dy: number; sc: number }[] {
   return [...back, ...front];
 }
 
-export function Pod({ grid: [gx, gy], desks, c, famKey, selected, T, dark, arriving = false, lightsOut = false }: {
+export function Pod({ grid: [gx, gy], desks, c, famKey, selected, T, dark, arriving = false, lightsOut = false, label }: {
   grid: Pt; desks: PodDesk[]; c: Family; famKey: string; selected: boolean; T: SceneTokens; dark: boolean;
+  /** The department's name, on a plate in front of the chairs, so an owner who
+   *  doesn't know the show sees what the office does (owner, 2026-10-15). */
+  label?: string;
   /** A new hire's pod, dropping into place. */
   arriving?: boolean;
   /** Everyone here confirmed at closing time: the lights are off. */
   lightsOut?: boolean;
 }) {
   const n = desks.length;
-  const hw = n === 1 ? 0.65 : 1.0;
-  const hd = n <= 2 ? 0.65 : 1.2;
   const spots = deskSpots(n);
+  const plate = label ? plateSize(label) : null;
+  // The pad grows only by what the plate needs (owner, 2026-10-15): just deeper
+  // at the front, and just wider when a word is longer than a small office.
+  const hw = Math.max(n === 1 ? 0.65 : 1.0, plate ? plate.w / (2 * S) + 0.06 : 0);
+  const hd = n <= 2 ? 0.65 : 1.2;
+  const plateGy = (n <= 2 ? CHAIR_END : FRONT_ROW + CHAIR_END) + 0.1;
+  const front = plate ? Math.max(0, plateGy + 0.12 - hd) : 0;
   const allIdle = desks.every((d) => d.st === 'idle');
   const needs = desks.some((d) => d.st === 'needs');
   const podFlicker = useLightsOn(lightsOut);
   return (
     <g className={[allIdle ? 'cth-st-idle' : '', arriving ? 'cth-st-arrive' : '', lightsOut ? 'cth-st-lightsout' : '', podFlicker ?? ''].filter(Boolean).join(' ') || undefined}>
-      <Box gx={gx - hw} gy={gy - hd} w={2 * hw} d={2 * hd} h={6} z0={0} top={c.l} left={c.m} right={c.d} T={T} />
-      <polygon points={pts([P(gx - hw + 0.1, gy - hd + 0.1, 6), P(gx + hw - 0.1, gy - hd + 0.1, 6), P(gx + hw - 0.1, gy + hd - 0.1, 6), P(gx - hw + 0.1, gy + hd - 0.1, 6)])}
+      <Box gx={gx - hw} gy={gy - hd} w={2 * hw} d={2 * hd + front} h={6} z0={0} top={c.l} left={c.m} right={c.d} T={T} />
+      <polygon points={pts([P(gx - hw + 0.1, gy - hd + 0.1, 6), P(gx + hw - 0.1, gy - hd + 0.1, 6), P(gx + hw - 0.1, gy + hd + front - 0.1, 6), P(gx - hw + 0.1, gy + hd + front - 0.1, 6)])}
         fill="none" stroke={T.inset} strokeOpacity={T.insetOp} strokeWidth={1} />
       {spots.map((sp, i) => {
         const d = desks[i];
         const inner = <Station gx={gx + sp.dx} gy={gy + sp.dy} st={d.st} sc={sp.sc} plant={i === 0 && n <= 2} prop={d.prop} c={c} famKey={famKey} T={T} dark={dark} />;
         return <DeskLight key={i} away={!lightsOut && !!d.away} idle={d.st === 'idle' && !allIdle}>{inner}</DeskLight>;
       })}
+      {plate && <DeptPlate at={P(gx, gy + plateGy, 6)} {...plate} c={c} dark={dark} />}
       {needs && <Beacon at={[gx + 0.42, gy - hd + 0.2]} T={T} />}
       {selected && (
         <EllipseAt gx={gx} gy={gy} z={2} r={Math.max(hw, hd) + 0.3} fill="none" stroke={dark ? '#ECEAF4' : '#1E1B2E'} strokeWidth={1.6} strokeDasharray="6 4" />
       )}
+    </g>
+  );
+}
+
+/** How far past its desk a chair's back reaches, and where the front row of a
+ *  three or four person pod sits (deskSpots, Station). */
+const CHAIR_END = 0.53;
+const FRONT_ROW = 0.62;
+
+/** A department plate's word and width in stage px. Latin words are spaced
+ *  capitals; spacing would break Arabic's joined letters, so it has none. */
+export function plateSize(label: string): { word: string; w: number; spaced: boolean } {
+  const spaced = /^[\u0000-\u024F\s]+$/.test(label);
+  const word = spaced ? label.toLocaleUpperCase() : label;
+  return { word, w: Math.round(10 + word.length * 4.6), spaced };
+}
+
+/** The department plate, lying on the pad in the floor's plane (the plane of
+ *  Michael's name plate), in the department's color. */
+function DeptPlate({ at: [x, y], word, w, spaced, c, dark }: { at: Pt; word: string; w: number; spaced: boolean; c: Family; dark: boolean }) {
+  return (
+    <g transform={`matrix(1,0.5,-1,0.5,${x.toFixed(1)},${y.toFixed(1)})`}>
+      <rect x={-w / 2} y={-4.5} width={w} height={9} rx={2.2} fill={dark ? '#24222F' : '#FFFFFF'} fillOpacity={0.92} stroke={c.acc} strokeWidth={0.7} />
+      <text x={0} y={2.1} textAnchor="middle" fontFamily="Sora, sans-serif" fontWeight={700} fontSize={5.8} letterSpacing={spaced ? 0.5 : 0} fill={c.acc}>{word}</text>
     </g>
   );
 }
@@ -421,9 +470,9 @@ export function Hub({ T, dark, board, busy = false, ringing = false, lightsOut =
         return (
           <g key={ox} className="cth-st-breathe">
             <Box gx={ox + 0.1} gy={-0.42} w={0.06} d={0.05} h={5} z0={ph + 22} top={T.metal[0]} left={T.metal[1]} right={T.metal[2]} rim={false} T={T} />
-            <Box gx={ox - 0.07} gy={-0.45} w={0.46} d={0.05} h={22} z0={ph + 27} top={T.mon[0]} left={T.mon[1]} right={T.mon[2]} rim={false} T={T} />
-            {dark && <polygon points={pts(scr)} fill="#8C80F0" opacity={0.8} filter="url(#st-halo)" />}
-            <polygon points={pts(scr)} fill="url(#st-scr-hub)" />
+            <Box gx={ox - 0.07} gy={-0.43} w={0.46} d={0.02} h={22} z0={ph + 27} top={GLASS_TOP} left={GLASS_LEFT} right={GLASS_RIGHT} rim={false} T={T} />
+            {dark && <polygon points={pts(scr)} fill="#8C80F0" opacity={0.25} filter="url(#st-halo)" />}
+            <polygon points={pts([P(ox - 0.065, -0.4, ph + 27.6), P(ox + 0.385, -0.4, ph + 27.6), P(ox + 0.385, -0.4, ph + 48.4), P(ox - 0.065, -0.4, ph + 48.4)])} fill={busy ? 'rgba(108,92,231,0.14)' : GLASS_IDLE} />
             <clipPath id={`st-hubclip${ox < 0 ? 'a' : 'b'}`}><polygon points={pts(scr)} /></clipPath>
             <g clipPath={`url(#st-hubclip${ox < 0 ? 'a' : 'b'})`}>
               <g className={busy ? 'cth-st-scroll' : undefined}>

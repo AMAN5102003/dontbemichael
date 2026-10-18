@@ -4,10 +4,13 @@
  * bold first sentence, then the context; the headline is that bold lead, or
  * else the first sentence, as plain text.
  */
+/** Sentence boundary that does not cut off after common abbreviations (Mr., e.g., No. 42). */
+const SENTENCE_LEAD = /^[\s\S]*?(?:(?<!\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|inc|ltd|co|corp|approx|dept|est|u\.s|u\.k|e\.g|i\.e)|\bno(?=\.\s*\d))[.?!](?=\s|$)|\n|$)/i;
+
 export function askHeadline(q: string): string {
   const text = q.trim();
   const bold = /^\*\*([\s\S]+?)\*\*/.exec(text);
-  const lead = bold ? bold[1] : (/^[\s\S]*?(?:[.?!](?=\s|$)|\n|$)/.exec(text)?.[0] ?? text);
+  const lead = bold ? bold[1] : (SENTENCE_LEAD.exec(text)?.[0] ?? text);
   return lead
     // One pass, so a code span's text is kept as written, and an underscore
     // inside a word (monthly_report.pdf, first_last@acme.com) is not emphasis.

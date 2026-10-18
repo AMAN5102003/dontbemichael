@@ -37,7 +37,9 @@ async function openServer(t) {
   const logs = [];
   const hive = {
     sockPath: () => sock,
-    appendLog: (entry) => logs.push(entry)
+    appendLog: (entry) => logs.push(entry),
+    // Framing only: every frame counts as one agent's (hook auth has its own tests).
+    hookTokenOwner: () => 'a1'
   };
   const server = new HookServer(hive, () => null, () => ({ notifications: false }));
 
@@ -107,7 +109,7 @@ test('CJK payload survives a split inside a multibyte code point', async (t) => 
   const result = await sendChunks(sock, [frame.subarray(0, split), frame.subarray(split)], 25);
 
   assert.equal(result.didClose, true);
-  assert.deepEqual(routed, [payload]);
+  assert.deepEqual(routed, [{ ...payload, agent_id: 'a1' }], 'the frame now names its authenticated sender');
 });
 
 test('emoji payload survives a split inside a four-byte code point', async (t) => {
@@ -119,7 +121,7 @@ test('emoji payload survives a split inside a four-byte code point', async (t) =
   const result = await sendChunks(sock, [frame.subarray(0, split), frame.subarray(split)], 25);
 
   assert.equal(result.didClose, true);
-  assert.deepEqual(routed, [payload]);
+  assert.deepEqual(routed, [{ ...payload, agent_id: 'a1' }], 'the frame now names its authenticated sender');
 });
 
 test('ordinary fragmented frame retains existing one-request behavior', async (t) => {
@@ -134,7 +136,7 @@ test('ordinary fragmented frame retains existing one-request behavior', async (t
   ], 10);
 
   assert.equal(result.didClose, true);
-  assert.deepEqual(routed, [payload]);
+  assert.deepEqual(routed, [{ ...payload, agent_id: 'a1' }], 'the frame now names its authenticated sender');
   assert.equal(result.response, '{}');
 });
 

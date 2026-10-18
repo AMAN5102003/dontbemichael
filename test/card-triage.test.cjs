@@ -53,10 +53,17 @@ test('Michael is shown every triage card first each turn, and the owner cannot m
   assert.equal(hive.tasks().tasks[0].status, 'triage');
 });
 
-test('an answer that leaves part of a bundle open comes back as a new ask on the same card', () => {
-  // Value: protects=no question of a numbered ask is lost when the owner answers only some; fails_when=the relay drops the check; why_new=owner, 2026-10-11; seam=answerMessages
-  const [m] = answerMessages({ id: 'c1', title: 'T' }, { q: '1. A? 2. B?', a: 'A is yes', raisedBy: 'god' }, { god: 'Michael' });
-  assert.match(m.body, /Check each question of the ask against the answer\. If any is left unanswered, first add one new ask on this card holding only those questions and keep the card Blocked, or, when this card is done, make a new card that asks them, so none is lost\./);
+test('questions the owner left unanswered go to whoever raised them, not straight back to the owner', () => {
+  // Value: protects=no question is lost and the owner is never made to answer every one; fails_when=the relay drops the check or keeps the old re-ask line; why_new=owner, 2026-10-15 (ask-me-options.md, eng review D1); seam=answerMessages
+  const base = { taskId: 'c1', title: 'T', q: '1. A? 2. B?', a: '1: yes. Not answered: 2' };
+  const [m] = answerMessages({ ...base, raiser: 'pam', raiserName: 'Pam' });
+  assert.match(m.body, /Check each question of the ask against the answer\. Send any the owner left unanswered to Pam with the answers: they settle what they can and file back to you only what they still need\. Ask the owner again only for that\./);
+  const [g] = answerMessages({ ...base, raiser: 'god', raiserName: 'Michael' });
+  assert.match(g.body, /Settle any the owner left unanswered yourself where you can, and ask the owner again only for what you still need\./);
+  for (const x of [m, g]) {
+    assert.doesNotMatch(x.body, /add one new ask on this card holding only those questions/);
+    assert.doesNotMatch(x.body, /[\u2013\u2014]/);
+  }
 });
 
 test('a Done card an agent reopens goes back to Done and Michael is told; the owner reopens with a reason', async (t) => {
@@ -495,4 +502,13 @@ test('a put back trusts only the saved Done card: history stays, a new open ques
   setOnDisk(hive, (tasks) => { tasks[0].status = 'triage'; tasks[0].title = 'x'; });
   hive.refreshOwnerRequests();
   assert.deepEqual([hive.tasks().tasks[0].status, hive.tasks().tasks[0].title], ['todo', 'Renamed by the app']);
+});
+
+test('the guard keeps when a card was first seen Done, across ticks and from an older save', () => {
+  const { guardCards, emptyGuardState } = loadTs('src/shared/cardGuards.ts');
+  let st = guardCards([card('d', { status: 'done' }), card('o', { status: 'doing' })], emptyGuardState('x'), '2026-10-14T09:00:00.000Z').state;
+  st = guardCards([card('d', { status: 'done' }), card('o', { status: 'doing' })], st, '2026-10-14T10:00:00.000Z').state;
+  assert.deepEqual(st.doneAt, { d: '2026-10-14T09:00:00.000Z' }, 'first seen, not the latest tick; open cards have none');
+  const older = { hive: 'x', done: {}, placed: {}, reminders: {} };
+  assert.deepEqual(guardCards([card('d', { status: 'done' })], older, '2026-10-14T11:00:00.000Z').state.doneAt, { d: '2026-10-14T11:00:00.000Z' });
 });

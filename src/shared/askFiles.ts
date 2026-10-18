@@ -99,11 +99,16 @@ export function askFilePaths(question: string): string[] {
     if (isFileSpan(span)) found.push({ path: span, at: m.index ?? 0 });
   }
   let prose = text.replace(/`[^`\n]+`/g, blank);
-  for (const m of prose.matchAll(/\]\(<?([^)\s>]+)>?\)/g)) {
-    const target = m[1];
+  // A link target in <angle brackets> may hold spaces ("Harbor & Pine/Q3
+  // report.md") or parentheses, and either form may carry a title after the
+  // target ("…", '…' or (…)). Each link found is blanked whole, so no part of
+  // its target or title is read again as a plain path below.
+  const links = /\]\((?:<([^>\n]+)>|([^)\s]+))(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\)/g;
+  for (const m of prose.matchAll(links)) {
+    const target = m[1] ?? m[2];
     if (isAbsolutePathText(target) && isFileSpan(target)) found.push({ path: target, at: m.index ?? 0 });
   }
-  prose = prose.replace(/\]\([^)]*\)/g, blank);
+  prose = prose.replace(links, blank).replace(/\]\([^)]*\)/g, blank);
   for (const p of plainFilePaths(prose)) found.push({ path: p.path, at: p.start });
   const seen = new Set<string>();
   const out: string[] = [];

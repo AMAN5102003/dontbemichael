@@ -27,6 +27,7 @@
  * any `electron` import so it can be smoke-tested as a plain Node module.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { randomBytes } from 'node:crypto';
 import { readAgentUsage } from './transcript';
 import { readCodexUsage } from './codexUsage';
 import { normalizeModel } from './pricing';
@@ -104,6 +105,8 @@ interface SessionAccum {
 }
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024; // OTLP batches are small; cap unauth peers.
+/** The header an agent's exporter sends its token in (OTEL_EXPORTER_OTLP_HEADERS). */
+export const TELEMETRY_TOKEN_HEADER = 'x-dbm-telemetry-token';
 const SPAN_RING_CAP = 200; // rich spans retained per agent for the waterfall.
 
 export interface TelemetryCollectorOptions {
@@ -151,6 +154,11 @@ export class TelemetryCollector {
   /** api_error subscribers — feeds Lane A's breaker error-storm trip (#6), which
    *  has no input source of its own (hook payloads don't expose api errors). */
   private readonly apiErrorSubs = new Set<(agentId: string) => void>();
+  /** token → the agent it speaks for. In memory only, minted by tokenFor. Usage
+   *  feeds the cost cap, so a batch counts only for the agent whose token sent
+   *  it: not for another agent it names, and not from a process holding none. */
+  private readonly agentByToken = new Map<string, string>();
+  private readonly tokenByAgent = new Map<string, string>();
 
   constructor(opts: TelemetryCollectorOptions = {}) {
     this.host = opts.host ?? '127.0.0.1';
@@ -185,6 +193,18 @@ export class TelemetryCollector {
   /** The bound loopback URL agents export to, or null until started. */
   endpoint(): string | null {
     return this.boundPort ? `http://${this.host}:${this.boundPort}` : null;
+  }
+
+  /** The token an agent's exporter sends with every batch. Stable for the life
+   *  of this process, so a respawn under the same id keeps working. */
+  tokenFor(agentId: string): string {
+    let token = this.tokenByAgent.get(agentId);
+    if (!token) {
+      token = randomBytes(32).toString('base64url');
+      this.tokenByAgent.set(agentId, token);
+      this.agentByToken.set(token, agentId);
+    }
+    return token;
   }
 
   // ─── The locked provider seam ──────────────────────────────────────────────
@@ -268,6 +288,10 @@ export class TelemetryCollector {
 
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
     if (req.method !== 'POST') { res.writeHead(405); res.end(); return; }
+    // Rejected before the body is read, so a peer without a token can't make us buffer.
+    const token = req.headers[TELEMETRY_TOKEN_HEADER];
+    const sender = typeof token === 'string' ? this.agentByToken.get(token) : undefined;
+    if (!sender) { res.writeHead(401); res.end(); return; }
     const chunks: Buffer[] = [];
     let size = 0;
     let aborted = false;
@@ -287,8 +311,8 @@ export class TelemetryCollector {
       const url = req.url ?? '';
       try {
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-        if (url.includes('/v1/metrics')) this.ingestMetrics(body);
-        else if (url.includes('/v1/logs')) this.ingestLogs(body);
+        if (url.includes('/v1/metrics')) this.ingestMetrics(body, sender);
+        else if (url.includes('/v1/logs')) this.ingestLogs(body, sender);
       } catch { /* malformed batch — drop it, never throw into the socket */ }
       // OTLP success response is an empty JSON ExportServiceResponse.
       res.writeHead(200, { 'content-type': 'application/json' });
@@ -302,7 +326,9 @@ export class TelemetryCollector {
 
   // ─── OTLP decode → normalize → accumulate ──────────────────────────────────
 
-  private ingestMetrics(body: unknown): void {
+  /** `sender` is the agent the request's token belongs to; points naming any
+   *  other agent are dropped. */
+  private ingestMetrics(body: unknown, sender: string): void {
     const root = body as { resourceMetrics?: ResourceMetrics[] };
     if (!Array.isArray(root?.resourceMetrics)) return;
     const touched = new Set<string>(); // agentIds with new data this batch
@@ -315,12 +341,15 @@ export class TelemetryCollector {
             const attrs = flattenAttrs(dp.attributes);
             const agentId = str(attrs['agent.id']) || str(resAttrs['agent.id']);
             const sessionId = str(attrs['session.id']);
-            if (!agentId || !sessionId) continue;
+            if (agentId !== sender || !sessionId) continue;
+            // Points are deltas, so a negative one could only hide spending.
+            const value = pointValue(dp);
+            if (!(value >= 0) || !Number.isFinite(value)) continue;
             const accum = this.session(agentId, sessionId);
+            if (!accum) continue;
             const model = normalizeModel(str(attrs['model']));
             if (model) accum.model = model;
             accum.ts = Date.now();
-            const value = pointValue(dp);
             if (metric.name === 'claude_code.token.usage') {
               switch (str(attrs['type'])) {
                 case 'input': accum.input += value; break;
@@ -340,7 +369,7 @@ export class TelemetryCollector {
     for (const agentId of touched) this.publishUsage(agentId);
   }
 
-  private ingestLogs(body: unknown): void {
+  private ingestLogs(body: unknown, sender: string): void {
     const root = body as { resourceLogs?: ResourceLogs[] };
     if (!Array.isArray(root?.resourceLogs)) return;
     for (const rl of root.resourceLogs) {
@@ -351,7 +380,7 @@ export class TelemetryCollector {
           const name = str(attrs['event.name']) || str(lr.body?.stringValue);
           const agentId = str(attrs['agent.id']) || str(resAttrs['agent.id']);
           const sessionId = str(attrs['session.id']);
-          if (!agentId) continue;
+          if (agentId !== sender) continue;
           if (name === 'tool_result') {
             const span: ToolSpan = {
               agentId,
@@ -381,8 +410,11 @@ export class TelemetryCollector {
 
   // ─── Accumulation helpers ──────────────────────────────────────────────────
 
-  private session(agentId: string, sessionId: string): SessionAccum {
+  /** Null when the session id already belongs to another agent: its totals are
+   *  never added to from here. */
+  private session(agentId: string, sessionId: string): SessionAccum | null {
     let accum = this.sessions.get(sessionId);
+    if (accum && accum.agentId !== agentId) return null;
     if (!accum) {
       accum = { agentId, model: '', ts: Date.now(), input: 0, output: 0, cacheRead: 0, cacheCreation: 0, usd: 0 };
       this.sessions.set(sessionId, accum);
