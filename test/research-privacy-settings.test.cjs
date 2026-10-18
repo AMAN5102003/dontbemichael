@@ -67,7 +67,9 @@ test('Windows owners are told Research is not walled off there', () => {
 
 test('Windows owners are told the team\'s commands still reach the internet there', () => {
   // Value: protects=an owner on Windows does not believe only Research uses the internet; fails_when=the line is missing, shown off Windows, or softened; why_new=TODOS "Take the internet from team members' shells on Windows" (say it on the Research screen); seam=source
-  assert.match(ui, /\{win && \(\s*<div[^>]*>\s*\{t\('research\.windowsTeam'\)\}\s*<InfoTip label=\{t\('research\.windowsTeam'\)\} text=\{t\('research\.windowsTeamTip', \{ name: researchName \}\)\} \/>/);
+  // It sits right under the Research Windows line, in the top section.
+  assert.match(ui, /text=\{t\('research\.windowsTip', \{ name: researchName \}\)\} \/>\s*<\/div>\s*\)\}\s*\{\/\*[^*]*\*\/\}\s*\{win && \(\s*<div style=\{\{ \.\.\.hint, marginTop: 8, paddingInlineStart: 16,[^>]*>\s*\{t\('research\.windowsTeam'\)\}<InfoTip label=\{t\('research\.windowsTeam'\)\} text=\{t\('research\.windowsTeamTip', \{ name: researchName \}\)\} \/>/);
+  assert.ok(ui.indexOf("t('research.windowsTeam')") < ui.indexOf("t('research.sendTitle'"), 'above the send section');
   assert.equal(en.research.windowsTeam, 'On Windows, your team\'s commands can still reach the internet.');
   assert.match(en.research.windowsTeamTip, /only their web tools are refused there\. On a Mac, only \{\{name\}\} uses the internet\.$/);
 });

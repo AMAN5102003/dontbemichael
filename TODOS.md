@@ -76,7 +76,7 @@
 
 ### Take the internet from team members' shells on Windows
 
-**What:** Hold team members' shell commands off the internet on Windows, where Claude Code has no sandbox, or say on the Research screen that it only holds on a Mac.
+**What:** Hold team members' shell commands off the internet on Windows, where the engine has no sandbox. Until then, the Research screen says so on Windows (done 2026-10-18).
 
 **Why:** On Windows only the web tools are refused; a shell command can still reach the internet, so the rule that only Pete uses the internet is not enforced there. The CHANGELOG names this.
 
