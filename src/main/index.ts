@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
+import { cutText } from '../shared/cutText';
 import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
 import { execFile, spawn } from 'node:child_process';
 import {
@@ -2858,7 +2859,7 @@ function handleWebhookMessage(msg: WebhookInbound, endpoint: WebhookEndpointRef)
   // communication only mode takes its title from the message: a caller's title
   // could otherwise carry the instruction to Michael (ship review, 2026-10-14).
   const full = mode === 'communication-only' && isAutoAllowed(mode, kind) ? msg.message : (msg.title ?? msg.message);
-  const title = full.length > 80 ? `${full.slice(0, 79)}…` : full;
+  const title = cutText(full, 80);
   const peer = msg.from?.trim() || endpoint.name || endpoint.id;
   // Minted here, not derived from the task id, because a HELD message has no task
   // id yet and must still be pairable with the reply it eventually earns.
@@ -5482,7 +5483,7 @@ hive.onOwnerReply((msg) => {
   if (inFront || !hive.ownerNotify(msg.in_reply_to, msg.id)) return;
   const first = (msg.body || msg.subject || '').replace(/\s+/g, ' ').trim();
   const text = msg.act === 'query' ? `Has a question about: ${first}` : first;
-  ownerToastOpening(text.length > 120 ? `${text.slice(0, 119)}…` : text, msg.in_reply_to);
+  ownerToastOpening(cutText(text, 120), msg.in_reply_to);
 });
 
 ipcMain.handle('owner:ask', (_evt, p: unknown) => {
@@ -6777,7 +6778,7 @@ ipcMain.handle('triggerHistory:decide', (_evt, arg: unknown) => {
 
   const taskId = `webhook-${randomBytes(8).toString('hex')}`;
   const tokenHash = heldTokenHashFor(id);
-  const title = entry.title ?? (entry.body.length > 80 ? `${entry.body.slice(0, 79)}…` : entry.body);
+  const title = entry.title ?? cutText(entry.body, 80);
   if (!dispatchWebhookWork({ taskId, title, message: entry.body, tokenHash, origin: entry.source })) {
     // The card is what the caller polls and what god works from. Leave the entry
     // pending so the operator can approve again once the hive is writable.

@@ -9,6 +9,7 @@ import { P, S, curvePts, dpath, pts, type Pt } from './iso';
 import { Box, EllipseAt, Poly } from './shapes';
 import type { Family, SceneTokens } from './theme';
 import { PROP_ART, hasProp } from '@/scene/office/props';
+import { cutText } from '@shared/cutText';
 
 /** What a desk's screen and floor show (DESIGN.md 3.5, 8.5). */
 export type DeskState = 'working' | 'thinking' | 'waiting' | 'needs' | 'compacting' | 'looping' | 'success' | 'idle';
@@ -570,7 +571,7 @@ function StatsSign({ at: [x, y], stats, T, dark }: { at: Pt; stats: { delegated:
 }
 
 /** The name as the plate shows it: long names are shortened to fit the glass. */
-export function plateName(name: string): string { return name.length > 12 ? `${name.slice(0, 11)}…` : name; }
+export function plateName(name: string): string { return cutText(name, 12); }
 /** The plate's width in stage px, sized to the glass (owner, 2026-09-30: the
  *  first plate was too big for the wall and ran onto the next one). */
 export function plateWidth(name: string): number { return Math.round(16 + plateName(name).length * 4.7); }
