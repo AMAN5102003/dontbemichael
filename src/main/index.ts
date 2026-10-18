@@ -3,6 +3,7 @@ import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
 import { cutText } from '../shared/cutText';
 import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
+import { readCodexContext } from './codexUsage';
 import { execFile, spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
@@ -6231,11 +6232,19 @@ ipcMain.handle('hive:agentUsage', (_evt, cwd: unknown) =>
 // spawn), so this works even when several agents share one cwd. Null until the
 // first hook fires; a known-but-empty transcript reads as 0 so a freshly
 // (re)started session zeroes the gauge instead of leaving a stale value up.
+// `limit` is the window size, sent only when the session names it (Codex).
 ipcMain.handle('hive:agentContext', (_evt, agentId: unknown) => {
   if (typeof agentId !== 'string') return null;
+  // A Codex agent writes rollouts, not Claude transcripts: read its session's
+  // rollout in its own CODEX_HOME, as the usage fallback does (telemetry.ts).
+  const codexHome = hive.codexHome(agentId);
+  if (codexHome) {
+    const sessionId = hive.lastSession(agentId);
+    return sessionId ? readCodexContext(codexHome, sessionId) : null;
+  }
   const tp = hookServer.transcriptPath(agentId);
   if (!tp) return null;
-  return readContextTokens(tp) ?? 0;
+  return { tokens: readContextTokens(tp) ?? 0 };
 });
 
 // A consolidated, NON-SENSITIVE per-agent directory for the voice read-layer

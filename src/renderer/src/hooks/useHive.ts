@@ -815,9 +815,12 @@ export function useHive(config: HarnessConfig | null): void {
 
   // 2c) Context gauge backfill: poll each live agent's current context size
   //     (tokens) from its session transcript — only until the status line
-  //     (effect 2d) has delivered exact numbers for that agent.
+  //     (effect 2d) has delivered exact numbers for that agent. A session that
+  //     names its own window (a Codex rollout) has no status line, so it is
+  //     sized by that window and polled for as long as it runs.
   useEffect(() => {
     if (!config?.onboardingComplete) return;
+    const sizedByPoll = new Set<string>();
     const poll = async () => {
       const { agents, updateAgent } = useStore.getState();
       for (const a of agents) {
@@ -825,14 +828,21 @@ export function useHive(config: HarnessConfig | null): void {
         // The status line pushes exact numbers after every response (effect
         // 2d) — this transcript poll only backfills agents whose status line
         // hasn't fired yet (e.g. freshly restored, no response so far).
-        if (a.contextLimit !== undefined) continue;
+        if (a.contextLimit !== undefined && !sizedByPoll.has(a.id)) continue;
         try {
           const ctx = await window.cth.agentContext(a.id);
           if (ctx === null) continue;
+          const tokens = ctx.tokens;
+          if (ctx.limit) {
+            sizedByPoll.add(a.id);
+            const progress = Math.max(0, Math.min(8, Math.round((tokens / ctx.limit) * 8)));
+            updateAgent(a.id, { contextTokens: tokens, contextLimit: ctx.limit, progress });
+            continue;
+          }
           const hinted = /1m/i.test(a.model ?? '') ? 1_000_000 : 200_000;
-          const limit = Math.max(hinted, ctx > 200_000 ? 1_000_000 : 0);
-          const progress = Math.max(0, Math.min(8, Math.round((ctx / limit) * 8)));
-          updateAgent(a.id, { contextTokens: ctx, progress });
+          const limit = Math.max(hinted, tokens > 200_000 ? 1_000_000 : 0);
+          const progress = Math.max(0, Math.min(8, Math.round((tokens / limit) * 8)));
+          updateAgent(a.id, { contextTokens: tokens, progress });
         } catch { /* ignore — try again next tick */ }
       }
     };

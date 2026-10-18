@@ -1296,7 +1296,7 @@ const api = {
   /** Current context size (tokens) of an agent's live session, read from the
    *  last assistant message of its transcript. Null until the agent's hooks
    *  have fired at least once (the transcript path is learned from them). */
-  agentContext: (agentId: string): Promise<number | null> =>
+  agentContext: (agentId: string): Promise<{ tokens: number; limit?: number } | null> =>
     ipcRenderer.invoke('hive:agentContext', agentId),
 
   // ─── Live telemetry (OTel collector — the usage-provider seam + spans) ──────
