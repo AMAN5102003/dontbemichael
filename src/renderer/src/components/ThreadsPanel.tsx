@@ -1,3 +1,4 @@
+import { PRIVACY_CHECK_SENDER } from '../../../shared/research';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '@/store/store';
@@ -58,6 +59,8 @@ export function ThreadsPanel({ agentId }: ThreadsPanelProps) {
     if (lower === 'human') return t('threads.you');
     if (lower === 'god' || lower === 'michael') return godName;
     if (lower === 'broadcast') return t('threads.everyone');
+    // A message the trust layer sent back (issue #230, design review D22).
+    if (lower === PRIVACY_CHECK_SENDER) return t('research.privacyCheck');
     const a = agents.find((x) => x.id === id);
     if (a?.isGod) return godName;
     return a?.name ?? id;
@@ -71,8 +74,9 @@ export function ThreadsPanel({ agentId }: ThreadsPanelProps) {
   };
   const dayLabel = (day: string) => {
     if (!day) return t('threads.undated');
-    const today = localDay(new Date().toISOString());
-    const yesterday = localDay(new Date(Date.now() - 86_400_000).toISOString());
+    const now = new Date().toISOString();
+    const today = localDay(now);
+    const yesterday = localDay(now, -1);
     if (day === today) return t('threads.today');
     if (day === yesterday) return t('threads.yesterday');
     const [y, m, d] = day.split('-').map(Number);

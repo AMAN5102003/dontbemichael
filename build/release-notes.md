@@ -1,4 +1,4 @@
-- **Michael alone** keeps the task board.
-- **Done is final**: only you reopen a card.
-- **A parked step wakes** at its time.
-- **One numbered ask** per activity.
+- **Pulse** shows work done and what it costs.
+- **Ask me** choices answer with a click.
+- **Delete** a team member for good.
+- **Stuck members** restart and carry on.

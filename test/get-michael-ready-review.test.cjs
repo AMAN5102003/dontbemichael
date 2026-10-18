@@ -104,6 +104,21 @@ test('a key Anthropic refuses for a reason shows that reason, not a network erro
   }
 });
 
+test('an API key the computer cannot store is refused up front, with what to do about it', () => {
+  // Value: protects=an owner on a Mac with a locked keychain or a Linux box with no keyring reads what to do, instead of "Try again" forever, and the key is never sent to Anthropic or approved for Claude when it could not be saved; fails_when=the store check moves after checkAnthropicKey or approveClaudeApiKey, the handler drops the reason, or the step stops showing it; why_new=the reason existed in setSecret but never reached this step; seam=source pin, main has no IPC harness
+  const main = read('src/main/index.ts');
+  const h = main.slice(main.indexOf("ipcMain.handle('engineSetup:useApiKey'"));
+  const handler = h.slice(0, h.indexOf('\n});') + 4);
+  const guard = "if (!integrations.canStoreSecrets()) return { ok: false, error: 'store', reason: integrations.secretStoreUnavailableReason() };";
+  assert.ok(handler.includes(guard), 'the handler refuses a key it could not store, with the reason');
+  assert.ok(handler.indexOf("error: 'invalid'") < handler.indexOf(guard), 'a malformed key is still reported as malformed first');
+  assert.ok(handler.indexOf(guard) < handler.indexOf('await checkAnthropicKey(key'), 'the key never leaves the computer when it cannot be saved');
+  assert.ok(handler.indexOf(guard) < handler.indexOf('approveClaudeApiKey(key)'), 'a key that cannot be saved is never approved for Claude');
+  const ready = read('src/renderer/src/components/GetMichaelReady.tsx');
+  assert.match(ready, /res\.error === 'store' && 'reason' in res && res\.reason\s*\? res\.reason/, 'the step shows the reason for a store failure');
+  // The words themselves are the secret store's; test/secret-store.test.cjs runs them.
+});
+
 test('auth status on Windows goes through cmd.exe for a .cmd shim, quoted for paths with spaces', () => {
   // Value: protects=an npm-installed Claude on Windows reads its sign in instead of failing with EINVAL into "could not check"; fails_when=the .cmd/.bat test, the ComSpec fallback, the /s quoting or verbatim arguments change; why_new=review cycle 2; seam=none
   const c = setup.claudeAuthStatusCommand;

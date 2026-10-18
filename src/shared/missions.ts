@@ -42,6 +42,10 @@ export interface ScheduledMission {
   enabled: boolean;
   autoCompact?: boolean;
   lastFiredAt?: number;
+  /** When its current times took effect: added, turned on, or given new times.
+   *  A slot before this was never the schedule's to run, so it is not "missed"
+   *  (catchUpFloor). Main stamps it; absent on rows from before it existed. */
+  scheduledSince?: number;
   kind?: 'dispatch' | 'heartbeat' | 'compact';
   quietThresholdMs?: number;
   /** Who added it: `'owner'`, or the id of the agent whose request the owner
@@ -159,13 +163,20 @@ export interface ArmContext {
   standupFiredThisLaunch: boolean;
 }
 
+/** The time before which a passed slot is not a missed run: the later of the
+ *  last run and when the current times took effect. Without the second, a job
+ *  added at 14:00 for "weekdays at 09:00" ran at once, as if 09:00 was missed. */
+export function catchUpFloor(m: ScheduledMission): number {
+  return Math.max(m.lastFiredAt ?? 0, m.scheduledSince ?? 0);
+}
+
 /** How the scheduler should arm `m` at `now`. The same decisions syncMissions
  *  made inline before this module existed; see test/missions.test.cjs. */
 export function armPlan(m: ScheduledMission, now: number, ctx: ArmContext): ArmPlan {
   if (!m.enabled) return { type: 'skip' };
   const times = m.kind === 'heartbeat' ? null : normalizeTimes(m.times);
   if (times) {
-    const firstDelayMs = timesDelayMs(times, now, m.lastFiredAt ?? 0);
+    const firstDelayMs = timesDelayMs(times, now, catchUpFloor(m));
     return firstDelayMs === null ? { type: 'skip' } : { type: 'times', times, firstDelayMs };
   }
   // A weekly mission needs no interval, so the interval guard comes after it.
@@ -173,7 +184,7 @@ export function armPlan(m: ScheduledMission, now: number, ctx: ArmContext): ArmP
   if (!weekly && !(m.intervalMs > 0)) return { type: 'skip' };
   if (m.kind === 'heartbeat') return { type: 'heartbeat' };
   if (weekly) {
-    const firstDelayMs = weeklyDelayMs(weekly, now, m.lastFiredAt ?? 0);
+    const firstDelayMs = weeklyDelayMs(weekly, now, catchUpFloor(m));
     return firstDelayMs === null ? { type: 'skip' } : { type: 'weekly', weekly, firstDelayMs };
   }
   // Honor lastFiredAt so an edit elsewhere doesn't restart this interval from
@@ -200,28 +211,54 @@ export function firePayload(m: ScheduledMission): { to: string; subject: string;
 // list it reads at that moment, so a screen opened earlier can never delete a
 // schedule it didn't know about (eng review R2).
 
+/** What decides when a schedule runs. A change here is new times. */
+function timingKey(m: ScheduledMission): string {
+  return JSON.stringify([m.kind ?? 'dispatch', m.intervalMs, normalizeWeekly(m.weekly), normalizeTimes(m.times)]);
+}
+
+/** `m` with `scheduledSince` set: `now` when its times just took effect, else
+ *  the stored value. Without a `now` nothing is stamped. */
+function withSince(m: ScheduledMission, since: number | undefined): ScheduledMission {
+  const out = { ...m };
+  if (since === undefined) delete out.scheduledSince; else out.scheduledSince = since;
+  return out;
+}
+
 /** Insert or replace `incoming` by id. `lastFiredAt` is the scheduler's, so the
- *  newer of the two stamps wins; `createdBy` is never rewritten by an edit. */
-export function upsertMission(list: ScheduledMission[], incoming: ScheduledMission): ScheduledMission[] {
+ *  newer of the two stamps wins; `createdBy` is never rewritten by an edit.
+ *  With `now`, a new schedule, new times or turning it on set `scheduledSince`
+ *  (catchUpFloor); otherwise the stored value stands, whatever the caller sent. */
+export function upsertMission(list: ScheduledMission[], incoming: ScheduledMission, now?: number): ScheduledMission[] {
   const prev = list.find((m) => m.id === incoming.id);
-  if (!prev) return [...list, { ...incoming, createdBy: incoming.createdBy ?? OWNER }];
+  if (!prev) {
+    const added = { ...incoming, createdBy: incoming.createdBy ?? OWNER };
+    return [...list, now === undefined ? added : withSince(added, now)];
+  }
   const lastFiredAt = Math.max(incoming.lastFiredAt ?? 0, prev.lastFiredAt ?? 0) || undefined;
   const merged: ScheduledMission = { ...incoming, lastFiredAt, createdBy: prev.createdBy ?? incoming.createdBy ?? OWNER };
   // An explicit `weekly: undefined` is the switch back to interval mode, and
   // an absent or undefined `times` drops the extra lines.
   if (!('weekly' in incoming) || incoming.weekly === undefined) delete merged.weekly;
   if (!('times' in incoming) || incoming.times === undefined) delete merged.times;
-  return list.map((m) => (m.id === incoming.id ? merged : m));
+  const restarted = timingKey(merged) !== timingKey(prev) || (merged.enabled && !prev.enabled);
+  const since = now !== undefined && restarted ? now : prev.scheduledSince;
+  return list.map((m) => (m.id === incoming.id ? withSince(merged, since) : m));
 }
 
 export function deleteMission(list: ScheduledMission[], id: string): ScheduledMission[] {
   return list.filter((m) => m.id !== id);
 }
 
-/** Turn one schedule on or off. Null when there is no such schedule. */
-export function setMissionEnabled(list: ScheduledMission[], id: string, on: boolean): ScheduledMission[] | null {
+/** Turn one schedule on or off. Null when there is no such schedule. With
+ *  `now`, turning it on sets `scheduledSince`, so a slot that passed while it
+ *  was off is not run. */
+export function setMissionEnabled(list: ScheduledMission[], id: string, on: boolean, now?: number): ScheduledMission[] | null {
   if (!list.some((m) => m.id === id)) return null;
-  return list.map((m) => (m.id === id ? { ...m, enabled: on } : m));
+  return list.map((m) => {
+    if (m.id !== id) return m;
+    const next = { ...m, enabled: on };
+    return on && !m.enabled && now !== undefined ? withSince(next, now) : next;
+  });
 }
 
 /** Pause every schedule `agentId` owns (the owner closed that agent, design 6A
@@ -555,9 +592,10 @@ export function requestIsStale(req: ScheduleRequest, missions: ScheduledMission[
   return !target || missionFingerprint(target) !== req.snapshot;
 }
 
-/** Apply an approved request to the current list. Refuses a stale one. */
+/** Apply an approved request to the current list. Refuses a stale one. With
+ *  `now`, an add, a resume or new times set `scheduledSince` (upsertMission). */
 export function applyScheduleRequest(
-  req: ScheduleRequest, missions: ScheduledMission[], newId: string
+  req: ScheduleRequest, missions: ScheduledMission[], newId: string, now?: number
 ): { ok: true; missions: ScheduledMission[]; missionId: string } | { ok: false; error: string } {
   if (requestIsStale(req, missions)) return { ok: false, error: 'stale' };
   if (req.op === 'add' && req.draft) {
@@ -568,12 +606,12 @@ export function applyScheduleRequest(
       ...(req.draft.focus ? { focus: req.draft.focus } : {}),
       to: req.agentId, body: '', enabled: true, createdBy: req.agentId
     };
-    return { ok: true, missions: [...missions, m], missionId: newId };
+    return { ok: true, missions: [...missions, now === undefined ? m : withSince(m, now)], missionId: newId };
   }
   const id = req.missionId ?? '';
   if (req.op === 'delete') return { ok: true, missions: deleteMission(missions, id), missionId: id };
   if (req.op === 'pause' || req.op === 'resume') {
-    const next = setMissionEnabled(missions, id, req.op === 'resume');
+    const next = setMissionEnabled(missions, id, req.op === 'resume', now);
     return next ? { ok: true, missions: next, missionId: id } : { ok: false, error: 'stale' };
   }
   if (req.op === 'update' && req.draft) {
@@ -583,6 +621,7 @@ export function applyScheduleRequest(
     if (req.draft.focus) updated.focus = req.draft.focus;
     if (req.draft.weekly) updated.weekly = req.draft.weekly; else delete updated.weekly;
     if (req.draft.times) updated.times = req.draft.times; else delete updated.times;
+    if (now !== undefined && timingKey(updated) !== timingKey(target)) updated.scheduledSince = now;
     return { ok: true, missions: missions.map((m) => (m.id === id ? updated : m)), missionId: id };
   }
   return { ok: false, error: 'invalid' };

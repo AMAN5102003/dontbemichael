@@ -43,6 +43,33 @@ const CLAUDE_CONFIG_KEEP = new Set([
   'CLAUDE_CODE_USE_VERTEX'
 ]);
 
+/**
+ * Names that look like a key, token or password. An agent whose shell reaches
+ * the internet (Research, issue #230) inherits none of these: a web page could
+ * ask it to print and send them. The sign in Claude Code itself uses is
+ * kept (providerAuth), because the CLI needs it and its subprocess scrub
+ * removes those from every command it runs.
+ */
+const SECRET_NAME_RE = /(?:TOKEN|SECRET|PASSWORD|PASSWD|PASS|PAT|KEY|CREDENTIALS?|AUTH|DSN|WEBHOOK)(?:_|$)|CONNECTION_STRING|DATABASE_URL/i;
+/** A value holding a password in an address: a scheme, then user, colon,
+ *  password and @ before the host. */
+const URL_PASSWORD_RE = /[a-z][\w+.-]*:\/\/[^\s/:@]+:[^\s/@]+@/i;
+
+/** The sign in Claude Code itself needs, kept only for the backend in use:
+ *  its subprocess scrub removes these from every command it runs. */
+function providerAuth(name: string, env: Record<string, string | undefined>): boolean {
+  if (/^CLAUDE_/.test(name)) return true;
+  if (['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS'].includes(name)) return true;
+  if (env.CLAUDE_CODE_USE_BEDROCK && /^AWS_/.test(name)) return true;
+  if (env.CLAUDE_CODE_USE_VERTEX && (name === 'GOOGLE_APPLICATION_CREDENTIALS' || /^CLOUDSDK_/.test(name))) return true;
+  return false;
+}
+
+export function isInheritedSecret(name: string, value = '', env: Record<string, string | undefined> = {}): boolean {
+  if (providerAuth(name, env)) return false;
+  return SECRET_NAME_RE.test(name) || URL_PASSWORD_RE.test(value);
+}
+
 export function buildPtyEnv(
   parentEnv: NodeJS.ProcessEnv,
   userPath: string,
@@ -54,9 +81,15 @@ export function buildPtyEnv(
   // so per-agent environment overrides (and future per-agent env features)
   // cannot be silently wiped by the strip.
   const inherited: Record<string, string> = {};
+  // Set for Research (index.ts): commands it runs get no keys or tokens.
+  const scrub = agentEnv?.CLAUDE_CODE_SUBPROCESS_ENV_SCRUB === '1';
   for (const [k, v] of Object.entries(parentEnv)) {
     if (v === undefined) continue;
     if (CLAUDE_MARKER_RE.test(k) && !CLAUDE_CONFIG_KEEP.has(k)) continue;
+    if (scrub && isInheritedSecret(k, v, parentEnv)) continue;
+    // Windows names it "Path", and names ignore case there: kept beside the
+    // PATH below, the child reads the inherited one and never sees ours.
+    if (platform === 'win32' && k.toUpperCase() === 'PATH') continue;
     inherited[k] = v;
   }
   return {

@@ -1,3 +1,4 @@
+import { RESEARCH_ID } from '../../../shared/research';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { FIRST_TASK_EDITED_MAX } from '@shared/firstTask';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +24,11 @@ import { firstTaskSection, roleLabel, plainFallback } from '@shared/workStyleTex
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { ScheduledJobsList } from './ScheduledJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
+import { useResearchName } from '@/shell/research';
+import { canDeleteTeamMember, deleteTeamMember } from '@/shell/deleteTeamMember';
+import { releaseBindingsOf } from '@/shell/releaseBindings';
+import { disposeTerminal } from './terminalPool';
+import { deleteConfirmText } from './triggers/ScheduleList';
 
 export interface EditAgentModalProps {
   agent: Agent;
@@ -35,21 +41,30 @@ export interface EditAgentModalProps {
  * color are chosen once, in the hire wizard: picking another here turned Pam
  * into a second Michael, and the color drew almost nowhere (owner,
  * 2026-10-02). Save patches the durable roster via updateAgent; engine changes
- * apply on the next restart.
+ * apply on the next restart. Under the engine, a Danger zone deletes the team
+ * member for good (owner, 2026-10-14).
  */
 export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
   const { t } = useTranslation();
+  const researchName = useResearchName();
   const updateAgent = useStore((s) => s.updateAgent);
   const godName = useResolvedGodName();
   const renameAgent = useStore((s) => s.renameAgent);
   const [nameError, setNameError] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [config, setConfig] = useState<HarnessConfig | null>(null);
 
   const [name, setName] = useState(agent.name);
+  const isResearch = agent.id === RESEARCH_ID;
   const [provider, setProvider] = useState<AgentProvider>(
     inferAgentProvider(agent.command, agent.provider)
   );
+  // On Claude, Research's engine is fixed; on anything else only Claude is offered.
+  // Judged on the saved engine, so picking Claude for a Research on an old
+  // engine never locks the list under the owner's hand before Save.
+  const researchLocked = isResearch && isClaudeProvider(inferAgentProvider(agent.command, agent.provider))
+    && AGENT_PROVIDER_PRESETS.filter((p) => BUILD_ENGINES.includes(p.id) && isClaudeProvider(p.id)).length <= 1;
   const [model, setModel] = useState<string | undefined>(agent.model);
   // Folded by default: the engine rarely changes after hiring.
   const [engineOpen, setEngineOpen] = useState(false);
@@ -182,6 +197,25 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
     onClose();
   };
 
+  // Deleting is final (owner, 2026-10-14): one confirm, then they are gone.
+  const remove = async () => {
+    if (deleting || saving || writing) return;
+    if (!confirm(deleteConfirmText(agent.id, agent.name, t))) return;
+    setDeleting(true);
+    const st = useStore.getState();
+    await deleteTeamMember(agent, {
+      closeByOwner: (id) => window.cth.closeAgentByOwner(id),
+      releaseBindings: releaseBindingsOf,
+      killPty: (ptyId) => window.cth.killPty(ptyId),
+      disposeTerminal,
+      archiveInRegistry: (id) => window.cth.hiveSetArchived(id, true),
+      settleWork: (id) => window.cth.memberDeleted(id),
+      forget: (id) => { st.archiveAgent(id); st.removeArchivedAgent(id); st.removeRestorableAgent(id); }
+    });
+    setDeleting(false);
+    onClose();
+  };
+
   const who = name.trim() || agent.name;
   // What the folded Engine line shows: the provider, and the model when it has one.
   const providerLabel = AGENT_PROVIDER_PRESETS.find((p) => p.id === provider)?.label ?? provider;
@@ -193,7 +227,7 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
     <Dialog
       title={t('editAgent.title')}
       onClose={onClose}
-      busy={saving || writing}
+      busy={saving || writing || deleting}
       width={640}
       fill
       align="end"
@@ -203,7 +237,7 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
         <>
           <PixelButton variant="ghost" size="md" onClick={onClose}>{t('editAgent.cancel')}</PixelButton>
           <div style={{ flex: 1 }} />
-          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={saving || writing}>{writing ? t('editAgent.writing') : t('editAgent.save')}</PixelButton>
+          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={saving || writing || deleting}>{writing ? t('editAgent.writing') : t('editAgent.save')}</PixelButton>
         </>
       )}
     >
@@ -215,7 +249,9 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
           scheduled jobs under it draw on top of it (owner, 2026-10-10). */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
         <Fields id="name">
-          <Row label={t('editAgent.name')}>
+          {/* The owner names the Research member (owner, ship 2 D17); whatever its
+              name, the app knows it as Research, the one on the internet. */}
+          <Row label={t('editAgent.name')} info={isResearch ? t('editAgent.researchName', { name: researchName }) : undefined}>
             <input
               value={name}
               onChange={(e) => { setName(e.target.value); setNameError(undefined); }}
@@ -306,20 +342,29 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
         </button>
         {engineOpen && (
         <Fields id="engine">
-          <Row label={t('editAgent.provider')}>
+          {/* Research's walls are Claude Code's, so its engine is locked
+              (ship review D6.2). */}
+          <Row label={t('editAgent.provider')} info={isResearch ? t('editAgent.researchEngine', { name: researchName }) : undefined}>
             {/* A list, not a grid of buttons. Only the engines this build
                 offers (BUILD_ENGINES, like setup), plus the agent's own if it
                 runs on another, so a list never hides what it is on. */}
+            {researchLocked ? (
+              // Nothing to choose: the engine as plain text, with its reason
+              // behind the info icon.
+              <input readOnly value={providerLabel} aria-label={t('editAgent.provider')} style={lockedValueStyle} />
+            ) : (
             <select
               value={provider}
               onChange={(e) => pickProvider(e.target.value as AgentProvider)}
+              aria-label={t('editAgent.provider')}
               className="cth-input"
               style={inputStyle}
             >
               {AGENT_PROVIDER_PRESETS
-                .filter((p) => BUILD_ENGINES.includes(p.id) || p.id === provider)
+                .filter((p) => (BUILD_ENGINES.includes(p.id) && (!isResearch || isClaudeProvider(p.id))) || p.id === provider)
                 .map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
+            )}
           </Row>
 
           {preset.supportsModel && (
@@ -347,6 +392,27 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
             {t('editAgent.engineNote')}
           </span>
         </Fields>
+        )}
+
+        {/* Danger zone, under the engine (owner, 2026-10-14): delete for good. */}
+        {canDeleteTeamMember(agent) && (
+          <div
+            id="edit-agent-danger"
+            data-fields="danger"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 'var(--cth-r-xl)',
+              // The Settings Danger zone's ring (DESIGN.md 6.3).
+              boxShadow: 'inset 0 0 0 1.5px color-mix(in srgb, var(--cth-coral-base) 55%, transparent)', background: 'var(--cth-coral-soft)'
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-coral-text)' }}>{t('editAgent.danger')}</span>
+              <InfoTip text={t('editAgent.deleteInfo', { name: agent.name })} label={t('editAgent.danger')} />
+            </span>
+            <PixelButton variant="destructive" size="md" onClick={() => { void remove(); }} disabled={deleting || saving || writing}>
+              {deleting ? t('editAgent.deleting') : t('editAgent.delete', { name: agent.name })}
+            </PixelButton>
+          </div>
         )}
       </div>
     </Dialog>
@@ -380,6 +446,13 @@ const inputStyle: CSSProperties = {
   color: 'var(--cth-ink)',
   outline: 'none',
   boxSizing: 'border-box'
+};
+
+/** A value that can't be changed here, shown as text but still a labelled,
+ *  read only field for screen readers (the Research member's engine). */
+const lockedValueStyle: CSSProperties = {
+  border: 'none', background: 'transparent', padding: 0,
+  fontSize: 13, color: 'var(--cth-ink)', fontFamily: 'var(--cth-font-ui)'
 };
 
 /** A group of fields with no heading (D3: field labels only). `id` names the

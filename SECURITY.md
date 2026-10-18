@@ -6,7 +6,13 @@ Don't Be Michael is a **local-first desktop app**. It spawns local processes in 
 reads/writes files under directories you register. What it listens on:
 
 - **The hook server**: a Unix domain socket in the hive folder (on Windows, a named
-  pipe with a random name for each launch), for agents' hook events.
+  pipe with a random name for each launch), for agents' hook events. Each agent start
+  gets its own secret, kept only in the app's memory and handed to that agent in its
+  environment (`HIVE_HOOK_SEAL`); the app takes an event's sender from that secret. An
+  event with no secret, an unknown one or one from an earlier start reaches nothing, and a
+  tool check from it is refused (issue #61). Known limit: another program running as you
+  can read an agent's environment, so a member that deliberately looks there could send
+  events as a teammate; moving the secret out of the environment is planned.
 - **The integration broker**: an HTTP server bound to `127.0.0.1` that agents call to
   reach connected apps. Each call needs the agent's own capability token.
 - **The telemetry receiver**: an HTTP server bound to `127.0.0.1` for usage data from
@@ -45,3 +51,18 @@ credit you (unless you prefer to stay anonymous).
   rooted at an agent's working directory.
 - The hive commits to a local git repo from a **single committer** (the main process);
   agents only write plain files.
+- **The internet boundary** (every office; `docs/designs/research-agent-privacy.md`):
+  only the Research team member (agent id `research`, named Pete unless the owner renames
+  it; every rule checks the id) may use web tools or a shell
+  network. Everyone else, Michael included, is refused WebFetch and WebSearch by the
+  PreToolUse hook and gets an empty strict `sandbox.network` list, with commands kept
+  inside the sandbox. Every message to Pete passes an inbound trust layer (pass, clean or
+  deny against the owner's data classes, fixed patterns before and after) and every
+  message from him an outbound one (instructions aimed at agents removed, likely
+  injection flagged to Michael); anything unsure, slow or failing is denied. Pete's own
+  walls: no reads of the home folder, the business folder or the hive; his file tools
+  open no temp folder but his own, and his shell only /tmp, which Claude Code needs;
+  writes to his own folders only, no settings files but the app's, no keys or tokens in
+  his commands' environment, Claude only. Known limits: Windows has no shell sandbox
+  (#187); members on other engines keep their own web tools; another member's shell
+  command can still write to /tmp, which Pete's shell can read.

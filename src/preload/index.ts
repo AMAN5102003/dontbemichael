@@ -1,3 +1,7 @@
+import type { Period } from '../shared/teamPerformance';
+import type { PulseView } from '../shared/pulseView';
+import type { ResearchConfig } from '../shared/research';
+import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
 import type { OfficeRecord } from '../shared/officeRecord';
 import type { MailboxRecord, AgentCapabilities, MailProvider, MailServer } from '../shared/mailboxes';
@@ -287,6 +291,11 @@ export interface HarnessConfig {
   businessTeam?: Array<{ agentId: string; folder: string }>;
   /** Set once the onboarding team has been started, so it is started once. */
   businessTeamStarted?: boolean;
+  /** Research, the one team member on the internet (shared/research.ts). */
+  research?: ResearchConfig;
+  /** The owner's data classes that differ from the seeded defaults
+   *  (shared/dataClasses.ts): what the team may send to Research. */
+  dataClasses?: Partial<Record<DataClassId, DataClassSetting>>;
   /** Team members that failed their first start, tried again (and only they)
    *  on each later launch until they start. */
   businessTeamRetry?: string[];
@@ -705,7 +714,7 @@ const api = {
   // ─── PTY ─────────────────────────────────────────────────────────────────
   /** `cwd` in the result is the TILDE-EXPANDED absolute path main actually spawned
    *  into — the renderer stores that, not the raw `~/…` the user typed. */
-  spawnPty: (opts: SpawnPtyOptions): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string }> =>
+  spawnPty: (opts: SpawnPtyOptions): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string; name?: string }> =>
     ipcRenderer.invoke('pty:spawn', opts),
   writePty: (id: string, data: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('pty:write', id, data),
@@ -764,6 +773,9 @@ const api = {
   // ─── Clipboard ─────────────────────────────────────────────────────────────
   copyToClipboard: (text: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('app:copyToClipboard', text),
+  /** The right-click "Copy link address" label, in the app language. */
+  setCopyLinkLabel: (label: string): void =>
+    ipcRenderer.send('app:setCopyLinkLabel', label),
   /** Read the system clipboard as plain text ('' when empty/unreadable). */
   readClipboard: (): Promise<string> =>
     ipcRenderer.invoke('app:readClipboard'),
@@ -852,6 +864,10 @@ const api = {
    *  agent output. */
   revealPath: (p: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('fs:revealPath', p),
+  /** The Profile tab's Open folder: the agent's work folder as the app has it
+   *  on record, opened. Main looks the folder up itself. */
+  openAgentFolder: (id: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('fs:openAgentFolder', id),
   /** The files an Ask me question names: whether each opens in its default
    *  app, is only shown in Finder, or is missing. Main decides
    *  (docs/designs/ask-me-open-file.md). */
@@ -982,6 +998,11 @@ const api = {
   connectorsClear: (key: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('connectors:clear', key),
   /** The owner saw the list: nothing in it is new any more. */
   connectorsSeen: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('connectors:seen'),
+  /** Research, the one team member on the internet (shared/research.ts). */
+  researchStatus: (): Promise<{ on: boolean; live: boolean; waiting: number; notice: boolean }> => ipcRenderer.invoke('research:status'),
+  researchPrepare: (): Promise<{ ok: true; cwd: string } | { ok: false }> => ipcRenderer.invoke('research:prepare'),
+  researchOff: (): Promise<{ ok: boolean; returned: number }> => ipcRenderer.invoke('research:off'),
+  researchNoticeSeen: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('research:noticeSeen'),
   /** Agents whose connectors changed since they started (missed pushes). */
   connectorsPendingRestarts: (): Promise<string[]> => ipcRenderer.invoke('connectors:pendingRestarts'),
   /** An agent's connectors changed since it started: restart it when idle. */
@@ -989,6 +1010,12 @@ const api = {
     const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
     ipcRenderer.on('connectors:restartNeeded', listener);
     return () => ipcRenderer.removeListener('connectors:restartNeeded', listener);
+  },
+  /** A member stopped on a prompt: restart it now (hooks.ts stuckOnPrompt). */
+  onAgentRestartStuck: (cb: (p: { agentId: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
+    ipcRenderer.on('agent:restartStuck', listener);
+    return () => ipcRenderer.removeListener('agent:restartStuck', listener);
   },
   /** Agents that may use QuickBooks, Read only, before the owner chooses (Oscar). */
   quickbooksRoleDefaults: (): Promise<string[]> => ipcRenderer.invoke('quickbooks:roleDefaults'),
@@ -1327,18 +1354,41 @@ const api = {
   /** Atomically append one card against the latest main-process ledger. */
   hiveAddTask: (task: HiveTask): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:addTask', task),
-  /** Record Ask me answers on one card, merged against the card on disk.
-   *  `landed`: at least one answer was added to a question still open there. */
+  /** Record the owner's Ask me answer to question `index` on one card, merged
+   *  against the card on disk. `landed`: it was added to that question, still
+   *  open there. */
   hivePatchTask: (
     id: string,
-    patch: Partial<Omit<HiveTask, 'id'>>
-  ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch),
+    patch: Partial<Omit<HiveTask, 'id'>>,
+    index: number
+  ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch, index),
   /** The owner moves a card; Done is their decision to end it. Michael is told. */
   hiveMoveTask: (id: string, status: HiveTask['status'], reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:moveTask', id, status, reason),
   /** The owner ends a card: Done, marked "Closed by owner", never deleted. */
   hiveCloseTask: (id: string, reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:closeTask', id, reason),
+
+  // ─── Pulse (docs/designs/team-performance.md) ─────────────────────────────
+  /** What the Pulse view shows for a period. */
+  pulseSnapshot: (period: Period): Promise<PulseView> => ipcRenderer.invoke('pulse:snapshot', period),
+  /** The Claude plan found in the owner's Claude account, and its list price a month. */
+  claudePlan: (): Promise<{ label: string | null; listMonthly: number | null }> => ipcRenderer.invoke('claude:plan'),
+  /** The owner's Apply on a way to save. A model change comes back for the store to make. */
+  pulseApply: (id: string, expected: unknown): Promise<{ ok: true; kind: 'schedule'; appliedId: number } | { ok: true; kind: 'model'; agentId: string; to: string; from: string | null } | { ok: false; error: 'stale' | 'unavailable' | 'failed' }> =>
+    ipcRenderer.invoke('pulse:apply', id, expected),
+  /** After the store set a model from a suggestion: record it for savings and Undo. */
+  pulseModelApplied: (id: string, agentId: string, from: string | null, to: string): Promise<number> =>
+    ipcRenderer.invoke('pulse:modelApplied', id, agentId, from, to),
+  pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
+    ipcRenderer.invoke('pulse:undo', appliedId),
+  pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  /** Fires when new telemetry was folded, so an open Pulse view refreshes. */
+  onPulseUpdated: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('pulse:updated', listener);
+    return () => ipcRenderer.removeListener('pulse:updated', listener);
+  },
 
   // ─── Scheduled missions (recurring auto-dispatch) ──────────────────────────
   listMissions: (): Promise<ScheduledMission[]> => ipcRenderer.invoke('missions:list'),
@@ -1397,6 +1447,9 @@ const api = {
   /** The owner is closing this agent: pause its schedules and mark it closed. */
   closeAgentByOwner: (id: string): Promise<{ ok: boolean; paused: number }> =>
     ipcRenderer.invoke('agent:closedByOwner', id),
+  /** The owner deleted this team member for good: withdraw their open asks and tell Michael. */
+  memberDeleted: (id: string): Promise<{ withdrawn: number; cards: number }> =>
+    ipcRenderer.invoke('agent:deleted', id),
   /** Fires when the scheduler stamps a mission's lastFiredAt (a beat/dispatch),
    *  so the SCHEDULES panel can refresh "last fired" without a reload. */
   onMissionsUpdated: (cb: () => void): (() => void) => {
@@ -1586,6 +1639,8 @@ const api = {
     ipcRenderer.invoke('integrations:templates'),
   integrationsUpsert: (record: IntegrationRecord): Promise<{ ok: true; record: IntegrationRecord } | { ok: false; error: string }> =>
     ipcRenderer.invoke('integrations:upsert', record),
+  integrationsCanStoreSecrets: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('integrations:canStoreSecrets'),
   integrationsSetSecret: (req: { id: string; secret: string }): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('integrations:setSecret', req),
   integrationsRemove: (req: { id: string }): Promise<{ ok: boolean }> =>
@@ -1717,6 +1772,16 @@ const api = {
   cliUpdateCurrent: (): Promise<CliUpdateStatus | null> => ipcRenderer.invoke('cliUpdate:current'),
   /** The office break (issue 124): null while the office works. */
   officeBreakView: (): Promise<OfficeBreakView | null> => ipcRenderer.invoke('office:breakView'),
+  /** Try again on a stop card (office-stopped-account.md): check now. */
+  officeRetry: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('office:retry'),
+  /** Add credit: main opens the Anthropic billing page (a fixed address). */
+  officeAddCredit: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('office:addCredit'),
+  /** A new key replaced one that stopped working: these Claude terminals restart, resumed. */
+  onOfficeRestartClaude: (cb: (ptyIds: string[]) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, ids: unknown): void => cb(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
+    ipcRenderer.on('office:restartClaude', listener);
+    return () => ipcRenderer.removeListener('office:restartClaude', listener);
+  },
   onOfficeBreak: (cb: (view: OfficeBreakView | null) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, payload: OfficeBreakView | null) => cb(payload);
     ipcRenderer.on('office:break', listener);

@@ -56,14 +56,14 @@ export const TAB_EXTENSIONS: ReadonlySet<string> = new Set([
  *  `/`, `~/` or a drive letter, and is not the tail of a URL, a word or a
  *  relative path (nothing path-like or word-like right before it). It stops at
  *  the first space, quote or bracket, so a path with spaces needs backticks. */
-const PLAIN_PATH = /(?<![\w:/.~\\$@-])(?:~[\\/]|\/|[A-Za-z]:\\)[^\s`'"<>()[\]{}|*]+/g;
+const PLAIN_PATH = /(?<![\w:/.~\\$@-])(?:~[\\/]|\/|[A-Za-z]:[\\/])[^\s`'"<>()[\]{}|*]+/g;
 
 /** Sentence punctuation after a path belongs to the sentence. */
 const TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
 /** Whether text is a full path (not one relative to a folder). */
 export function isAbsolutePathText(s: string): boolean {
-  return /^(?:~[\\/]|\/|[A-Za-z]:\\)/.test(s);
+  return /^(?:~[\\/]|\/|[A-Za-z]:[\\/])/.test(s);
 }
 
 /** The full paths with a known file ending that plain text names, with where
@@ -99,11 +99,16 @@ export function askFilePaths(question: string): string[] {
     if (isFileSpan(span)) found.push({ path: span, at: m.index ?? 0 });
   }
   let prose = text.replace(/`[^`\n]+`/g, blank);
-  for (const m of prose.matchAll(/\]\(<?([^)\s>]+)>?\)/g)) {
-    const target = m[1];
+  // A link target in <angle brackets> may hold spaces ("Harbor & Pine/Q3
+  // report.md") or parentheses, and either form may carry a title after the
+  // target ("…", '…' or (…)). Each link found is blanked whole, so no part of
+  // its target or title is read again as a plain path below.
+  const links = /\]\((?:<([^>\n]+)>|([^)\s]+))(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\)/g;
+  for (const m of prose.matchAll(links)) {
+    const target = m[1] ?? m[2];
     if (isAbsolutePathText(target) && isFileSpan(target)) found.push({ path: target, at: m.index ?? 0 });
   }
-  prose = prose.replace(/\]\([^)]*\)/g, blank);
+  prose = prose.replace(links, blank).replace(/\]\([^)]*\)/g, blank);
   for (const p of plainFilePaths(prose)) found.push({ path: p.path, at: p.start });
   const seen = new Set<string>();
   const out: string[] = [];

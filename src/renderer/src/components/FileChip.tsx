@@ -4,7 +4,7 @@
  * option instead of the path). Main checks every path and decides what the
  * chip does: a file the office can show opens as a tab next to Who talks to
  * whom; another document inside the office folders opens in its own app; a
- * file the office cannot open shows in Finder (Show in folder on Windows); a
+ * file the office cannot open shows in Finder (Show in folder off a Mac); a
  * file that is gone, or outside every folder, reads Not found.
  *
  * Replaces the rows under the question (docs/designs/ask-me-open-file.md, D2).
@@ -84,7 +84,8 @@ export function FileChip({ path, check, who, onGone }: {
   onGone: (path: string) => void;
 }) {
   const { t } = useTranslation();
-  const win = window.cth.platform === 'win32';
+  // Finder is the Mac's; Windows and Linux both say folder.
+  const win = window.cth.platform !== 'darwin';
   const name = fileTitle(path);
   const kind = kindOf(path);
   const icon = kind === 'excel' || kind === 'csv' ? 'sheet' : kind === 'image' ? 'image' : 'file';

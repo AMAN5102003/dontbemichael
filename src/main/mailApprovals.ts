@@ -46,6 +46,9 @@ export interface MailApprovalDeps {
    *  grant). Absent: assumed, as before. The late sweep skips one that can't,
    *  so Michael is never sent on a dead errand (OV6). */
   canSend?: (agentId: string, mailbox: string, proposalId: string) => boolean;
+  /** Every owner decision and withdrawal, for Pulse's kept as is (E2). No
+   *  subject or body: the member, the decision and whether it was edited. */
+  onDecision?: (agentId: string, decision: 'approve' | 'approve-edited' | 'changes' | 'decline' | 'cancelled') => void;
   now?: () => number;
 }
 
@@ -85,8 +88,30 @@ export class MailApprovals implements ProposalStore {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
     const raw = v as Record<string, unknown>;
     const ok = <T extends { id?: unknown }>(a: unknown): T[] => (Array.isArray(a) ? (a as T[]).filter((x) => x && typeof x.id === 'string') : []);
-    const sends = Array.isArray(raw.sends) ? (raw.sends as SendRecord[]).filter((r) => r && typeof r.messageId === 'string' && typeof r.agentId === 'string') : [];
-    const paused = raw.paused && typeof raw.paused === 'object' && !Array.isArray(raw.paused) ? (raw.paused as Record<string, PausedNotice>) : {};
+    const sends = Array.isArray(raw.sends) ? (raw.sends as unknown[]).filter((r): r is SendRecord => {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
+      const rec = r as Record<string, unknown>;
+      return typeof rec.agentId === 'string'
+        && typeof rec.mailbox === 'string'
+        && typeof rec.messageId === 'string'
+        && Array.isArray(rec.references)
+        && rec.references.every((ref) => typeof ref === 'string')
+        && typeof rec.to === 'string'
+        && typeof rec.subject === 'string'
+        && typeof rec.sentAt === 'number'
+        && Number.isFinite(rec.sentAt)
+        && Number.isFinite(new Date(rec.sentAt).getTime());
+    }) : [];
+    // A damaged notice is dropped, so pausedDue starts that pause's wait again.
+    const paused: Record<string, PausedNotice> = {};
+    if (raw.paused && typeof raw.paused === 'object' && !Array.isArray(raw.paused)) {
+      const now = this.now();
+      for (const [key, n] of Object.entries(raw.paused as Record<string, unknown>)) {
+        if (!n || typeof n !== 'object' || Array.isArray(n)) continue;
+        const { since, told } = n as Record<string, unknown>;
+        if (typeof since === 'number' && Number.isFinite(since) && since <= now && typeof told === 'boolean') paused[key] = { since, told };
+      }
+    }
     return { ...raw, proposals: ok<MailProposal>(raw.proposals), standing: ok<StandingApproval>(raw.standing), sends, paused };
   }
 
@@ -186,6 +211,7 @@ export class MailApprovals implements ProposalStore {
     if (!gone.length) return [];
     const ids = new Set(gone.map((p) => p.id));
     this.write(list.map((p) => (ids.has(p.id) ? { ...p, state: 'cancelled' as const, decidedAt: this.now(), cancelReason: reason } : p)));
+    for (const p of gone) { try { this.deps.onDecision?.(p.agentId, 'cancelled'); } catch { /* best-effort */ } }
     return gone;
   }
 
@@ -357,6 +383,7 @@ export class MailApprovals implements ProposalStore {
     this.save({ proposals: list.map((x) => (x.id === id ? next : x)), ...(standing ? { standing: [...this.load().standing, standing] } : {}) });
     const msg = decisionMessage(p, decision, edits, note, standing);
     try { this.deps.send({ to: p.agentId, ...msg }); } catch (e) { console.error('[mail] approval message:', e); }
+    try { this.deps.onDecision?.(p.agentId, decision === 'approve' ? (edits ? 'approve-edited' : 'approve') : decision === 'changes' ? 'changes' : 'decline'); } catch { /* best-effort */ }
     const line = memoryLine(p, decision, edits, note, this.today());
     if (line) { try { this.deps.remember(p.agentId, line); } catch { /* the decision stands */ } }
     if (standing) { try { this.deps.remember(p.agentId, standingMemoryLine(standing, true, this.today())); } catch { /* the approval stands */ } }

@@ -72,6 +72,31 @@ test('a genuinely newer release supersedes a staged one', () => {
   assert.deepEqual(next, { state: 'available', version: '0.3.8' });
 });
 
+test('a download that fails stops showing as downloading, and the manual download replaces it', () => {
+  // Value: protects=the update chip and Settings after a failed download; fails_when=the chip spins on "downloading 37%" with nothing to click, and the manual download the updater fell back to never shows, until the next release; seam=none
+  const manual = {
+    state: 'available-manual', version: '0.3.7', reason: 'net::ERR_CONNECTION_RESET',
+    url: 'https://github.com/agentvivekkumar/dontbemichael/releases/tag/v0.3.7',
+    downloadUrl: 'https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.3.7/Dont-Be-Michael-0.3.7-mac-universal.dmg'
+  };
+  // Mid-download, the updater emits the error and then the fallback's offer.
+  let s = reduceStatus({ state: 'available', version: '0.3.7' }, { state: 'downloading', version: '0.3.7', percent: 37 });
+  s = reduceStatus(s, { state: 'error', message: 'net::ERR_CONNECTION_RESET' });
+  assert.equal(s.state, 'error', 'a download that failed is not still downloading');
+  assert.equal(describeUpdate(s, '0.3.6').busy, false, 'the chip stops spinning');
+  s = reduceStatus(s, manual);
+  assert.deepEqual(s, manual);
+  assert.equal(describeUpdate(s, '0.3.6').action, 'manual', 'the chip offers the download by hand');
+  // A download that never got going: the offer replaces it too. The error
+  // before it leaves "available" alone, which is still something to click.
+  const available = { state: 'available', version: '0.3.7' };
+  assert.deepEqual(reduceStatus(available, { state: 'error', message: 'EACCES' }), available);
+  assert.deepEqual(reduceStatus(available, manual), manual);
+  // A finished download is on disk: neither takes the restart away.
+  const staged = { state: 'downloaded', version: '0.3.7' };
+  assert.deepEqual(reduceStatus(staged, manual), staged);
+});
+
 test('every actionable state offers the action its label promises', () => {
   const check = (status, expected) => {
     const v = describeUpdate(status, '0.3.6');
@@ -214,4 +239,23 @@ test('just-updated is quiet on the badge and loses to a newer available release'
     { state: 'available', version: '0.4.6' }
   );
   assert.equal(next.state, 'available');
+});
+
+test('hyphenated prerelease identifiers retain their full release order', () => {
+  // Value: protects=update offers for hyphenated prereleases; fails_when=beta-a.1 and beta-z.1 collapse to the same version; seam=none
+  const { isNewerRelease, pendingVersion, reduceStatus } = loadTs('src/shared/updateState.ts');
+  const older = '0.1.1-beta-a.1';
+  const newer = '0.1.1-beta-z.1';
+  assert.equal(isNewerRelease(newer, older), true);
+  assert.equal(isNewerRelease(older, newer), false);
+  assert.equal(isNewerRelease(newer, newer), false);
+  assert.equal(isNewerRelease('0.1.1', newer), true);
+  assert.equal(isNewerRelease(newer, '0.1.1'), false);
+  assert.equal(isNewerRelease('v0.1.1-beta-z.2+build.7', newer), true);
+  assert.equal(isNewerRelease('0.1.1-beta-z.1+build.8', newer), false);
+
+  const available = { state: 'available', version: newer };
+  assert.equal(pendingVersion(available, older), newer);
+  assert.equal(reduceStatus({ state: 'downloaded', version: older }, available), available);
+  assert.equal(isNewer(newer, older), false, 'CLI and model floor comparisons still ignore prereleases');
 });

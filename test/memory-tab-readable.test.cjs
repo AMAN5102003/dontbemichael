@@ -160,6 +160,21 @@ test('every slug the app writes can be read back', () => {
   }
 });
 
+test('procedures named with no Latin letters each keep their own file', () => {
+  const { procedureSlug, applyOps } = loadTs('src/shared/memoryIndex.ts');
+  const names = ['每周财务汇总', '库存盘点', 'إغلاق نهاية اليوم', 'साप्ताहिक रिपोर्ट'];
+  const slugs = names.map(procedureSlug);
+  assert.equal(new Set(slugs).size, names.length, slugs.join(', '));
+  for (const [i, slug] of slugs.entries()) {
+    assert.equal(isProcedureSlug(slug), true, slug);
+    assert.equal(procedureSlug(` ${names[i]} `), slug, 'the same name always gives the same file');
+  }
+  const ops = names.map((name, i) => ({ op: 'procedure', name, steps: `1. step ${i}`, source: 'task' }));
+  const r = applyOps([], ops, '2026-10-12');
+  assert.equal(r.entries.length, names.length, 'one pointer each, none replaced');
+  assert.deepEqual(r.entries.map((e) => procedurePointer(e.text)?.slug), slugs);
+});
+
 test('a name with letters NFKD turns uppercase still gives a readable slug', () => {
   const { procedureSlug } = loadTs('src/shared/memoryIndex.ts');
   for (const name of ['ℍow to ship', 'Deploy ℝ']) assert.equal(isProcedureSlug(procedureSlug(name)), true, procedureSlug(name));

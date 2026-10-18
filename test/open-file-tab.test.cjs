@@ -57,6 +57,9 @@ test('the chip replaces exactly the path, from the source, in text, code spans a
   assert.equal(para[1].children[1].value, '.', 'the sentence period stays text, kept with its chip');
   assert.equal(para[2].value, ' Also ');
   assert.deepEqual(chips('Saved to C:\\Reports\\_q3.md today').out, ['C:\\Reports\\_q3.md'], 'Windows path read from the source, backslash kept');
+  assert.deepEqual(chips('Saved to C:/Reports/q3.csv. See [notes](D:/Reports/notes.md).').out,
+    ['C:/Reports/q3.csv', 'D:/Reports/notes.md'], 'Windows forward slash paths become chips in prose and links');
+  assert.deepEqual(chips('See [site](https://example.com/C:/Reports/q3.csv).').out, [], 'a URL containing a drive path stays a link');
   assert.deepEqual(chips('```\n/Users/me/skip.md\n```').out, [], 'code fences stay code');
   // 2026-10-11: Michael wrote **... 10 Oct (`/path/report.md`).** and the chip
   // wrapped to its own line, stranding "(" above it and ")." below it.
@@ -146,17 +149,46 @@ test('CSV and TSV become a table; broken quoting falls back to text (E3)', () =>
   assert.deepEqual(parseDelimited('name,note\n"Acme, Inc","said ""hi"""\r\nB,\n', ','), [['name', 'note'], ['Acme, Inc', 'said "hi"'], ['B', '']]);
   assert.deepEqual(parseDelimited('a\tb\n1\t2', '\t'), [['a', 'b'], ['1', '2']]);
   assert.equal(parseDelimited('a,"b\n1,2', ','), null);
+  // Excel's CSV UTF-8 starts with a byte order mark; the quoted header still reads as one column.
+  assert.deepEqual(parseDelimited('﻿"Client, name",Amount\r\n"Acme, Inc",10', ','), [['Client, name', 'Amount'], ['Acme, Inc', '10']]);
+  assert.deepEqual(parseDelimited('﻿name\tnote\n1\t2', '\t'), [['name', 'note'], ['1', '2']]);
   assert.equal(CSV_ROW_LIMIT, 1000);
+});
+
+test('CSV and TSV retain an empty quoted final record without a trailing newline', () => {
+  // Value: protects=an empty quoted final record stays in the preview; fails_when=EOF drops a record whose cell text is empty; why_new=only nonempty cells and completed separators were checked at EOF; seam=none
+  for (const sep of [',', '\t']) {
+    for (const ending of ['\n', '\r\n', '\r']) {
+      assert.deepEqual(parseDelimited(`name${ending}""`, sep), [['name'], ['']]);
+    }
+    assert.deepEqual(parseDelimited('""', sep), [['']]);
+    assert.deepEqual(parseDelimited('\ufeff""', sep), [['']], 'a BOM does not hide the empty quoted record');
+    assert.deepEqual(parseDelimited(`name${sep}note\nA${sep}""`, sep), [['name', 'note'], ['A', '']]);
+    assert.equal(parseDelimited('name\n"', sep), null, 'unclosed quotes still fall back to text');
+  }
+});
+
+test('CSV and TSV do not invent final records for empty files or trailing line endings', () => {
+  // Value: protects=the EOF fix does not add a phantom row; fails_when=an empty file or completed line ending produces an extra record; why_new=guards the record-start boundary used for quoted empty fields; seam=none
+  for (const sep of [',', '\t']) {
+    assert.deepEqual(parseDelimited('', sep), []);
+    assert.deepEqual(parseDelimited('\ufeff', sep), []);
+    for (const ending of ['\n', '\r\n', '\r']) {
+      assert.deepEqual(parseDelimited(`name${ending}`, sep), [['name']]);
+      assert.deepEqual(parseDelimited(`name${ending}""${ending}`, sep), [['name'], ['']]);
+      assert.deepEqual(parseDelimited(`""${ending}`, sep), [['']]);
+    }
+  }
 });
 
 test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, watchers dropped on reload', () => {
   // Value: protects=the owner's tab and column behavior and the watcher cap; fails_when=the column hides on a file tab, a restart lands on a file tab, or watchers leak; why_new=all new; seam=none
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /if \(view === 'file'\) \{ set\(\{ floorView: view \}\); return; \}/, 'a file tab is never written to cth.floorView');
-  assert.match(store, /if \(view === 'office' \|\| view === 'file'\) return \{\};/, 'opening the column on a file tab stays on it (F1)');
+  assert.match(store, /if \(view === 'office' \|\| view === 'file'\) return \{\};/, 'opening the column on a file tab (or Pulse) stays on it (F1, D14)');
   const app = read('src/renderer/src/App.tsx');
-  assert.match(app, /const columnShown = columnOpen && \(floorView === 'office' \|\| floorView === 'file'\);/);
-  assert.match(app, /display: floorView === 'office' \|\| floorView === 'file' \? 'flex' : 'none'/, 'the column style too, not only columnShown');
+  assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
+  assert.match(app, /display: columnView \? 'flex' : 'none'/, 'the column style too, not only columnShown');
   assert.match(app, /\{floorView === 'file' && <FileTabView \/>\}/);
   assert.match(read('src/renderer/src/components/FileTabView.tsx'), /<div ref=\{scroller\} className="cth-file-tab"/);
   assert.match(read('src/renderer/src/design/global.css'), /\.cth-file-tab \.cth-md-preview \{ max-width: none; \}/, 'a report fills the file tab, no 72ch cap');

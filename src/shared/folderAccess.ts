@@ -27,6 +27,7 @@
  * rules without touching the plumbing.
  */
 
+import { RESEARCH_ID, RESEARCH_NAME } from './research';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 export interface FolderLayout {
@@ -163,6 +164,172 @@ export function folderDecision(
   return { deny: false };
 }
 
+/**
+ * The computer's temporary folders (ship review D6.1): Claude Code keeps a
+ * session's scratch files and command output there unless told otherwise, so
+ * Research's file tools open none of them. Its own session files live in its
+ * desk (RESEARCH_TMP_DIR) and every other office agent's in its own folder
+ * under the app's home (AGENT_TMP_DIR), both set with CLAUDE_CODE_TMPDIR.
+ */
+export function tempFolders(platform: string, tmpdir: string): string[] {
+  const posix = platform === 'darwin'
+    ? ['/tmp', '/private/tmp', '/var/tmp', '/private/var/tmp', '/var/folders', '/private/var/folders']
+    : ['/tmp', '/var/tmp'];
+  return Array.from(new Set([...(platform === 'win32' ? [] : posix), tmpdir].filter((f) => !!f && isAbsolute(f))));
+}
+
+/** The temporary folders Research's shell is walled from: all but /tmp, where
+ *  Claude Code's shell keeps its own working files whatever the settings say
+ *  (live check 2026-10-13: with /tmp walled, every command fails). */
+export function shellTempWalls(platform: string, tmpdir: string): string[] {
+  return tempFolders(platform, tmpdir).filter((f) => f !== '/tmp' && f !== '/private/tmp');
+}
+
+/** A file tool saving into the shared temporary folders while Research is on
+ *  (owner, D7.2): Research's shell can read /tmp, so another agent saves its
+ *  scratch work in its own folder instead and carries on there. */
+export function sharedTempWriteDecision(temps: string[], ownTmp: string, ownCwd: string | undefined, tool: string, target: string, caseInsensitive: boolean, name: string = RESEARCH_NAME): { deny: boolean; reason?: string } {
+  if (!FOLDER_WRITE_TOOLS.has(tool)) return { deny: false };
+  const inside = insideFn(caseInsensitive);
+  // Its own folders stay open, even in an office that sits in a temp folder.
+  if ([ownTmp, ownCwd].some((f) => f && inside(f, target))) return { deny: false };
+  if (!temps.some((f) => f && inside(f, target))) return { deny: false };
+  return { deny: true, reason: `While ${name} is on, the shared temporary folders are closed for saving. Save it in your own scratch folder, ${ownTmp}, and carry on from there.` };
+}
+
+/** A save aimed at the shared temporary folders, judged on the file it names
+ *  (`//tmp`, `/./tmp` and `..` resolve first): the fail closed checks use it
+ *  when the app's own check can't run (the hook program has the same pattern). */
+export function isSharedTempSave(tool: string, input: unknown, cwd?: string): boolean {
+  if (!FOLDER_WRITE_TOOLS.has(tool)) return false;
+  const target = folderToolTarget(tool, input, cwd) ?? '';
+  return /^(?:\/private)?\/(?:tmp|var\/tmp|var\/folders)(?:\/|$)/i.test(target);
+}
+
+/** Another agent's session scratch folder (`<home>/agent-tmp/<id>`, D6.1):
+ *  its command output and scratch files are its own, like its team folder
+ *  (ship review pass 2). Michael reads everything, as with team folders. */
+export function agentTmpDecision(home: string, agentId: string, isGod: boolean, tool: string, target: string, caseInsensitive: boolean): { deny: boolean; reason?: string } {
+  if (isGod || (!FOLDER_WRITE_TOOLS.has(tool) && !FOLDER_READ_TOOLS.has(tool))) return { deny: false };
+  const inside = insideFn(caseInsensitive);
+  const all = join(home, AGENT_TMP_DIR);
+  if (!inside(all, target) || inside(join(all, agentTmpName(agentId)), target)) return { deny: false };
+  return { deny: true, reason: 'That is another team member\'s scratch folder, and only they can open it. Use your own.' };
+}
+
+/** Where an office agent's Claude session keeps its scratch files: under the
+ *  app's home, outside the hive, one folder per agent. */
+export const AGENT_TMP_DIR = 'agent-tmp';
+
+/** An agent's own folder name inside AGENT_TMP_DIR: its id when that is a
+ *  plain short name, else a short safe form of it with a checksum, so a hire
+ *  with a long name still gets a folder (Codex review, second ship). */
+export function agentTmpName(id: string): string {
+  // A Windows device name (con, nul, com1) can't be a folder there.
+  if (/^[\w-]{1,64}$/.test(id) && !/^(con|prn|aux|nul|com\d|lpt\d)$/i.test(id)) return id;
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return `${id.replace(/[^\w-]/g, '_').slice(0, 40)}-${h.toString(36)}`;
+}
+/** Research's, inside its desk. */
+export const RESEARCH_TMP_DIR = '.tmp';
+
+/**
+ * Research's walls (issue #230, eng review R1): it uses the internet, so it
+ * opens nothing of the office. `walled` are the folders it may not open (the
+ * app's home with the hive, the business folder, team folders, the shared
+ * memory and company knowledge); `own` its own folders inside them (its agent
+ * folder and its desk), which the sandbox opens again. Its shell writes only
+ * its own folders (hive.sandboxWritableDirs), and the hook judges its file
+ * tools (researchFolderDecision), since a deny rule can't be opened again.
+ */
+export function researchFolderPolicy(walled: string[], own: string[], home?: string): AgentFolderPolicy {
+  const clean = (l: string[]) => Array.from(new Set(l.filter((f) => !!f && isAbsolute(f)).map((f) => resolve(f))));
+  // A second layer under the hook's write allowlist: permission rules can't
+  // reopen a folder they deny, so they name the riskiest places outside its
+  // own folders instead, where a write would reach other agents or the owner's
+  // shell (ship review D2.6).
+  const risky = home && isAbsolute(home)
+    ? ['.claude', '.config', '.ssh', 'Library'].map((d) => rule('Edit', join(home, d)))
+      .concat(['.zshrc', '.zprofile', '.zshenv', '.bashrc', '.bash_profile', '.profile'].map((f) => `Edit(/${resolve(home, f).replace(/\\/g, '/').replace(/^\/?/, '/')})`))
+    : [];
+  return { sandbox: { denyWrite: [], denyRead: clean(walled), allowRead: clean(own) }, deny: risky, sandboxOnly: true };
+}
+
+/** One file tool call by Research: it writes only its own folders (an
+ *  allowlist, ship review D2.6), and reads its own folders or anything outside
+ *  and above no wall (the home folder is walled, D2.5). */
+export function researchFolderDecision(walled: string[], own: string[], tool: string, target: string, caseInsensitive: boolean, writeOwn: string[] = own): { deny: boolean; reason?: string } {
+  const writes = FOLDER_WRITE_TOOLS.has(tool);
+  if (!writes && !FOLDER_READ_TOOLS.has(tool)) return { deny: false };
+  const inside = insideFn(caseInsensitive);
+  // It reads its whole folder but writes only where its shell may: the app
+  // keeps the rest (identity, memory index, cursor, skills; Codex review,
+  // third ship).
+  if ((writes ? writeOwn : own).some((f) => f && inside(f, target))) return { deny: false };
+  if (writes) {
+    return { deny: true, reason: 'You save files only in your own desk and notes folder. Put what you write there.' };
+  }
+  // A search from a folder above a wall (Grep on "/" or "/Users") reads what
+  // the wall holds, so it is refused too.
+  if (walled.some((f) => f && (inside(f, target) || inside(target, f)))) {
+    return { deny: true, reason: 'You work only from the internet and your own folder: the office\'s files, task board and memory are kept from you on purpose. Everything you need is in the message you were sent.' };
+  }
+  return { deny: false };
+}
+
+/** Every other agent's guard on Research's folders (eng review R2, owner
+ *  2026-10-13): they are Research's alone. Nobody else writes into them, so
+ *  nothing reaches Research without the trust layer, and nobody else reads
+ *  them, so nothing leaves Research without it either. */
+export function withResearchWall(policy: AgentFolderPolicy, researchFolders: string[]): AgentFolderPolicy {
+  const dirs = Array.from(new Set(researchFolders.filter((f) => !!f && isAbsolute(f)).map((f) => resolve(f))));
+  return {
+    ...policy,
+    sandbox: {
+      ...policy.sandbox,
+      denyWrite: Array.from(new Set([...policy.sandbox.denyWrite, ...dirs])),
+      denyRead: Array.from(new Set([...policy.sandbox.denyRead, ...dirs]))
+    },
+    deny: Array.from(new Set([...policy.deny, ...dirs.flatMap((d) => [rule('Edit', d), rule('Read', d)])]))
+  };
+}
+
+/** A team member's shell reads no other agent's session scratch folder
+ *  (ship review pass 2); its own stays open, since allowRead wins over
+ *  denyRead in Claude's sandbox. Michael's shell reads them, as team folders. */
+export function withAgentTmpWall(policy: AgentFolderPolicy, home: string, agentId: string, isGod: boolean): AgentFolderPolicy {
+  if (isGod || !home || !isAbsolute(home)) return policy;
+  const all = resolve(home, AGENT_TMP_DIR);
+  return {
+    ...policy,
+    sandbox: {
+      ...policy.sandbox,
+      denyRead: Array.from(new Set([...policy.sandbox.denyRead, all])),
+      allowRead: Array.from(new Set([...policy.sandbox.allowRead, join(all, agentTmpName(agentId))]))
+    }
+  };
+}
+
+/** A file tool reaching into Research's folders, by anyone but Research. */
+export function researchWallDecision(researchFolders: string[], tool: string, target: string, caseInsensitive: boolean, name: string = RESEARCH_NAME): { deny: boolean; reason?: string } {
+  const writes = FOLDER_WRITE_TOOLS.has(tool);
+  if (!writes && !FOLDER_READ_TOOLS.has(tool)) return { deny: false };
+  const inside = insideFn(caseInsensitive);
+  // A search over a folder that holds Research's (the hive, the app's home)
+  // stays open: the Read deny rules withResearchWall writes keep its files
+  // out of the results.
+  if (researchFolders.some((f) => f && inside(f, target))) {
+    return {
+      deny: true,
+      reason: writes
+        ? `That is ${name}'s folder. To ask ${name} something, write a message to "${RESEARCH_ID}" in your own outbox; the app checks it and delivers it.`
+        : `That is ${name}'s folder, and only ${name} reads it. What ${name} finds reaches you in their messages, after the app checks them.`
+    };
+  }
+  return { deny: false };
+}
+
 /** A Claude Code permission rule for everything under an absolute folder. */
 function rule(tool: 'Read' | 'Edit', folder: string): string {
   const p = resolve(folder).replace(/\\/g, '/');
@@ -205,7 +372,10 @@ function insideFn(ci: boolean) {
 export function folderToolTarget(tool: string, input: unknown, cwd: string | undefined): string | null {
   if (!input || typeof input !== 'object') return null;
   const o = input as Record<string, unknown>;
-  const str = (k: string) => (typeof o[k] === 'string' && (o[k] as string).length > 0 ? (o[k] as string) : null);
+  // Trimmed first, as Claude Code reads a path (its expandPath trims, then
+  // expands ~): " /Users/x" is the folder /Users/x, never one inside the
+  // agent's own (red team, ship review pass 3).
+  const str = (k: string) => (typeof o[k] === 'string' && (o[k] as string).trim().length > 0 ? (o[k] as string).trim() : null);
   let p = str('file_path') ?? str('notebook_path') ?? str('path');
   if (tool === 'Glob') {
     // Judged by the part before the first wildcard, relative or not and with

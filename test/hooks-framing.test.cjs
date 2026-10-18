@@ -37,7 +37,9 @@ async function openServer(t, options = {}) {
   const logs = [];
   const hive = {
     sockPath: () => sock,
-    appendLog: (entry) => logs.push(entry)
+    appendLog: (entry) => logs.push(entry),
+    // Framing only: every frame counts as one agent's (hook auth has its own tests).
+    hookTokenOwner: () => 'a1'
   };
   const server = new HookServer(hive, () => null, () => ({ notifications: false }));
 
@@ -109,7 +111,7 @@ test('CJK payload survives a split inside a multibyte code point', async (t) => 
   const result = await sendChunks(sock, [frame.subarray(0, split), frame.subarray(split)], 25);
 
   assert.equal(result.didClose, true);
-  assert.deepEqual(routed, [payload]);
+  assert.deepEqual(routed, [{ ...payload, agent_id: 'a1' }], 'the frame now names its authenticated sender');
 });
 
 test('emoji payload survives a split inside a four-byte code point', async (t) => {
@@ -121,7 +123,7 @@ test('emoji payload survives a split inside a four-byte code point', async (t) =
   const result = await sendChunks(sock, [frame.subarray(0, split), frame.subarray(split)], 25);
 
   assert.equal(result.didClose, true);
-  assert.deepEqual(routed, [payload]);
+  assert.deepEqual(routed, [{ ...payload, agent_id: 'a1' }], 'the frame now names its authenticated sender');
 });
 
 test('ordinary fragmented frame retains existing one-request behavior', async (t) => {
@@ -136,7 +138,7 @@ test('ordinary fragmented frame retains existing one-request behavior', async (t
   ], 10);
 
   assert.equal(result.didClose, true);
-  assert.deepEqual(routed, [payload]);
+  assert.deepEqual(routed, [{ ...payload, agent_id: 'a1' }], 'the frame now names its authenticated sender');
   assert.equal(result.response, '{}');
 });
 
@@ -175,7 +177,9 @@ test('a bare null frame is normalized to an object payload', async (t) => {
 
   assert.equal(result.didClose, true, 'server left the connection open on a null frame');
   assert.equal(result.response, '{}');
-  assert.deepEqual(routed, [{}], 'a non-object JSON frame must reach handle() as {}');
+  // The frame becomes an empty object, then the sender check names it by its
+  // secret's owner (the stub's 'a1').
+  assert.deepEqual(routed, [{ agent_id: 'a1' }], 'a non-object JSON frame must reach handle() as an empty object');
 });
 
 test('a frame that makes the gate throw still answers and closes', async (t) => {

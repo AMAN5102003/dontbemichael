@@ -121,6 +121,13 @@ export const SHOW_LANGUAGE_PICKER = false;
  *  or stop. Webhooks are separate and unchanged. */
 export const SHOW_SLACK = false;
 
+/** Mailboxes: the Mailboxes block in Settings → Connections, the Email
+ *  section on an agent's Capabilities tab, the mailbox option in the hire
+ *  wizard, and the mailbox posts and tags on the office floor. While off, no
+ *  agent is started with the md-mail server, even with email saved earlier.
+ *  On in this build (docs/designs/multi-mailbox.md, plan section 9). */
+export const SHOW_MAILBOXES = true;
+
 /** The "Safe & read only" list in Settings → Connections (Sequential
  *  Thinking, Time, Fetch, Context7 Docs, Filesystem, Git). Hidden (owner,
  *  2026-09-26): none of it is a choice a business owner can make, and none of

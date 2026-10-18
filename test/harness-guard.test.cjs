@@ -106,6 +106,13 @@ test('`..` cannot smuggle a write out of an allowed folder', () => {
   assert.equal(decide(`${HIVE}/agents/oscar/outbox/../report.pdf`).deny, true);
 });
 
+test('a name that starts with two dots is still inside the harness folder', () => {
+  assert.equal(decide(`${HOME}/..notes.md`).deny, true);
+  assert.equal(decide(`${HOME}/..shared/brand-voice.md`).deny, true);
+  assert.equal(decide(`${HIVE}/..board.md`).deny, true);
+  assert.equal(decide(`${HOME}/../outside.md`).deny, false, 'a real step out of the folder is still outside');
+});
+
 test('changing the case of the path does not get around it on macOS', () => {
   assert.equal(decide('/Users/me/harnessagents/HIVE/shared/x.md').deny, true);
   assert.equal(decide('/Users/me/HARNESSAGENTS/hive/agents/OSCAR/memory/inbox.md').deny, false, 'and plumbing still passes');
@@ -153,4 +160,11 @@ test('a refusal names the agent\'s folder only when that folder is outside the h
     tool: 'Write', toolInput: 'oops', cwd: FOLDER, agentId: 'oscar', isGod: false,
     harnessHome: HOME, hiveRoot: HIVE, caseInsensitive: true
   }).deny, false);
+});
+
+test('an agent saves into its own scratch folder in the app\'s home, and no one else\'s', posixOnly('POSIX paths'), () => {
+  // Value: protects=a member's session can save temp files in its own scratch folder, which moved out of /tmp; fails_when=the guard refuses it (every scratch save fails) or lets an agent into another's; why_new=ship review pass 3 (D6.1 regression); seam=none
+  assert.equal(decide(`${HOME}/agent-tmp/oscar/claude-501/s/scratchpad/notes.md`).deny, false);
+  assert.equal(decide(`${HOME}/agent-tmp/pam/notes.md`).deny, true, 'another agent\'s');
+  assert.equal(decide(`${HOME}/agent-tmp/oscar-2/notes.md`).deny, true, 'a name that only starts the same');
 });

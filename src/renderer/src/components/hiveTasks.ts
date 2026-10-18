@@ -20,10 +20,18 @@ export interface HumanQA {
   /** Why it was withdrawn, in a few words. */
   dismissedReason?: string;
   /** Set when the card closing withdrew it; shown in the owner's language. */
-  dismissedBy?: 'card-closed';
+  dismissedBy?: 'card-closed' | 'member-deleted';
   /** The agent whose work needs the answer, and which learns from it; "god"
    *  when Michael raised it himself. */
   raisedBy?: string;
+  /** A choice: the options Michael wrote (docs/designs/ask-me-options.md). */
+  options?: unknown;
+  /** Several questions, each maybe with its own options. */
+  parts?: unknown;
+  /** Which option the owner picked, recorded with the answer. */
+  picked?: number;
+  /** Each question's answer, null where the owner left it unanswered. */
+  partAnswers?: (string | null)[];
 }
 
 export interface HiveTask {
@@ -115,9 +123,9 @@ export function parseTasks(raw: unknown): HiveTask[] {
         ? (t.humanQA as unknown[])
           .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object' && typeof (e as { q?: unknown }).q === 'string')
           // Every field an entry carries survives the parse (raisedBy routes the
-          // answer; Slack options and thread ids ride along). An answer writes
-          // these entries back, so a field dropped here was erased from disk
-          // (found 2026-10-02).
+          // answer; options and parts give the card its shape, ask-me-options.md).
+          // An answer writes these entries back, so a field dropped here was
+          // erased from disk (found 2026-10-02).
           .map((e) => ({
             ...e,
             q: e.q as string,
@@ -128,7 +136,7 @@ export function parseTasks(raw: unknown): HiveTask[] {
             // resurface on the next poll (openQuestion would see it as open).
             dismissedAt: typeof e.dismissedAt === 'string' ? e.dismissedAt : undefined,
             dismissedReason: typeof e.dismissedReason === 'string' ? e.dismissedReason : undefined,
-            dismissedBy: e.dismissedBy === 'card-closed' ? 'card-closed' as const : undefined,
+            dismissedBy: e.dismissedBy === 'card-closed' || e.dismissedBy === 'member-deleted' ? e.dismissedBy : undefined,
             raisedBy: typeof e.raisedBy === 'string' ? e.raisedBy : undefined
           }))
         : undefined,
@@ -165,6 +173,30 @@ export function resultHeadline(result: string | undefined): string {
   return line
     .replace(/^#{1,6}\s+/, '')
     .replace(/^(?:[-*+]|\d+[.)])\s+/, '')
-    .replace(/(\*\*|__|\*|_|`)(.+?)\1/g, '$2')
+    // Underscores are emphasis only at a word's edges, so q3_sales_report.md
+    // and first_last@acme.com keep theirs.
+    .replace(
+      /(\*\*|\*|`)(.+?)\1|(?<![\p{L}\p{N}])(__?)(.+?)\3(?![\p{L}\p{N}])/gu,
+      (_m, _mark?: string, inner?: string, _under?: string, emph?: string) => inner ?? emph ?? ''
+    )
     .trim();
+}
+
+/** The Tasks board's filter (issue 158): what the owner typed and one team
+ *  member ('' for everyone). */
+export interface TaskFilter { query: string; assignee: string }
+
+/** Is either part of the filter set? While it is, the board unfolds Done. */
+export function filterActive(f: TaskFilter): boolean {
+  return f.query.trim() !== '' || f.assignee !== '';
+}
+
+/** Does a card pass the filter? Every typed word must appear, in any case, in
+ *  the card's id, title, description or result; a member must be its assignee. */
+export function taskMatches(task: HiveTask, f: TaskFilter): boolean {
+  if (f.assignee && task.assignee !== f.assignee) return false;
+  const words = f.query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const text = [task.id, task.title, task.description, task.result].filter(Boolean).join(' ').toLowerCase();
+  return words.every((w) => text.includes(w));
 }

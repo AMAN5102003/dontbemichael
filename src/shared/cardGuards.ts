@@ -47,6 +47,9 @@ export interface GuardState {
   hive: string;
   /** Every card last seen Done, as it was then. */
   done: Record<string, GuardCard>;
+  /** When each Done card was first seen Done, however it got there: an owner
+   *  answer after it is still Michael's to route. Absent in older saves. */
+  doneAt?: Record<string, string>;
   /** Where each open card last stood outside Triage. */
   placed: Record<string, Placed>;
   reminders: Record<string, Reminder>;
@@ -59,7 +62,7 @@ export function guardSignature(st: GuardState): string {
   return JSON.stringify(st);
 }
 
-export const emptyGuardState = (hive: string): GuardState => ({ hive, done: {}, placed: {}, reminders: {} });
+export const emptyGuardState = (hive: string): GuardState => ({ hive, done: {}, doneAt: {}, placed: {}, reminders: {} });
 
 export interface GuardResult {
   /** True when the board needs fixing: apply `fixes` to it with applyGuardFixes. */
@@ -102,7 +105,7 @@ export function restoreDone(was: GuardCard, live: GuardCard): GuardCard {
 const placedOf = (id: string, p: Placed | string | undefined): Placed | undefined => (typeof p === 'string' ? { id, status: p } : p);
 
 /** Check the board against what the app saw before, and record what it sees now. */
-export function guardCards(raw: unknown[], before: GuardState): GuardResult {
+export function guardCards(raw: unknown[], before: GuardState, at = new Date().toISOString()): GuardResult {
   const tasks = raw.filter(isCard);
   const reopened: GuardResult['reopened'] = [];
   const untriaged: GuardResult['untriaged'] = [];
@@ -126,9 +129,9 @@ export function guardCards(raw: unknown[], before: GuardState): GuardResult {
   const restored = Object.values(before.done).filter((t) => !present.has(t.id));
   now.push(...restored);
 
-  const state: GuardState = { hive: before.hive, done: {}, placed: {}, reminders: {} };
+  const state: GuardState = { hive: before.hive, done: {}, doneAt: {}, placed: {}, reminders: {} };
   for (const t of now) {
-    if (t.status === 'done') state.done[t.id] = t;
+    if (t.status === 'done') { state.done[t.id] = t; state.doneAt![t.id] = before.doneAt?.[t.id] ?? at; }
     else if (t.status && t.status !== 'triage') state.placed[t.id] = { ...t, status: t.status };
     // A reminder is kept only while its card is parked in To do on that time,
     // so a card that moves on and comes back is reminded again.

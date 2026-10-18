@@ -13,7 +13,8 @@ import { app } from 'electron';
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readConfig } from './config';
-import { extractDocumentText } from './docText';
+import { extractDocumentText, type DocExtraction } from './docText';
+import { extractDocumentTextApart } from './docTextProcess';
 
 // Pure-JS core, copied to out/main at build (like slack-trigger.cjs) and shipped
 // to process.resourcesPath for the agent CLI (electron-builder extraResources).
@@ -148,7 +149,7 @@ export class KnowledgeManager {
    *  THROWS with a plain-English reason rather than being stored: storing it
    *  anyway is what used to index a .docx as zip bytes and report success. */
   async ingestFile(srcPath: string, opts: { title?: string; tags?: string[]; caption?: string } = {}) {
-    const ex = await extractDocumentText(srcPath);
+    const ex = await this.readDocument(srcPath);
     if (ex.kind === 'unreadable') throw new Error(ex.reason);
     if (ex.kind === 'text') {
       return core.ingest(this.root(), {
@@ -156,6 +157,14 @@ export class KnowledgeManager {
       });
     }
     return core.ingest(this.root(), { srcPath, ...opts });
+  }
+
+  /** Parsed in a process of its own: a big or crafted file parsed here would
+   *  freeze every window. Without the built doc-text script, it is read here. */
+  private readDocument(srcPath: string): Promise<DocExtraction> {
+    const script = join(app.getAppPath(), 'out', 'main', 'docTextCli.js');
+    if (!existsSync(script)) return extractDocumentText(srcPath);
+    return extractDocumentTextApart(srcPath, { file: process.execPath, args: [script], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
   }
 
   /** Ingest inline text (e.g. pasted content). */

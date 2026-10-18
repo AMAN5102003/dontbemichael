@@ -1,3 +1,4 @@
+import { RESEARCH_ID } from '../../../shared/research';
 import { CapabilitiesTab } from './CapabilitiesTab';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -77,6 +78,8 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const onKill = async () => {
     if (!agent.ptyId) return;
     if (!confirm(closeConfirmText(agent.id, agent.name, t))) return;
+    // Closing Research turns it off: its waiting asks go back (issue #230).
+    if (agent.id === RESEARCH_ID) await window.cth.researchOff().catch(() => undefined);
     // The owner is closing this agent on purpose: its schedules pause (design
     // 6A). A crash or a quit only archives it and leaves them running.
     await window.cth.closeAgentByOwner(agent.id).catch(() => undefined);

@@ -9,12 +9,12 @@ import {
   Disclosure, Field, Hint, MiniButton, SchedulePicker, Toggle, fmtInterval, inputStyle, textareaStyle,
   weeklyDraft, weeklyIsUsable, type WeeklyDraft
 } from './ui';
-import { formatWeekly } from '@shared/weeklySchedule';
-import { formatTimes, normalizeTimes } from '@shared/scheduleTimes';
+import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
 import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { useRtl } from '@/i18n/useDirection';
+import i18n from '@/i18n';
 
 /**
  * SCHEDULES, per agent (docs/designs/per-agent-schedules.md).
@@ -189,14 +189,36 @@ function relTime(ms: number, lang: string): string {
   }
 }
 
+/** formatTimes' words in the owner's language. Day names come from Intl, so
+ *  every language gets them without a key per day. Sep 27 2026 is a Sunday. */
+function whenWords(t: TFunction, lang: string): WhenWords {
+  let weekday: Intl.DateTimeFormat;
+  try { weekday = new Intl.DateTimeFormat(lang, { weekday: 'short' }); } catch { weekday = new Intl.DateTimeFormat('en', { weekday: 'short' }); }
+  const sep = t('schedulesSection.whenSep');
+  return {
+    day: (d) => weekday.format(new Date(2026, 8, 27 + d)),
+    everyDay: t('triggersUi.everyDay'),
+    weekdays: t('triggersUi.weekdays'),
+    weekends: t('schedulesSection.whenWeekends'),
+    list: (items) => items.join(sep),
+    and: (items) => (items.length > 1
+      ? t('schedulesSection.whenAnd', { list: items.slice(0, -1).join(sep), last: items[items.length - 1] })
+      : items[0]),
+    at: (days, time) => t('schedulesSection.whenAt', { days, time }),
+    every: (interval) => t('schedulesSection.everyInterval', { interval }),
+    span: (from, to) => t('schedulesSection.whenSpan', { from, to })
+  };
+}
+
 /** When a job runs, in words: the calendar, the interval ("every 4h", like an
  *  every line in formatTimes), or the heartbeat. */
 export function whenText(m: Pick<ScheduledMission, 'kind' | 'weekly' | 'intervalMs' | 'times'>, t: TFunction): string {
   if (m.kind === 'heartbeat') return t('schedulesSection.beat');
+  const words = whenWords(t, i18n.language);
   const times = normalizeTimes(m.times);
-  if (times) return formatTimes(times);
+  if (times) return formatTimes(times, words);
   const w = weeklyDraft(m.weekly);
-  if (w) return formatWeekly(w);
+  if (w) return formatTimes([{ kind: 'at', days: w.days, minute: w.minute }], words);
   const every = fmtInterval(m.intervalMs);
   return /^\d/.test(every) ? t('schedulesSection.everyInterval', { interval: every }) : every;
 }
@@ -639,11 +661,26 @@ export function OfficeSchedules() {
 /** The close confirmation. When the agent has schedules running, it says they
  *  will pause (design 6A); otherwise it is the plain close question. */
 export function closeConfirmText(agentId: string, name: string, t: TFunction): string {
-  // The same ownership rule the close uses to pause them (pauseMissionsOf).
-  const st = useStore.getState();
-  const godId = st.agents.find((a) => a.isGod)?.id ?? GOD_ALIAS;
-  const count = missionsFor(st.missions, agentId, godId).filter((m) => m.enabled).length;
+  const count = schedulesOn(agentId);
   return count > 0
     ? t(count === 1 ? 'agentDetail.killConfirmSchedules' : 'agentDetail.killConfirmSchedulesPlural', { name, count })
     : t('agentDetail.killConfirm', { name });
+}
+
+/** The Danger zone's delete confirmation in Edit agent: final, and it names
+ *  the schedules that pause, like the close. */
+export function deleteConfirmText(agentId: string, name: string, t: TFunction): string {
+  const count = schedulesOn(agentId);
+  return count > 0
+    ? t(count === 1 ? 'editAgent.deleteConfirmSchedules' : 'editAgent.deleteConfirmSchedulesPlural', { name, count })
+    : t('editAgent.deleteConfirm', { name });
+}
+
+/** Their schedules that are on: the same ownership rule a close or a delete
+ *  uses to pause them (pauseMissionsOf). */
+function schedulesOn(agentId: string): number {
+  const st = useStore.getState();
+  const godId = st.agents.find((a) => a.isGod)?.id ?? GOD_ALIAS;
+  const count = missionsFor(st.missions, agentId, godId).filter((m) => m.enabled).length;
+  return count;
 }

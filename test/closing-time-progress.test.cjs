@@ -419,6 +419,31 @@ test('a failed "terminal ended" note is retried on the next row update, then sen
   assert.equal(f.sent.filter((m) => /Dwight's terminal ended/.test(m.subject)).length, 1);
 });
 
+test('a team member archived mid-close leaves the rows, and Michael is told once not to wait', (t) => {
+  // Value: protects=Michael stops waiting for someone the owner archived; fails_when=refresh only notes ended terminals, not an archived one still running; why_new=TODOS "Archiving a live agent during closing time"; seam=none
+  const f = floor({ t });
+  f.ct.start();
+  f.floorAgents.dwight.archived = true;
+  f.ct.refresh('dwight');
+  f.ct.refresh('dwight');
+  const notes = f.sent.filter((m) => m.to === 'god' && /Dwight was archived/.test(m.subject));
+  assert.equal(notes.length, 1, 'told once');
+  assert.match(notes[0].body, /^Dwight \(dwight\) was archived, so no CLOSING-TIME-ACK will come from them\. Do not wait for it/);
+  assert.deepEqual(last(f.events).waiting, ['pam']);
+  assert.equal(f.sent.filter((m) => /terminal ended/.test(m.subject)).length, 0);
+});
+
+test('archiving from the panel or by voice refreshes closing time', () => {
+  // Value: protects=both archive paths reach the controller; fails_when=an archive path stops calling closingTime.refresh; why_new=index.ts can't be loaded in a test; seam=source pin
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
+  const ipc = src.slice(src.indexOf("ipcMain.handle('hive:setArchived'"));
+  assert.match(ipc.slice(0, ipc.indexOf('});')), /hive\.setArchived\(id, archived === true\);\s*\/\/[^\n]*\s*try \{ if \(archived === true\) closingTime\.refresh\(id\); \}/);
+  const voice = src.slice(src.indexOf('  setArchived: (id, archived) => {'));
+  assert.match(voice.slice(0, voice.indexOf('\n  },')), /hive\.setArchived\(id, archived\);\s*try \{ if \(archived\) closingTime\.refresh\(id\); \}/);
+});
+
 test('a new closing time tells Michael again about a terminal that ends again', (t) => {
   // Value: protects=the told-about-ended list does not carry over a cancel; fails_when=start() stops resetting it; why_new=review pass 3 (owner, 2026-09-29); seam=none
   const f = floor({ t });
@@ -541,4 +566,50 @@ test('a reopen asked for mid-close counts, but a refused re-press never turns it
   g.setLive(['god', 'pam']);
   g.ct.refresh();
   assert.equal(last(g.events).relaunch, false, 'the refused press changed nothing');
+});
+
+test('a team member whose terminal comes back mid-close is waited on again, and Michael is told (TODOS: an agent respawned mid-close)', (t) => {
+  const f = floor({ t });
+  f.ct.start();
+  f.route('pam', 'CLOSING-TIME-ACK');
+  // Dwight's terminal ends: Michael is told not to wait.
+  f.setLive(['god', 'pam']);
+  f.ct.refresh('dwight');
+  assert.deepEqual(last(f.events).waiting, []);
+  // It comes back: the row returns, the new session gets the closing note and
+  // the steer, and Michael is told to wait after all.
+  f.steers.length = 0;
+  f.setLive(['god', 'pam', 'dwight']);
+  f.ct.revive('dwight');
+  assert.deepEqual(last(f.events).waiting, ['dwight']);
+  assert.ok(f.sent.some((m) => m.to === 'dwight' && m.subject === 'Closing time' && /CLOSING-TIME-ACK/.test(m.body)));
+  assert.deepEqual(f.steers.map((s) => s.id), ['dwight']);
+  const back = f.sent.filter((m) => m.to === 'god' && m.subject === 'Closing time: Dwight is back');
+  assert.equal(back.length, 1);
+  assert.match(back[0].body, /wait for their CLOSING-TIME-ACK after all/);
+  // Michael's early COMPLETE is refused until Dwight confirms.
+  f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);
+  assert.notEqual(last(f.events).phase, 'complete');
+  // If it ends again, Michael hears that again too.
+  f.setLive(['god', 'pam']);
+  f.ct.refresh('dwight');
+  assert.equal(f.sent.filter((m) => /Dwight's terminal ended/.test(m.subject)).length, 2);
+  f.setLive(['god', 'pam', 'dwight']);
+  f.ct.revive('dwight');
+  f.route('dwight', 'CLOSING-TIME-ACK');
+  f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);
+  assert.equal(last(f.events).phase, 'complete');
+});
+
+test('revive leaves alone anyone closing time is not waiting on', (t) => {
+  const f = floor({ t });
+  f.ct.revive('pam');
+  assert.deepEqual([f.sent.length, f.events.length], [0, 0], 'not running');
+  f.ct.start();
+  f.route('pam', 'CLOSING-TIME-ACK');
+  f.ct.revive('pam');
+  assert.deepEqual(f.ct.excuse('dwight'), { ok: true });
+  f.ct.revive('dwight');
+  f.ct.revive('ghost');
+  assert.equal(f.sent.filter((m) => m.subject === 'Closing time').length, 0, 'confirmed, closed without, or never on the list');
 });

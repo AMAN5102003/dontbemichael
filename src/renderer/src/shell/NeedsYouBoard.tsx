@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore, type Agent } from '@/store/store';
 import type { HarnessConfig } from '@/store/config';
@@ -20,6 +21,7 @@ export function NeedsYouBoard() {
   const { t } = useTranslation();
   const godName = useResolvedGodName();
   const count = useNeedsYouCount();
+  const [closeHover, setCloseHover] = useState(false);
   const close = () => { useStore.getState().setRightColumn('closed'); focusNeedsYouPill(); };
   return (
     <div style={{
@@ -40,11 +42,17 @@ export function NeedsYouBoard() {
         <InfoTip text={t('shell.needsYouInfo', { godName })} />
         {count === 0 && <button
           onClick={close}
+          onMouseEnter={() => setCloseHover(true)}
+          onMouseLeave={() => setCloseHover(false)}
           aria-label={t('panel.close')}
           title={t('panel.close')}
           style={{
             marginInlineStart: 'auto', width: 24, height: 24, padding: 0, border: 'none', borderRadius: 'var(--cth-r-sm)',
-            cursor: 'pointer', background: 'transparent', color: 'var(--cth-ink-3)', fontSize: 13, lineHeight: 1
+            cursor: 'pointer',
+            background: closeHover ? 'var(--cth-neutral-soft)' : 'transparent',
+            color: closeHover ? 'var(--cth-ink-2)' : 'var(--cth-ink-3)',
+            fontSize: 13, lineHeight: 1,
+            transition: 'background var(--cth-dur-fast) var(--cth-ease), color var(--cth-dur-fast) var(--cth-ease)'
           }}
         >✕</button>}
       </div>

@@ -55,7 +55,7 @@ The front of an agent's MD queue is delivered only when **all** of these hold:
 |---|---|
 | agent status is `idle` | don't interrupt a running turn |
 | auto-delivery not paused — **or the message was manually released** | floor-wide switch (Command Center); see below |
-| no office break for a Claude agent, **or the message was manually released** | the Claude plan reached its usage limit, so nothing is typed into a Claude terminal until the break ends (`heldByBreak`, `src/shared/officeBreak.ts`); other engines keep working |
+| no office break for a Claude agent, **or the message was manually released** | Claude can't work (the plan reached its usage limit, the account is out of credit, or a sign in or API key stopped working; `docs/designs/office-stopped-account.md`), so nothing is typed into a Claude terminal until the break ends (`heldByBreak`, `src/shared/officeBreak.ts`); other engines keep working |
 | past the boot grace window | the CLI is still painting its banner |
 | `isTerminalAutomationSafe(ptyId)` | the user owns the prompt — see below |
 | 4.5 s since the last delivery to this agent | back-to-back sends jam the TUI |
