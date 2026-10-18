@@ -51,7 +51,7 @@ test('the migration makes the tables once, and nothing but kind, time, value and
   // Value: protects=the store shape and no text in telemetry; fails_when=a migration is edited or prompt text lands in a row; why_new=D16; seam=none; no_claim=a database made by an older build (user_version 1 upgrades here)
   const { persist, store } = setup(t);
   const db = persist.database();
-  assert.equal(db.pragma('user_version', { simple: true }), 4);
+  assert.equal(db.pragma('user_version', { simple: true }), 5);
   const idx = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('idx_tr_open', 'idx_te_office_id', 'idx_te_office_kind_ts')").all().map((r) => r.name).sort();
   assert.deepEqual(idx, ['idx_te_office_id', 'idx_te_office_kind_ts', 'idx_tr_open'], 'the hot reads have their indexes');
   store.record({ agentId: 'pam', kind: 'tool', ts: 1, attrs: { tool: 'Write' } });

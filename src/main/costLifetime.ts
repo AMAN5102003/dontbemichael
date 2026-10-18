@@ -1,5 +1,7 @@
 /**
- * Lifetime cost, recovered from `cost-ledger.jsonl`.
+ * Lifetime cost, recovered from the cost ledger: harness.db's `cost_ledger`
+ * table once the old `cost-ledger.jsonl` is copied in (costLedger.ts, D17),
+ * the file until then.
  *
  * WHY THIS EXISTS
  * ───────────────
@@ -36,11 +38,20 @@
  * the bytes appended since the last one and keeps the running segment state.
  * Steady-state cost per pass is a few hundred bytes regardless of ledger size.
  *
+ * The table folds the same way, through the same fold: rows past a cursor,
+ * a page at a time, so both give the same totals for the same rows.
+ *
  * Read-only: this module never writes to the ledger.
  */
 
 import { createReadStream, statSync } from 'fs';
 import { isCostReset } from '../shared/costFold';
+import type { CostLedgerPoint } from './costLedger';
+
+/** Where the table's rows come from (CostLedgerStore). */
+interface LedgerSource {
+  rowsAfter(office: string, afterId: number, limit: number): CostLedgerPoint[] | null;
+}
 
 /** Per (agent, session) fold state: closed segments plus the open one. */
 interface Segment {
@@ -54,6 +65,10 @@ interface Segment {
 /** Cap per pass so a cold start cannot stall behind one enormous read. The
  *  fold simply resumes on the next call. */
 const MAX_BYTES_PER_PASS = 8 * 1024 * 1024;
+/** The same cap for the table, in rows, read a page at a time so no single
+ *  read holds the main process for long. */
+const MAX_ROWS_PER_PASS = 200_000;
+const ROWS_PER_PAGE = 5_000;
 
 export class CostLedgerTotals {
   /** Bytes of the ledger already folded. */
@@ -70,6 +85,10 @@ export class CostLedgerTotals {
   /** True once a full pass has completed, so callers can tell "no spend" from
    *  "not read yet" instead of reporting a confident $0. */
   private warm = false;
+  /** The office whose harness.db ledger is folded, or null while folding a file. */
+  private store: string | null = null;
+  /** Last table row folded (the table's `offset`). */
+  private lastId = 0;
 
   /** Lifetime usd for one agent, or null when the ledger has not been folded
    *  yet. Null rather than 0 so a caller never publishes a cold zero as fact. */
@@ -103,8 +122,23 @@ export class CostLedgerTotals {
    */
   refresh(ledgerPath: string): Promise<void> {
     if (this.folding) return Promise.resolve();
+    if (this.store !== null) { this.reset(); this.store = null; }
     this.folding = true;
     return this.fold(ledgerPath)
+      .catch(() => { /* keep last good totals */ })
+      .finally(() => { this.folding = false; });
+  }
+
+  /**
+   * Fold the rows added to harness.db's ledger since the last pass (D17).
+   * Same fold and contract as refresh(): returns immediately, capped per
+   * pass, never throws, and a table it cannot read keeps the last good totals.
+   */
+  refreshFromStore(store: LedgerSource, office: string): Promise<void> {
+    if (this.folding) return Promise.resolve();
+    if (this.store !== office) { this.reset(); this.store = office; }
+    this.folding = true;
+    return this.foldStore(store, office)
       .catch(() => { /* keep last good totals */ })
       .finally(() => { this.folding = false; });
   }
@@ -146,6 +180,21 @@ export class CostLedgerTotals {
     if (this.offset >= size) this.warm = true;
   }
 
+  private async foldStore(store: LedgerSource, office: string): Promise<void> {
+    try {
+      for (let read = 0; read < MAX_ROWS_PER_PASS; read += ROWS_PER_PAGE) {
+        const rows = store.rowsAfter(office, this.lastId, ROWS_PER_PAGE);
+        if (!rows) return;
+        for (const r of rows) { this.foldRow(r.agent_id, r.session_id, r.usd); this.lastId = r.id; }
+        // Only "warm" once caught up; a capped pass is still behind.
+        if (rows.length < ROWS_PER_PAGE) { this.warm = true; return; }
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+    } finally {
+      this.recompute();
+    }
+  }
+
   /** Fold one buffer, holding back any incomplete trailing line. */
   private consume(chunk: Buffer): void {
     const buf = this.tail.length ? Buffer.concat([this.tail, chunk]) : chunk;
@@ -161,9 +210,14 @@ export class CostLedgerTotals {
     let row: { agent_id?: string; session_id?: string; usd?: number };
     try { row = JSON.parse(line); } catch { return; } // half-written tail line
     if (!row || typeof row.agent_id !== 'string') return;
-    const usd = typeof row.usd === 'number' && Number.isFinite(row.usd) ? row.usd : 0;
+    this.foldRow(row.agent_id, row.session_id, row.usd);
+  }
 
-    const key = `${row.agent_id}\t${row.session_id ?? ''}`;
+  /** One row, from the file or the table. */
+  private foldRow(agentId: string, sessionId: string | null | undefined, value: unknown): void {
+    const usd = typeof value === 'number' && Number.isFinite(value) ? value : 0;
+
+    const key = `${agentId}\t${sessionId ?? ''}`;
     let s = this.seg.get(key);
     if (!s) { s = { committed: 0, peak: 0 }; this.seg.set(key, s); }
 
@@ -187,6 +241,7 @@ export class CostLedgerTotals {
 
   private reset(): void {
     this.offset = 0;
+    this.lastId = 0;
     this.tail = Buffer.alloc(0);
     this.seg.clear();
     this.totals = new Map();

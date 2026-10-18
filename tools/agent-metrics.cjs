@@ -5,13 +5,14 @@
  * Measure compaction, clearing and memory from an office's own files (owner,
  * 2026-09-25). Read only: nothing in the office is changed.
  *
- *   node tools/agent-metrics.cjs [--home ~/HarnessAgents] [--days 7] [--json]
+ *   node tools/agent-metrics.cjs [--home ~/HarnessAgents] [--db <harness.db>] [--days 7] [--json]
  *
  * Reads <home>/hive/log.jsonl (compact, clear*, memory-tidy*, memory-read) and
- * <home>/hive/cost-ledger.jsonl (tokens and dollars per agent per day). Ledger
- * rows are running totals per (agent, session) that restart at zero when the
- * app restarts, so a drop is read as a restart and the new value counts whole,
- * the same rule as src/main/costLifetime.ts.
+ * the cost ledger (tokens and dollars per agent per day): the app's harness.db
+ * once it has copied the office's old hive/cost-ledger.jsonl in (D17), else
+ * that file. Ledger rows are running totals per (agent, session) that restart
+ * at zero when the app restarts, so a drop is read as a restart and the new
+ * value counts whole, the same rule as src/main/costLifetime.ts.
  */
 
 const fs = require('node:fs');
@@ -27,6 +28,27 @@ function readJsonl(file) {
       try { return JSON.parse(l); } catch { return null; }
     }).filter(Boolean);
   } catch { return []; }
+}
+
+/** Where the app keeps harness.db (index.ts pins its data folder to this name). */
+function defaultDb() {
+  const base = process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support')
+    : process.platform === 'win32' ? (process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'))
+    : (process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'));
+  return path.join(base, 'dontbemichael', 'harness.db');
+}
+
+/** The office's ledger rows from harness.db, oldest first, or null when it
+ *  cannot be opened here or has not copied this office's file in yet. Node 22
+ *  has node:sqlite; under Electron's Node, better-sqlite3 opens it. */
+function readLedgerTable(dbFile, office) {
+  let db = null;
+  try {
+    try { db = new (require('node:sqlite').DatabaseSync)(dbFile, { readOnly: true }); } catch { db = new (require('better-sqlite3'))(dbFile, { readonly: true, fileMustExist: true }); }
+    const mark = db.prepare('SELECT value FROM kv WHERE key = ?').get(`cost-ledger:import:${office}`);
+    if (!mark || JSON.parse(mark.value).done !== true) return null;
+    return db.prepare('SELECT agent_id, session_id, ts, input, output, cache_read, cache_creation, model, usd FROM cost_ledger WHERE office = ? ORDER BY id').all(office);
+  } catch { return null; } finally { try { db?.close(); } catch { /* read only */ } }
 }
 
 const day = (ts) => new Date(ts).toISOString().slice(0, 10);
@@ -143,10 +165,11 @@ function main(argv) {
   const home = (arg('--home') ?? path.join(os.homedir(), 'HarnessAgents')).replace(/^~(?=$|\/)/, os.homedir());
   const days = Number(arg('--days') ?? 7) || 7;
   const hive = path.join(home, 'hive');
-  const report = buildReport({ log: readJsonl(path.join(hive, 'log.jsonl')), ledger: readJsonl(path.join(hive, 'cost-ledger.jsonl')), days });
+  const ledger = readLedgerTable(arg('--db') ?? defaultDb(), path.resolve(home)) ?? readJsonl(path.join(hive, 'cost-ledger.jsonl'));
+  const report = buildReport({ log: readJsonl(path.join(hive, 'log.jsonl')), ledger, days });
   process.stdout.write((argv.includes('--json') ? JSON.stringify(report, null, 2) : render(report)) + '\n');
 }
 
 if (require.main === module) main(process.argv.slice(2));
 
-module.exports = { buildReport, usageByDay, render };
+module.exports = { buildReport, usageByDay, render, readLedgerTable };

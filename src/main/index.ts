@@ -104,6 +104,7 @@ import { initCompletionWatcher } from './realtimeCompletionWatcher';
 import type { TaskCard, InboxMessage } from './realtimeCompletionWatcher';
 import { TelemetryCollector } from './telemetry';
 import { CostLedgerTotals } from './costLifetime';
+import { CostLedgerStore } from './costLedger';
 import { analytics, isRendererMessageSurface } from './analytics';
 import type { SpawnFailReason } from './analytics';
 import { IntegrationBroker } from './integrationBroker';
@@ -2116,10 +2117,14 @@ function runBreakerBeat(progressWindowMs: number): void {
   }
 }
 
-/** Lifetime spend, folded from cost-ledger.jsonl. `telemetry`'s usd counter is
+/** Lifetime spend, folded from the cost ledger. `telemetry`'s usd counter is
  *  cumulative-since-process-start and restarts at ~0 on every app restart, so
  *  it cannot answer "what has this agent cost us". See costLifetime.ts. */
 const costTotals = new CostLedgerTotals();
+/** The cost ledger in harness.db (D17): it takes the hive's rows once the old
+ *  cost-ledger.jsonl is copied in. See costLedger.ts. */
+const costLedger = new CostLedgerStore(() => persist.database());
+hive.costLedgerSink = (row) => { const office = pulseOffice(); return !!office && costLedger.append(office, row); };
 
 /** Build + write the live fleet snapshot Michael reads (`<hive>/fleet.json`).
  *  Always-on (independent of the heartbeat) since `claude agents` can't see the
@@ -2132,8 +2137,16 @@ function writeFleetSnapshot(): void {
     const usageById = new Map(snap.usage.map((u) => [u.agentId, u]));
     const now = Date.now();
     // Async + incremental; returns immediately and never throws into the timer.
+    // harness.db's ledger once the old file is copied in (D17); until then the
+    // file, while the copy runs.
     const hiveRoot = hive.root();
-    if (hiveRoot) void costTotals.refresh(join(hiveRoot, 'cost-ledger.jsonl'));
+    const office = pulseOffice();
+    if (hiveRoot && office && costLedger.imported(office)) void costTotals.refreshFromStore(costLedger, office);
+    else if (hiveRoot) {
+      const file = join(hiveRoot, 'cost-ledger.jsonl');
+      void costTotals.refresh(file);
+      if (office) void costLedger.importFile(office, file);
+    }
     const agents = Object.entries(reg.agents)
       .filter(([, a]) => !a.archived)
       .map(([id, a]) => {
