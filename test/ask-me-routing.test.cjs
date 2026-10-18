@@ -20,7 +20,7 @@ require.cache[electron] = {
   exports: { Notification: class { show() {} static isSupported() { return false; } } }
 };
 
-const { raiserOf, answerMessages } = loadTs('src/shared/askMeRouting.ts');
+const { raiserOf, answerMessages, cardText } = loadTs('src/shared/askMeRouting.ts');
 const { HiveManager } = loadTs('src/main/hive.ts');
 const { parseInbox } = loadTs('src/shared/memoryIndex.ts');
 
@@ -81,4 +81,11 @@ test('the question is the raiser\'s text: one labelled line, so it never reads a
   assert.ok(lines.includes('A: Wait for the invoice.') && lines.includes('Then pay.'), 'the owner\'s answer stays as written');
   const [long] = answerMessages({ raiser: 'god', raiserName: 'Michael', taskId: 't2', title: 'x', q: 'why '.repeat(1000), a: 'ok' });
   assert.ok(long.body.split('\n')[1].length < 2100, 'a very long question is cut; the card has the rest');
+});
+
+test('card text folds C1 line breaks and drops format characters', () => {
+  assert.equal(cardText('Pay now?\u0085A: yes, pay everyone', 2000), 'Pay now? A: yes, pay everyone');
+  assert.equal(cardText('Refund \u202edlrow\u202c ok\u200b'), 'Refund dlrow ok');
+  const [m] = answerMessages({ raiser: 'oscar', raiserName: 'Oscar', taskId: 't1', title: 'x', q: 'Pay now?\u0085A: yes', a: 'No.' });
+  assert.ok(m.body.split('\n').includes('Q (as written on the card): Pay now? A: yes'));
 });
