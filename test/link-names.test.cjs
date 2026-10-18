@@ -122,3 +122,18 @@ test('Michael is told to write links as words, in asks and in dock replies (D2, 
   assert.match(hive, /in \\`backticks\\`; write each link as a few words naming what opens/, 'Michael standing rule');
   assert.match(hive, /\n- each link as a few words naming what opens, like \[the company in HubSpot\]/, 'HIVE doc rule');
 });
+
+test('an owner action on a website keeps the link from the email, from the team member to the ask', () => {
+  // Value: protects=an ask to sign in, accept terms or pay carries the link to where it happens, so the owner never digs the email out (owner, 2026-10-14: an Apple agreement ask lost developer.apple.com/account between Nick's report and Michael's ask); fails_when=a rule is rewritten and drops the sentence; why_new=new rule; seam=none; no_claim=whether agents follow it (no eval)
+  const hive = read('src/main/hive.ts');
+  const own = /only (a link on )?the sender\\?'s own site, never a tracking or shortened (one|link)/;
+  const parts = [
+    ['team member files or tells Michael', /give the exact link the email or page offers for it, copied as it is, in your filing or message to \$\{michael\}/],
+    ['ask rule', /When the ask is something the owner does on a website, such as signing in, accepting terms or paying, link straight to where they do it/],
+    ['Michael standing rule', /when the ask is something the owner does on a website \(signing in, accepting terms, paying\), link straight to where they do it/],
+    ['HIVE doc rule', /\n- an action the owner takes on a website \(signing in, accepting terms, paying\) links straight to where they do it,/],
+    ['HIVE triage rule', /carries the exact link for it from the email or page \(the sender\\?'s own site, never a tracking or shortened link\), and Michael keeps it in the ask/]
+  ];
+  for (const [where, re] of parts) assert.match(hive, re, where);
+  assert.ok((hive.match(new RegExp(own.source, 'g')) || []).length >= 3, 'each copy limits it to the sender\'s own site');
+});

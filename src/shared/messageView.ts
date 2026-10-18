@@ -43,10 +43,11 @@ export function isRoutine(m: Pick<HistoryItem, 'from' | 'subject'>): boolean {
   return SYSTEM_SENDERS.has(m.from) || CLOSING.test(m.subject ?? '');
 }
 
-/** Local YYYY-MM-DD of an ISO time. */
-export function localDay(iso: string): string {
+/** Local YYYY-MM-DD of an ISO time, optionally shifted by calendar days. */
+export function localDay(iso: string, dayOffset = 0): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
+  if (dayOffset) d.setDate(d.getDate() + dayOffset);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }

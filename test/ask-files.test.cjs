@@ -35,6 +35,17 @@ test('only code spans with a known file ending are files; money, emails and doma
   assert.equal(OPEN_EXTENSIONS.has('xls'), false, 'old Excel can carry macros: shown, never opened (eng R2)');
 });
 
+test('a Markdown link to a file is a chip when its path has spaces or the link has a title', () => {
+  // Value: protects=links into an office folder named after the business become chips; fails_when=a space or a title drops the link; why_new=the link pattern stopped at the first space, then the link was blanked; seam=none
+  assert.deepEqual(askFilePaths('See [the report](</Users/me/Harbor & Pine/Q3 report.md>) please'), ['/Users/me/Harbor & Pine/Q3 report.md']);
+  assert.deepEqual(askFilePaths('See [r](/Users/me/Biz/report.md "Q3 numbers")'), ['/Users/me/Biz/report.md']);
+  assert.deepEqual(askFilePaths('See [r](<C:/Harbor & Pine/Q3 report.xlsx> "Q3")'), ['C:/Harbor & Pine/Q3 report.xlsx']);
+  assert.deepEqual(askFilePaths("See [r](/Users/me/Biz/report.md 'Q3') and [s](/Users/me/Biz/sheet.csv (Q3))"), ['/Users/me/Biz/report.md', '/Users/me/Biz/sheet.csv'], 'single quoted and parenthesised titles');
+  assert.deepEqual(askFilePaths('See [r](</Users/me/Biz/Q3 (final)/report.md>)'), ['/Users/me/Biz/Q3 (final)/report.md'], 'a ) inside the target leaves no tail behind');
+  assert.deepEqual(askFilePaths('See [r](/Users/me/a.md "draft (old) /Users/me/b.md")'), ['/Users/me/a.md'], 'a path inside a title is not a file');
+  assert.deepEqual(askFilePaths('See [r](/Users/me/Biz/report.md) and [site](https://example.com/a.md)'), ['/Users/me/Biz/report.md'], 'plain links unchanged, URLs stay links');
+});
+
 test('main opens only allowlisted documents inside the roots, judged on the canonical path', async (t) => {
   // Value: protects=an agent named path opens only a safe document inside the office folders; fails_when=safeResolve, the canonical extension check or the allowlist is dropped; why_new=no code opened agent paths before; seam=none
   // .native, like main: on Windows it spells the temp folder out in full, not as RUNNER~1.
@@ -144,8 +155,9 @@ test('the open card, Task detail and Michael\'s replies show chips in place of p
   const tab = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(tab, /<FileText source=\{open\.q\} who=\{\{ raisedBy: open\.raisedBy, assignee:/, 'the open card');
   const kanban = read('src/renderer/src/components/TasksKanban.tsx');
-  assert.match(kanban, /<FileText source=\{e\.q\} who=\{\{ raisedBy: e\.raisedBy, assignee: qaAssignee \}\} checks=\{qaFiles\[e\.raisedBy \?\? ''\] \?\? \{\}\} \/>/, 'Task detail, one check per card');
-  assert.match(kanban, /const qaFiles = useAskFileChecks\(task\.humanQA, qaAssignee\);/);
+  assert.match(kanban, /<FileText source=\{qaShown\?\.\[i\]\?\.q \?\? e\.q\} who=\{\{ raisedBy: e\.raisedBy, assignee: qaAssignee \}\} checks=\{qaFiles\[e\.raisedBy \?\? ''\] \?\? \{\}\} \/>/, 'Task detail, one check per card');
+  // The check runs over the text the card shows, options and parts included (ask-me-options.md).
+  assert.match(kanban, /const qaShown = useMemo\(\(\) => task\.humanQA\?\.map\(\(e\) => \(\{ \.\.\.e, q: askAsText\(e\.q, readAskShape\(e\)\) \}\)\), \[task\.humanQA\]\);\s*const qaFiles = useAskFileChecks\(qaShown, qaAssignee\);/);
   const dock = read('src/renderer/src/shell/MichaelDock.tsx');
   assert.match(dock, /<FileText source=\{boldFirst\(text\)\} who=\{\{ raisedBy: 'god' \}\} \/>/, 'replies, notes included');
   assert.equal(fs.existsSync(path.resolve(__dirname, '..', 'src/renderer/src/components/AskFileRows.tsx')), false, 'no rows left');

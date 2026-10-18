@@ -22,7 +22,7 @@ import { acquireTerminal, resetTerminal, isTerminalAutomationSafe, hasTerminalDr
 import { canDeliverToAgent, deliverWithAcknowledgement, checkPrecondition } from './queueDelivery';
 import { RunningToolCalls } from './runningToolCalls';
 import { OFFICE_CAST, DEFAULT_CHARACTER, HIREABLE_CAST, type OfficeCharacterName } from '@/scene/office/cast';
-import { teamMemberName, teamMemberRole, teamMemberGoal, teamAccent, teamMemberStart, rewrittenInstructions } from '../../../shared/teamPlan';
+import { teamMemberName, teamMemberRole, teamMemberGoal, teamAccent, teamMemberStart, rewrittenInstructions, didNotStartNote } from '../../../shared/teamPlan';
 import type { AgentDefinitionV2 } from '../../../shared/agentDefinition';
 import { FIRST_TASK_EDITED_MAX, withoutLegacyFirstTask } from '../../../shared/firstTask';
 import { firstTaskSection } from '../../../shared/workStyleText';
@@ -449,6 +449,11 @@ async function startBusinessTeam(config: HarnessConfig): Promise<void> {
     }
   }
   await window.cth.updateConfig({ businessTeamStarted: true, businessTeamRetry: failed }).catch(() => undefined);
+  // Who did not start goes to Michael, who tells the owner; it was only logged.
+  if (failed.length) {
+    const note = didNotStartNote(failed.map((id) => teamMemberName(defs.get(id)!)), !!retry);
+    await window.cth.hiveSend({ to: GOD_ID, act: 'inform', ...note }, 'system').catch(() => undefined);
+  }
   if (!retry) await startPickedResearch(config);
 }
 
@@ -1413,12 +1418,21 @@ export function useHive(config: HarnessConfig | null): void {
     void window.cth.connectorsPendingRestarts?.().then((ids) => ids.forEach(queue)).catch(() => {});
     return window.cth.onConnectorsRestartNeeded?.(({ agentId }) => queue(agentId));
   }, [config?.onboardingComplete]);
+  // A member stopped on a prompt the owner can't answer: restart now, which
+  // clears it; they resume where they left off (owner, 2026-10-15).
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    return window.cth.onAgentRestartStuck?.(({ agentId }) => {
+      const a = useStore.getState().agents.find((x) => x.id === agentId);
+      if (a?.ptyId) useStore.getState().setPendingRestart(agentId, { at: Date.now(), reason: 'stuck', now: true });
+    });
+  }, [config?.onboardingComplete]);
   useEffect(() => {
     if (!config?.onboardingComplete) return;
     const CEILING_MS = 10 * 60_000;
     const POLL_MS = 5_000;
     const BUSY = new Set(['thinking', 'working', 'compacting', 'looping']);
-    const WHY = { email: 'turn on email', connectors: 'apply its connectors', engine: 'start on Claude Code' } as const;
+    const WHY = { email: 'turn on email', connectors: 'apply its connectors', engine: 'start on Claude Code', stuck: 'clear a stuck prompt' } as const;
     const inFlight = new Set<string>();
     const tick = (): void => {
       const { pendingRestart, agents, setPendingRestart, updateAgent } = useStore.getState();

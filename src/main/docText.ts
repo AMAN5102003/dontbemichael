@@ -256,7 +256,11 @@ function drawingParagraphs(xml: string): string {
 }
 
 function readSheets(files: Record<string, Uint8Array>): string {
-  const xml = (name: string) => (files[name] ? strFromU8(files[name]) : '');
+  // Excel writes SpreadsheetML as the default namespace (<row>), but the Open
+  // XML SDK and ClosedXML, which many business systems export with, write the
+  // same elements with a prefix (<x:row>). The patterns below match bare names,
+  // so without this a workbook from those systems reads as having no text.
+  const xml = (name: string) => (files[name] ? localNames(strFromU8(files[name])) : '');
 
   // Shared strings: most text cells hold an index into this table. Phonetic
   // guides (<rPh>) are furigana, not content.
@@ -279,7 +283,7 @@ function readSheets(files: Record<string, Uint8Array>): string {
     const name = decodeXml(attr(m[1], 'name') ?? 'Sheet');
     const path = targets.get(attr(m[1], 'r:id') ?? '');
     if (!path || !files[path]) continue;
-    const rows = sheetRows(strFromU8(files[path]), shared);
+    const rows = sheetRows(xml(path), shared);
     if (rows.length) out.push(`Sheet: ${name}\n${rows.join('\n')}`);
   }
   return out.join('\n\n');
@@ -453,6 +457,13 @@ function looksBinary(srcPath: string): boolean {
 function attr(tag: string, name: string): string | null {
   const m = tag.match(new RegExp(`(?:^|\\s)${name.replace(':', '\\:')}="([^"]*)"`));
   return m ? m[1] : null;
+}
+
+/** Every tag reduced to its local name: `<x:row>` reads as `<row>`. Only the
+ *  name right after `<` or `</` changes, so attributes such as `r:id` keep
+ *  their prefix, and text is untouched because it cannot hold a raw `<`. */
+function localNames(xml: string): string {
+  return xml.replace(/<(\/?)[\w.-]+:/g, '<$1');
 }
 
 function decodeXml(s: string): string {

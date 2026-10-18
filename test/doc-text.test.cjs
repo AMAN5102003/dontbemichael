@@ -260,6 +260,26 @@ test('Excel: every sheet by name, columns kept aligned, all cell kinds read', as
   );
 });
 
+test('Excel: a workbook whose tags carry a namespace prefix (Open XML SDK, ClosedXML) is read like one from Excel', async () => {
+  // Excel writes SpreadsheetML as the default namespace (<row>). Microsoft's
+  // Open XML SDK and ClosedXML, behind many business systems' exports, write
+  // the same elements with a prefix (<x:row>). Both are valid Office Open XML.
+  const S = 'xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+  const r = await extractDocumentText(zip('clients.xlsx', {
+    'xl/workbook.xml': `<x:workbook ${S} xmlns:r="r"><x:sheets>
+      <x:sheet name="Clients" sheetId="1" r:id="R1" /></x:sheets></x:workbook>`,
+    'xl/_rels/workbook.xml.rels': `<Relationships>
+      <Relationship Type="worksheet" Target="/xl/worksheets/sheet1.xml" Id="R1" /></Relationships>`,
+    'xl/sharedStrings.xml': `<x:sst ${S}><x:si><x:t>Client</x:t></x:si><x:si><x:t xml:space="preserve">Phone</x:t></x:si></x:sst>`,
+    'xl/worksheets/sheet1.xml': `<x:worksheet ${S}><x:sheetData>
+      <x:row r="1"><x:c r="A1" t="s"><x:v>0</x:v></x:c><x:c r="C1" t="s"><x:v>1</x:v></x:c></x:row>
+      <x:row r="2"><x:c r="A2" t="inlineStr"><x:is><x:t>Northside Bakery</x:t></x:is></x:c><x:c r="B2" s="1" /><x:c r="C2"><x:v>5550142</x:v></x:c></x:row>
+      </x:sheetData></x:worksheet>`
+  }));
+  assert.equal(r.kind, 'text');
+  assert.equal(r.text, 'Sheet: Clients\nClient\t\tPhone\nNorthside Bakery\t\t5550142');
+});
+
 // ─── PDF ─────────────────────────────────────────────────────────────────────
 
 test('PDF: text is read with the bundled reader — no pdftotext needed', async () => {

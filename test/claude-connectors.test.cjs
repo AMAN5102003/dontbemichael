@@ -170,6 +170,22 @@ test('spawn: stripped agents get the env and strict mode; others get deny rules 
   assert.match(hidden, /\['--strict-mcp-config', '--disallowedTools', \.\.\.disallowed\]/);
 });
 
+test('a claude an agent starts from its shell loads no connector, even when the agent has grants', { skip: process.platform === 'win32' ? 'bash shell env file' : false }, async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md conn shell-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  const granted = await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home }, { connectors: { strip: false, deny: [] } });
+  // The agent keeps its connectors; only its shell commands get the switch.
+  assert.equal(granted.env.ENABLE_CLAUDEAI_MCP_SERVERS, undefined);
+  const file = granted.env.CLAUDE_ENV_FILE;
+  assert.ok(file && fs.existsSync(file), 'shell env file written');
+  // Beside the settings file, outside the hive, so no agent's shell rewrites it.
+  const settings = granted.args[granted.args.indexOf('--settings') + 1];
+  assert.equal(path.dirname(file), path.dirname(settings));
+  const out = spawnSync('bash', ['-c', `source "$1"; printf %s "$ENABLE_CLAUDEAI_MCP_SERVERS"`, 'x', file], { encoding: 'utf8' });
+  assert.equal(out.stdout, 'false');
+});
+
 test('the hook shim refuses MCP calls when it cannot reach the app, and leaves other tools alone (D8)', { skip: process.platform === 'win32' ? 'unix socket paths' : false }, async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-conn-shim-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -323,12 +339,13 @@ test('over the hook socket, a gate that throws refuses an MCP call and lets a bu
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const hive = new HiveManager(() => home);
   await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const token = hive.mintHookToken('pam');
   const server = new HookServer(hive, () => null, () => { throw new Error('config unreadable'); });
   server.start();
   t.after(() => server.stop());
   const ask = (payload) => new Promise((resolve, reject) => {
     let out = '';
-    const c = net.createConnection(hive.sockPath(), () => c.write(JSON.stringify(payload) + '\n'));
+    const c = net.createConnection(hive.sockPath(), () => c.write(JSON.stringify({ hook_token: token, ...payload }) + '\n'));
     c.setEncoding('utf8');
     c.on('data', (d) => { out += d; });
     c.on('end', () => resolve(JSON.parse(out)));
@@ -348,8 +365,9 @@ test('over the hook socket, a gate that throws refuses an MCP call and lets a bu
     assert.equal((await ask({ ...base, tool_name })).hookSpecificOutput.permissionDecisionReason, W.WEB_SETTINGS_UNREADABLE, tool_name);
   }
   assert.ok(!denied(await ask({ ...base, tool_name: 'Bash', tool_input: { command: 'ls' } })));
+  const researchToken = hive.mintHookToken('research');
   for (const tool_name of ['WebFetch', 'Read', 'Bash']) {
-    assert.equal((await ask({ ...base, agent_id: 'research', tool_name })).hookSpecificOutput.permissionDecisionReason, R.RESEARCH_UNCHECKED_TOOL, `Research ${tool_name}`);
+    assert.equal((await ask({ ...base, agent_id: 'research', hook_token: researchToken, tool_name })).hookSpecificOutput.permissionDecisionReason, R.RESEARCH_UNCHECKED_TOOL, `Research ${tool_name}`);
   }
   // A save into the shared temp folders fails closed here too, as in the hook program (api review).
   assert.equal((await ask({ ...base, tool_name: 'Write', tool_input: { file_path: '/TMP/draft.md', content: 'x' } })).hookSpecificOutput.permissionDecisionReason, R.RESEARCH_UNCHECKED_TOOL);
@@ -427,7 +445,7 @@ async function throughShim(t, cfg, payload) {
   t.after(() => server.stop());
   await new Promise((r) => setTimeout(r, 50));
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath() } });
+    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath(), HIVE_HOOK_SEAL: hive.mintHookToken('pam') } });
     let out = '';
     p.stdout.on('data', (d) => { out += d; });
     p.on('close', () => resolve(out));

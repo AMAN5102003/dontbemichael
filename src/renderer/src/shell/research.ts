@@ -15,6 +15,8 @@ import { teamAccent } from '../../../shared/teamPlan';
 import { RESEARCH_ID, RESEARCH_NAME, RESEARCH_ROLE, RESEARCH_WORK_STYLE } from '../../../shared/research';
 import { disposeTerminal } from '@/components/terminalPool';
 import { RESEARCH_CHARACTER } from '@/scene/office/cast';
+import { browserStorage, forgetWelcome } from '@/scene/office/peteWelcome';
+import { ROSTER_BOOT_HOME } from '@/store/store';
 
 export const RESEARCH_PTY_ID = `pty-${RESEARCH_ID}`;
 /** Its role line on the floor and in the roster. */
@@ -62,12 +64,17 @@ export async function startResearch(config: HarnessConfig): Promise<{ ok: true }
     await window.cth.researchOff().catch(() => undefined);
     return { ok: false, error: res.error };
   }
+  // Turned on for real: the office welcomes Pete in its next quiet moment
+  // (owner, 2026-10-13, D7). Not on the early return above, where he is
+  // already on the floor, and never on a restore, which does not come here.
+  forgetWelcome(browserStorage(), ROSTER_BOOT_HOME);
   const store = useStore.getState();
   store.removeArchivedAgent(RESEARCH_ID);
   const cwd = res.cwd || prep.cwd;
   store.addAgent({
     id: RESEARCH_ID,
-    name,
+    // The name the app gave it (its settings), over the one this floor kept.
+    name: res.name || name,
     character: RESEARCH_CHARACTER,
     accent: teamAccent(store.agents.length),
     description: RESEARCH_DESCRIPTION,

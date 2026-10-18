@@ -828,6 +828,29 @@ that limits the rule to a business office, or that fixes the name to Pete.
   broadcast and the like) or another member's id (review of this change: a name is in every
   agent's house rules and on every answer label).
 
+## Owner decision 2026-10-14: Michael hears every refusal
+
+Supersedes "sender only" in the Trust layer section, step 5 of the flow, the States table and
+the out of scope list above, which stay as the record of the 2026-10-13 decision.
+
+- **Who is told:** the sender still gets its "Not sent to Pete" note, and Michael now gets one
+  too, for every message the privacy check stops: whose message it was, its subject (quote marks
+  and line breaks removed, so it can't add text in the app's voice), the reason, and what to do
+  next: when Pete is off, that the owner turns him on in Settings, Research & privacy; otherwise,
+  that what stays private is set there (a check that could not run is below). Michael's own
+  refused messages give him one note, not two. Why: an owner saw Michael report that the
+  privacy check was blocking things for Pete with no way to learn what or why (owner,
+  2026-10-14: "Michael names it").
+- **A check that could not run** (no answer, an answer it could not read, too slow, settings it
+  could not read) refuses with its own reason: not sent, not about the wording, send it again
+  later. Michael is told it is an app problem. A message dropped from Research's inbox without
+  being checked gets the same reason, told to its sender only. Before, these asked the sender
+  to reword the message.
+- **Reading the verdict:** the check's answer may follow its JSON verdict with a sentence of
+  explanation. A verdict that lets something through is not trusted when another verdict object
+  follows it, including a badly written or differently cased one, so a self correction or a
+  verdict copied from the checked text fails closed.
+
 ## GSTACK REVIEW REPORT
 
 | Review | Trigger | Why | Runs | Status | Findings |

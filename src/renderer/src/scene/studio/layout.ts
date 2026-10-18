@@ -45,12 +45,13 @@ export function departmentOf(a: Seatable): DepartmentName {
 }
 
 /** A short job title for a card or a panel header: the hired job card's role,
- *  else the character's usual job, else the first phrase of the role line. */
+ *  else the character's usual job, else the first phrase of the role line (a
+ *  "Title: what they do" line gives its title). */
 export function roleOf(a: Seatable): string {
   const card = a.sourceCard?.split('/').pop();
   const fromCard = card ? ROLES[card]?.role : undefined;
   const usual = !a.sourceCard ? (ROLES[a.id]?.role ?? (a.character ? ROLES[a.character]?.role : undefined)) : undefined;
-  const line = (a.description ?? '').split(/[.\n]/)[0].trim();
+  const line = (a.description ?? '').split(/[.:\n]/)[0].trim();
   return fromCard ?? usual ?? (line.length <= 28 ? line : `${line.slice(0, 26)}...`);
 }
 

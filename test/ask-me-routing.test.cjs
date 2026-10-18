@@ -66,5 +66,7 @@ test('Michael records who raised each question, and the tidy-up keeps the lastin
   assert.match(tidy, /A note that starts "From the owner" is the owner\\'s answer/);
   const tab = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/AskMeTab.tsx'), 'utf8');
   assert.match(tab, /const raiser = raiserOf\(open, task, new Set\(agents\.map\(\(a\) => a\.id\)\)\);/);
-  assert.match(tab, /window\.cth\.hiveRememberOwnerAnswer\(\{ agentId: raiser, task: task\.title, q: open\.q, a: text \}\)/);
+  // The question as Michael and memory see it: its options or parts included (ask-me-options.md).
+  assert.match(tab, /const asked = askAsText\(open\.q, shape\);/);
+  assert.match(tab, /window\.cth\.hiveRememberOwnerAnswer\(\{ agentId: raiser, task: task\.title, q: asked, a: text \}\)/);
 });

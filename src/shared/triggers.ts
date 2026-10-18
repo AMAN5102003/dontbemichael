@@ -38,7 +38,8 @@ export const DEFAULT_TRIGGER_MODE: TriggerMode = 'strict';
 /**
  * What an inbound message is asking for. A *directive* wants the hive to do work;
  * *communication* is informational (a status question, an FYI, a reply).
- * Senders may declare it; `classifyInboundKind` guesses when they don't.
+ * A sender may declare 'directive' to make a message stricter; a 'communication'
+ * label is never taken as given, and `classifyInboundKind` decides.
  */
 export type InboundKind = 'directive' | 'communication';
 
@@ -50,28 +51,45 @@ export function isAutoAllowed(mode: TriggerMode, kind: InboundKind): boolean {
 }
 
 /**
- * Best-effort guess at intent when the payload doesn't declare `kind`.
+ * Whether an inbound message is chatter or a request. Runs on every message
+ * unless the caller declared it a 'directive'.
  *
- * Deliberately conservative: anything we aren't confident is chatter is treated as
- * a directive, because mis-labelling a directive as communication is what lets
- * unapproved work through in `communication-only` mode. Callers who care should
- * send an explicit `kind`.
+ * It fails closed: anything that isn't plainly a status question is a directive,
+ * because mis-labelling a directive as communication is what lets unapproved
+ * work through in `communication-only` mode. A caller can make a message
+ * stricter by sending `kind: "directive"`; it can never make it looser.
+ *
+ * Chatter (owner, 2026-10-14, after three review rounds each found a request
+ * that a list of words let through) is one short question in plain words: Latin
+ * letters, digits, spaces, apostrophes and dots only, ending in "?" (a time such
+ * as 10:30 is fine), 12 words or fewer, opening with a question word, with no
+ * joining word (and, then, also, plus, but, while, after, before), no address,
+ * link or amount, none of the action words in any form ("pay", "paying",
+ * "paid"), and asking nobody to act ("Any chance you could...", "Is it ok to...").
  */
 export function classifyInboundKind(text: string): InboundKind {
   const t = text.trim().toLowerCase();
   if (!t) return 'communication';
 
-  // "Can you …", "Could you please …", etc. are requests — treat as directive.
-  if (/^(can|could|would|will)\s+you\s+(please\s+)?/.test(t)) return 'directive';
+  // Plain words only: any other punctuation, symbol, invisible or non Latin
+  // character fails closed, so a second clause can't hide behind it.
+  const plain = /^[a-z0-9' .]+\?+$/.test(t.replace(/(\d):(\d)/g, '$1$2'))
+    && !/\.\s/.test(t)
+    && t.split(' ').filter(Boolean).length <= 12
+    && !/\bwww\.|\.(com|org|net|io|co)\b|\d\s?(usd|eur|gbp|dollars?)\b/.test(t);
+  if (!plain) return 'directive';
 
-  // Standalone "please" anywhere also signals a request.
-  if (/\bplease\b/.test(t)) return 'directive';
-
-  // A leading question word with no imperative verb reads as asking, not tasking.
-  const asksOnly = /^(what|how|when|where|who|why|is|are|do|does|did|status|any)\b/.test(t)
-    && t.endsWith('?')
-    && !/\b(fix|build|ship|deploy|run|write|create|add|remove|delete|refactor|implement|update|merge|revert)\b/.test(t);
-  return asksOnly ? 'communication' : 'directive';
+  const asks = /^(what|how|when|where|who|why|is|are|do|does|did|status|any)\b/.test(t);
+  const joins = /\b(and|then|also|plus|but|while|after|before)\b/.test(t);
+  // The action words, with their usual endings and past forms. "run" only as
+  // the bare word, so "How long has the job been running?" still flows.
+  const acts = /\brun\b|\b(fix|build|built|ship|deploy|write|wrote|written|writing|create|creat|add|remove|remov|delete|delet|refactor|implement|update|updat|merge|merg|revert|pay|paid|wire|wir|transfer|transferr|send|sent|email|refund|order|buy|bought|approve|approv|cancel|cancell|share|shar|forward|export|upload|give|giv|gave|given|grant|invite|invit|post|publish|sign|book|move|mov|copy|copie|cop|restart|stop|stopp|reset|clear|kill|launch|sell|sold|shipp)(s|es|ed|d|ing|ment|y)?\b/.test(t);
+  // Polite ways of asking someone to act: "you" with more words after it ("you
+  // could", "you pay", "don't you"; a closing "how are you?" is only asking),
+  // "please", "mind", "chance", "possible", "how about", "ok to", "way to",
+  // "should" and a leading "why not".
+  const asksToAct = /\byou\b(?!\s*\?+$)|\b(please|mind|chance|possible|should)\b|\bhow about\b|\b(ok|okay|way) to\b|^why not\b/.test(t);
+  return asks && !joins && !acts && !asksToAct ? 'communication' : 'directive';
 }
 
 /* ──────────────────────────── context trigger ────────────────────────────── */

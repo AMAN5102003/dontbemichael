@@ -9,13 +9,14 @@ import {
   Disclosure, Field, Hint, MiniButton, SchedulePicker, Toggle, fmtInterval, inputStyle, textareaStyle,
   weeklyDraft, weeklyIsUsable, type WeeklyDraft
 } from './ui';
-import { formatWeekly } from '@shared/weeklySchedule';
-import { formatTimes, normalizeTimes } from '@shared/scheduleTimes';
+import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
 import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
-import { pausedStarterMission, starterSuggestionsFor, type StarterSuggestion } from '@shared/starterJobs';
+import { remainingStarterMissions, starterSuggestionsFor, type StarterSuggestion } from '@shared/starterJobs';
+import type { OfficePack } from '@shared/officePack';
 import { useRtl } from '@/i18n/useDirection';
+import i18n from '@/i18n';
 
 /**
  * SCHEDULES, per agent (docs/designs/per-agent-schedules.md).
@@ -190,14 +191,36 @@ function relTime(ms: number, lang: string): string {
   }
 }
 
+/** formatTimes' words in the owner's language. Day names come from Intl, so
+ *  every language gets them without a key per day. Sep 27 2026 is a Sunday. */
+function whenWords(t: TFunction, lang: string): WhenWords {
+  let weekday: Intl.DateTimeFormat;
+  try { weekday = new Intl.DateTimeFormat(lang, { weekday: 'short' }); } catch { weekday = new Intl.DateTimeFormat('en', { weekday: 'short' }); }
+  const sep = t('schedulesSection.whenSep');
+  return {
+    day: (d) => weekday.format(new Date(2026, 8, 27 + d)),
+    everyDay: t('triggersUi.everyDay'),
+    weekdays: t('triggersUi.weekdays'),
+    weekends: t('schedulesSection.whenWeekends'),
+    list: (items) => items.join(sep),
+    and: (items) => (items.length > 1
+      ? t('schedulesSection.whenAnd', { list: items.slice(0, -1).join(sep), last: items[items.length - 1] })
+      : items[0]),
+    at: (days, time) => t('schedulesSection.whenAt', { days, time }),
+    every: (interval) => t('schedulesSection.everyInterval', { interval }),
+    span: (from, to) => t('schedulesSection.whenSpan', { from, to })
+  };
+}
+
 /** When a job runs, in words: the calendar, the interval ("every 4h", like an
  *  every line in formatTimes), or the heartbeat. */
 export function whenText(m: Pick<ScheduledMission, 'kind' | 'weekly' | 'intervalMs' | 'times'>, t: TFunction): string {
   if (m.kind === 'heartbeat') return t('schedulesSection.beat');
+  const words = whenWords(t, i18n.language);
   const times = normalizeTimes(m.times);
-  if (times) return formatTimes(times);
+  if (times) return formatTimes(times, words);
   const w = weeklyDraft(m.weekly);
-  if (w) return formatWeekly(w);
+  if (w) return formatTimes([{ kind: 'at', days: w.days, minute: w.minute }], words);
   const every = fmtInterval(m.intervalMs);
   return /^\d/.test(every) ? t('schedulesSection.everyInterval', { interval: every }) : every;
 }
@@ -544,33 +567,47 @@ export function AgentSchedules({ agentId, agentName, businessType, sourceCard }:
   const [suggestionData, setSuggestionData] = useState<{ key: string; items: StarterSuggestion[] } | null>(null);
   const { busy: suggestionBusy, failed: suggestionFailed, run: saveSuggestion } = useSaveOp();
   const suggestionKey = `${agentId}:${businessType ?? ''}:${sourceCard ?? ''}`;
-  const suggestions = suggestionData?.key === suggestionKey ? suggestionData.items : [];
+  const starterItems = suggestionData?.key === suggestionKey ? suggestionData.items : [];
+  const suggestionSaving = useRef(false);
+  const suggestions = isGod ? [] : remainingStarterMissions(
+    starterItems, to, missions, godId, (i) => `suggestion_${agentId}_${i}`
+  );
 
   useEffect(() => {
     let alive = true;
     setSuggestionData(null);
-    if (status !== 'ready' || mine.length !== 0 || isGod) return;
+    if (status !== 'ready' || isGod) return;
     void window.cth.packsList()
       .then(({ packs, core }) => {
+        const available = [...packs.map((p) => p.pack), core].filter((p): p is OfficePack => !!p);
         if (alive) setSuggestionData({
           key: suggestionKey,
-          items: starterSuggestionsFor([...packs.map((p) => p.pack), core], businessType, agentId, sourceCard)
+          // Keep all definitions for recognizing existing starter jobs; the
+          // remaining list is capped after excluding jobs already added.
+          items: starterSuggestionsFor(available, businessType, agentId, sourceCard, Infinity)
         });
       })
       .catch(() => { /* The manual add button still works if packs cannot load. */ });
     return () => { alive = false; };
-  }, [agentId, businessType, sourceCard, suggestionKey, status, mine.length, isGod]);
+  }, [agentId, businessType, sourceCard, suggestionKey, status, isGod]);
 
-  const addSuggestion = (suggestion: StarterSuggestion): void => {
-    if (suggestionBusy || mine.length !== 0) return;
-    const mission = pausedStarterMission(
-      suggestion, to, missions, godId, (i) => `m_${Date.now().toString(36)}_${agentId}_${i}`
-    );
+  const addSuggestion = (suggestion: ScheduledMission): void => {
+    if (suggestionSaving.current || suggestionBusy) return;
+    // Recheck the current store: another view may have added a custom job or
+    // this starter since the row was rendered.
+    const mission = remainingStarterMissions(
+      starterItems, to, useStore.getState().missions, godId,
+      (i) => `m_${Date.now().toString(36)}_${agentId}_${i}`
+    ).find((m) => m.label === suggestion.label);
     if (!mission) return;
+    suggestionSaving.current = true;
     void saveSuggestion(() => window.cth.upsertMission(mission), () => {
-      setSuggestionData(null);
+      const current = useStore.getState();
+      if (!current.missions.some((m) => m.id === mission.id)) {
+        current.setMissions([...current.missions, mission], 'ready');
+      }
       refreshMissions();
-    });
+    }).finally(() => { suggestionSaving.current = false; });
   };
 
   const waiting = loadState(status, missions.length === 0, t('schedulesSection.loadError', { name: agentName }), retry, t);
@@ -606,28 +643,28 @@ export function AgentSchedules({ agentId, agentName, businessType, sourceCard }:
           />
         ))}
       </div>
-      {mine.length === 0 && suggestions.length > 0 && (
+      {suggestions.length > 0 && (
         <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
-          {suggestions.map((suggestion, i) => (
-            <li key={`${suggestion.job.agentId}:${suggestion.job.title}:${i}`} style={{
+          {suggestions.map((suggestion) => (
+            <li key={suggestion.id} style={{
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
               padding: '8px 0', borderTop: '1px solid var(--cth-ink-100)'
             }}>
               <span style={{ flex: '1 1 200px', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
-                {t('schedulesSection.suggestedJob', { title: suggestion.job.title, schedule: suggestion.job.schedule })}
+                {t('schedulesSection.suggestedJob', { title: suggestion.label, schedule: whenText(suggestion, t) })}
               </span>
               <PixelButton
                 variant="secondary"
                 size="sm"
                 disabled={suggestionBusy}
-                ariaLabel={t('schedulesSection.addSuggestedJob', { title: suggestion.job.title })}
+                ariaLabel={t('schedulesSection.addSuggestedJob', { title: suggestion.label })}
                 onClick={() => addSuggestion(suggestion)}
               >{t('common.add')}</PixelButton>
             </li>
           ))}
         </ul>
       )}
-      {mine.length === 0 && suggestionFailed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
+      {suggestionFailed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
       <AddSchedule to={to} ownerName={agentName} focusOwner={focusOwner} />
     </div>
   );
@@ -695,11 +732,26 @@ export function OfficeSchedules() {
 /** The close confirmation. When the agent has schedules running, it says they
  *  will pause (design 6A); otherwise it is the plain close question. */
 export function closeConfirmText(agentId: string, name: string, t: TFunction): string {
-  // The same ownership rule the close uses to pause them (pauseMissionsOf).
-  const st = useStore.getState();
-  const godId = st.agents.find((a) => a.isGod)?.id ?? GOD_ALIAS;
-  const count = missionsFor(st.missions, agentId, godId).filter((m) => m.enabled).length;
+  const count = schedulesOn(agentId);
   return count > 0
     ? t(count === 1 ? 'agentDetail.killConfirmSchedules' : 'agentDetail.killConfirmSchedulesPlural', { name, count })
     : t('agentDetail.killConfirm', { name });
+}
+
+/** The Danger zone's delete confirmation in Edit agent: final, and it names
+ *  the schedules that pause, like the close. */
+export function deleteConfirmText(agentId: string, name: string, t: TFunction): string {
+  const count = schedulesOn(agentId);
+  return count > 0
+    ? t(count === 1 ? 'editAgent.deleteConfirmSchedules' : 'editAgent.deleteConfirmSchedulesPlural', { name, count })
+    : t('editAgent.deleteConfirm', { name });
+}
+
+/** Their schedules that are on: the same ownership rule a close or a delete
+ *  uses to pause them (pauseMissionsOf). */
+function schedulesOn(agentId: string): number {
+  const st = useStore.getState();
+  const godId = st.agents.find((a) => a.isGod)?.id ?? GOD_ALIAS;
+  const count = missionsFor(st.missions, agentId, godId).filter((m) => m.enabled).length;
+  return count;
 }

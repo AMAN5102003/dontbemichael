@@ -78,3 +78,14 @@ test('an install without a business folder keeps its older instructions', async 
   const p = promptOf(await hive.ensureAgent({ id: 'jim', name: 'Jim', provider: 'claude', cwd: home }));
   assert.match(p, /HIVE PROTOCOL/);
 });
+
+test('Michael\'s prompt never teaches a numbered list of choices; asks use options and parts', async (t) => {
+  // Value: protects=new Ask me cards show choices as rows to pick; fails_when=any section of the prompt Michael runs with offers choices as a numbered or bulleted list; why_new=owner 2026-10-15, an old copy of the nothing-fits rule kept asks as text lists; seam=ensureAgent prompt
+  const { god } = await office(t);
+  const own = god.replace(HOUSE_RULES, '');
+  const fit = own.slice(own.indexOf('## When no one fits'), own.indexOf('## The Ask me board'));
+  assert.match(fit, /put these choices in the ask's "options", with "recommended": true on the one you recommend: add a team member for it/);
+  assert.match(fit, /; or drop it\./);
+  assert.doesNotMatch(own, /^[ \t]*(?:\d+[.)]|[-*•])[ \t]+(?:Add a team member|Hand it to|You do it yourself|Drop it)/m);
+  assert.doesNotMatch(own, /numbered (?:list|options)|"1\." number|bullet or/);
+});

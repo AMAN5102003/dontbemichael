@@ -193,30 +193,59 @@ export function formatEvery(ms: number): string {
   return `${Math.round(ms / MINUTE)}m`;
 }
 
-function formatDays(days: number[]): string {
+/** The words a "when" line is built from. English by default, which is what
+ *  Michael and the agents read; the schedule list passes the owner's language. */
+export interface WhenWords {
+  /** A day's short name, 0 = Sunday. */
+  day: (d: number) => string;
+  everyDay: string;
+  weekdays: string;
+  weekends: string;
+  /** "Mon, Wed". */
+  list: (items: string[]) => string;
+  /** "08:00 and 14:00". */
+  and: (items: string[]) => string;
+  at: (days: string, time: string) => string;
+  every: (interval: string) => string;
+  span: (from: string, to: string) => string;
+}
+
+export const ENGLISH_WHEN: WhenWords = {
+  day: (d) => WEEKDAY_LABELS[d],
+  everyDay: 'every day',
+  weekdays: 'weekdays',
+  weekends: 'weekends',
+  list: (items) => items.join(', '),
+  and: (items) => (items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}` : items[0]),
+  at: (days, time) => `${days} at ${time}`,
+  every: (interval) => `every ${interval}`,
+  span: (from, to) => `${from} to ${to}`
+};
+
+function formatDays(days: number[], w: WhenWords): string {
   const key = days.join(',');
-  if (key === ALL_DAYS.join(',')) return 'every day';
-  if (key === '1,2,3,4,5') return 'weekdays';
-  if (key === '0,6') return 'weekends';
-  return days.map((d) => WEEKDAY_LABELS[d]).join(', ');
+  if (key === ALL_DAYS.join(',')) return w.everyDay;
+  if (key === '1,2,3,4,5') return w.weekdays;
+  if (key === '0,6') return w.weekends;
+  return w.list(days.map(w.day));
 }
 
 /** One line in words: "every 2h weekdays 08:00 to 18:00", "weekends at 14:00". */
-export function formatLine(line: ScheduleLine): string {
-  if (line.kind === 'at') return `${formatDays(line.days)} at ${formatMinute(line.minute)}`;
-  const parts = [`every ${formatEvery(line.everyMs)}`];
-  if (line.days) parts.push(formatDays(line.days));
-  if (line.from !== undefined && line.to !== undefined) parts.push(`${formatMinute(line.from)} to ${formatMinute(line.to)}`);
+export function formatLine(line: ScheduleLine, w: WhenWords = ENGLISH_WHEN): string {
+  if (line.kind === 'at') return w.at(formatDays(line.days, w), formatMinute(line.minute));
+  const parts = [w.every(formatEvery(line.everyMs))];
+  if (line.days) parts.push(formatDays(line.days, w));
+  if (line.from !== undefined && line.to !== undefined) parts.push(w.span(formatMinute(line.from), formatMinute(line.to)));
   return parts.join(' ');
 }
 
 /** All lines in words, joined: "every 2h weekdays 08:00 to 18:00, weekends at
  *  14:00". Times on the same days read as one: "weekdays at 08:00 and 14:00". */
-export function formatTimes(times: ScheduleLine[]): string {
+export function formatTimes(times: ScheduleLine[], w: WhenWords = ENGLISH_WHEN): string {
   const parts: string[] = [];
   const atGroups = new Map<string, { days: number[]; minutes: number[]; index: number }>();
   for (const line of times) {
-    if (line.kind === 'every') { parts.push(formatLine(line)); continue; }
+    if (line.kind === 'every') { parts.push(formatLine(line, w)); continue; }
     const key = line.days.join(',');
     const g = atGroups.get(key);
     if (g) { g.minutes.push(line.minute); continue; }
@@ -225,8 +254,7 @@ export function formatTimes(times: ScheduleLine[]): string {
   }
   for (const g of atGroups.values()) {
     const mins = [...new Set(g.minutes)].sort((a, b) => a - b).map(formatMinute);
-    const list = mins.length > 1 ? `${mins.slice(0, -1).join(', ')} and ${mins[mins.length - 1]}` : mins[0];
-    parts[g.index] = `${formatDays(g.days)} at ${list}`;
+    parts[g.index] = w.at(formatDays(g.days, w), w.and(mins));
   }
-  return parts.join(', ');
+  return w.list(parts);
 }

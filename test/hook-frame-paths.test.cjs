@@ -41,7 +41,7 @@ async function office(t) {
   t.after(() => server.stop());
   await new Promise((r) => setTimeout(r, 50));
   const shim = (payload, env = {}) => new Promise((resolve) => {
-    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath(), ...env } });
+    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath(), HIVE_HOOK_SEAL: hive.mintHookToken('pam'), ...env } });
     let out = '';
     p.stdout.on('data', (d) => { out += d; });
     p.on('close', () => resolve(out ? JSON.parse(out).hookSpecificOutput ?? {} : {}));

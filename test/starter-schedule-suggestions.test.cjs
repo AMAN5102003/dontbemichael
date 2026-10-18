@@ -3,16 +3,13 @@
 /**
  * Starter job suggestions in an empty schedule tab (per-agent-schedules.md 5A).
  * The business's pack chooses the job; the owner's click saves it paused.
- *
- * Contributor note: Thank you for the opportunity to contribute to this project.
- * It means a great deal to me and my family.
  */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
-const { starterSuggestionsFor, pausedStarterMission } = loadTs('src/shared/starterJobs.ts');
+const { starterSuggestionsFor, pausedStarterMission, remainingStarterMissions } = loadTs('src/shared/starterJobs.ts');
 
 const hours = { days: ['mon', 'tue', 'wed', 'thu', 'fri'], work: { start: '09:00', end: '17:00' } };
 const job = (agentId, title, schedule = 'mon 09:00') => ({ agentId, title, schedule, focus: `Check ${title.toLowerCase()}` });
@@ -71,8 +68,11 @@ test('the empty state offers suggestions with a paused Add action in every suppo
   const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
   const list = read('src/renderer/src/components/triggers/ScheduleList.tsx');
   const capabilities = read('src/renderer/src/components/CapabilitiesTab.tsx');
-  assert.match(list, /mine\.length === 0 && suggestions\.length > 0/, 'suggestions stay out of populated tabs');
-  assert.match(list, /pausedStarterMission\(/, 'the suggested save must be paused');
+  assert.match(list, /suggestions\.length > 0/, 'remaining starters stay visible in starter-only tabs');
+  assert.doesNotMatch(list, /mine\.length === 0 && suggestions/);
+  assert.match(list, /schedule: whenText\(suggestion, t\)/, 'schedule wording uses the parsed mission and current language');
+  assert.match(list, /filter\(\(p\): p is OfficePack => !!p\)/, 'missing pack files are excluded');
+  assert.match(list, /remainingStarterMissions\(/, 'the suggested save must be a parsed paused mission');
   assert.match(list, /upsertMission\(mission\)/, 'the click saves the mission in main');
   assert.match(capabilities, /businessType=\{config\.businessType\} sourceCard=\{agent\.sourceCard\}/, 'agent provenance is passed through');
   for (const locale of ['en', 'ar', 'zh-CN']) {
@@ -81,4 +81,44 @@ test('the empty state offers suggestions with a paused Add action in every suppo
     assert.match(o.schedulesSection.suggestedJob, /\{\{schedule\}\}/);
     assert.match(o.schedulesSection.addSuggestedJob, /\{\{title\}\}/);
   }
+});
+
+
+test('after adding one of two starters, the other remains offered and is also saved paused', () => {
+  const starters = starterSuggestionsFor([pack('home-services', ['pam'], [
+    job('pam', 'Inbox zero', 'every 2h during office hours'),
+    job('pam', "Tomorrow's jobs", '18:00 on office days')
+  ])], 'home-services', 'pam');
+  const offer = (existing) => remainingStarterMissions(starters, 'pam', existing, 'god', (i) => `m_${i}`);
+  const first = offer([])[0];
+  assert.equal(first.enabled, false);
+  const remaining = offer([first]);
+  assert.deepEqual(remaining.map((m) => m.label), ["Tomorrow's jobs"]);
+  assert.equal(remaining[0].enabled, false);
+  assert.deepEqual(offer([first, remaining[0]]), [], 'both added, no duplicates');
+  assert.deepEqual(offer([{ ...first, enabled: true, lastFiredAt: 123 }]), remaining, 'runtime changes do not hide the other starter');
+  const custom = { ...first, id: 'custom', label: 'My own job' };
+  assert.deepEqual(offer([first, custom]), [], 'a custom job hides remaining starters');
+  assert.deepEqual(offer([{ ...first, focus: 'My own focus' }]), [], 'a custom job with a starter name is not a starter');
+  assert.deepEqual(offer([{ ...custom, to: 'kelly' }]).map((m) => m.label), ['Inbox zero', "Tomorrow's jobs"], 'other members do not affect this tab');
+});
+
+test('invalid schedules and empty focus never produce suggestion rows', () => {
+  const starters = starterSuggestionsFor([pack('retail-shop', ['pam'], [
+    job('pam', 'Bad schedule', 'whenever needed'),
+    { ...job('pam', 'Empty focus'), focus: '   ' },
+    job('pam', 'Good schedule')
+  ])], 'retail-shop', 'pam');
+  assert.deepEqual(starters.map((s) => s.job.title), ['Good schedule']);
+  const invalid = { job: job('pam', 'Invalid', 'whenever needed'), hours };
+  assert.deepEqual(remainingStarterMissions([invalid], 'pam', [], 'god', () => 'unused'), []);
+});
+
+test('cap the remaining list after recognizing every starter, including jobs beyond the first three', () => {
+  const starters = starterSuggestionsFor([pack('retail-shop', ['pam'], [
+    job('pam', 'First'), job('pam', 'Second'), job('pam', 'Third'), job('pam', 'Fourth')
+  ])], 'retail-shop', 'pam', undefined, Infinity);
+  const fourth = pausedStarterMission(starters[3], 'pam', [], 'god', () => 'fourth');
+  const remaining = remainingStarterMissions(starters, 'pam', [fourth], 'god', (i) => `m_${i}`);
+  assert.deepEqual(remaining.map((m) => m.label), ['First', 'Second', 'Third']);
 });

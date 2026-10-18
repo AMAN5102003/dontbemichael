@@ -25,6 +25,10 @@ import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { ScheduledJobsList } from './ScheduledJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
 import { useResearchName } from '@/shell/research';
+import { canDeleteTeamMember, deleteTeamMember } from '@/shell/deleteTeamMember';
+import { releaseBindingsOf } from '@/shell/releaseBindings';
+import { disposeTerminal } from './terminalPool';
+import { deleteConfirmText } from './triggers/ScheduleList';
 
 export interface EditAgentModalProps {
   agent: Agent;
@@ -37,7 +41,8 @@ export interface EditAgentModalProps {
  * color are chosen once, in the hire wizard: picking another here turned Pam
  * into a second Michael, and the color drew almost nowhere (owner,
  * 2026-10-02). Save patches the durable roster via updateAgent; engine changes
- * apply on the next restart.
+ * apply on the next restart. Under the engine, a Danger zone deletes the team
+ * member for good (owner, 2026-10-14).
  */
 export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
   const { t } = useTranslation();
@@ -47,6 +52,7 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
   const renameAgent = useStore((s) => s.renameAgent);
   const [nameError, setNameError] = useState<string | undefined>();
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [config, setConfig] = useState<HarnessConfig | null>(null);
 
   const [name, setName] = useState(agent.name);
@@ -191,6 +197,25 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
     onClose();
   };
 
+  // Deleting is final (owner, 2026-10-14): one confirm, then they are gone.
+  const remove = async () => {
+    if (deleting || saving || writing) return;
+    if (!confirm(deleteConfirmText(agent.id, agent.name, t))) return;
+    setDeleting(true);
+    const st = useStore.getState();
+    await deleteTeamMember(agent, {
+      closeByOwner: (id) => window.cth.closeAgentByOwner(id),
+      releaseBindings: releaseBindingsOf,
+      killPty: (ptyId) => window.cth.killPty(ptyId),
+      disposeTerminal,
+      archiveInRegistry: (id) => window.cth.hiveSetArchived(id, true),
+      settleWork: (id) => window.cth.memberDeleted(id),
+      forget: (id) => { st.archiveAgent(id); st.removeArchivedAgent(id); st.removeRestorableAgent(id); }
+    });
+    setDeleting(false);
+    onClose();
+  };
+
   const who = name.trim() || agent.name;
   // What the folded Engine line shows: the provider, and the model when it has one.
   const providerLabel = AGENT_PROVIDER_PRESETS.find((p) => p.id === provider)?.label ?? provider;
@@ -202,7 +227,7 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
     <Dialog
       title={t('editAgent.title')}
       onClose={onClose}
-      busy={saving || writing}
+      busy={saving || writing || deleting}
       width={640}
       fill
       align="end"
@@ -212,7 +237,7 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
         <>
           <PixelButton variant="ghost" size="md" onClick={onClose}>{t('editAgent.cancel')}</PixelButton>
           <div style={{ flex: 1 }} />
-          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={saving || writing}>{writing ? t('editAgent.writing') : t('editAgent.save')}</PixelButton>
+          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={saving || writing || deleting}>{writing ? t('editAgent.writing') : t('editAgent.save')}</PixelButton>
         </>
       )}
     >
@@ -367,6 +392,27 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
             {t('editAgent.engineNote')}
           </span>
         </Fields>
+        )}
+
+        {/* Danger zone, under the engine (owner, 2026-10-14): delete for good. */}
+        {canDeleteTeamMember(agent) && (
+          <div
+            id="edit-agent-danger"
+            data-fields="danger"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 'var(--cth-r-xl)',
+              // The Settings Danger zone's ring (DESIGN.md 6.3).
+              boxShadow: 'inset 0 0 0 1.5px color-mix(in srgb, var(--cth-coral-base) 55%, transparent)', background: 'var(--cth-coral-soft)'
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-coral-text)' }}>{t('editAgent.danger')}</span>
+              <InfoTip text={t('editAgent.deleteInfo', { name: agent.name })} label={t('editAgent.danger')} />
+            </span>
+            <PixelButton variant="destructive" size="md" onClick={() => { void remove(); }} disabled={deleting || saving || writing}>
+              {deleting ? t('editAgent.deleting') : t('editAgent.delete', { name: agent.name })}
+            </PixelButton>
+          </div>
         )}
       </div>
     </Dialog>
