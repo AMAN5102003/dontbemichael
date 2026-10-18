@@ -5,7 +5,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import {
   configMatchesRegistry,
   officeRecordFromConfig,
@@ -150,6 +150,10 @@ export function folderLayoutFor(businessFolder: string | undefined, folders: str
   const onDisk = (p: string) => {
     try { return realpathSync.native(resolve(p)); } catch { return resolve(p); }
   };
+  // A record the engine hasn't written yet takes its folder's real path.
+  const recordOnDisk = (p: string) => {
+    try { return realpathSync.native(resolve(p)); } catch { return join(onDisk(dirname(p)), basename(p)); }
+  };
   const fold = process.platform === 'darwin' || process.platform === 'win32'
     ? (p: string) => p.toLowerCase()
     : (p: string) => p;
@@ -174,7 +178,7 @@ export function folderLayoutFor(businessFolder: string | undefined, folders: str
   return {
     business, teamFolders,
     ...(app ? { appPrivate: join(app, 'private'), appLocked: [join(app, 'hive', 'bin'), join(app, 'agent-settings')] } : {}),
-    engineRecords: { projects: claudeProjectsRoot(), history: engineHistoryFile() }
+    engineRecords: { projects: recordOnDisk(claudeProjectsRoot()), history: recordOnDisk(engineHistoryFile()) }
   };
 }
 

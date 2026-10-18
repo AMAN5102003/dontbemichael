@@ -278,3 +278,34 @@ test('the office layout carries the records, wherever CLAUDE_CONFIG_DIR puts the
     history: path.join(abs('/Volumes/work/engine-config'), 'history.jsonl')
   });
 });
+
+test('the records are walled by the folder they really are, when CLAUDE_CONFIG_DIR goes through a link', (t) => {
+  // Value: protects=a dotfiles setup leaves no side door to the records; fails_when=the layout carries the link path, not the real one; why_new=review, the other folders are real paths and this one was not; seam=none
+  const { realPathOf } = loadTs('src/main/hooks.ts');
+  const before = process.env.CLAUDE_CONFIG_DIR;
+  const dir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-linked config-')));
+  t.after(() => {
+    if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const real = path.join(dir, 'dotfiles', 'engine');
+  const link = path.join(dir, 'engine');
+  fs.mkdirSync(real, { recursive: true });
+  try { fs.symlinkSync(real, link, process.platform === 'win32' ? 'junction' : 'dir'); } catch { t.skip('no links here'); return; }
+  process.env.CLAUDE_CONFIG_DIR = link;
+  const expected = { projects: path.join(real, 'projects'), history: path.join(real, 'history.jsonl') };
+  assert.deepEqual(folderLayoutFor(undefined, []).engineRecords, expected, 'neither is there yet');
+  fs.mkdirSync(path.join(real, 'projects', '-Users-me-Documents-Pho-Admin'), { recursive: true });
+  fs.writeFileSync(expected.history, '');
+  const l = folderLayoutFor(undefined, []);
+  assert.deepEqual(l.engineRecords, expected);
+  const transcript = ['projects', '-Users-me-Documents-Pho-Admin', 'abc.jsonl'];
+  for (const agent of [oscar, michael]) {
+    const p = folderPolicy(agent, l, false);
+    assert.ok(p.sandbox.denyRead.includes(expected.projects) && p.sandbox.denyRead.includes(expected.history), 'the shell is walled from the real folder');
+    // Judged as the hook does: by the file it really is.
+    for (const target of [expected.history, path.join(real, ...transcript), path.join(link, 'history.jsonl'), path.join(link, ...transcript)]) {
+      assert.equal(folderDecision(agent, l, 'Read', realPathOf(target), false).deny, true, target);
+    }
+  }
+});
