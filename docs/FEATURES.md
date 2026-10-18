@@ -75,6 +75,8 @@ moving, and brings you only the decisions that need you.
   inbox"), when, and its focus area, what to concentrate on each run; it does the job the way its
   work style says. A new hire can arrive with its jobs already set, like Inbox to zero.
 - One job can run at several times: every 2 hours on weekdays between 8 and 6, plus 2 pm at weekends.
+- Run now sends a job at once, exactly as its clock would, so you see it work without waiting. A
+  job at set times keeps them; a job that runs every few hours counts again from the run.
 - Closing time pauses the office; opening it runs a missed job once, never a backlog.
 
 ### 5. Memory that gets better
