@@ -173,35 +173,51 @@ export function readCodexUsage(codexHome: string, sessionId: string): AgentUsage
  *  sits near the end, and rollouts grow to many MB (as readContextTokens). */
 const CONTEXT_TAIL_BYTES = 256 * 1024;
 
-/** The context size in the tail of a rollout: the LAST token_count's
- *  `last_token_usage`, which is what the model just took in (input, cached
- *  included) plus what it wrote, which joins the context for the next turn.
+/** A Codex session's context fill: tokens in the window, and the window's size
+ *  when the rollout names it (`model_context_window`). */
+export interface CodexContext {
+  tokens: number;
+  limit?: number;
+}
+
+/** The context in the tail of a rollout: the LAST token_count's
+ *  `last_token_usage`, counted the way Codex counts its own "context left"
+ *  (`tokens_in_context_window` in codex-rs/protocol: the turn's total_tokens,
+ *  reasoning included), with input plus output when total_tokens is missing.
  *  Null when no turn has been counted yet. The first line of a tail may be cut
  *  mid-record; it fails to parse and is skipped. */
-export function contextFromRolloutTail(text: string): number | null {
+export function contextFromRolloutTail(text: string): CodexContext | null {
   const lines = text.split('\n');
   for (let i = lines.length - 1; i >= 0; i--) {
     const trimmed = lines[i].trim();
     if (!trimmed) continue;
-    let rec: { type?: unknown; payload?: { type?: unknown; info?: { last_token_usage?: Record<string, unknown> } | null } };
+    let rec: {
+      type?: unknown;
+      payload?: { type?: unknown; info?: { last_token_usage?: Record<string, unknown>; model_context_window?: unknown } | null };
+    };
     try {
       rec = JSON.parse(trimmed);
     } catch {
       continue;
     }
     if (rec.type !== 'event_msg' || rec.payload?.type !== 'token_count') continue;
-    const last = rec.payload.info?.last_token_usage;
+    const info = rec.payload.info;
+    const last = info?.last_token_usage;
     if (!last) continue; // a rate-limit-only update carries info: null
-    return num(last.input_tokens) + num(last.output_tokens);
+    const total = num(last.total_tokens);
+    const ctx: CodexContext = { tokens: total > 0 ? total : num(last.input_tokens) + num(last.output_tokens) };
+    const window = num(info?.model_context_window);
+    if (window > 0) ctx.limit = window;
+    return ctx;
   }
   return null;
 }
 
-/** Current context size (tokens) of a Codex session, for the context gauge:
- *  the Codex counterpart of readContextTokens. Null when the rollout isn't
- *  there (yet) or can't be read; 0 when it holds no counted turn, so a fresh
+/** Current context of a Codex session, for the context gauge: the Codex
+ *  counterpart of readContextTokens. Null when the rollout isn't there (yet)
+ *  or can't be read; 0 tokens when it holds no counted turn, so a fresh
  *  session zeroes the gauge instead of leaving the last one's value up. */
-export function readCodexContext(codexHome: string, sessionId: string): number | null {
+export function readCodexContext(codexHome: string, sessionId: string): CodexContext | null {
   try {
     const file = findRollout(codexHome, sessionId);
     if (!file) return null;
@@ -209,10 +225,10 @@ export function readCodexContext(codexHome: string, sessionId: string): number |
     try {
       const size = fstatSync(fd).size;
       const len = Math.min(size, CONTEXT_TAIL_BYTES);
-      if (len === 0) return 0;
+      if (len === 0) return { tokens: 0 };
       const buf = Buffer.alloc(len);
       const read = readSync(fd, buf, 0, len, size - len);
-      return contextFromRolloutTail(buf.subarray(0, read).toString('utf8')) ?? 0;
+      return contextFromRolloutTail(buf.subarray(0, read).toString('utf8')) ?? { tokens: 0 };
     } finally {
       closeSync(fd);
     }

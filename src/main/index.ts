@@ -6229,6 +6229,7 @@ ipcMain.handle('hive:agentUsage', (_evt, cwd: unknown) =>
 // spawn), so this works even when several agents share one cwd. Null until the
 // first hook fires; a known-but-empty transcript reads as 0 so a freshly
 // (re)started session zeroes the gauge instead of leaving a stale value up.
+// `limit` is the window size, sent only when the session names it (Codex).
 ipcMain.handle('hive:agentContext', (_evt, agentId: unknown) => {
   if (typeof agentId !== 'string') return null;
   // A Codex agent writes rollouts, not Claude transcripts: read its session's
@@ -6240,7 +6241,7 @@ ipcMain.handle('hive:agentContext', (_evt, agentId: unknown) => {
   }
   const tp = hookServer.transcriptPath(agentId);
   if (!tp) return null;
-  return readContextTokens(tp) ?? 0;
+  return { tokens: readContextTokens(tp) ?? 0 };
 });
 
 // A consolidated, NON-SENSITIVE per-agent directory for the voice read-layer
