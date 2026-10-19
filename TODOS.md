@@ -190,18 +190,6 @@
 **Priority:** P3
 **Depends on:** None
 
-### Prune the processor's saved cost totals
-
-**What:** Drop session keys from the processor's saved state (`state.costs`) that have not changed for a long horizon, or keep them in a keyed table.
-
-**Why:** Two keys per agent and session are kept forever and parsed and written every 30 s, so an office with many restarts grows a large kv row.
-
-**Context:** From the Codex adversarial review, 2026-10-16. `telemetryProcessor.ts` saveState.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
 ### Key Pulse by a stable office id, not its folder path
 
 **What:** Store an office id in the office and key telemetry rows by it, or re-key rows when Settings moves the office; resolve the path with realpath meanwhile.
