@@ -178,18 +178,6 @@
 **Priority:** P3
 **Depends on:** None
 
-### Backfill when Pulse first opens
-
-**What:** Start `pulseBackfillOnce` from the `pulse:snapshot` handler as well as the 30 s beat.
-
-**Why:** On the first launch after an update, opening Pulse within 30 s shows the office without its past weeks.
-
-**Context:** From the second Codex adversarial review, 2026-10-16. `index.ts` pulse:snapshot and the beat.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
 ### Pulse keeps a card finished just before a quit
 
 **What:** Record card status changes where Michael's board write lands (or persist the last seen board) instead of only diffing the 8 s poll in memory.
