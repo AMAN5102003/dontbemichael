@@ -54,6 +54,9 @@ export interface ClosingTimeEvent {
   waiting: string[];
   /** Team members the owner chose to close without. */
   excused: string[];
+  /** Team members whose engine isn't reporting to the app: their mail is held,
+   *  so no CLOSING-TIME-ACK can come, and closing time does not wait on them. */
+  notReporting: string[];
   /** Michael's id, for his own row. */
   godId: string;
   /** False once Michael's terminal has ended: closing time cannot finish. */
@@ -100,6 +103,8 @@ export class ClosingTimeController {
   private timedOut = false;
   /** Team members whose ended terminal Michael has been told about. */
   private toldEnded = new Set<string>();
+  /** Team members Michael has been told aren't reporting, so he stops waiting. */
+  private toldNotReporting = new Set<string>();
   private timeoutTimer: NodeJS.Timeout | null = null;
   private teardownTimer: NodeJS.Timeout | null = null;
 
@@ -117,7 +122,11 @@ export class ClosingTimeController {
     /** Mid-run steering (#7C.2): lets closing time reach DEEPLY BUSY agents at
      *  their next hook boundary instead of waiting for the Stop-hook inbox
      *  drain — the graceful interrupt. Optional so tests can omit it. */
-    private control?: ControlRegistry
+    private control?: ControlRegistry,
+    /** True while a team member's engine isn't reporting and its mail is held
+     *  for Michael (silentEngine mailFor 'hold'): it can't hear closing time,
+     *  so it is not waited on. Optional so tests can omit it. */
+    private notReporting?: (agentId: string) => boolean
   ) {}
 
   isActive(): boolean {
@@ -165,6 +174,7 @@ export class ClosingTimeController {
     this.concluded = false;
     this.timedOut = false;
     this.toldEnded = new Set();
+    this.toldNotReporting = new Set();
     this.active = true;
     this.relaunch = opts.relaunch === true;
 
@@ -336,6 +346,21 @@ export class ClosingTimeController {
   private tellMichaelAboutEndedUnsafe(): void {
     const live = new Set(this.getLiveAgentIds());
     const reg = this.hive.registry();
+    // Not reporting: its mail is held for Michael, so the brief and any
+    // reminder never reach it. Michael stops waiting on it, once.
+    for (const id of this.silentIds(reg)) {
+      if (this.toldNotReporting.has(id)) continue;
+      const name = reg.agents[id]?.name ?? id;
+      try {
+        this.hive.send({
+          to: this.godId,
+          act: 'inform',
+          subject: `Closing time: ${name} isn't reporting to the app`,
+          body: `${name} (${id}) isn't reporting to the app, so its mail comes to you and the closing steps can't reach it. No CLOSING-TIME-ACK will come from ${name}. Do not wait for it; send CLOSING-TIME-COMPLETE once everyone else has acknowledged.`
+        }, 'human');
+        this.toldNotReporting.add(id);
+      } catch (e) { console.error('[closing-time] not reporting mail:', e); }
+    }
     const ended = [...this.workers].filter(
       (id) => !this.acked.has(id) && !this.excused.has(id) && !this.toldEnded.has(id) && (!live.has(id) || reg.agents[id]?.archived)
     );
@@ -359,8 +384,21 @@ export class ClosingTimeController {
   private pendingIds(reg = this.hive.registry()): string[] {
     const liveNow = new Set(this.getLiveAgentIds());
     return [...this.workers].filter(
-      (id) => !this.acked.has(id) && !this.excused.has(id) && liveNow.has(id) && !reg.agents[id]?.archived
+      (id) => !this.acked.has(id) && !this.excused.has(id) && liveNow.has(id) && !reg.agents[id]?.archived && !this.isSilent(id)
     );
+  }
+
+  /** Team members not confirmed, not closed without, still running, whose
+   *  engine isn't reporting: shown apart and not waited on. */
+  private silentIds(reg = this.hive.registry()): string[] {
+    const liveNow = new Set(this.getLiveAgentIds());
+    return [...this.workers].filter(
+      (id) => !this.acked.has(id) && !this.excused.has(id) && liveNow.has(id) && !reg.agents[id]?.archived && this.isSilent(id)
+    );
+  }
+
+  private isSilent(id: string): boolean {
+    try { return this.notReporting?.(id) === true; } catch { return false; }
   }
 
   /** Router observer — called by the hive for every routed message. */
@@ -431,6 +469,7 @@ export class ClosingTimeController {
 
   private emitState(phase: ClosingTimePhase): void {
     const waiting = this.active && !this.concluded ? this.pendingIds() : [];
+    const notReporting = this.active && !this.concluded ? this.silentIds() : [];
     const ev: ClosingTimeEvent = {
       phase,
       acked: this.acked.size,
@@ -438,6 +477,7 @@ export class ClosingTimeController {
       confirmed: [...this.acked],
       waiting,
       excused: [...this.excused],
+      notReporting,
       godId: this.godId,
       godLive: this.getLiveAgentIds().includes(this.godId),
       relaunch: this.relaunch

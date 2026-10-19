@@ -11,6 +11,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSPr
 import { useTranslation } from 'react-i18next';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
 import { useStore, actionText, liveActivity, ACTION_CLOCKING_IN, ROSTER_BOOT_HOME, type Agent } from '@/store/store';
+import { useClockingIn } from '@/hooks/useClockingIn';
 import type { HarnessConfig } from '@/store/config';
 import { departments, type DepartmentName } from '@/design/tokens';
 import { useAppTheme } from '@/design/theme';
@@ -55,7 +56,7 @@ const ROLL_TOP = 14;
  *  crosses the spot where the chip was. */
 const ROLL_PAD = 24;
 
-type Board = { todo: number; doing: number; blocked: number; done: number };
+type Board = { todo: number; doing: number; waiting: number; blocked: number; done: number };
 
 /* ── Data ─────────────────────────────────────────────────────────────────── */
 
@@ -66,14 +67,14 @@ function useTaskSnapshot(godId: string): TaskSnapshot {
   // always match the pill and the board.
   const { tasks } = useNeedsYou();
   return useMemo(() => {
-    const board: Board = { todo: 0, doing: 0, blocked: 0, done: 0 };
+    const board: Board = { todo: 0, doing: 0, waiting: 0, blocked: 0, done: 0 };
     const doingBy: Record<string, number> = {};
     const forYouBy: Record<string, number> = {};
     let kept = 0;
     const done: Record<string, string | undefined> = {};
     for (const t of tasks) {
-      // Michael's board has four columns; a Waiting card is nobody's work right now.
-      if (t.status !== 'waiting') board[t.status]++;
+      // Michael's board has the Tasks view's five columns (design review 2026-10-18).
+      board[t.status]++;
       if (t.status === 'done') done[t.id] = t.assignee;
       if (t.status === 'doing' && t.assignee) doingBy[t.assignee] = (doingBy[t.assignee] ?? 0) + 1;
       if (t.assignee) { const asks = openQuestions(t).length; if (asks) forYouBy[t.assignee] = (forYouBy[t.assignee] ?? 0) + asks; }
@@ -872,11 +873,12 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
         {stat(kept, t('studio.kept'))}
       </div>
       <button onClick={() => useStore.getState().setFloorView('tasks')} aria-label={t('floorView.tasks')} style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', width: '100%', padding: '6px 4px 7px', border: 'none', borderTop: '1px solid var(--cth-line)',
+        display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', width: '100%', padding: '6px 4px 7px', border: 'none', borderTop: '1px solid var(--cth-line)',
         background: 'transparent', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)'
       }}>
         {col(board.todo, t('studio.todo'), 'var(--cth-ink-4)')}
         {col(board.doing, t('studio.doingCol'), 'var(--cth-blue)')}
+        {col(board.waiting, t('kanban.colWaiting'), 'var(--cth-amber)')}
         {col(board.blocked, t('studio.blocked'), 'var(--cth-coral-base)')}
         {col(board.done, t('studio.done'), 'var(--cth-green)')}
       </button>
@@ -992,27 +994,6 @@ function useKickoff(pods: PodPlan<Agent>[], paused: boolean): Record<string, num
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, paused]);
   return kick;
-}
-
-/** Who is still clocking in: their action is the clocking in marker, for at
- *  most a minute each, so a quiet engine never leaves a desk dark. */
-function useClockingIn(agents: Agent[]): Set<string> {
-  const since = useRef(new Map<string, number>());
-  const [, tick] = useState(0);
-  const now = Date.now();
-  const out = new Set<string>();
-  for (const a of agents) {
-    if (a.action !== ACTION_CLOCKING_IN) { since.current.delete(a.id); continue; }
-    if (!since.current.has(a.id)) since.current.set(a.id, now);
-    if (now - (since.current.get(a.id) ?? now) < 60_000) out.add(a.id);
-  }
-  const waiting = out.size > 0;
-  useEffect(() => {
-    if (!waiting) return;
-    const id = window.setInterval(() => tick((n) => n + 1), 5000);
-    return () => window.clearInterval(id);
-  }, [waiting]);
-  return out;
 }
 
 /* ── Closing time and daylight (DESIGN.md 8.12) ───────────────────────────── */

@@ -2,13 +2,13 @@
 
 ## Connections
 
-### Third-party rate-limit backoff in the broker
+### One call at a time per connected app, and a throttle notice
 
-**What:** Per-connection rate-limit handling in the loopback broker: read the provider's `Retry-After` or rate-limit headers, back off, and queue instead of hammering.
+**What:** The broker now backs off per connected app after a 429 or a 503 with `Retry-After` (`src/main/brokerThrottle.ts`, PR #399): a wait of 20 s or less is held, a longer one is answered at once with when to try again. Two parts are left. Send one call at a time per app, so the calls held during a wait don't all go out together when it ends and hit the limit again. And show the owner a throttle that lasts, in plain words, instead of it showing only in agents' answers.
 
-**Why:** Gmail, Google Business Profile, Meta and QuickBooks all throttle. Today the broker passes the upstream status straight back to the calling agent with no retry (`src/main/integrationBroker.ts:264`, `:272`) behind a 30-second timeout, so a throttled provider reads to the agent as a failure and it retries blind, burning plan quota.
+**Why:** Gmail, Google Business Profile, Meta and QuickBooks all throttle. Held calls released together can trip the limit straight away, and a long throttle is invisible to the owner today.
 
-**Context:** Surfaced by the outside-voice pass during the 2026-09-15 engineering review of `docs/designs/business-mode-office-packs.md`. Decision 22 established a serialized executor with at most one in-flight execution per connection, and named that as the right home for backoff without deciding to build it. Decision 10's transient-versus-terminal retry classification covers approvals only, not ordinary agent calls. Start in the executor: classify 429 and 503 with `Retry-After`, hold the connection's queue, and surface a persistent throttle on the attention strip (Decision 25) rather than retrying silently forever.
+**Context:** Decision 22 (business-mode-office-packs.md) named a serialized executor with at most one call in flight per connection as the home for this; Decision 25 named the attention strip, which does not exist yet.
 
 **Effort:** M
 **Priority:** P2
@@ -33,6 +33,17 @@
 **What:** `queueForResearch()` in `src/main/hive.ts` removes the message's row from `research-pending.json` before `deliverToResearch()` and the commit succeed, and a delivery error is only logged. Keep the row until delivery succeeds, requeue it on failure, and tell Michael when it can't be delivered.
 
 **Why:** Found by the Codex adversarial review of the mit/named-links ship (2026-10-14). A disk or git error drops an owner or app message for Pete with no trace, and the record that would have recovered it is already gone.
+
+**Effort:** S
+**Priority:** P2
+
+### Catch money amounts in the privacy check's pattern recheck
+
+**What:** Add a pattern for money amounts to the recheck in `src/shared/dataClasses.ts`: digits with a currency mark or code before or after them (Rs, INR, ₹, $, USD, €, £ and the like, with the groupings people write, such as `1,35,000` or `2,000.50`). Today the only money pattern is the card number check.
+
+**Why:** Found by PR 411 (Tejashree0405), confirmed on main 2026-10-18: when the model's cleaned rewrite of a message to Pete keeps "Rs 1,35,000", "₹5,000" or "$2,000", the recheck lets it through, so business figures (private by default) rely on the model alone. In the contributor's live runs, one of 30 private messages kept a payroll figure.
+
+**Behavior change:** Pete gets more messages refused or trimmed: a message to Pete that names an amount is cleaned or refused even when the model passed it. Tests should keep years, counts and percentages passing.
 
 **Effort:** S
 **Priority:** P2
@@ -322,20 +333,6 @@
 
 ## Attachments (from the Codex adversarial review of design/studio-v2, 2026-10-01)
 
-### Keep pasted screenshots somewhere durable
-
-**What:** A pasted screenshot is saved to the OS temp folder (`clipboard:saveImage` in `src/main/index.ts`), and only that path goes into the message. Save it in an app folder tied to the message instead, and delete it once the message is delivered or removed, and on startup.
-
-**Why:** A screenshot pasted into a busy team member's queue is persisted as a temp path. If the app quits or the Mac restarts before delivery, the restored queue can send a path that no longer exists, and every pasted image stays in temp until the OS clears it.
-
-**Context:** This predates the Studio redesign (the queue composer used it already); the redesign also lets Talk to Michael paste screenshots through `src/renderer/src/components/pasteAttachments.ts`, though those are sent at once.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
-## Mailboxes (deferred from ship of feat/multi-mailbox, 2026-09-26)
-
 ### Keep each agent's mail pass out of other agents' reach
 
 **What:** Move each agent's `md-mail.mcp.json` (it holds that agent's broker token) out of the shared hive folder, or block other agents from reading `<hive>/agents/<other>/md-mail.mcp.json`, and delete it when the agent's terminal closes.
@@ -364,6 +361,40 @@
 
 **Effort:** M
 **Priority:** P2
+
+## Michael reply readability (deferred from the eng review, 2026-10-17)
+
+### Check the figures in Michael's answer against the team's report
+
+**What:** In code, check that every amount in Michael's answer to the owner matches, by label and value, an amount in the team report it drew on; a mismatch goes back to Michael, never the owner.
+
+**Why:** Michael now copies figures exactly by rule (hive.ts owner answer rule), but a retyped or rounded figure still reaches the owner unseen. Research on multi agent systems found the lead agent's rewrite of worker output is where most errors come from, and models are weak at checking numbers themselves.
+
+**Pros:** A wrong figure is caught before the owner reads it.
+
+**Cons:** Needs a link from an answer to the reports it used, which the hive does not record today; a check that matches any recent number would flag dates, counts and Michael's own totals.
+
+**Context:** Owner D9 A in the readability eng review (decision 383ee82c). Start by recording, on Michael's answer, the ids of the team messages it used. The marker gstack-shortcut(dec-383ee82c) sits at routeMessage's toOwner branch in `src/main/hive.ts`.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** linking an answer to its source reports
+
+### An eval for agent prompt changes
+
+**What:** A small eval that runs Michael (and one team member) on a few fixed questions, such as a figures question and a compare two options question, and checks the reply's shape in code: answer first, a list or small table, figures copied exactly, currency present, no dashes.
+
+**Why:** Prompt changes ship with source pins only, which prove the text is in the app, not that agents follow it; the owner is the first to see a regression.
+
+**Pros:** Catches a prompt regression before an office sees it; makes later wording changes safe.
+
+**Cons:** Model calls per run; answers vary, so checks must be about shape, not exact text.
+
+**Context:** Owner D12 A in the readability eng review, 2026-10-17. Prompt rules: `src/main/hive.ts` (owner answer rule, team report rule), `src/shared/ownerRequests.ts` ownerQuestionsContext. Start with a script under tools/ that runs claude -p with the built prompt and checks the reply with plain code.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
 
 ## Mail approvals and Michael replies (deferred from ship of feat/mail-approvals-michael-replies, 2026-10-07)
 
@@ -432,15 +463,6 @@
 **What:** Give the closing-time rows names and detail in every window, not only the one that saw the hook events.
 
 **Why:** Detail lives in the renderer store of the window that received `hive:hookEvent`; another window shows names but no detail.
-
-**Effort:** S
-**Priority:** P3
-
-### An agent respawned mid-close
-
-**What:** Decide what happens to a row when an agent's terminal restarts while closing time runs.
-
-**Why:** A respawned worker becomes live again and is waited on, but its row and Michael's "terminal ended" note may already be gone.
 
 **Effort:** S
 **Priority:** P3
@@ -809,18 +831,6 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 
 ## Onboarding
 
-### Retry team members that failed their first start
-
-**What:** Mark `businessTeamStarted` only once every picked member is running; tell the owner who did not start.
-
-**Why:** A member that fails at first launch is never retried and the owner is not told. Owner chose to leave it at ship review 2026-09-24.
-
-**Context:** `startBusinessTeam` in `src/renderer/src/hooks/useHive.ts`.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ## Release
 
 ### Sign and notarize the Mac build with an Apple Developer ID
@@ -1123,42 +1133,6 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 
 **Effort:** human S / CC S
 **Priority:** P1
-
-### Match catch-up requests to their answer
-
-**What:** The launch catch-up compares each answer with the card's newest owner request. If the request for one answer failed, and the owner then answered another question on the same card, the first answer is never sent. Match each request to its answer instead, by the answer key or answeredAt carried in the request.
-
-**Context:** Re-review of this ship, P3. Rare: it needs a failed send plus a second answer on the same card before the next launch.
-
-**Effort:** human S / CC S
-**Priority:** P3
-
-### Owner requests on cards Michael marked Done
-
-**What:** A request on a Done card counts as open only when it came after the card's `closedAt`, and only owner closes set `closedAt`. If Michael marks a card Done in the ledger while a question is still open, the owner's answer to it is left out of his open requests list. It still reaches his inbox.
-
-**Fix options:** Stamp a done time whenever a card enters Done. Or keep a request whose answer came after the card's last open question.
-
-**Context:** Re-review of this ship, P2 at confidence 6. Michael's instructions already forbid closing a card that has an open question.
-
-**Effort:** human S / CC S
-**Priority:** P3
-
-### Tell Michael when finishing by voice withdrew a question
-
-**What:** A voice "done with a result" withdraws the card's open questions, but Michael gets no owner change note for it, unlike a close from Tasks.
-
-**Effort:** human S / CC S
-**Priority:** P3
-
-### Answer only the question being answered
-
-**What:** hive:patchTask accepts an answer on any open slot whose question text matches. Send the target index with the patch, and accept the answer only on that slot.
-
-**Context:** Re-review of this ship, P3 at confidence 4. It needs Michael to clear an answer and ask the same text again within the 5 s snapshot.
-
-**Effort:** human S / CC S
-**Priority:** P4
 
 ### A React test harness
 

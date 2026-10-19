@@ -8,7 +8,7 @@
  * Every side effect is passed in, so the tests drive it with a fake clock.
  * Built on PR #345's watchdog (thanks to its author), with the owner's rules.
  */
-import { CHECK_IN_MS, LONG_TOOL_MS, QUIET_MS, RESTART_WAIT_MS, neverReports, guardedWithoutReports, type SilentEpisode, type SilentState } from '../shared/silentEngine';
+import { BEAT_GAP_MS, BUSY_FRESH_MS, CHECK_IN_MS, LONG_TOOL_MS, QUIET_MS, RESTART_WAIT_MS, neverReports, guardedWithoutReports, type SilentEpisode, type SilentState } from '../shared/silentEngine';
 
 export interface WatchMember {
   id: string;
@@ -71,8 +71,15 @@ interface Watch {
   lastEvent: string | null;
   firstOutputAt: number | null;
   lastHookAt: number | null;
+  /** When the terminal began printing without a report since: the start of
+   *  one unbroken stretch of output, cleared by a report or a pause. */
+  busySince: number | null;
   /** The finding held on the previous beat (two beats in a row, SD9). */
   pending: boolean;
+  /** A beat saw no process behind it: reports from now on are the next
+   *  process's, held as early ones until a beat sees it (2026-10-17: a
+   *  restarted Pete's first reports landed here and were lost). */
+  gone?: boolean;
 }
 
 /** Hook events that end the turn, and with it any tool call left open (one
@@ -90,6 +97,9 @@ export class SilentWatch {
 
   /** Episodes saved before the app quit (SD8): kept ones stay kept; the rest
    *  wait for the restored member to check in. */
+  /** When the last beat ran, so a gap in the beats is seen. */
+  private lastBeatAt: number | null = null;
+
   restore(saved: SilentEpisode[]): void {
     const now = this.deps.now();
     for (const e of saved) {
@@ -109,8 +119,9 @@ export class SilentWatch {
   noteHook(agentId: string | undefined, event?: string, at = this.deps.now()): void {
     if (!agentId) return;
     const w = this.watches.get(agentId);
-    if (w) {
+    if (w && !w.gone) {
       w.lastHookAt = at;
+      w.busySince = null;
       w.lastEvent = event ?? null;
       w.pending = false;
       if (event === 'PreToolUse') { w.openTools++; w.toolSince = at; }
@@ -131,6 +142,16 @@ export class SilentWatch {
   beat(members: readonly WatchMember[]): void {
     const now = this.deps.now();
     let dirty = false;
+    // After a gap in the beats (sleep, a stall) no stretch of printing or wait
+    // for a first report carries over: each starts again from this beat.
+    if (this.lastBeatAt !== null && now - this.lastBeatAt > BEAT_GAP_MS) {
+      for (const w of this.watches.values()) {
+        w.busySince = null;
+        w.pending = false;
+        if (w.firstOutputAt !== null) w.firstOutputAt = now;
+      }
+    }
+    this.lastBeatAt = now;
     const present = new Set(members.map((m) => m.id));
     // A member removed, closed or deleted while its card is open drops off the
     // card, and Michael hears its mail is his to route (ship review).
@@ -178,7 +199,12 @@ export class SilentWatch {
         if (m.running) this.maybeStop(m, ep);
         dirty = true;
       }
-      if (!m.running || !m.ptyId) { this.notRunning.add(m.id); continue; }
+      if (!m.running || !m.ptyId) {
+        this.notRunning.add(m.id);
+        const old = this.watches.get(m.id);
+        if (old) old.gone = true;
+        continue;
+      }
       this.notRunning.delete(m.id);
       let w = this.watches.get(m.id);
       if (!w || w.ptyId !== m.ptyId || (m.pid !== undefined && w.pid !== undefined && w.pid !== m.pid)) {
@@ -188,7 +214,7 @@ export class SilentWatch {
         // A report since the old process was last seen came from the new one:
         // it reported before this beat noticed the restart.
         const carried = w && w.lastHookAt !== null && w.seenAt !== null && w.lastHookAt > w.seenAt && w.lastEvent === 'SessionStart' ? w.lastHookAt : null;
-        w = { ptyId: m.ptyId, pid: m.pid, firstOutputAt: null, lastHookAt: this.early.get(m.id) ?? carried, pending: false, openTools: 0, toolSince: null, seenAt: null, lastEvent: null };
+        w = { ptyId: m.ptyId, pid: m.pid, firstOutputAt: null, lastHookAt: this.early.get(m.id) ?? carried, busySince: null, pending: false, openTools: 0, toolSince: null, seenAt: null, lastEvent: null };
         this.early.delete(m.id);
         this.watches.set(m.id, w);
         // Its card waits on the new process, on the engine it runs now.
@@ -196,7 +222,17 @@ export class SilentWatch {
         else if (ep?.stopped) { ep.stopped = false; dirty = true; }
         // A restored member's wait counts from its start, not the app's.
         if (ep?.state === 'checking') ep.waitSince = now;
-      } else if (w.pid === undefined && m.pid !== undefined) w.pid = m.pid;
+      } else {
+        if (w.pid === undefined && m.pid !== undefined) w.pid = m.pid;
+        // The same process back after a beat that missed it: its reports since
+        // were held as early ones.
+        if (w.gone) {
+          w.gone = false;
+          const early = this.early.get(m.id);
+          if (early !== undefined && (w.lastHookAt === null || early > w.lastHookAt)) { w.lastHookAt = early; w.busySince = null; }
+          this.early.delete(m.id);
+        }
+      }
       w.seenAt = now;
       // The clock starts at the first real output, not at spawn (outside voice 1).
       if (m.hasOutput && w.firstOutputAt === null) w.firstOutputAt = now;
@@ -213,10 +249,15 @@ export class SilentWatch {
       return w.firstOutputAt !== null && now - w.firstOutputAt >= CHECK_IN_MS ? 'never' : null;
     }
     if (!m.statusTicks) return null;
+    // Busy means still printing since the last report, and quiet means busy
+    // for QUIET_MS without one: an idle screen that redraws once is never quiet.
+    // The stretch is tracked through a long tool call, which only defers it.
+    const printing = m.lastOutputAt > w.lastHookAt && now - m.lastOutputAt < BUSY_FRESH_MS;
+    if (!printing) { w.busySince = null; return null; }
+    w.busySince ??= now;
     if (w.toolSince !== null && now - w.toolSince < LONG_TOOL_MS) return null;
-    const busy = m.lastOutputAt > w.lastHookAt && now - m.lastOutputAt < QUIET_MS;
     const typing = m.lastInputAt > 0 && now - m.lastInputAt < QUIET_MS;
-    return busy && !typing && now - w.lastHookAt >= QUIET_MS ? 'quiet' : null;
+    return !typing && now - w.busySince >= QUIET_MS && now - w.lastHookAt >= QUIET_MS ? 'quiet' : null;
   }
 
   /** Silence held on two beats in a row. True when an episode changed. */

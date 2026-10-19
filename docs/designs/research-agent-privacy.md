@@ -247,6 +247,19 @@ is treated as untrusted:
 Known limit (owner D6): the review hit its cycle cap with converged false; a P1 TODO moves
 its mail to folders only the app writes.
 
+### Research versus the app's upkeep (owner, 2026-10-17)
+
+The check guards what Research may research with, and the Pulse list ("Questions sent to the
+internet") shows only that. Research is decided by who sent the message, never by its words:
+anything a teammate, Michael or the owner sends Research is research, checked and listed. The
+app's own upkeep notes (Office open, You were restarted, carry on after a stop, a schedule
+decision) are stamped `upkeep` by the code that sends them (`hive.send`'s third argument,
+`src/shared/upkeep.ts`); nothing in a message's file can set it. A fixed note whose words are
+exactly the app's own reaches Research with no paid check and is logged as
+`upkeep-to-research`; upkeep carrying anyone's words (a schedule decision with a note) is
+checked. Upkeep is never listed, counted or held in the lists. Research report:
+`reports/Message type stamping for trust layer.md`.
+
 ## The guard (superseded by the trust layer above)
 
 Every message addressed to the Research agent is checked before delivery.

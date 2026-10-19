@@ -12,6 +12,16 @@
 export const CHECK_IN_MS = 60_000;
 /** Mid work silence, Claude only: its terminal busy, no report this long (SD9). */
 export const QUIET_MS = 3 * 60_000;
+/** Output this recent means the terminal is still printing. A working Claude
+ *  repaints many times a second; an idle screen that redraws once (a refit, a
+ *  resize) goes still at once, so a single redraw never starts the quiet clock
+ *  (2026-10-17: one redraw flagged ten idle members as not reporting). */
+export const BUSY_FRESH_MS = 15_000;
+/** The watch beats every 8 s. A longer gap means the beats stopped (the Mac
+ *  slept, or the app stalled), so output on either side of it is two separate
+ *  redraws, never one unbroken stretch (2026-10-17: a lid closed at 22:55 and
+ *  opened at 23:07 flagged eight idle members as not reporting). */
+export const BEAT_GAP_MS = 30_000;
 /** One tool call (a long build or test run) sends no report until it ends, so
  *  a member inside one is not quiet until it has run this long, longer than
  *  Claude Code's longest shell command (ship review 2026-10-17). */

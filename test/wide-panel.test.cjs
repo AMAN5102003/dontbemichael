@@ -130,7 +130,8 @@ test('the wide choice is remembered on this computer, never set by the window, a
   assert.match(store, /try \{ return window\.localStorage\.getItem\(LS_PANEL_WIDE\) === '1'; \} catch \{ return false; \}/);
   assert.match(store, /try \{ window\.localStorage\.setItem\(LS_PANEL_WIDE, on \? '1' : '0'\); \} catch \{ \/\* noop \*\/ \}/);
   const app = read('src/renderer/src/App.tsx');
-  assert.match(app, /const wide = panelWide && columnShown && rightColumn === 'person' && !!agent;/);
+  // The wide 1:1 takes the center from a panel when opened last (8A, wide-dock.test.cjs).
+  assert.match(app, /const wide = panelCentered\(\{ panelWide, panelOpen: columnShown && rightColumn === 'person' && !!agent, dockCentered: dockWide \}\);/);
   assert.doesNotMatch(app, /innerWidth[^\n]*setPanelWide|setPanelWide\(window/);
 });
 
@@ -140,8 +141,8 @@ test('wide, the column keeps its slot so the office never reflows, and the offic
   assert.match(app, /<StudioStage config=\{config\} bleed=\{columnShown \? sidebarWidth \+ 10 : 0\} \/>/, 'bleed unchanged');
   assert.match(app, /\{wide && <div aria-hidden style=\{\{ width: sidebarWidth \+ 6, flexShrink: 0 \}\} \/>\}/, 'the slot');
   assert.match(app, /\? \{ position: 'absolute', top: 12, bottom: 12, left: '10%', right: '10%', margin: 0 \}/, '10% in from each side');
-  assert.match(app, /\{wide && <div aria-hidden className="cth-wide-scrim" style=\{\{ position: 'absolute', inset: 0, zIndex: 190/, 'inside the row under the top bar');
-  assert.match(app, /stageRef\.current\?\.toggleAttribute\('inert', wide\)/);
+  assert.match(app, /\{\(wide \|\| dockWide\) && <div aria-hidden className="cth-wide-scrim" style=\{\{ position: 'absolute', inset: 0, zIndex: 190/, 'inside the row under the top bar');
+  assert.match(app, /stageRef\.current\?\.toggleAttribute\('inert', wide \|\| dockWide\)/);
   assert.match(app, /data-wide-panel=\{wide \|\| undefined\}/);
   const css = read('src/renderer/src/design/global.css');
   assert.match(css, /\[data-wide-panel\] \[data-panel-body\]:not\(\[data-tab="terminal"\]\) > \* \{ padding-inline: max\(16px, calc\(\(100% - 720px\) \/ 2\)\) !important; \}/, 'text at most 720 px, the terminal full width (WD2, WD5)');

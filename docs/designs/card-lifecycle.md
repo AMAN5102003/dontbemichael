@@ -179,6 +179,23 @@ member" in Doing, so Doing could not tell work in progress from work on hold.
   Doing, so no card ever reached Waiting. An office still on that focus, word
   for word, gets the current one at launch; a focus the owner wrote stays as it
   is.
+- **A Waiting card comes back (owner, 2026-10-17; eng review D4 E, D5 B;
+  research "Waiting task follow up ownership").** Until then nothing brought a
+  Waiting card back: the standup said "else chase them" with no date. Now the
+  job is split. The team member whose work waits tells Michael when to check
+  back: a date the other side named ("next week" becomes the first working
+  morning after it), else their own judgement. Michael keeps it on the card as
+  `nextAt`. The app keeps the clock (`waitingChecks` in shared/cardGuards.ts,
+  saved with the board guard, so a restart neither forgets nor repeats): a
+  missing, unreadable, past or more than 30 days out time becomes three
+  business days after the app first saw the card Waiting. When the time comes,
+  Michael gets one "Follow up due" note (never the person directly) and the card
+  sits on his WAITING CARDS GONE QUIET list every turn while overdue. A new
+  check back time set after one came counts as a follow up; after two with no
+  reply, the note tells him to ask the owner on Ask me whether to keep waiting
+  or close it. A card that leaves Waiting loses its clock, so one that comes
+  back starts afresh. The standup's focus works the list; an office on the old
+  "else chase them" text gets the new one at launch.
 
 ### 9. Questions held the wrong way (2026-10-04)
 

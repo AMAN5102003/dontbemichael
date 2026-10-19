@@ -7,8 +7,9 @@
  *
  *   question to Research ─ what Research got: agents/research/inbox(/.done)
  *                        ─ what was written: the sender's outbox/.sent copy,
- *                          the owner's answer on its Ask me card (tasks.json),
- *                          or the app's own fixed "Office open" note
+ *                          or the owner's answer on its Ask me card (tasks.json);
+ *                          the app's own upkeep notes are never questions
+ *                          (shared/upkeep.ts), so none is filled in
  *   Research's answer    ─ what it wrote: research-outbox/sent (or its outbox/.sent)
  *                        ─ what the team read: the copy in the recipient's
  *                          inbox, named research-<hash of file name and text>
@@ -23,7 +24,6 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { CHECKED_FILE, CHECKED_KEEP_MS, keepText, parseChecked, type CheckedRow } from '../shared/checkedRecord';
-import { OFFICE_OPEN_SUBJECT } from '../shared/officeOpen';
 import { RESEARCH_REPLY_LABEL, researchText } from '../shared/research';
 import { readMessageFile, realFolderIn, researchDeliveredId } from './messageFile';
 
@@ -120,11 +120,6 @@ export function backfillChecked(i: BackfillInput): CheckedRow[] {
       // The answer saved on the card moments before Research got its copy.
       const a = answers.filter((x) => x.at <= at + 5_000 && at - x.at < 10 * 60_000).sort((x, y) => y.at - x.at)[0];
       if (a) rows.push(row(at, 'in', from, i.researchId, texts({ subject: `The owner answered: ${a.title.slice(0, 120)}`, body: `Q: ${a.q}\nA: ${a.a}` }, got)));
-      continue;
-    }
-    if ((from === 'human' || from === 'system') && str(m.subject) === OFFICE_OPEN_SUBJECT) {
-      // The app's own fixed note: what it wrote is what it always writes.
-      rows.push(row(at, 'in', from, i.researchId, texts(got, got)));
       continue;
     }
     if (from === 'human' || from === 'system') continue;

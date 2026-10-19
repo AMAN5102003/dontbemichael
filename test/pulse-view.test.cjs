@@ -70,10 +70,30 @@ test('line icons, never emoji; Team at work lists everyone on the team busiest f
 test('Kept safe counts what was stopped apart from what could not be checked, and held work is the only amber tile', () => {
   // Value: protects=Kept safe honesty; fails_when=held messages read as protection, or held turns calm while messages wait; why_new=owner proposal 3; seam=none; no_claim=none beyond protects
   const held = view.slice(view.indexOf('<StatTile icon="pause"'), view.indexOf('<StatTile icon="lock"'));
-  assert.match(held, /text=\{t\(safe\.held > 0 \? 'pulse\.safe\.held' : 'pulse\.safe\.heldNone'\)\} amber=\{safe\.held > 0\}/);
-  assert.equal(en.pulse.safe.held, 'messages held back because the safety check could not run. Nothing went out unchecked.');
+  assert.match(held, /text=\{t\('pulse\.safe\.held'\)\} amber=\{safe\.held > 0\}/);
+  assert.equal(en.pulse.safe.held, 'messages held');
+  assert.equal(en.pulse.safe.heldTip, 'When the check cannot run, the message waits instead of going out unchecked.', 'the (i) keeps "nothing goes out unchecked"');
   assert.doesNotMatch(view, /<Section title=\{t\('pulse\.safe\.title'\)\}/, 'no Kept safe header; each tile says what it guards (owner, 2026-10-15)');
   assert.match(view, /since: fmtDay\(view\.liveSince \?\? Date\.now\(\)\)/, 'recommendations count from live recording, not the backfill');
+});
+
+test('Kept safe tiles say what they count in a few words, keep the meaning in their own (i), and drop legends of zeros (owner, 2026-10-18)', () => {
+  // Value: protects=design review D2 A, 1A and 2A (fields only, explanations behind the (i)); fails_when=a sentence comes back under a number, a zero state swaps the label, two tiles share one tip again, or a legend of zeros returns; why_new=owner report (too verbose); seam=source pins and locale files; no_claim=the rendered tiles
+  assert.match(view, /tip=\{t\('pulse\.safe\.toInternetTip'\)\} text=\{t\('pulse\.safe\.toInternet'\)\}/);
+  assert.match(view, /tip=\{t\('pulse\.safe\.answersTip'\)\} text=\{t\('pulse\.safe\.answersCleaned'\)\}/);
+  assert.match(view, /text=\{t\('pulse\.safe\.rules'\)\}/);
+  assert.doesNotMatch(view, /toInternetNone|heldNone|rulesNone|pulse\.safe\.trustTip/);
+  assert.match(view, /const shown = all\.some\(\(p\) => p\.n > 0\) \? all\.filter\(\(p\) => p\.n > 0 \|\| all\.length <= 3\) : \[\];/, 'no legend of zeros');
+  for (const k of ['toInternet', 'answersCleaned', 'held', 'rules']) assert.ok(en.pulse.safe[k].split(' ').length <= 5, `${k} is a label, not a sentence`);
+  for (const k of ['sentAsWritten', 'privateOut', 'stopped', 'cleaned', 'nothingToRemove']) assert.ok(en.pulse.safe[k].split(' ').length <= 3, k);
+  for (const g of Object.values(en.pulse.safe.gate)) assert.ok(g.split(' ').length <= 3, g);
+  for (const loc of ['en', 'zh-CN', 'ar']) {
+    const s = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/i18n/locales', `${loc}.json`), 'utf8')).pulse.safe;
+    for (const k of ['toInternet', 'answersCleaned', 'held', 'rules', 'toInternetTip', 'answersTip', 'heldTip', 'rulesTip']) {
+      assert.equal(typeof s[k], 'string', `${loc} ${k}`);
+      assert.doesNotMatch(s[k], /[–—]| - /, `${loc} ${k}`);
+    }
+  }
 });
 
 test('the layout follows the stage width, and every picture has words', () => {

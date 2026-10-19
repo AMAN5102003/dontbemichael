@@ -354,7 +354,7 @@ Rules:
 | `t-view` | 20 / 26 | 600 | View title on the stage ("Office", "Tasks") |
 | `t-panel` | 15 / 20 | 600 | Right column heading, person name in the panel header |
 | `t-ui` | 13 / 18 | 400 to 600 | Base UI: tabs, buttons, inputs, body |
-| `t-read` | 14 / 22 | 400 | Long text boxes in a wide panel only (what a person handles, their work style) |
+| `t-read` | 14 / 22 | 400 | Long text boxes in a wide panel only (what a person handles, their work style), and the wide 1:1's questions and replies (§7.19) |
 | `t-body` | 12 / 16.5 | 400 | Card body text, Michael's questions, descriptions |
 | `t-meta` | 11 / 15 | 400 to 600 | Captions, chips, meta lines, hints |
 | `t-micro` | 10 / 13 | 600 | Uppercase micro labels, status pills, badges |
@@ -512,7 +512,10 @@ re-reads the file within a second of a change while shown, keeping the scroll.
 ### 7.3 Clock pill
 
 Pill, `card` fill, `line` border, padding 6 × 12. Green live dot (7 px with a 3 px
-`green` soft halo), mono time in `ink` 600, "Office open" in `ink-2`, a chevron. Click
+`green` soft halo), mono time in `ink` 600, "Office open" in `ink-2`, a chevron. While the
+office opens (§7.24) the dot is `indigo` with the slow pulse and the words are "Opening" and
+a mono "5 of 12" (no count before any team exists), on every view; it goes back to "Office
+open" when everyone is in or at the one minute cap (design review 1A, 2026-10-18). Click
 opens a menu: **Office schedule** (opens Michael's Office schedule tab), **Closing time**
 (starts the closing time flow). Office hours are not a setting in the app (packs carry
 `officeHours`, which only starter jobs and the Tasks view's "hasn't moved this" read), so the
@@ -582,7 +585,9 @@ from each side, 12 px under the top bar and above the bottom edge, at every wind
 The choice is remembered on this computer and applies to every panel that can open wide;
 it is never set by the window's size. The Needs you board and Ask me cards never go wide.
 The column keeps its slot, so the office does not reflow, and dims under the top bar
-(`--cth-backdrop`), so the coral pill stays bright and live; the office and the bottom bar
+(`--cth-backdrop`), so the coral pill stays bright and live; only one thing holds the center,
+whichever the owner opened last, this or the wide 1:1 (§7.19), the other back to the side for now
+(the Needs you board and a panel at the side sit beside the wide 1:1 instead); the office and the bottom bar
 are out of reach (inert) and a click on the dimming does nothing. Inside, text is at most
 720 px across and centered; the Work tab's terminal fills the panel. Edit agent lays over
 the wide panel in two columns: the short fields (300 to 360 px) and the work style (up
@@ -902,15 +907,16 @@ was a distraction). There is no chip: the name plate on his glass is the way in.
 or focusing it opens the full hub card just under the plate and lights the plate's rim in
 `indigo`; a click selects him, which keeps the card open.
 
-The hub card: 196 px wide, `r-2xl`, `shadow-hub`.
+The hub card: 212 px wide (so the five board labels never touch), `r-2xl`, `shadow-hub`.
 
 - Top: 26 px avatar (Michael's mug on ink, §3.4), name, "Office Manager", status pill, caption.
 - Stats strip (`card-2`): three columns, mono 16 px 600 numbers: **delegated** (today's
   hive messages from Michael with act `request`), **to you** (open Ask me cards), **kept**
   (tasks assigned to Michael himself). Labels `t-micro` 400 `ink-3`. "to you" in `coral`
   text when above zero.
-- Task board strip: To do, Doing, Blocked, Done with 6 px square keys (`ink-4`, `blue`,
-  `coral`, `green`) and mono counts. Click opens Tasks.
+- Task board strip: To do, Doing, Waiting, Blocked, Done, the Tasks view's columns and words,
+  with 6 px square keys (`ink-4`, `blue`, `amber`, `coral`, `green`) and mono counts. Click
+  opens Tasks.
 - Context meter: label, 5 px bar with the indigo gradient (§3.8), mono percent.
 
 ### 7.18 Mailbox tag
@@ -926,8 +932,8 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
 - **Talk to Michael composer** (MessageQueueComposer for Michael; owner, 2026-09-30: "Brief
   Michael" was unclear): 400 px, 50 px tall,
   `card`, `line-2` border, `r-2xl`, `shadow-lg`. When Michael's conversation has saved history, a
-  conversation button first (34 × 34, `neutral-soft`, `r-md`, a speech bubble; `ink` fill while the
-  dock is open) opens or closes the dock. Attach button (34 × 34, `neutral-soft`,
+  conversation button first (34 × 34, `neutral-soft`, `r-md`, a chevron: up to open, down while the
+  dock is open, with an `ink` fill) opens or closes the dock. Attach button (34 × 34, `neutral-soft`,
   `r-md`), a message box with placeholder "Talk to Michael…", primary button "Send" with
   an arrow. The box grows with the text up to 140 px, then scrolls; the composer grows
   upward from the bar's bottom edge with its buttons on the bottom row, and the chips
@@ -942,7 +948,13 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   words on §3.5 meanings: Sent and Waiting on X `ink-3`, Michael has it `blue`, Answered
   `green`, Later than he said `amber` with Nudge, Waiting for you `coral-text`, Couldn't
   finish `ink-2` with Ask again). Michael's replies sit left on `card` with a `line` ring,
-  markdown at 12.5 / 18, first sentence bold, 4 lines then More, files as §7.8 chips (notes too);
+  markdown at 12.5 / 18, first sentence bold. A longer reply is the answer first, then lists
+  (markers `ink-3`), small tables or short paragraphs under bold labels (paragraphs 0.6em apart). Tables
+  fill the bubble, rows split by a `line` rule, headers 11 px 600 `ink-3`, amount columns mono 12 px with
+  tabular figures; a table too wide scrolls sideways in its own box, which takes Tab (focus ring `indigo`)
+  and is labelled "Table". A long reply folds at 8 lines of height (notes 6) with a 24 px fade into the
+  bubble, then More. Reply shows under Michael's question back and under his latest answer to an
+  answered question. Files as §7.8 chips (notes too);
   terminal notes are muted (`card-2`, "From Michael's notes"); a refusal with no reason
   reads "No reason given". Bubble tails and the quote bar use logical corners and edges,
   so they mirror in Arabic. Empty: one line and two example chips. The dock slides 180 ms
@@ -951,6 +963,18 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   `coral-strong` (`on-coral` text) while Michael waits on the owner. The dock
   opens only on the owner's action and closes on ✕, Esc, or a floor click with nothing
   typed. A known slash command still types straight into Michael's terminal.
+  **Wide 1:1** (design review 2026-10-17): Open wide beside ✕ (the wide panel's button, §7.6)
+  moves the conversation and the message box to the center, one card with the box at the bottom
+  (its ring only, `indigo` on focus), the office dimmed and out of reach, the box's slot kept in
+  the bar. It never covers the right column (owner, 2026-10-17: a question on Needs you may be what
+  you ask Michael): with the column open it fills the office's width, 24 px from the office's
+  edge and 12 px from the column, and the column stays bright and live; with the column closed it
+  takes the wide panel's frame. Its own choice, remembered on this computer,
+  changed only by that button. Text at most 720 px across, `t-read` 14 / 22, owner bubbles at
+  most 560 px; nothing folds; tables as wide as their columns, 24 px apart, headers 12 px,
+  amounts 13 px mono. Esc goes back to the side for now, a second Esc closes. The move is the
+  wide panel's 320 ms transform; reduced motion switches at once. The box keeps its text, files
+  and reply target and takes focus at the end of the text.
 - **Next job chip**: calendar icon, "Next:" `ink-2`, mono time 600, job and person.
   `card`, `line`, `r-lg`, 40 px tall. Click opens Office schedule.
 - **Hire**, pushed right: secondary "Hire" with a plus (opens the hire wizard). No pack
@@ -966,6 +990,16 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   (`amber` key, yellow), Blocked, Done. Column head: key dot, name `t-ui` 600, mono count. Blocked
   column tinted `coral` soft. A Waiting card shows an `amber` soft chip "Waiting on {who}"
   (card-lifecycle.md section 8).
+- Order (owner, 2026-10-17): To do, Doing, Waiting and Blocked read earliest Next first; cards
+  with no Next time come after the dated ones; at the same time the higher priority first, then
+  the order made. A time already passed is earliest. Done reads newest first. Search and the
+  member filter keep the same order.
+- Time groups (owner, 2026-10-17): each open lane is cut by the card's Next time, in the
+  viewer's local calendar, with a heading where the group changes (11.5 px 600 `ink-3`,
+  Overdue in `coral-text`): Overdue, Today, Tomorrow, This month, This quarter (the rest of the
+  current quarter; in October to December it reads Later this year), Next quarter, Later this
+  year, Next year, Later (two years or more), No date. Groups run earliest to latest; an empty
+  group shows no heading, and a lane with no dated card shows none at all. Done has no groups.
 - Task card: `card`, `line`, `r-lg`, padding 12. Mono id (`#112`, `ink-3`), title `t-ui` 600
   up to 2 lines, assignee avatar plus name. Waiting on the owner: a 18 px coral "?"
   circle top right. Done: a small green check, text in `ink-2`. Hover shows the dismiss
@@ -998,7 +1032,8 @@ Centered overlay over the stage (never over the right column), 528 px wide, `r-2
   Cards carry no running notes (owner, 2026-10-11: agents used them as diaries; an agent's
   activity lives in its conversation and the office log). A To do card with a one off
   step at a set time shows "Next: Mon, 12 Oct, 8:00 AM" (`nextAt`, local time), on the
-  card under the assignee and in the detail.
+  card under the assignee and in the detail, with the year when it is not this year
+  ("Next: Mon, 4 Jan 2027, 9:00 AM").
   QUESTIONS (the Q and A trail, newest first like Ask me, each question's top row saying
   how long ago it was asked, "5d ago", 11 px `ink-3` as on Ask me cards, nothing when the
   time is missing; an open question sits
@@ -1058,8 +1093,25 @@ Centered overlay over the stage (never over the right column), 528 px wide, `r-2
 ### 7.24 Empty and starting states
 
 - **Starting**: the office opens dark and the lights come up as people clock in (§8.12).
-  Before any team member exists, a small card over the studio says Michael is clocking in,
-  with a slow `indigo` pulse.
+  A card over Michael's pod says so (owner, 2026-10-17; design review 2026-10-18, the owner
+  found the white card easy to miss among the name chips). It is the one colored card on the
+  floor: `indigo-soft` fill, a 1.5 px `indigo` ring plus `shadow-lg`, `r-xl`, padding 14 × 16,
+  min(300 px, stage width less 32); the floor stays clickable under it
+  (`components/OpeningCard.tsx`). Rows: the 12 px `indigo` dot with the slow pulse, "Clocking
+  in" at `t-view` 600, the mono count ("5 of 12 in", `t-ui`, `ink-2`) at the end; a 4 px bar
+  (`indigo` on `indigo` 20%, `role=progressbar`); "Still coming: Toby, Ryan, Oscar and 4 more"
+  (`t-body`, `ink-2`, roster order). When the last person is in it turns `green-soft` with a
+  `green` ring and a check, "Everyone's in", the full bar, for 2 s, then fades in 300 ms. If
+  anyone is still out at the one minute cap it turns `amber-soft` with an `amber` ring and a
+  still dot: "11 of 12 in" and "Toby hasn't clocked in." (or "Toby and 2 more haven't clocked
+  in.") for 4 s, then fades; Needs you's not reporting card carries it from there when the app
+  sees that engine running without reporting. The opening runs from launch, or a Restore team,
+  until that first end (never before the automatic restore has had its chance), and then it is
+  over for the session: a hire or Research turned on later clocks in on their own desk only,
+  with no card and no pill change. Before any team member exists, Michael's own start uses the
+  same card ("Michael is clocking in", no count, bar or names). A screen reader hears the
+  opening once ("Office opening, 5 of 12 in") and its end once, never each count. The clock
+  pill agrees (§7.3).
 - **No team yet**: the platform with Michael's pod only, a centered card "Your office is
   empty" and a primary "Hire" button.
 - **Needs you empty**: there is no empty board. With nothing waiting the column is closed
@@ -1214,12 +1266,16 @@ half written message survives the switch.
   scheduled checks), each a line icon (mail, send, check, clock, 18 px `ink-2` on a `card-2`
   square), a mono 28 px number, a label, and a who did it bar: members of one department take
   its `acc`, then `m`, then `d`, with a 2 px gap and a named legend.
-- **Kept safe**, with no header (owner, 2026-10-15; each tile's text says what it guards, with an (i) on how): four tiles of the same build (line icons shield, search, pause, lock):
-  questions that went to the internet (sent as written, private parts taken out first,
-  stopped), web answers with instructions to AI agents removed (of all answers; flagged to
-  Michael), messages held because the check could not run (`amber` soft while above zero,
-  "Nothing went out unchecked"), and steps stopped by the owner's settings by gate. A held
-  message is never counted as protection. Above zero, the held tile carries "See what was held"
+- **Kept safe**, with no header (owner, 2026-10-15): four tiles of the same build (line icons
+  shield, search, pause, lock). Each names its number in a few words, the same at zero and above,
+  and its own (i) says how (owner, 2026-10-18: fields only): "questions to the internet" (As
+  written, Private parts removed, Stopped; the (i): each question is checked for private details
+  before it goes out), "web answers cleaned" with "of N" (Cleaned, Already clean, Flagged to
+  Michael; the (i): hidden instructions to AI agents are taken out before the team reads them),
+  "messages held" (`amber` soft while above zero; the (i): the message waits instead of going out
+  unchecked), and "steps blocked by your settings" by gate (Unconfirmed sender, Connector off,
+  Outside the sandbox, Internet, not research, and the rest). A tile's bar and legend show only
+  once one of its parts is above zero. A held message is never counted as protection. Above zero, the held tile carries "See what was held"
   (12/600, `amber` text), which opens a list in the member detail's frame (owner, 2026-10-16):
   per held message a `card-2` row in the owner's words (owner, 2026-10-16): a 13/600 headline
   saying what was not sent ("Pete's notes were not added to the team's shared knowledge",
@@ -1349,9 +1405,10 @@ that glows green while he works; it always ends before the glass's corner (owner
 2026-09-30: an "M" badge said nothing; a door plate says whose office it is). It sits at the center of the platform. The glass is taller
 than a desk (72) so his walls carry his numbers:
 
-- Left wall: the task board. To do, Doing, Blocked, Done read left to right, each column's
-  count in mono inside the board's top (never on its edge) in the column color, up to four
-  stickies under it. Stickies pop
+- Left wall: the task board. To do, Doing, Waiting (`amber`), Blocked, Done read left to
+  right, as the Tasks view does, so the wall adds up to it (owner, 2026-10-18); five columns
+  fill the board the way four did. Each column's count in mono inside the board's top (never
+  on its edge) in the column color, up to four stickies under it. Stickies pop
   on; Doing breathes; his marker writes under the columns while he works.
 - Right wall, above the monitors: a lit sign (ink, indigo rim) with three mono numbers and
   glyphs: handed out today, waiting on you (coral when above zero), kept; his context gauge
@@ -1950,6 +2007,12 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-15 | Pulse, a view tab between Tasks and Who talks to whom that takes the whole window: recommendations, what got done, Kept safe, the row of four tiles, Team at work, and trends on Last 4 weeks (§5.2, §7.2, §7.6, §7.27). |
 | 2026-10-16 | Pulse: periods Today, This week, This month, and Compare, two bars per tile against the span before up to the same day, the switch kept in place while a period cannot compare yet; Last week and Last 4 weeks go (§7.27). |
 | 2026-10-17 | Not reporting (§7.6b): a card on Needs you when a team member's engine stops reporting to the app, one per engine version, with Restart, Change engine and Keep working unchecked; an amber Not reporting tag on its pod and panel; the office's own card for Michael. §6.3 drops the stale coral left rule on Ask me cards (§7.8 has none since 2026-09-30). |
+| 2026-10-17 | Tasks board: time group headings in each open lane (Overdue to No date, §7.20). |
+| 2026-10-17 | Tasks board: open columns read earliest Next first, no Next after, ties by priority then the order made; the Next line shows the year when it is not this year (§7.20, §7.21). |
+| 2026-10-17 | Wide 1:1: Open wide moves the conversation with Michael and its box to the center, beside the right column and never over it; its own remembered choice; `t-read`, no fold and content sized tables while wide; Esc to the side, then close; one thing in the center, last opened wins (§4.2, §7.6, §7.19). |
+| 2026-10-18 | Office opening: the Clocking in card is the one colored card on the floor (indigo, `t-view` title, a bar, who is still coming), ends with "Everyone's in" or who has not clocked in at the cap, runs only from launch or a Restore team, and Michael's own start shares it; the clock pill says "Opening" and the count meanwhile; the screen reader hears start and end only (§7.3, §7.24). |
+| 2026-10-18 | Michael's wall and hub card count Waiting: five columns in the Tasks view's order (To do, Doing, Waiting, Blocked, Done), Waiting in `amber`; the hub card is 212 px so the five labels never touch (§7.17, §8.4). |
+| 2026-10-18 | Pulse, Kept safe: each tile names its number in a few words, the same at zero, with its own (i); shorter legend and gate names; a tile's legend shows only once a part is above zero (§7.27). |
 | 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
 

@@ -17,6 +17,7 @@ import { useArabicTerminalSync } from '@/terminal/useArabicTerminalSync';
 import { AgentDetailPanel } from '@/components/AgentDetailPanel';
 import { AddAgentModal } from '@/components/AddAgentModal';
 import { MichaelBooting } from '@/components/MichaelBooting';
+import { TeamClockingIn } from '@/components/TeamClockingIn';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
 import { OfficeFolderMissing } from '@/components/OfficeFolderMissing';
 import { ClosingTimeBar, type ClosingTimeState } from '@/components/ClosingTimeBar';
@@ -43,6 +44,8 @@ import { columnAfterGoneHome } from '@/shell/closingFloor';
 import { watchReturningBindings } from '@/shell/releaseBindings';
 import { NEEDS_YOU_PILL_ID, columnEscAction, columnLocked, focusNeedsYouPill } from '@/shell/rightColumn';
 import { BottomBar } from '@/shell/BottomBar';
+import { DOCK_CENTER_ID, panelCentered } from '@/shell/wideCenter';
+import { useDockCentered } from '@/hooks/useCenter';
 import { PANEL_MOVE_EVENT, PANEL_MOVE_MS } from '@/shell/Dialog';
 import { afterLeave } from '@/store/leaveGuard';
 
@@ -333,7 +336,7 @@ export function App() {
     const st = useStore.getState();
     const next = columnAfterGoneHome(st.rightColumn, st.selectedId, goneHome, locked);
     if (!next) return;
-    st.setRightColumn(next);
+    st.setRightColumn(next, { claim: false });
     afterLeave(() => document.querySelector<HTMLElement>('[data-closing-bar]')?.focus({ preventScroll: true }));
   }, [goneHome, locked]);
   const columnOpen = rightColumn !== 'closed';
@@ -355,9 +358,12 @@ export function App() {
   // the owner chose wide, moves to the center of the window, 10% in from each
   // side. Same element restyled, so a terminal or a half written reply
   // survives; its slot in the row stays, so the office never reflows (eng 2).
-  const wide = panelWide && columnShown && rightColumn === 'person' && !!agent;
-  // While wide the office and the bottom bar are out of reach (WD13).
-  useEffect(() => { stageRef.current?.toggleAttribute('inert', wide); }, [wide]);
+  // The wide 1:1 takes the center from it when the owner opened it last (8A).
+  const dockWide = useDockCentered();
+  const wide = panelCentered({ panelWide, panelOpen: columnShown && rightColumn === 'person' && !!agent, dockCentered: dockWide });
+  // While wide the office and the bottom bar are out of reach (WD13). The
+  // wide 1:1 leaves the right column live beside it (owner, 2026-10-17).
+  useEffect(() => { stageRef.current?.toggleAttribute('inert', wide || dockWide); }, [wide, dockWide]);
   // The move (WD9): the column takes its new place at once and a transform
   // carries it there from the old one over 320 ms. Boxes are read without
   // transforms (offset*), kept current as the column is dragged or the window
@@ -396,7 +402,7 @@ export function App() {
   }, [wide]);
   // An ask arriving, or waiting at launch, opens the board. Focus stays put.
   useEffect(() => {
-    if (locked && useStore.getState().rightColumn === 'closed') useStore.getState().setRightColumn('board');
+    if (locked && useStore.getState().rightColumn === 'closed') useStore.getState().setRightColumn('board', { claim: false });
   }, [locked, rightColumn]);
   // D4: after the last answer the board shows All clear and closes on the next
   // click outside it (not the pill, which toggles it, nor the splitter).
@@ -513,6 +519,8 @@ export function App() {
           {/* Over the office only, never over Tasks or the graph (DESIGN.md 7.6). */}
           {floorView === 'office' && <RestoreTeamBanner config={config} />}
           {agentCount === 0 && godStatus === 'booting' && <MichaelBooting />}
+          {/* The office opening runs on every view; its card shows on the floor (7.24). */}
+          <TeamClockingIn show={floorView === 'office'} />
           {agentCount === 0 && godStatus !== 'booting' && (
             <div style={{
               position: 'absolute', inset: 0,
@@ -617,7 +625,19 @@ export function App() {
         {/* While wide: the office dims under the top bar, so the coral pill
             stays bright, and a click on it does nothing (WD4, WD8); the
             column's slot stays, so the office keeps its size (eng 2). */}
-        {wide && <div aria-hidden className="cth-wide-scrim" style={{ position: 'absolute', inset: 0, zIndex: 190, background: 'var(--cth-backdrop)' }} />}
+        {(wide || dockWide) && <div aria-hidden className="cth-wide-scrim" style={{ position: 'absolute', inset: 0, zIndex: 190, background: 'var(--cth-backdrop)',
+          // The wide 1:1 dims the office only; the column (and its splitter) stay bright.
+          ...(dockWide && columnShown ? { insetInlineEnd: sidebarWidth + 16 } : {}) }} />}
+        {/* The wide 1:1 is drawn here, outside the stage that goes inert
+            (eng review R1, D14): the wide panel's frame, or with the right
+            column open the office's width beside it, never over Needs you
+            (owner, 2026-10-17). Empty and hidden otherwise; BottomBar portals
+            into it. */}
+        <div id={DOCK_CENTER_ID} style={{
+          position: 'absolute', top: 12, bottom: 12, zIndex: 200,
+          ...(columnShown ? { insetInlineStart: 24, insetInlineEnd: sidebarWidth + 28 } : { insetInlineStart: '10%', insetInlineEnd: '10%' }),
+          display: dockWide ? 'flex' : 'none', flexDirection: 'column', pointerEvents: 'none'
+        }} />
         {wide && <div aria-hidden style={{ width: sidebarWidth + 6, flexShrink: 0 }} />}
       </div>
 

@@ -43,7 +43,8 @@ function floor(opts = {}) {
     () => live,
     () => ({ send: (channel, ev) => { if (channel === 'app:closingTime') events.push(ev); } }),
     () => { concluded++; },
-    control
+    control,
+    opts.silent ? (id) => opts.silent.has(id) : undefined
   );
   const route = (from, subject, targets = ['god']) => ct.onRouted({ from, subject, to: targets[0] }, targets);
   // Closing time arms a 6-minute timer; cancel it so the test process ends.
@@ -140,7 +141,7 @@ test('COMPLETE closes the app after the grace, not before', (t) => {
 test('every update names who confirmed, who is still working, and Michael', (t) => {
   const f = floor({ t, workers: ['pam', 'dwight', 'jim'] });
   f.ct.start();
-  assert.deepEqual(last(f.events), { phase: 'started', acked: 0, total: 3, confirmed: [], waiting: ['pam', 'dwight', 'jim'], excused: [], godId: 'god', godLive: true, relaunch: false });
+  assert.deepEqual(last(f.events), { phase: 'started', acked: 0, total: 3, confirmed: [], waiting: ['pam', 'dwight', 'jim'], excused: [], notReporting: [], godId: 'god', godLive: true, relaunch: false });
   f.route('dwight', 'CLOSING-TIME-ACK');
   assert.deepEqual(last(f.events).confirmed, ['dwight']);
   assert.deepEqual(last(f.events).waiting, ['pam', 'jim']);
@@ -567,3 +568,51 @@ test('a reopen asked for mid-close counts, but a refused re-press never turns it
   g.ct.refresh();
   assert.equal(last(g.events).relaunch, false, 'the refused press changed nothing');
 });
+
+test('a team member that is not reporting is shown apart, not waited on, and Michael hears once', (t) => {
+  // Value: protects=closing time finishes when a member's engine isn't reporting (its mail is held, so it can never hear closing time); fails_when=it stays in waiting, COMPLETE is refused over it, Michael is not told or is told twice, or a member that reports again is not waited on; why_new=owner report 2026-10-17 (closing time stuck at 0 of 10); seam=the notReporting callback (main passes mailFor hold)
+  const silent = new Set(['dwight']);
+  const f = floor({ t, silent });
+  f.ct.start();
+  let ev = last(f.events);
+  assert.deepEqual(ev.waiting, ['pam']);
+  assert.deepEqual(ev.notReporting, ['dwight']);
+  const told = () => f.sent.filter((m) => m.to === 'god' && /isn't reporting to the app/.test(m.subject));
+  f.ct.refresh();
+  f.ct.refresh();
+  assert.equal(told().length, 1, 'Michael hears once');
+  assert.match(told()[0].body, /Do not wait for it; send CLOSING-TIME-COMPLETE once everyone else has acknowledged\./);
+  assert.doesNotMatch(told()[0].body, /[–—]| - /, 'no dashes in what Michael reads');
+  // Reporting again before closing ends: waited on again, so its ACK still counts.
+  silent.delete('dwight');
+  f.ct.refresh();
+  assert.deepEqual(last(f.events).waiting, ['pam', 'dwight']);
+  silent.add('dwight');
+  f.ct.refresh();
+  f.route('pam', 'CLOSING-TIME-ACK');
+  f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);
+  assert.equal(last(f.events).phase, 'complete', 'COMPLETE is accepted with only a not reporting member left');
+  assert.equal(f.sent.filter((m) => /still waiting on the team/.test(m.subject)).length, 0);
+});
+
+test('the closing bar lists members that are not reporting, and its count opens the list', () => {
+  // Value: protects=the owner sees who isn't reporting during closing time instead of "still working"; fails_when=the rows or the count pill drop them, or a language misses the words; why_new=owner report 2026-10-17; seam=source pins (no DOM harness)
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  assert.match(bar, /\{c && !done && \(waiting > 0 \|\| silent > 0\) && \(/);
+  assert.match(bar, /: t\('closingBar\.notReporting', \{ count: silent \}\)/);
+  assert.match(bar, /\{notReporting\.map\(\(id\) => \([\s\S]{0,200}t\('closingTime\.notReporting'\)/);
+  const main = read('src/main/index.ts');
+  assert.match(main, /\(agentId\) => mailFor\(silentWatch\?\.episode\(agentId\)\) === 'hold'\n\);/);
+  assert.match(main, /try \{ closingTimeRef\?\.refresh\(\); \}/);
+  for (const loc of ['en', 'zh-CN', 'ar']) {
+    const l = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
+    for (const v of [l.closingTime.notReporting, l.closingBar.notReporting]) {
+      assert.equal(typeof v, 'string', loc);
+      assert.doesNotMatch(v, /[–—]| - /, loc);
+    }
+  }
+});
+

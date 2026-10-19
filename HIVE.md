@@ -99,7 +99,7 @@ LISP syntax. Seven semantic fields:
 
 ```jsonc
 {
-  "id":            "2026-05-30T14-03-11-123Z-a1b2",  // unique, time-sortable
+  "id":            "2026-05-30T14-03-11-123Z-a1b2",  // set by the app, unique, time-sortable; one an agent writes is replaced
   "conversation":  "conv-7f3",                        // groups a thread
   "in_reply_to":   "<prev msgid> | null",
   "from":          "agent.researcher",

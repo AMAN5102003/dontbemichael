@@ -75,7 +75,7 @@ export function OnboardingStudio({ picked, unpicked, businessName }: {
               node: <Pod key={`pod-${pod.dept}`} grid={pod.grid} desks={inPod.map(() => ({ st: 'success' as const }))} c={families[pod.dept]} famKey={pod.dept} selected={false} T={T} dark={dark} />
             };
           }),
-          { depth: 0, node: <Hub key="hub" T={T} dark={dark} board={{ todo: 0, doing: 0, blocked: 0, done: 0 }} /> }
+          { depth: 0, node: <Hub key="hub" T={T} dark={dark} board={{ todo: 0, doing: 0, waiting: 0, blocked: 0, done: 0 }} /> }
         ].sort((a, b) => a.depth - b.depth).map((o) => o.node)}
       </svg>
       {/* Name tags */}

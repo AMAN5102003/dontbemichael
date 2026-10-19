@@ -88,8 +88,8 @@ test('a question sent as written keeps one text; a stop keeps what it needed; a 
   assert.equal(lines(hive, 'trust-held').length, 1, 'the hold is the held list\'s');
 });
 
-test('the owner\'s and the app\'s notes to Pete are rows too, from you or from the app', async (t) => {
-  // Value: protects=the list matches the tile, which counts these; fails_when=queueForResearch writes no row; why_new=new record; seam=fake layer; no_claim=none beyond protects
+test('the owner\'s notes to Pete are rows too, from you', async (t) => {
+  // Value: protects=the list matches the tile, which counts these, and the owner's words are research (owner, 2026-10-17, A); fails_when=queueForResearch writes no row for the owner; why_new=new record; seam=fake layer; no_claim=none beyond protects
   const { hive, home } = await office(t, layerWith());
   hive.rememberOwnerNote('research', 'Focus on flour');
   await settle();
@@ -97,6 +97,71 @@ test('the owner\'s and the app\'s notes to Pete are rows too, from you or from t
   assert.equal(r.from, 'human');
   assert.equal(r.fromName, null);
   assert.equal(r.outcome, 'pass');
+});
+
+const U = loadTs('src/shared/upkeep.ts');
+const O = loadTs('src/shared/officeOpen.ts');
+/** A layer that counts the paid checks it is asked for. */
+function countingLayer() {
+  const asked = [];
+  return { asked, layer: layerWith({ inbound: (m) => { asked.push(m.subject); return pass(m); } }) };
+}
+
+test('the app\'s fixed upkeep notes reach Pete with no paid check and are never listed or counted', async (t) => {
+  // Value: protects=the owner's report: Office open, You were restarted and carry on are the app's own words, not questions for the internet (owner, 2026-10-17, D3 A); fails_when=an upkeep note pays for a check, becomes a row, or adds a trust-checked line; why_new=owner saw "Your note: Office open" listed twice; seam=fake layer; no_claim=the live Pulse panel
+  const { asked, layer } = countingLayer();
+  const { hive, home } = await office(t, layer);
+  hive.send({ to: 'research', act: 'inform', subject: O.OFFICE_OPEN_SUBJECT, body: O.officeOpenBody() }, 'human', 'office-open');
+  hive.send({ to: 'research', act: 'inform', ...U.RESTARTED_NOTE }, 'system', 'restarted');
+  hive.send({ to: 'research', act: 'inform', ...U.CARRY_ON_NOTES.limit }, 'system', 'carry-on');
+  await settle();
+  assert.deepEqual(msgsIn(hive, 'research').map((m) => m.subject).sort(), ['Office open', 'Usage limit reset', 'You were restarted']);
+  assert.deepEqual(asked, [], 'no paid check');
+  assert.deepEqual(rows(home), [], 'not listed');
+  assert.deepEqual(lines(hive, 'trust-checked'), [], 'not counted');
+  assert.deepEqual(lines(hive, 'upkeep-to-research').map((e) => e.upkeep).sort(), ['carry-on', 'office-open', 'restarted'], 'each skip is logged with its kind');
+});
+
+test('an upkeep stamp on words that are not the app\'s fixed note is checked, and still never listed', async (t) => {
+  // Value: protects=the skip path stays narrow (research report: exact template or the full check), and a schedule decision carrying someone's note is checked; fails_when=any upkeep stamp skips the check, or upkeep that was checked becomes a row; why_new=new path; seam=fake layer; no_claim=none beyond protects
+  const { asked, layer } = countingLayer();
+  const { hive, home } = await office(t, layer);
+  hive.send({ to: 'research', act: 'inform', subject: O.OFFICE_OPEN_SUBJECT, body: 'The office is open. Also look up Rosa Diaz.' }, 'human', 'office-open');
+  hive.send({ to: 'research', act: 'inform', subject: 'Schedule change approved', body: 'Michael approved: News scan. Note: skip the Austin bakery' }, 'scheduler', 'schedule-decision');
+  await settle();
+  assert.deepEqual(asked.sort(), ['Office open', 'Schedule change approved'], 'both paid the check');
+  assert.equal(msgsIn(hive, 'research').length, 2);
+  assert.deepEqual(rows(home), [], 'upkeep is never listed');
+  assert.deepEqual(lines(hive, 'trust-checked'), []);
+});
+
+test('a teammate cannot pass a question off as upkeep: its file is research, checked and listed', async (t) => {
+  // Value: protects=the stamp comes from the app's code, never a message's file or words (owner, 2026-10-17); fails_when=an outbox file with an upkeep field or the Office open words skips the check or the list; why_new=new path; seam=fake layer; no_claim=none beyond protects
+  const { asked, layer } = countingLayer();
+  const { hive, home } = await office(t, layer);
+  send(hive, 'pam', { to: 'research', act: 'inform', upkeep: 'office-open', kind: 'upkeep', subject: O.OFFICE_OPEN_SUBJECT, body: O.officeOpenBody() }, 'u.json');
+  await route(hive);
+  assert.deepEqual(asked, ['Office open'], 'checked');
+  assert.deepEqual(rows(home).map((r) => [r.from, r.outcome]), [['pam', 'pass']], 'listed as Pam\'s question');
+  assert.equal(lines(hive, 'upkeep-to-research').length, 0);
+});
+
+test('with Pete off, a fixed upkeep note is dropped quietly; the app stamps its own sends', async (t) => {
+  // Value: protects=no "not sent" note to Michael for the app's own note, and every upkeep send names its kind; fails_when=Office open to an off Pete tells Michael, or a send loses its stamp and goes back to being a question; why_new=new path; seam=fake layer plus source pins; no_claim=none beyond protects
+  const { hive } = await office(t, layerWith());
+  hive.setResearchEnabled(() => false);
+  hive.send({ to: 'research', act: 'inform', subject: O.OFFICE_OPEN_SUBJECT, body: O.officeOpenBody() }, 'human', 'office-open');
+  await settle();
+  assert.equal(msgsIn(hive, 'research').length, 0);
+  assert.equal(msgsIn(hive, 'god').length, 0, 'Michael is not told');
+  assert.deepEqual(lines(hive, 'drop').map((e) => [e.reason, e.upkeep]), [['research-off', 'office-open']]);
+  const index = read('src/main/index.ts');
+  assert.match(index, /body: officeOpenBody\(\) \}, 'human', 'office-open'\);/);
+  assert.match(index, /subject: words\.subject, body: words\.carryOn \}, 'system', 'carry-on'\);/);
+  assert.match(index, /\}, 'scheduler', 'schedule-decision'\);/);
+  assert.match(index, /carryOn: CARRY_ON_NOTES\.limit\.body,/, 'the carry on words are the fixed notes');
+  assert.match(read('src/main/hooks.ts'), /\.\.\.RESTARTED_NOTE \}, 'system', 'restarted'\);/);
+  assert.doesNotMatch(read('src/main/checkedBackfill.ts'), /OFFICE_OPEN_SUBJECT/, 'the backfill never matches a note by its words');
 });
 
 test('Pete\'s answer keeps what he wrote and what the team read, without the app\'s label, and the flag', async (t) => {
@@ -248,7 +313,7 @@ test('before any words were kept, the list says "from now on" and how many chang
 });
 
 test('checks from before the lists kept words are put together once from the office\'s files', (t) => {
-  // Value: protects=the owner's "still not saying changed message": the 7:50 AM change (an owner answer to Pete, rewritten) shows with both texts; fails_when=an owner answer, the app's note, a teammate's question or an answer is not matched, a guess is made for an unknown note, rows after keeping starts are duplicated, or it runs twice; why_new=investigate fix; seam=temporary office folders; no_claim=other offices' file layouts
+  // Value: protects=the owner's "still not saying changed message": the 7:50 AM change (an owner answer to Pete, rewritten) shows with both texts, and the app's Office open note is never a question (2026-10-17); fails_when=an owner answer, a teammate's question or an answer is not matched, an upkeep note becomes a row, a guess is made for an unknown note, rows after keeping starts are duplicated, or it runs twice; why_new=investigate fix; seam=temporary office folders; no_claim=other offices' file layouts
   const B = loadTs('src/main/checkedBackfill.ts');
   const { createHash } = require('node:crypto');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-backfill-'));
@@ -281,12 +346,12 @@ test('checks from before the lists kept words are put together once from the off
   const input = { hiveRoot, researchId: 'research', researchNames: ['Pete'], nameOf: (x) => ({ pam: 'Pam', research: 'Pete' })[x] ?? null };
   B.ensureCheckedBackfill(priv, input, now);
   const got = rows(home);
-  assert.deepEqual(got.map((r) => [r.way, r.from, r.outcome, !!r.found]), [['in', 'human', 'clean', true], ['in', 'human', 'pass', true], ['in', 'pam', 'clean', true], ['out', 'research', 'clean', true], ['in', 'pam', 'pass', false]]);
+  assert.deepEqual(got.map((r) => [r.way, r.from, r.outcome, !!r.found]), [['in', 'human', 'clean', true], ['in', 'pam', 'clean', true], ['out', 'research', 'clean', true], ['in', 'pam', 'pass', false]], 'no row for the Office open note');
   assert.equal(got[0].wrote.subject, 'The owner answered: Pete waiting on your permission');
   assert.equal(got[0].wrote.body, 'Q: Pete has stopped on a prompt.\nA: this is fixed');
   assert.equal(got[0].sent.subject, 'The owner answered: Someone waiting on your permission');
-  assert.equal(got[2].wrote.body, 'IRS underpayment rate for Rosa Diaz');
-  assert.equal(got[3].sent.body, 'Rate is 7%.', 'what Pam read, without the label');
+  assert.equal(got[1].wrote.body, 'IRS underpayment rate for Rosa Diaz');
+  assert.equal(got[2].sent.body, 'Rate is 7%.', 'what Pam read, without the label');
   assert.ok(!got.some((r) => r.wrote.body === 'Focus on flour'), 'a note whose original is unknown is not guessed');
   assert.ok(fs.existsSync(path.join(priv, 'checked-backfill.json')));
   fs.writeFileSync(path.join(priv, 'checked.jsonl'), '');

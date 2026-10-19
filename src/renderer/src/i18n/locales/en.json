@@ -893,6 +893,18 @@
     }
   },
   "office": {
+    "opening": {
+      "title": "Clocking in",
+      "announce": "Office opening, {{count}} of {{total}} in",
+      "stillComing": "Still coming: {{names}}",
+      "stillComingMore": "Still coming: {{names}} and {{count}} more",
+      "nameSep": ", ",
+      "allIn": "Everyone's in",
+      "missingOne": "{{name}} hasn't clocked in.",
+      "missingMore": "{{name}} and {{count}} more haven't clocked in.",
+      "michael": "{{name}} is clocking in"
+    },
+    "clockedInCount": "{{count}} of {{total}} in",
     "gpuError": "The office floor lost its GPU context.\n\nToo many terminals are using the GPU at once.\nClose a few agent terminals, or restart the app, to bring it back.",
     "errand": {
       "water": [
@@ -1569,6 +1581,18 @@
     "edit": "edit"
   },
   "kanban": {
+    "group": {
+      "overdue": "Overdue",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "thisMonth": "This month",
+      "thisQuarter": "This quarter",
+      "laterThisYear": "Later this year",
+      "nextQuarter": "Next quarter",
+      "nextYear": "Next year",
+      "later": "Later",
+      "none": "No date"
+    },
     "search": "Search tasks",
     "everyone": "Everyone",
     "member": "Team member",
@@ -2052,6 +2076,7 @@
     "nothingToDo": "nothing to do",
     "confirmed": "confirmed",
     "excused": "not waiting for them",
+    "notReporting": "not reporting to the app, not waiting for them",
     "remind": "Remind",
     "reminded": "reminded",
     "closeWithout": "Close without them",
@@ -2082,6 +2107,8 @@
     "allClearLine5": "Free for the next thing. Big or small, the office can handle it.",
     "backToBoard": "Back to Needs you",
     "officeOpen": "Office open",
+    "opening": "Opening",
+    "openingCount": "{{count}} of {{total}}",
     "officeSchedule": "Office schedule",
     "closingTime": "Closing time",
     "themeLight": "Light theme",
@@ -2206,6 +2233,7 @@
     "starting": "Starting closing time…",
     "left": "{{count}} still working",
     "leftPlural": "{{count}} still working",
+    "notReporting": "{{count}} not reporting",
     "hideWho": "Hide who",
     "confirmForce": "Quit without waiting? Unsaved work is lost.",
     "keepClosing": "Keep closing",
@@ -2367,7 +2395,8 @@
   "markdown": {
     "opensInBrowser": "opens in your browser",
     "opensInEmail": "opens your email app",
-    "copyLinkAddress": "Copy link address"
+    "copyLinkAddress": "Copy link address",
+    "table": "Table"
   },
   "crash": {
     "line": "Something went wrong on this screen.",
@@ -2567,32 +2596,30 @@
     "fourWeeks": "Value, last 4 weeks",
     "safe": {
       "title": "Kept safe",
-      "toInternet": "questions sent to the internet, each checked for your private details first",
-      "toInternetNone": "questions sent to the internet, each checked first: none held your private details",
-      "sentAsWritten": "Sent as written",
-      "privateOut": "Private parts taken out first",
-      "stopped": "Stopped, needed private data",
-      "answersCleaned": "web answers had hidden instructions to AI agents removed before your team read them",
+      "toInternet": "questions to the internet",
+      "sentAsWritten": "As written",
+      "privateOut": "Private parts removed",
+      "stopped": "Stopped",
+      "answersCleaned": "web answers cleaned",
       "of": "of {{n}}",
       "cleaned": "Cleaned",
-      "nothingToRemove": "Nothing to remove",
+      "nothingToRemove": "Already clean",
       "flagged": "Flagged to {{godName}}",
-      "held": "messages held back because the safety check could not run. Nothing went out unchecked.",
-      "heldNone": "Every message to and from the internet was safety checked.",
-      "rules": "steps blocked by your settings, such as a tool a member was not given",
-      "rulesNone": "Nothing needed blocking by your settings.",
+      "held": "messages held",
+      "rules": "steps blocked by your settings",
       "gate": {
-        "connector": "Connector off or not given",
+        "connector": "Connector off",
         "quickbooks": "QuickBooks not given",
         "mail": "Mailbox not given",
-        "internet": "Internet outside research",
-        "sandbox": "Commands outside the sandbox",
+        "internet": "Internet, not research",
+        "sandbox": "Outside the sandbox",
         "folder": "Private folders",
         "office-files": "App files",
         "paused": "Paused by you",
-        "impostor": "Sender the app could not confirm"
+        "impostor": "Unconfirmed sender"
       },
-      "trustTip": "The trust layer checks every question before research takes it to the internet, and every answer before your team reads it.",
+      "toInternetTip": "Each question is checked for your private details before it goes out.",
+      "answersTip": "Hidden instructions to AI agents are taken out of web answers before your team reads them.",
       "heldTip": "When the check cannot run, the message waits instead of going out unchecked.",
       "rulesTip": "Each member can only use what you gave them in Settings; anything else is blocked."
     },

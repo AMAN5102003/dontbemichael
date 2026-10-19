@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore, actionText, type Agent } from '@/store/store';
+import { useDockCentered } from '@/hooks/useCenter';
 import { PixelBadge, type StatusKind } from '@/components/PixelBadge';
 import { useRtl } from '@/i18n/useDirection';
 import { isComposingKey } from '@shared/imeGuard';
@@ -64,16 +65,22 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
 /** Opens the panel wide in the center of the window and back (wide panel WD6,
  *  WD7). The choice is remembered; the button keeps focus as it switches. */
 /** `size` matches the header it sits in: 32 in a panel header, 30 beside a
- *  dialog's close button (design review). */
-export function WideButton({ disabled = false, size = 32 }: { disabled?: boolean; size?: number }) {
+ *  dialog's close button (design review). `on` and `onToggle` let the 1:1 with
+ *  Michael use it for its own choice; a panel shows wide only while the 1:1
+ *  does not hold the center (8A). */
+export function WideButton({ disabled = false, size = 32, on, onToggle }: {
+  disabled?: boolean; size?: number; on?: boolean; onToggle?: () => void;
+}) {
   const { t } = useTranslation();
-  const wide = useStore((s) => s.panelWide);
+  const dockWide = useDockCentered();
+  const panelWide = useStore((s) => s.panelWide) && !dockWide;
+  const wide = on ?? panelWide;
   const label = wide ? t('panel.backToSide') : t('panel.openWide');
   return (
     <button
       type="button"
       data-wide-button
-      onClick={() => useStore.getState().setPanelWide(!wide)}
+      onClick={onToggle ?? (() => useStore.getState().setPanelWide(!wide))}
       disabled={disabled}
       aria-label={label}
       aria-pressed={wide}

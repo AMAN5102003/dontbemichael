@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { OfficeOpening } from '@/shell/clockingIn';
 import type { AccentColorName } from '@/design/tokens';
 import type { OfficeCharacterName } from '@/scene/office/cast';
 import type { StatusKind } from '@/components/PixelBadge';
@@ -22,6 +23,7 @@ import { refocusAfterRemoval, focusOnLoad, restoreFocus } from './focusMode';
 import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
 import { canOpen } from '../shell/closingFloor';
+import type { CenterClaim } from '../shell/wideCenter';
 import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
 import { afterLeave, attemptLeave } from './leaveGuard';
 
@@ -268,8 +270,22 @@ interface State {
    *  set by the window's size. The Needs you board ignores it (WD1). */
   panelWide: boolean;
   setPanelWide: (on: boolean) => void;
+  /** The 1:1 with Michael opens wide in the center (design review 2026-10-17,
+   *  1A): its own choice, remembered on this computer, set only by its Open
+   *  wide button (7A). */
+  dockWide: boolean;
+  setDockWide: (on: boolean) => void;
+  /** Esc sent the wide 1:1 back to the side for now (6B); cleared on close. */
+  dockSideForNow: boolean;
+  setDockSideForNow: (on: boolean) => void;
+  /** Who opened last, the 1:1 or the right column: that one takes the center
+   *  (8A, shell/wideCenter.ts). Never remembered. */
+  centerClaim: CenterClaim;
   sidebarTab: SidebarTab;
   godStatus: GodStatus;
+  /** The office opening (DESIGN.md 7.24): the Clocking in card and the clock
+   *  pill read it; OfficeOpening.tsx moves it on. */
+  opening: OfficeOpening;
   /** Per-agent outgoing message queue (agent id → messages awaiting delivery).
    *  Lets the user keep "talking" to a busy agent: messages park here and are
    *  drained to the terminal one-by-one once the agent is free. */
@@ -279,6 +295,9 @@ interface State {
   toolCounts: Record<string, number>;
   bumpToolCount: (id: string) => void;
   setGodStatus: (status: GodStatus) => void;
+  setOpening: (opening: OfficeOpening) => void;
+  /** A Restore team run opens the office again, card and pill included. */
+  reopenOffice: () => void;
   select: (id: string) => void;
   /** Closing time: who has gone home (confirmed or closed without). Empty when
    *  not closing. Nobody in it can be opened (docs/designs/closing-floor.md). */
@@ -290,7 +309,9 @@ interface State {
    *  launch), so the column needs its own state. Starts closed; App opens the
    *  board whenever anything waits and nothing may close it then. */
   rightColumn: RightColumn;
-  setRightColumn: (column: RightColumn) => void;
+  /** `claim: false` for the app's own opening (an ask arriving), which never
+   *  takes the center from the 1:1 (8A counts the owner's actions only). */
+  setRightColumn: (column: RightColumn, opts?: { claim?: boolean }) => void;
   /** Open the Needs you board from an owner action (the pill, the coral strip,
    *  a "for you" chip). Asks the board to put focus in a reply field (D10),
    *  on `taskId`'s card when given (D11). */
@@ -465,6 +486,7 @@ interface State {
 const LS_SIDEBAR_WIDTH = 'cth.sidebarWidth';
 const LS_SIDEBAR_TAB = 'cth.sidebarTab';
 const LS_PANEL_WIDE = 'cth.panelWide';
+const LS_DOCK_WIDE = 'cth.dockWide';
 const LS_AGENTS = 'cth.agents';
 const LS_ARCHIVED = 'cth.archivedAgents';
 const LS_RESTORABLE = 'cth.restorableAgents';
@@ -867,6 +889,9 @@ const initialSidebarWidth = (() => {
 const initialPanelWide = (() => {
   try { return window.localStorage.getItem(LS_PANEL_WIDE) === '1'; } catch { return false; }
 })();
+const initialDockWide = (() => {
+  try { return window.localStorage.getItem(LS_DOCK_WIDE) === '1'; } catch { return false; }
+})();
 const initialSidebarTab: SidebarTab = (() => {
   try {
     const v = window.localStorage.getItem(LS_SIDEBAR_TAB);
@@ -940,7 +965,7 @@ export const useStore = create<State>((set, get) => ({
   openAgentProfile: (agentId) => { attemptLeave({ selectedId: agentId, rightColumn: 'person' }, () => set((s) => {
     const seq = (s.ccTabRequest?.seq ?? 0) + 1;
     persistAgents(s.agents, agentId);
-    return { selectedId: agentId, ccTabRequest: { tab: 'profile', seq }, rightColumn: 'person' as const, ...officeView(s.floorView) };
+    return { selectedId: agentId, ccTabRequest: { tab: 'profile', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) };
   })); },
   openAgentMemory: (agentId) => { attemptLeave({ selectedId: get().agents.find((a) => a.isGod)?.id ?? get().selectedId, rightColumn: 'person' }, () => set((s) => {
     const god = s.agents.find((a) => a.isGod);
@@ -952,6 +977,7 @@ export const useStore = create<State>((set, get) => ({
       ccTabRequest: { tab: 'memory', seq },
       memoryFocusRequest: { agentId, seq },
       rightColumn: 'person' as const,
+      centerClaim: 'column' as const,
       ...officeView(s.floorView)
     };
   })); },
@@ -962,10 +988,10 @@ export const useStore = create<State>((set, get) => ({
     const blocked = tab !== 'human' && !!s0.selectedId && !canOpen(s0.selectedId, s0.goneHome);
     attemptLeave(blocked ? null : { selectedId: s0.selectedId, rightColumn: tab === 'human' ? 'board' : 'person' }, () =>
       set((s) => tab === 'human'
-        ? { rightColumn: 'board' as const, ...officeView(s.floorView) }
+        ? { rightColumn: 'board' as const, centerClaim: 'column' as const, ...officeView(s.floorView) }
         : s.selectedId && !canOpen(s.selectedId, s.goneHome)
           ? {}
-          : { ccTabRequest: { tab, seq: (s.ccTabRequest?.seq ?? 0) + 1 }, rightColumn: 'person' as const, ...officeView(s.floorView) }));
+          : { ccTabRequest: { tab, seq: (s.ccTabRequest?.seq ?? 0) + 1 }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) }));
   },
   missions: [],
   missionsStatus: 'loading',
@@ -983,8 +1009,16 @@ export const useStore = create<State>((set, get) => ({
   panelWide: initialPanelWide,
   setPanelWide: (on) => {
     try { window.localStorage.setItem(LS_PANEL_WIDE, on ? '1' : '0'); } catch { /* noop */ }
-    set({ panelWide: on });
+    set(on ? { panelWide: on, centerClaim: 'column' } : { panelWide: on });
   },
+  dockWide: initialDockWide,
+  setDockWide: (on) => {
+    try { window.localStorage.setItem(LS_DOCK_WIDE, on ? '1' : '0'); } catch { /* noop */ }
+    set(on ? { dockWide: on, dockSideForNow: false, centerClaim: 'dock' } : { dockWide: on, dockSideForNow: false });
+  },
+  dockSideForNow: false,
+  setDockSideForNow: (on) => set({ dockSideForNow: on }),
+  centerClaim: null,
   sidebarTab: initialSidebarTab,
   godStatus: 'booting',
   messageQueues: initialQueues,
@@ -992,18 +1026,24 @@ export const useStore = create<State>((set, get) => ({
   bumpToolCount: (id) =>
     set((s) => ({ toolCounts: { ...s.toolCounts, [id]: (s.toolCounts[id] ?? 0) + 1 } })),
   setGodStatus: (status) => set({ godStatus: status }),
+  opening: { kind: 'opening', since: Date.now() },
+  setOpening: (opening) => set({ opening }),
+  reopenOffice: () => set({ opening: { kind: 'opening', since: Date.now() } }),
   // A person who has gone home at closing time opens from nowhere (5A).
   select: (id) => { attemptLeave(canOpen(id, get().goneHome) ? { selectedId: id, rightColumn: 'person' } : null, () => set((s) => {
     if (!canOpen(id, s.goneHome)) return {};
     persistAgents(s.agents, id);
-    return { selectedId: id, ccTabRequest: null, memoryFocusRequest: null, rightColumn: 'person', ...officeView(s.floorView) };
+    return { selectedId: id, ccTabRequest: null, memoryFocusRequest: null, rightColumn: 'person', centerClaim: 'column', ...officeView(s.floorView) };
   })); },
   goneHome: [],
   setGoneHome: (ids) => set((s) => (ids.length === s.goneHome.length && ids.every((id) => s.goneHome.includes(id)) ? {} : { goneHome: ids })),
   rightColumn: 'closed',
-  setRightColumn: (column) => { attemptLeave({ selectedId: get().selectedId, rightColumn: column }, () => set({ rightColumn: column })); },
+  setRightColumn: (column, opts) => { attemptLeave({ selectedId: get().selectedId, rightColumn: column }, () => set(
+    column !== 'closed' && opts?.claim !== false ? { rightColumn: column, centerClaim: 'column' } : { rightColumn: column }
+  )); },
   openNeedsYou: (opts) => { attemptLeave({ selectedId: get().selectedId, rightColumn: 'board' }, () => set((s) => ({
     rightColumn: 'board',
+    centerClaim: 'column',
     ...officeView(s.floorView),
     needsYouFocus: { seq: (s.needsYouFocus?.seq ?? 0) + 1, ...(opts?.taskId ? { taskId: opts.taskId } : {}) }
   }))); },
@@ -1269,7 +1309,10 @@ export const useStore = create<State>((set, get) => ({
   setOrgTrigger: (cfg) => set({ orgTrigger: cfg }),
   dockOpen: false,
   dockFocus: undefined,
-  setDock: (open, focus) => set({ dockOpen: open, dockFocus: open ? focus : undefined }),
+  // Opening the 1:1 takes the center (8A); closing ends Esc's "for now" (7A).
+  setDock: (open, focus) => set(open
+    ? { dockOpen: true, dockFocus: focus, centerClaim: 'dock' }
+    : { dockOpen: false, dockFocus: undefined, dockSideForNow: false }),
   enqueueMessage: (agentId, text, meta) =>
     set((s) => {
       const trimmed = text.trim();

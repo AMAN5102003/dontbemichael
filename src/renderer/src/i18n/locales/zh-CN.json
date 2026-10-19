@@ -893,6 +893,18 @@
     }
   },
   "office": {
+    "opening": {
+      "title": "正在打卡",
+      "announce": "办公室开门中，已到 {{count}} / {{total}}",
+      "stillComing": "还在路上：{{names}}",
+      "stillComingMore": "还在路上：{{names}}，另有 {{count}} 人",
+      "nameSep": "、",
+      "allIn": "全员到齐",
+      "missingOne": "{{name}} 还没打卡。",
+      "missingMore": "{{name}} 和另外 {{count}} 人还没打卡。",
+      "michael": "{{name}} 正在打卡上班"
+    },
+    "clockedInCount": "已到 {{count}} / {{total}}",
     "gpuError": "办公楼层丢失了 GPU 上下文。\n\n同时使用 GPU 的终端太多了。\n关闭几个智能体终端，或重启应用，即可恢复。",
     "errand": {
       "water": [
@@ -1569,6 +1581,18 @@
     "edit": "编辑"
   },
   "kanban": {
+    "group": {
+      "overdue": "已逾期",
+      "today": "今天",
+      "tomorrow": "明天",
+      "thisMonth": "本月",
+      "thisQuarter": "本季度",
+      "laterThisYear": "今年稍后",
+      "nextQuarter": "下季度",
+      "nextYear": "明年",
+      "later": "更晚",
+      "none": "无日期"
+    },
     "search": "搜索任务",
     "everyone": "所有人",
     "member": "团队成员",
@@ -2052,6 +2076,7 @@
     "nothingToDo": "无事可做",
     "confirmed": "已确认",
     "excused": "不等他们了",
+    "notReporting": "没有向应用报告，不再等待",
     "remind": "提醒",
     "reminded": "已提醒",
     "closeWithout": "不等他们",
@@ -2082,6 +2107,8 @@
     "allClearLine5": "可以接下一件事了。大事小事，办公室都能搞定。",
     "backToBoard": "返回“需要你处理”",
     "officeOpen": "办公室开放中",
+    "opening": "开门中",
+    "openingCount": "{{count}} / {{total}}",
     "officeSchedule": "办公室日程",
     "closingTime": "下班时间",
     "themeLight": "浅色主题",
@@ -2206,6 +2233,7 @@
     "starting": "正在开始下班…",
     "left": "还有 {{count}} 人在工作",
     "leftPlural": "还有 {{count}} 人在工作",
+    "notReporting": "{{count}} 个未报告",
     "hideWho": "收起名单",
     "confirmForce": "不等了直接退出？未保存的工作会丢失。",
     "keepClosing": "继续收尾",
@@ -2367,7 +2395,8 @@
   "markdown": {
     "opensInBrowser": "在浏览器中打开",
     "opensInEmail": "打开邮件应用",
-    "copyLinkAddress": "复制链接地址"
+    "copyLinkAddress": "复制链接地址",
+    "table": "表格"
   },
   "crash": {
     "line": "此页面出了点问题。",
@@ -2567,32 +2596,30 @@
     "fourWeeks": "价值，最近 4 周",
     "safe": {
       "title": "安全保障",
-      "toInternet": "个问题发往互联网，发送前均检查过是否含你的隐私信息",
-      "toInternetNone": "个问题发往互联网，发送前均已检查：都不含你的隐私信息",
-      "sentAsWritten": "按原文发送",
-      "privateOut": "先去除了隐私部分",
-      "stopped": "已阻止，需要隐私数据",
-      "answersCleaned": "个网络答案在你的团队阅读前，已删除其中针对 AI 代理的隐藏指令",
+      "toInternet": "个发往互联网的问题",
+      "sentAsWritten": "按原文",
+      "privateOut": "已去除隐私部分",
+      "stopped": "已阻止",
+      "answersCleaned": "个网络答案已清理",
       "of": "共 {{n}} 个",
       "cleaned": "已清理",
-      "nothingToRemove": "无需删除",
+      "nothingToRemove": "本已干净",
       "flagged": "已报告给 {{godName}}",
-      "held": "条消息因安全检查无法运行而被暂扣。没有任何内容未经检查就发出。",
-      "heldNone": "所有往来互联网的消息都经过了安全检查。",
-      "rules": "个步骤被你的设置阻止，例如使用未授予该成员的工具",
-      "rulesNone": "没有需要被你的设置阻止的步骤。",
+      "held": "条消息被暂扣",
+      "rules": "个步骤被你的设置阻止",
       "gate": {
-        "connector": "连接器已关闭或未授予",
+        "connector": "连接器已关闭",
         "quickbooks": "未授予 QuickBooks",
         "mail": "未授予邮箱",
-        "internet": "研究以外的互联网使用",
-        "sandbox": "沙盒外的命令",
+        "internet": "互联网，非研究",
+        "sandbox": "沙盒之外",
         "folder": "私人文件夹",
         "office-files": "应用文件",
         "paused": "被你暂停",
-        "impostor": "应用无法确认的发送者"
+        "impostor": "未确认的发送者"
       },
-      "trustTip": "信任层会在研究把问题带到互联网之前检查每个问题，并在你的团队阅读之前检查每个答案。",
+      "toInternetTip": "每个问题发出前，都会检查是否含有你的隐私信息。",
+      "answersTip": "网络答案中针对 AI 代理的隐藏指令，会在你的团队阅读前删除。",
       "heldTip": "检查无法运行时，消息会等待，而不会未经检查就发出。",
       "rulesTip": "每位成员只能使用你在设置中授予的内容；其他一律阻止。"
     },

@@ -342,18 +342,19 @@ export function PulseView() {
           </div>
         </Section>
 
-        {/* Kept safe (owner, 2026-10-15): no header; each tile says what it guards. */}
+        {/* Kept safe (owner, 2026-10-15): no header; each tile names what it counts
+            in a few words, the same at zero, and its (i) says how (2026-10-18). */}
         <section aria-label={t('pulse.safe.title')}>
           <div style={grid(cols)}>
-            <StatTile icon="shield" value={toNet} trend={pk && pair(toNetOf(pk), toNet, t('pulse.safe.toInternet'))} tip={t('pulse.safe.trustTip')} text={t(toNet > 0 && safe.toInternet.clean + safe.toInternet.stop === 0 ? 'pulse.safe.toInternetNone' : 'pulse.safe.toInternet')}
+            <StatTile icon="shield" value={toNet} trend={pk && pair(toNetOf(pk), toNet, t('pulse.safe.toInternet'))} tip={t('pulse.safe.toInternetTip')} text={t('pulse.safe.toInternet')}
               parts={[{ n: safe.toInternet.pass, name: t('pulse.safe.sentAsWritten'), color: 'var(--cth-ink-2)' }, { n: safe.toInternet.clean, name: t('pulse.safe.privateOut'), color: 'var(--cth-green)' }, { n: safe.toInternet.stop, name: t('pulse.safe.stopped'), color: 'var(--cth-amber)' }]}
               open={toNet > 0 ? { label: t('pulse.checked.q.open'), onClick: () => setCheckedOpen('in') } : undefined} />
-            <StatTile icon="search" value={safe.webAnswers.clean} of={answers} trend={pk && pair(pk.webAnswers.clean, safe.webAnswers.clean, t('pulse.safe.answersCleaned'), 'var(--cth-green)')} tip={t('pulse.safe.trustTip')} text={t('pulse.safe.answersCleaned')}
+            <StatTile icon="search" value={safe.webAnswers.clean} of={answers} trend={pk && pair(pk.webAnswers.clean, safe.webAnswers.clean, t('pulse.safe.answersCleaned'), 'var(--cth-green)')} tip={t('pulse.safe.answersTip')} text={t('pulse.safe.answersCleaned')}
               parts={[{ n: safe.webAnswers.clean, name: t('pulse.safe.cleaned'), color: 'var(--cth-green)' }, { n: safe.webAnswers.pass, name: t('pulse.safe.nothingToRemove'), color: 'var(--cth-ink-4)' }, { n: safe.webAnswers.flagged, name: t('pulse.safe.flagged'), color: 'var(--cth-amber)' }]}
               open={answers > 0 ? { label: t('pulse.checked.a.open'), onClick: () => setCheckedOpen('out') } : undefined} />
-            <StatTile icon="pause" value={safe.held} trend={pk && pair(pk.held, safe.held, t('pulse.safe.held'), 'var(--cth-amber)')} tip={t('pulse.safe.heldTip')} text={t(safe.held > 0 ? 'pulse.safe.held' : 'pulse.safe.heldNone')} amber={safe.held > 0}
+            <StatTile icon="pause" value={safe.held} trend={pk && pair(pk.held, safe.held, t('pulse.safe.held'), 'var(--cth-amber)')} tip={t('pulse.safe.heldTip')} text={t('pulse.safe.held')} amber={safe.held > 0}
               open={safe.held > 0 ? { label: t('pulse.held.open'), onClick: () => setHeldOpen(true) } : undefined} />
-            <StatTile icon="lock" value={rulesTotal} trend={pk && pair(rulesOf(pk), rulesTotal, t('pulse.safe.rules'))} tip={t('pulse.safe.rulesTip')} text={t(rulesTotal > 0 ? 'pulse.safe.rules' : 'pulse.safe.rulesNone')}
+            <StatTile icon="lock" value={rulesTotal} trend={pk && pair(rulesOf(pk), rulesTotal, t('pulse.safe.rules'))} tip={t('pulse.safe.rulesTip')} text={t('pulse.safe.rules')}
               parts={[...rules].sort((a, b) => b[1] - a[1]).map(([g, n], i) => ({ n, name: t(`pulse.safe.gate.${g}`), color: ['var(--cth-ink-2)', 'var(--cth-ink-3)', 'var(--cth-ink-4)', 'var(--cth-line-2)'][Math.min(i, 3)] }))} />
           </div>
         </section>
@@ -536,10 +537,13 @@ export function PulseView() {
   );
 }
 
-/** A Kept safe tile: an icon, a number, what it counts, and its parts (proposal 3). */
+/** A Kept safe tile: an icon, a number, what it counts, and its parts
+ *  (proposal 3). The parts show only once one is above zero: a legend of
+ *  zeros says nothing the number does not (owner, 2026-10-18). */
 function StatTile({ icon, value, of, text, parts, amber, tip, trend, open }: { icon: IconName; value: number; of?: number; text: string; parts?: Array<{ n: number; name: string; color: string }>; amber?: boolean; tip?: string; trend?: ReactNode; open?: { label: string; onClick: () => void } }) {
   const { t, i18n } = useTranslation();
-  const shown = (parts ?? []).filter((p) => p.n > 0 || (parts ?? []).length <= 3);
+  const all = parts ?? [];
+  const shown = all.some((p) => p.n > 0) ? all.filter((p) => p.n > 0 || all.length <= 3) : [];
   return (
     <div style={{ ...(amber ? { background: 'var(--cth-amber-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-amber) 40%, transparent)' } : card), padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div aria-hidden style={{ width: 30, height: 30, borderRadius: 'var(--cth-r-md)', background: amber ? 'var(--cth-card)' : 'var(--cth-card-2)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', display: 'grid', placeItems: 'center', color: amber ? 'var(--cth-amber-text)' : 'var(--cth-ink-2)' }}><Icon name={icon} size={1.125} /></div>

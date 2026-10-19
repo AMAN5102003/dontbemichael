@@ -103,6 +103,66 @@ test('mid work silence counts only on Claude, and never while the owner types (S
   assert.deepEqual(quiet.log.restarts, []);
 });
 
+test('an idle member whose screen redraws is not quiet; only unbroken output for 3 minutes is', () => {
+  // Value: protects=no false "not reporting" card on an idle member, which also held its mail and stalled closing time; fails_when=one redraw (a refit or resize) of an idle Claude screen, or redraws with pauses, open a quiet card; why_new=owner report 2026-10-17 (ten idle members flagged at once); seam=none; no_claim=real terminal output (lastOutputAt faked)
+  const idle = rig();
+  idle.watch.beat([member()]);
+  idle.watch.noteHook('kelly');
+  idle.clock.t += 2 * 3600_000; // two hours idle: no report, no output
+  idle.watch.beat([member()]);
+  // One redraw, then still.
+  const redrawAt = idle.clock.t + 1000;
+  for (let i = 0; i < 40; i++) { idle.clock.t += BEAT; idle.watch.beat([member({ lastOutputAt: redrawAt })]); }
+  assert.equal(idle.watch.list().length, 0, 'one redraw of an idle screen');
+  // Redraws with pauses longer than BUSY_FRESH_MS between them, for ten minutes.
+  const end = idle.clock.t + 10 * 60_000;
+  let last = idle.clock.t;
+  while (idle.clock.t < end) {
+    idle.clock.t += BEAT;
+    if (idle.clock.t - last >= 3 * BEAT) last = idle.clock.t;
+    idle.watch.beat([member({ lastOutputAt: last })]);
+  }
+  assert.equal(idle.watch.list().length, 0, 'redraws with pauses');
+  // A working member printing all the while, with no report for 3 minutes: quiet.
+  const busy = rig();
+  busy.watch.beat([member()]);
+  busy.watch.noteHook('kelly');
+  busy.clock.t += 2 * 3600_000;
+  busy.watch.beat([member()]);
+  run(busy, 2 * 60_000, member());
+  assert.equal(busy.watch.list().length, 0, 'not yet: two minutes of output');
+  busy.watch.noteHook('kelly', 'Status');
+  run(busy, 2 * 60_000 + 2 * BEAT, member());
+  assert.equal(busy.watch.list().length, 0, 'a report restarts the stretch');
+  run(busy, 2 * 60_000, member());
+  assert.equal(busy.watch.episode('kelly').kind, 'quiet', 'unbroken output for 3 minutes since the last report');
+  assert.ok(S.BUSY_FRESH_MS < S.QUIET_MS);
+});
+
+test('a member restarted after it was stopped keeps the reports it sent before the next beat', () => {
+  // Value: protects=a restarted member (Research, or any stopped one) that checks in at once and then sits idle is not flagged "never checked in" and stopped; fails_when=reports landing between the stop and the next beat go to the old watch and are dropped when the new process is noticed; why_new=owner report 2026-10-17 (Pete paused although its SessionStart arrived); seam=none
+  const r = rig({ mayAutoRestart: false });
+  const pete = (over = {}) => member({ id: 'research', isResearch: true, ptyId: 'p-r', pid: 100, ...over });
+  r.watch.beat([pete()]);
+  r.watch.noteHook('research', 'SessionStart');
+  r.clock.t += BEAT; r.watch.beat([pete()]);
+  for (let i = 0; i < 4; i++) { r.clock.t += BEAT; r.watch.beat([pete({ running: false })]); }
+  // Restarted: SessionStart, then a status tick, both before the next beat; then idle.
+  r.watch.noteHook('research', 'SessionStart');
+  r.watch.noteHook('research', 'Status');
+  const firstOutput = r.clock.t + 1000;
+  for (let i = 0; i < 20; i++) { r.clock.t += BEAT; r.watch.beat([pete({ pid: 200, lastOutputAt: firstOutput })]); }
+  assert.equal(r.watch.list().length, 0, 'it checked in; no card');
+  assert.deepEqual(r.log.stops, []);
+  // The same process missed by one beat (no new pid): its report in between still counts.
+  const s = rig({ mayAutoRestart: false });
+  s.watch.beat([member()]);
+  s.clock.t += BEAT; s.watch.beat([member({ running: false })]);
+  s.watch.noteHook('kelly', 'SessionStart');
+  for (let i = 0; i < 20; i++) { s.clock.t += BEAT; s.watch.beat([member({ lastOutputAt: 0 })]); }
+  assert.equal(s.watch.list().length, 0);
+});
+
 test('Gemini 0.60 and later: no automatic restart, the failed card at once, and stopped on every platform (R2, R6)', () => {
   // Value: protects=no restart that cannot help, and no unguarded member; fails_when=a known version is restarted or a Gemini member keeps running; why_new=R2 R6; seam=none; no_claim=real Gemini (version faked)
   for (const platform of ['darwin', 'win32']) {
@@ -554,4 +614,41 @@ test('Keep on a member with no terminal starts it again, and a relaunch restarts
   re.watch.restore(saved);
   re.clock.t += BEAT; re.watch.beat([member({ running: false, ptyId: '' })]);
   assert.equal(re.watch.episode('kelly').state, 'kept', 'the wait counts from this launch');
+});
+
+test('a Mac that sleeps between two redraws never flags an idle member; real work after waking still does', () => {
+  // Value: protects=no false "not reporting" card after the lid closes and opens (owner report 2026-10-17: lid closed 22:55, opened 23:07, eight idle members flagged at the wake second, their mail held); fails_when=a stretch of printing or the first report wait carries across a gap in the beats; why_new=the beats stop during sleep, so a redraw before and one after looked like 12 minutes of work; seam=fake clock; no_claim=real terminal output (lastOutputAt faked)
+  const idle = rig();
+  idle.watch.beat([member()]);
+  idle.watch.noteHook('kelly');
+  idle.clock.t += 60 * 60_000;
+  idle.watch.beat([member()]);
+  // The lid closes: every terminal redraws, the beat sees it, then the Mac sleeps.
+  idle.clock.t += BEAT;
+  idle.watch.beat([member({ lastOutputAt: idle.clock.t - 500 })]);
+  idle.clock.t += 12 * 60_000; // asleep: no beats
+  // The lid opens: another redraw, and two beats at once (the resume re-arms them).
+  const wake = idle.clock.t;
+  idle.watch.beat([member({ lastOutputAt: wake - 300 })]);
+  idle.clock.t += 50;
+  idle.watch.beat([member({ lastOutputAt: wake - 300 })]);
+  for (let i = 0; i < 40; i++) { idle.clock.t += BEAT; idle.watch.beat([member({ lastOutputAt: wake - 300 })]); }
+  assert.equal(idle.watch.list().length, 0, 'two redraws around a sleep are not work');
+
+  // A member that never reported yet: the sleep does not count toward its first check in.
+  const fresh = rig();
+  fresh.watch.beat([member({ lastOutputAt: fresh.clock.t })]);
+  fresh.clock.t += 10 * 60_000;
+  fresh.watch.beat([member({ lastOutputAt: fresh.clock.t - 100 })]);
+  fresh.watch.beat([member({ lastOutputAt: fresh.clock.t - 100 })]);
+  assert.equal(fresh.watch.list().length, 0, 'not flagged at the wake beat');
+
+  // Real silent work after waking is still flagged once it runs for QUIET_MS.
+  const busy = rig();
+  busy.watch.beat([member()]);
+  busy.watch.noteHook('kelly');
+  busy.clock.t += 12 * 60_000;
+  busy.watch.beat([member({ lastOutputAt: busy.clock.t - 100 })]);
+  run(busy, S.QUIET_MS + 3 * BEAT, member());
+  assert.deepEqual(busy.watch.list().map((e) => e.kind), ['quiet'], 'unbroken output after waking');
 });

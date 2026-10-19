@@ -166,6 +166,7 @@ import { legacyBusinessFolder, touchesOffice } from '../shared/officeRecord';
 import { cleanCompanyProfile, companyProfileContext } from '../shared/companyProfile';
 import { scheduledRunBody } from '../shared/scheduleMessage';
 import { OFFICE_OPEN_SUBJECT, officeClosedInLog, officeOpenBody } from '../shared/officeOpen';
+import { CARRY_ON_NOTES } from '../shared/upkeep';
 import { CLAUDE_MODEL_CLI_FLOOR, modelForCli } from '../shared/modelCliFloor';
 import { cliUpdateStatus, type CliUpdateStatus } from '../shared/cliUpdate';
 import {
@@ -461,6 +462,8 @@ const promptSubmits = new PromptSubmits();
 // hook returns) AND Jim's breaker (feed recordToolUse on each PostToolUse).
 // The not reporting watch (issue #326), set up once the store exists below.
 let silentWatch: SilentWatch | null = null;
+/** Closing time, once built further down: the silent watch refreshes its rows. */
+let closingTimeRef: ClosingTimeController | null = null;
 const hookServer = new HookServer(
   hive,
   () => liveWebContents(),
@@ -618,6 +621,9 @@ silentWatch = new SilentWatch({
   changed: (episodes) => {
     try { persist.setKv(SILENT_KV_KEY, episodes); } catch { /* the store may not be open yet */ }
     try { liveWebContents()?.send('silent:changed', episodes); } catch { /* window gone */ }
+    // Closing time's rows follow: a member that stops or starts reporting
+    // moves between waited on and not reporting.
+    try { closingTimeRef?.refresh(); } catch (e) { console.error('[closing-time] refresh:', e); }
   },
   event: ({ type, episode }) => {
     const name = silentName(episode.agentId);
@@ -1632,7 +1638,8 @@ function tellOfficeOpen(agentId: string): void {
     const a = hive.registry().agents[agentId];
     if (!a || a.isAssistant) return;
     toldOfficeOpen.add(agentId);
-    hive.send({ to: agentId, act: 'inform', subject: OFFICE_OPEN_SUBJECT, body: officeOpenBody() }, 'human');
+    // The app's own upkeep note, never a question for the internet (shared/upkeep.ts).
+    hive.send({ to: agentId, act: 'inform', subject: OFFICE_OPEN_SUBJECT, body: officeOpenBody() }, 'human', 'office-open');
   } catch (e) {
     console.error('[office-open]', e);
   }
@@ -1875,7 +1882,7 @@ function decideScheduleRequest(id: string, approve: boolean, by: 'owner' | 'mich
       to: req.agentId, act: 'inform',
       subject: approve ? 'Schedule change approved' : 'Schedule change declined',
       body: `${who} ${approve ? 'approved' : 'declined'}: ${described}. ${approve ? 'It is in place now.' : 'Nothing changed.'}${note ? ` Note: ${note}` : ''}`
-    }, 'scheduler');
+    }, 'scheduler', 'schedule-decision');
     // The owner decided one Michael passed on: he hears the outcome too.
     if (by === 'owner' && req.escalated) {
       hive.send({ to: hiveGodId(), act: 'inform', subject: `Owner ${approve ? 'approved' : 'declined'} a schedule change`, body: `${described}.` }, 'scheduler');
@@ -2237,34 +2244,34 @@ function armOfficeBreak(): void {
  *  translated. */
 interface StopWords { start: string; subject: string; check: string; carryOn: string; over: string }
 function stopWords(reason: OfficeStopReason, until: number | null): StopWords {
-  const carry = 'Continue the task you were working on when it stopped; do not repeat work that is already done.';
+  // Each carry on note is one of the app's fixed upkeep notes (shared/upkeep.ts).
   if (reason === 'credit') return {
     start: 'The office stopped. Your Anthropic account is out of credit.',
-    subject: 'Credit may be back',
+    subject: CARRY_ON_NOTES.credit.subject,
     check: 'The office stopped because the Anthropic account was out of credit, and work may start again now. Carry on with what was waiting.',
-    carryOn: `The Anthropic account has credit again. ${carry}`,
+    carryOn: CARRY_ON_NOTES.credit.body,
     over: 'The office is back at work.'
   };
   if (reason === 'signin') return readConfig().claudeAuth === 'apiKey' ? {
     start: 'The office stopped. The Anthropic API key stopped working.',
-    subject: 'New API key',
+    subject: CARRY_ON_NOTES.apiKey.subject,
     check: 'The office stopped because the Anthropic API key stopped working. A new key is in place, so work may start again now. Carry on with what was waiting.',
-    carryOn: `The Anthropic API key works again. ${carry}`,
+    carryOn: CARRY_ON_NOTES.apiKey.body,
     over: 'The office is back at work.'
   } : {
     start: 'The office stopped. Your Claude account needs you to sign in again.',
-    subject: 'Signed in again',
+    subject: CARRY_ON_NOTES.signin.subject,
     check: 'The office stopped because the Claude sign in had expired, and work may start again now. Carry on with what was waiting.',
-    carryOn: `Claude is signed in again. ${carry}`,
+    carryOn: CARRY_ON_NOTES.signin.body,
     over: 'The office is back at work.'
   };
   return {
     start: until
       ? `The office is on a break. Your Claude plan reached its limit. Work starts again around ${breakClock(until)}.`
       : 'The office is on a break. Your Claude plan reached its limit. Work starts again when it resets.',
-    subject: 'Usage limit reset',
+    subject: CARRY_ON_NOTES.limit.subject,
     check: 'The Claude plan\'s usage limit should have reset, so the office\'s break may be over. Carry on with what was waiting.',
-    carryOn: 'The Claude plan\'s usage limit has reset. Continue the task you were working on when it was reached; do not repeat work that is already done.',
+    carryOn: CARRY_ON_NOTES.limit.body,
     over: 'The break is over. The team is back at work.'
   };
 }
@@ -2359,7 +2366,7 @@ function endOfficeBreak(ended: OfficeBreakState): void {
     const cutOff = [...ended.cutOff].sort((a, b) => (a === godId ? -1 : b === godId ? 1 : 0));
     if (hive.enabled()) {
       for (const id of cutOff) {
-        hive.send({ to: id, act: 'inform', subject: words.subject, body: words.carryOn }, 'system');
+        hive.send({ to: id, act: 'inform', subject: words.subject, body: words.carryOn }, 'system', 'carry-on');
       }
     }
     hive.appendLog({ kind: 'office-break', step: 'over', reason: ended.reason, cutOff: cutOff.length });
@@ -6502,8 +6509,12 @@ const closingTime = new ClosingTimeController(
   },
   // #7C.2 steering — the graceful interrupt that reaches deeply busy agents
   // at their next hook boundary instead of waiting for a Stop.
-  control
+  control,
+  // A member that isn't reporting has its mail held: closing time can't reach
+  // it, so it is shown apart and not waited on (owner, 2026-10-17).
+  (agentId) => mailFor(silentWatch?.episode(agentId)) === 'hold'
 );
+closingTimeRef = closingTime;
 hive.setRoutedObserver((msg, targets) => closingTime.onRouted(msg, targets));
 // A dev build quits instead of reopening, so the dialog must not say "Reopening".
 ipcMain.handle('app:startClosingTime', (_evt, opts?: { relaunch?: boolean }) =>

@@ -53,6 +53,8 @@ const msgsIn = (hive, id) => {
 };
 const send = (hive, from, msg, name = 'm1.json') => fs.writeFileSync(path.join(hive.root(), 'agents', from, 'outbox', name), JSON.stringify(msg));
 const tick = () => new Promise((r) => setImmediate(r));
+/** The id the app gave a sent message, as its sender's sent copy records it. */
+const sentId = (hive, from, name = 'm1.json') => JSON.parse(fs.readFileSync(path.join(hive.root(), 'agents', from, 'outbox', '.sent', name), 'utf8')).id;
 const notes = (hive, id, subject) => msgsIn(hive, id).filter((m) => m.subject === subject);
 /** A teammate asks Research something, so Research may answer it (owner, D8.1). */
 const askFrom = async (hive, from) => {
@@ -449,7 +451,7 @@ test('Research\'s answer lands in the sender\'s thread, and a request reaches Re
   send(hive, 'research', { to: 'pam', act: 'inform', subject: 'Flour', body: 'About 25 dollars a bag', in_reply_to: copy.id, conversation: copy.conversation });
   hive.routeOnce(); await tick(); hive.routeOnce();
   const answer = msgsIn(hive, 'pam').find((m) => m.from === 'research');
-  assert.equal(answer.in_reply_to, 'pam-ask-1');
+  assert.equal(answer.in_reply_to, sentId(hive, 'pam'), 'names the ask as Pam\'s sent copy records it');
   assert.equal(answer.conversation, 'card:T-9');
 });
 
@@ -676,7 +678,7 @@ test('turning Research off answers each waiting ask in its sender\'s own thread'
   hive.routeOnce(); await tick(); hive.routeOnce();
   assert.equal(hive.returnResearchInbox(), 1);
   const [note] = notes(hive, 'pam', R.NOT_SENT_SUBJECT);
-  assert.equal(note.in_reply_to, 'ask-9');
+  assert.equal(note.in_reply_to, sentId(hive, 'pam'));
   assert.equal(note.conversation, 'card:T-4');
 });
 

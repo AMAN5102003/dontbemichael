@@ -47,6 +47,7 @@ import { randomBytes, createHash, createHmac } from 'node:crypto';
 import { readMessageFile, researchDeliveredId } from './messageFile';
 import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
 import { CHECKED_ARCHIVE_DIR, CHECKED_FILE, keepText, splitForArchive, type CheckedOutcome, type CheckedRow } from '../shared/checkedRecord';
+import { isFixedUpkeep, type UpkeepKind } from '../shared/upkeep';
 import { heldWaits, heldWhy, tidy, HELD_FILE, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
@@ -64,7 +65,7 @@ import { selectBroadcastTargets } from '../shared/broadcast';
 import { preferredAgentRole } from '../shared/agentRole';
 import { mergeTaskLedger } from '../shared/taskLedger';
 import {
-  answersWithoutRequest, asksToTidy, blockedWithNothingAsked, closesOwnerQuestion, memberDeletedNote, openOwnerQuestions, openOwnerRequests, ownerChangeNote, reopenedNote, restoredDoneNote, untriagedNote, nextStepDueNote, nextStepBackstopNote, ownerConversation,
+  answersWithoutRequest, asksToTidy, blockedWithNothingAsked, closesOwnerQuestion, memberDeletedNote, openOwnerQuestions, openOwnerRequests, ownerChangeNote, reopenedNote, restoredDoneNote, untriagedNote, nextStepDueNote, nextStepBackstopNote, waitingDueNote, ownerConversation,
   ownerDock, ownerQuestionOf, OWNER_ALIASES, OWNER_NUDGE_EVERY_MS, OWNER_REQUESTS_FLOOR, unmatchedReplyNote,
   type CardLike, type MessageLike, type OpenOwnerQuestion, type OwnerCardChange, type OwnerDock, type OwnerDockState, type OwnerRequest,
   type OwnerRequestFlags, type StuckCard, type ThreadMessage
@@ -83,7 +84,7 @@ import {
   privateOwnerSentDir, privateOwnerStatePath, privateRoot
 } from '../shared/agentPrivatePaths';
 import { HOUSE_RULES_CHANGED_SUBJECT, houseRulesNoticeBody, houseRulesToTell } from '../shared/houseRulesNotice';
-import { applyGuardFixes, restoreDone, dueReminders, guardSignature, emptyGuardState, guardCards, type GuardCard, type GuardState } from '../shared/cardGuards';
+import { applyGuardFixes, restoreDone, dueReminders, guardSignature, emptyGuardState, guardCards, waitingChecks, WAITING_FOLLOW_UPS, type GuardCard, type GuardState } from '../shared/cardGuards';
 import { sleepSync } from './atomicFile';
 import { TELEMETRY_TOKEN_HEADER } from './telemetry';
 
@@ -373,13 +374,13 @@ export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPa
     'You alone write the task board (tasks.json). Team members file what their work needs as one file each in the triage folder (triage, in the hive folder): a title, what they were doing in "description", "filedBy", "filedAt", and either an "ask" for the owner or "waitingOn" naming someone outside the office. The owner never sees the folder. Each turn you see the filings waiting, oldest first; at the start of a session, list the folder yourself too: work them in that order, one at a time, against the board as it stands. For each one: answer it from your memory or the board when you can, and tell the team member; fold it into an existing card that covers the same matter, rewriting that card or its open ask; route a question a teammate can answer to them; drop a duplicate; or make a card for it, keeping what they were doing and why in its "description" (the owner reads it under See full context): "blocked" with the ask rewritten into the Ask me shape ("raisedBy" the team member), or "waiting" with "waitingOn" and the team member as assignee. Keep one card per source of answers. Then move the file to triage/.done. Team members also tell you when their work moves (finished, waiting on someone, due again at a set time): move its card to match. A card already on the board with "status": "triage" is handled the same way: release it as "blocked" or "waiting", or close it.',
     '',
     '## Keeping the task board accurate',
-    'Record each piece of work as a card. Set its assignee to the team member when you hand the work off and keep it through every status change, because the owner reads the board by who did what. Write no running "notes" on a card (house rule 8): its status, "waitingOn", "nextAt", Ask me question and "result" say where it stands. Move cards between todo, doing, waiting, blocked and done as the work moves, so the board is right whenever the owner looks. A card is "blocked" only while its question for the owner is open on Ask me, because Blocked tells the owner the card waits on them. A card waiting on someone outside the office, or on a team member, is "waiting", with "waitingOn" naming who in a few words (like "customer Gopi" or "Nick"), never the card\'s own person; move it back to "doing" when they answer and the work starts again. A card whose one off next step is its own person\'s at a set time is "todo", with "nextAt" set to that time; scheduled routines get no card (house rule 8). "doing" means someone is working on it now. When you close a request from the owner, leave its card in one of these states. When a To do card\'s "nextAt" arrives, the app sends its person a "Next step due" message; you hear about it only if the card is still in To do hours later. You alone write tasks.json and board.md, the office\'s notes on plans and priorities; team members send you changes.',
+    'Record each piece of work as a card. Set its assignee to the team member when you hand the work off and keep it through every status change, because the owner reads the board by who did what. Write no running "notes" on a card (house rule 8): its status, "waitingOn", "nextAt", Ask me question and "result" say where it stands. Move cards between todo, doing, waiting, blocked and done as the work moves, so the board is right whenever the owner looks. A card is "blocked" only while its question for the owner is open on Ask me, because Blocked tells the owner the card waits on them. A card waiting on someone outside the office, or on a team member, is "waiting", with "waitingOn" naming who in a few words (like "customer Gopi" or "Nick"), never the card\'s own person, and "nextAt" set to when to check back: the date the team member gave you (a date the other side named, else their judgement), or none, and the app checks back in three business days. Move it back to "doing" when they answer and the work starts again. When the app tells you a Waiting card\'s check back time has come, have its person follow up and set a new "nextAt"; after two follow ups with no reply, ask the owner on Ask me whether to keep waiting or close it. A card whose one off next step is its own person\'s at a set time is "todo", with "nextAt" set to that time; scheduled routines get no card (house rule 8). "doing" means someone is working on it now. When you close a request from the owner, leave its card in one of these states. When a To do card\'s "nextAt" arrives, the app sends its person a "Next step due" message; you hear about it only if the card is still in To do hours later. You alone write tasks.json and board.md, the office\'s notes on plans and priorities; team members send you changes.',
     '',
     '## Schedule requests',
     'You manage the office, so you decide the team\'s schedule requests. Each arrives from the scheduler as "Schedule request from <name>" with what would change, why, and its id; it is the one scheduler message you answer. Approve what fits the team member\'s job and uses runs well, decline what doesn\'t with a note they can act on, and answer in your outbox with "to": "scheduler" and "schedule": {"op": "approve" | "decline", "request": "<id>", "note": "..."}. Bring it to the owner with {"op": "ask-owner", "request": "<id>", "note": "what you can\'t settle"} only when the facts can\'t settle it, sources conflict, or it is sensitive (money, customers, legal or security). {"op": "pending"} lists what is waiting. Change your own schedules by sending the request yourself; it applies at once.',
     '',
     '## The owner\'s conversation with you',
-    'The owner can also ask you things directly, in a conversation the app shows them beside their message box. Each question reaches you typed, with its id. Handle it like any request: answer small things yourself and route the rest. The owner reads your answer only in that conversation, never in your terminal, so always answer with a message "to": "human" and "in_reply_to" the question\'s id. Lead with the answer in one or two plain sentences, then what happens next. Name files by their full path in backticks so the owner can open them; never paste a report. Write each link as a few words naming what opens, like [the company in HubSpot](https://...), never the bare address. Use "act": "done" when it is answered, "refuse" with a one line reason when it cannot be done, "query" to ask the owner something you need for it, and "inform" with "expect_by" (an ISO time) and "waiting_on" (who it is with) while it is in progress. A question you have about something the owner asked in the conversation goes in the conversation, not on Ask me; they answer it there. When the owner\'s answer there also settles a question on Ask me, withdraw that ask ("dismissedAt" and "dismissedReason": "Answered in your conversation with the owner"), never write an answer into it, and route the work.',
+    'The owner can also ask you things directly, in a conversation the app shows them beside their message box. Each question reaches you typed, with its id. Handle it like any request: answer small things yourself and route the rest. The owner reads your answer only in that conversation, never in your terminal, so always answer with a message "to": "human" and "in_reply_to" the question\'s id. Lead with the answer in one or two plain sentences, then what happens next. When an answer runs longer than a couple of sentences, keep the answer itself in the first sentence, then lay out the rest in the shape that reads best in a narrow panel: a short list with one item or figure per line, a small table of 2 or 3 columns when you compare several things on the same points (right align an amount column with --:), or short paragraphs under a short bold label. End with what happens next, and make an offer a question. Rewrite a report from the team into this shape. Copy each figure a team member gave you exactly, with its currency; never recompute, convert or round one unless the owner asks, and say so when you worked a figure out yourself. Name files by their full path in backticks so the owner can open them, and put longer detail in a file rather than the answer; never paste a report. Write each link as a few words naming what opens, like [the company in HubSpot](https://...), never the bare address. Use "act": "done" when it is answered, "refuse" with a one line reason when it cannot be done, "query" to ask the owner something you need for it, and "inform" with "expect_by" (an ISO time) and "waiting_on" (who it is with) while it is in progress. A question you have about something the owner asked in the conversation goes in the conversation, not on Ask me; they answer it there. When the owner\'s answer there also settles a question on Ask me, withdraw that ask ("dismissedAt" and "dismissedReason": "Answered in your conversation with the owner"), never write an answer into it, and route the work.',
     '',
     '## Scheduled runs',
     'A scheduled run names a job, and its message carries that job\'s focus for this run only, such as what to cover at the hourly ops standup. A scheduled run needs no reply, so do not answer it.',
@@ -418,11 +419,11 @@ export function teamMemberInstructions(name: string, role: string, michael: stri
   return [
     `You are ${name}, the ${role} on the team at ${where(b)}. ${michael} is the office manager: he gives you work and is your only link to the owner. Anything you need from the owner, such as an approval, an answer or a file, you file for ${michael} to check, and he puts it on the owner's Ask me board.`,
     '',
-    `When your work needs answers from someone, file it for ${michael} as one new file in the triage folder (${join(p.hiveRoot, 'triage')}), named by the time you file it and your id, like 20261011T143000-<your id>.json. Write {"title": "<a few plain words>", "description": "<what you were doing and why you need it>", "filedBy": "<your id>", "filedAt": "<time>"} with either "ask": "<the questions for the owner>" or "waitingOn": "<who outside the office>". When something only the owner can do happens on a website, such as signing in, accepting terms or paying, give the exact link the email or page offers for it, copied as it is, in your filing or message to ${michael}, so it reaches the owner's ask: only a link on the sender's own site, never a tracking or shortened one. Put all the questions one activity raised for the owner in one ask, one question to a line with any choices you would offer, and merge the ones that ask the same thing. When the same activity also needs an answer from someone outside the office, file a second one naming them in "waitingOn". Write each filing once and never change it. ${michael} reads the filings in the order they were filed and turns each into a card on the board. You never write tasks.json, your own cards included: when your work moves, such as finished, waiting on someone, or due again at a set time, tell ${michael} and he moves its card. A "Next step due" message from the app means a step of yours parked for a set time is due now: do it, then tell ${michael}. When the owner's answers come back through ${michael} with questions left unanswered, settle what you can yourself and file again only for what you still need.`,
+    `When your work needs answers from someone, file it for ${michael} as one new file in the triage folder (${join(p.hiveRoot, 'triage')}), named by the time you file it and your id, like 20261011T143000-<your id>.json. Write {"title": "<a few plain words>", "description": "<what you were doing and why you need it>", "filedBy": "<your id>", "filedAt": "<time>"} with either "ask": "<the questions for the owner>" or "waitingOn": "<who outside the office>". When something only the owner can do happens on a website, such as signing in, accepting terms or paying, give the exact link the email or page offers for it, copied as it is, in your filing or message to ${michael}, so it reaches the owner's ask: only a link on the sender's own site, never a tracking or shortened one. Put all the questions one activity raised for the owner in one ask, one question to a line with any choices you would offer, and merge the ones that ask the same thing. When the same activity also needs an answer from someone outside the office, file a second one naming them in "waitingOn". Write each filing once and never change it. ${michael} reads the filings in the order they were filed and turns each into a card on the board. You never write tasks.json, your own cards included: when your work moves, such as finished, waiting on someone, or due again at a set time, tell ${michael} and he moves its card. When it waits on someone, also tell him when to check back: the date they named (for "next week", the first working morning after it), else your own judgement of when a reply is due. A "Next step due" message from the app means a step of yours parked for a set time is due now: do it, then tell ${michael}. When the owner's answers come back through ${michael} with questions left unanswered, settle what you can yourself and file again only for what you still need.`,
     '',
     'Do what was asked, at the scope asked. If a request looks mistaken, say so in one sentence and carry on. Finish the whole task; if part is blocked, do the rest and say plainly what is missing and why. Anything hard to undo, public, or costing money is the owner\'s call, so send it to ' + michael + ' for approval first; go ahead with everything else. Email is the exception: the owner set how your mail leaves (your Sending setting, which list_mailboxes reports), so follow it.',
     '',
-    `When you finish or get stuck, message ${michael} with what you did, what you found and what you need. ${michael} passes your words to the owner, who reads them on a phone, so lead with the result, keep it to a few plain sentences, and use commas, colons and periods instead of dashes, which the owner prefers.`,
+    `When you finish or get stuck, message ${michael} with what you did, what you found and what you need. ${michael} passes your words to the owner, who reads them on a phone, so lead with the result, keep it to a few plain sentences, and use commas, colons and periods instead of dashes, which the owner prefers. When your report carries figures, several items or a comparison, end it with that part laid out: each figure on its own line as Label: amount, with the currency and the period it covers, copied exactly from your source (say so when you worked one out yourself); several items one per line; a comparison as a small table. More than about 8 lines go in a file in your folder, named in your report.`,
     '',
     `Only ${michael} assigns work. If you need a fact from a teammate to do your job, ask them directly: write to their id (listed in registry.json in ${p.hiveRoot}) with "act": "query", and answer a teammate's query the same way with "act": "inform". If they cannot help, or you need someone else to do something, tell ${michael}, who hands it off. Never give a teammate work yourself. A teammate\'s hive folder (agents/<id>/ in the hive), notes and inbox are theirs: never open them, ask instead. Files a teammate hands off or keeps in a shared work folder are fine to read.`,
     '',
@@ -2736,7 +2737,7 @@ export class HiveManager {
   /** A message the app itself or the owner sends Research (a card reminder,
    *  an owner answer, a house rule note): it passes the same trust layer, in
    *  the background, before Research sees it (ship review D2.1). */
-  private queueForResearch(msg: HiveMessage): void {
+  private queueForResearch(msg: HiveMessage, upkeep = false): void {
     const fromAgent = msg.from !== RESEARCH_ID && !!this.registry().agents[msg.from];
     // A teammate hears why its own message was refused, and Michael hears of
     // every refusal, the owner's and the app's too, so nothing sent to
@@ -2749,7 +2750,11 @@ export class HiveManager {
     };
     // Who heard of a hold: the sender (a teammate) and Michael, or Michael alone.
     const told: HeldTold = fromAgent ? (msg.from === (this.registry().godId ?? 'god') ? 'sender' : 'sender+michael') : 'michael';
-    const held = (why: HeldWhy, error?: string): void => this.recordHeld('in', msg.from, RESEARCH_ID, msg.subject, msg.body, why, error, told);
+    // Upkeep is never research, so it is left out of what the owner reviews.
+    const held = (why: HeldWhy, error?: string): void => { if (!upkeep) this.recordHeld('in', msg.from, RESEARCH_ID, msg.subject, msg.body, why, error, told); };
+    const checked = (outcome: CheckedOutcome, sent?: { subject?: unknown; body?: unknown }, kinds?: readonly string[]): void => {
+      if (!upkeep) this.recordChecked('in', msg.from, RESEARCH_ID, outcome, msg, sent, { kinds });
+    };
     if (!this.researchOn() || !this.trustLayer) {
       this.appendLog({ kind: 'trust-denied', from: msg.from, id: msg.id, reason: this.trustLayer ? 'research-off' : 'no-layer' });
       tell(this.trustLayer ? REFUSAL_OFF : REFUSAL_CHECK_FAILED);
@@ -2780,19 +2785,19 @@ export class HiveManager {
       try {
         // The owner changed what stays private while it was checked: checked
         // again under the new settings (Codex review, third ship).
-        if (this.policyOf(layer) !== policy) { this.queueForResearch(msg); return; }
+        if (this.policyOf(layer) !== policy) { this.queueForResearch(msg, upkeep); return; }
         // Turned off while it waited for a check that could not run.
         if (!this.researchOn() && this.checkMayRunLater(v)) return refuse(REFUSAL_OFF, 'research-off');
         if (v.decision === 'deny') {
           const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
           if (why) held(why, v.error);
-          else this.recordChecked('in', msg.from, RESEARCH_ID, 'stop', msg, undefined, { kinds: v.kinds });
+          else checked('stop', undefined, v.kinds);
           return refuse(v.reason);
         }
         // Research may have been turned off while the check ran.
         if (!this.researchOn()) return refuse(REFUSAL_OFF, 'research-off');
         this.deliverToResearch(msg.from, msg, v.subject, v.body);
-        this.recordChecked('in', msg.from, RESEARCH_ID, v.decision, msg, v, { kinds: v.decision === 'clean' ? v.removed : undefined });
+        checked(v.decision, v, v.decision === 'clean' ? v.removed : undefined);
         if (v.decision === 'clean' && fromAgent) this.tellSender(msg.from, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
         this.commit('hive: trust layer delivered to research');
       } catch (e) { console.error('[research] delivering a checked message', e); }
@@ -2807,7 +2812,7 @@ export class HiveManager {
       try {
         // The owner changed what stays private meanwhile: checked again under
         // the new settings, as a check that answered is (ship review 2026-10-17).
-        if (this.researchOn() && this.policyOf(layer) !== policy) { this.queueForResearch(msg); return; }
+        if (this.researchOn() && this.policyOf(layer) !== policy) { this.queueForResearch(msg, upkeep); return; }
         if (!this.researchOn()) refuse(REFUSAL_OFF, 'research-off');
         else { refuse(REFUSAL_CHECK_FAILED, 'failed'); held('failed'); }
       } catch { /* logged above */ }
@@ -2885,6 +2890,16 @@ export class HiveManager {
 
   /** The clean copy Research receives: built only from what the trust layer
    *  returned, with an id, time and thread the app chose. */
+  /** One of the app's fixed upkeep notes, straight to Research: its words are
+   *  the app's own, so there is nothing private to check and it is not a
+   *  question. Logged with its kind; with Research off it is dropped quietly. */
+  private upkeepToResearch(msg: HiveMessage, upkeep: UpkeepKind): void {
+    if (!this.researchOn()) { this.appendLog({ kind: 'drop', reason: 'research-off', from: msg.from, id: msg.id, upkeep }); return; }
+    this.appendLog({ kind: 'upkeep-to-research', from: msg.from, id: msg.id, upkeep });
+    this.researchCleared.add(msg.id);
+    try { this.routeMessage(msg); } finally { this.researchCleared.delete(msg.id); }
+  }
+
   private deliverToResearch(fromId: string, orig: HiveMessage, subject: string, body: string): void {
     // Research answers questions; it is never assigned work, so a request
     // reaches it as a query (a request would go to Michael as a teammate's
@@ -3079,14 +3094,16 @@ export class HiveManager {
   }
 
   /** Inject a message directly (used by the orchestrator / UI / tests). */
-  send(partial: Partial<HiveMessage>, from = 'system'): HiveMessage {
+  /** `upkeep`: the app's own upkeep note (shared/upkeep.ts), stamped here by
+   *  the code that sends it, never read from a message's file or words. */
+  send(partial: Partial<HiveMessage>, from = 'system', upkeep?: UpkeepKind): HiveMessage {
     const msg = this.normalize(partial, from);
-    this.routeMessage(msg);
+    this.routeMessage(msg, upkeep);
     this.commit(`hive: msg ${msg.from}→${msg.to} (${msg.act})`);
     return msg;
   }
 
-  private routeMessage(msg: HiveMessage): void {
+  private routeMessage(msg: HiveMessage, upkeep?: UpkeepKind): void {
     if (msg.hops > HOP_CAP) {
       // loop guard — drop a runaway message rather than let agents ping-pong.
       // There's no human queue to fall back on; the god agent owns conflicts,
@@ -3143,6 +3160,7 @@ export class HiveManager {
     // An owner question asked in the dock (michael-replies.md) closes only on
     // done or refuse: a holding reply or a question back keeps it open.
     const toOwner = msg.from === godId && resolveTo(msg.to) === godId;
+    // gstack-shortcut(dec-383ee82c): figures in Michael's answer are not checked against the team's report, upgrade when an answer records the reports it used or a wrong figure reaches the owner
     if (toOwner && msg.in_reply_to && (!this.isOwnerQuestion(msg.in_reply_to) || closesOwnerQuestion(msg.act))) {
       this.appendLog({ kind: 'owner-request-closed', id: msg.id, in_reply_to: msg.in_reply_to });
     }
@@ -3166,8 +3184,12 @@ export class HiveManager {
       return;
     }
     if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && !this.researchCleared.has(msg.id)) {
+      // The app's fixed upkeep notes are not research: no paid check, never
+      // listed (owner, 2026-10-17). Anything else, upkeep with someone's words
+      // included, is checked; only research is listed and counted.
+      if (upkeep && isFixedUpkeep(upkeep, msg.subject, msg.body)) { this.upkeepToResearch({ ...msg, to: RESEARCH_ID }, upkeep); return; }
       this.appendLog({ kind: 'message-held-for-trust-layer', from: msg.from, id: msg.id });
-      this.queueForResearch({ ...msg, to: RESEARCH_ID });
+      this.queueForResearch({ ...msg, to: RESEARCH_ID }, !!upkeep);
       return;
     }
     const targets = msg.to === 'broadcast'
@@ -3452,8 +3474,20 @@ export class HiveManager {
               repair: 'literal-line-break'
             });
           }
-          const msg = this.normalize(partial, id);
+          // The app makes every id: one an agent wrote can repeat (a second
+          // message with it overwrote the first in the inbox) or be missing
+          // from the sent copy, so the conversation read every reply as "".
+          const msg = this.normalize({ ...partial, id: undefined }, id);
           msg.from = id; // sender is authoritative — the owning directory
+          // The sent copy carries what was delivered: the app's id, sender and
+          // time (and repaired text), written in place before the one rename
+          // that archives it. Only a plain file of the agent's own is written
+          // over (red team, third ship); anything else is archived as written.
+          const stampSent = (): void => {
+            const sent = JSON.stringify({ ...partial, id: msg.id, from: msg.from, created_at: msg.created_at }, null, 2);
+            if (repairedText !== null) rewriteOwnFile(full, sent);
+            else try { rewriteOwnFile(full, sent); } catch { /* not a plain file */ }
+          };
           const schedule = (partial as { schedule?: unknown }).schedule;
           if (msg.to === 'scheduler' && schedule !== undefined && this.scheduleRequestHandler) {
             // A schedule request, not mail: main files it for the owner and the
@@ -3466,6 +3500,7 @@ export class HiveManager {
             }
             this.appendLog({ kind: 'schedule-request', from: id, id: msg.id });
             this.routeMessage(this.normalize({ to: id, act: 'inform', subject: 'Schedule request', body: reply }, 'scheduler'));
+            stampSent();
             this.archiveOutboxFile(full, join(outbox, '.sent'), f);
             routed++;
             continue;
@@ -3485,7 +3520,7 @@ export class HiveManager {
             mkdirSync(dest, { recursive: true });
             // Research's archive is the app's own record: its file is moved as
             // it is, never written through (red team, third ship).
-            if (repairedText !== null && !research) rewriteOwnFile(full, repairedText);
+            if (!research) stampSent();
             this.archiveOutboxFile(full, dest, f);
             routed++;
             continue;
@@ -3502,10 +3537,9 @@ export class HiveManager {
             }
           }
           this.routeMessage(msg);
-          // Repaired text replaces the original in place, then one rename
-          // archives it, so a failed step can never deliver it twice. Only a
-          // plain file of the agent's own is written over (red team, third ship).
-          if (repairedText !== null) rewriteOwnFile(full, repairedText);
+          // Stamped in place, then one rename archives it, so a failed step
+          // can never deliver it twice.
+          stampSent();
           this.archiveOutboxFile(full, join(outbox, '.sent'), f); // archive, don't reprocess
           routed++;
         } catch {
@@ -3851,6 +3885,8 @@ export class HiveManager {
    *  cards it saw Done, where each open card was, and the reminders it sent.
    *  Kept in the private folder; null until the first tick loads it. */
   private guard: GuardState | null = null;
+  /** Waiting cards past their check back time, for Michael's list (guardBoard). */
+  private goneQuiet: StuckCard[] = [];
   /** The guard state's signature as last saved, so a quiet tick writes nothing. */
   private guardSaved = '';
   /** Team members' filings waiting in triage/, oldest first, as of the last tick. */
@@ -3995,6 +4031,27 @@ export class HiveManager {
       } catch { unsent(); }
     }
     if (godId) for (const t of reminders.backstop) tell(nextStepBackstopNote(t, reminders.reminders[t.id]?.to), t.id);
+    // Waiting cards come back (card-lifecycle.md section 8): Michael is told
+    // once when a check back time comes, and keeps a gone quiet list while
+    // the card stays overdue. Without him the clock waits for the next tick.
+    if (godId) {
+      const now = Date.now();
+      const quiet = waitingChecks(tasks.map((t) => {
+        const id = (t as GuardCard | null)?.id;
+        return typeof id === 'string' && fixed.fixes[id] ? { ...(t as GuardCard), ...fixed.fixes[id] } : t;
+      }) as GuardCard[], before.waiting ?? {}, now);
+      this.guard.waiting = quiet.waiting;
+      this.goneQuiet = quiet.overdue
+        .sort((a, b) => Date.parse(a.clock.since) - Date.parse(b.clock.since))
+        .map(({ card, clock }) => ({
+          id: card.id, title: String(card.title ?? card.id).trim() || card.id,
+          ...(card.assignee ? { assignee: card.assignee } : {}), issue: 'gone-quiet' as const,
+          quiet: { ...(typeof card.waitingOn === 'string' ? { waitingOn: card.waitingOn } : {}), since: clock.since, followUps: clock.followUps }
+        }));
+      // Recorded as told before it goes out, so a crash never sends it twice.
+      this.saveGuard();
+      for (const d of quiet.due) tell(waitingDueNote(d.card, d.clock, d.askOwner, now, WAITING_FOLLOW_UPS), d.card.id);
+    } else this.guard.waiting = before.waiting;
     if (sent) this.commit(`hive: board guard (${sent} message${sent === 1 ? '' : 's'})`);
     this.saveGuard();
   }
@@ -4075,7 +4132,7 @@ export class HiveManager {
     try { this.filingsCache = this.pendingFilings(); } catch (e) { console.error('[hive] triage filings:', e); }
     // A list-style ask is flagged only when written since the reminder first
     // ran here, so asks already on the board keep their look (ask-me-options.md, 1A).
-    this.stuckCardsCache = [...blockedWithNothingAsked(tasks, this.ownerRequestsCache), ...asksToTidy(tasks, this.askListSince())];
+    this.stuckCardsCache = [...blockedWithNothingAsked(tasks, this.ownerRequestsCache), ...this.goneQuiet, ...asksToTidy(tasks, this.askListSince())];
     return this.ownerRequestsCache;
   }
 
@@ -4098,7 +4155,9 @@ export class HiveManager {
           // An agent's own outbox file often has no created_at (the router adds
           // it in memory; the archived copy keeps the raw file): use its time.
           const at = typeof raw.created_at === 'string' && raw.created_at ? raw.created_at : new Date(statSync(p).mtimeMs).toISOString();
-          m = { id: String(raw.id ?? ''), from: String(raw.from ?? ''), act: String(raw.act ?? ''), conversation: raw.conversation, in_reply_to: raw.in_reply_to, subject: raw.subject, created_at: at, to: raw.to };
+          // Sent copies archived before the app stamped them have no id: the
+          // file name stands in, so each still has its own one to answer.
+          m = { id: String(raw.id ?? '') || `sent-${f.slice(0, -'.json'.length)}`, from: String(raw.from ?? ''), act: String(raw.act ?? ''), conversation: raw.conversation, in_reply_to: raw.in_reply_to, subject: raw.subject, created_at: at, to: raw.to };
           // The owner's conversation needs the words (michael-replies.md); other
           // mail keeps only its envelope in memory.
           const ownerSide = raw.from === 'human' || OWNER_ALIASES.has(String(raw.to ?? '').toLowerCase()) || !!ownerQuestionOf(raw.conversation);
@@ -4358,7 +4417,9 @@ export class HiveManager {
   private ownerDockRaw(state: OwnerDockState, now: number, verified?: (m: ThreadMessage) => boolean): OwnerDock {
     const godDir = this.agentDir(this.registry().godId ?? 'god');
     const ownerSent = this.ownerMessages(this.ownerSentDir()) as ThreadMessage[];
-    const fromMichael = [...this.ownerMessages(join(godDir, 'outbox')), ...this.ownerMessages(join(godDir, 'outbox', '.sent'))] as ThreadMessage[];
+    // Routed replies only: one still in his outbox has no id of its own yet, and a
+    // Reply to it would point at an id that changes when it is routed (D14).
+    const fromMichael = this.ownerMessages(join(godDir, 'outbox', '.sent')) as ThreadMessage[];
     return ownerDock(ownerSent, fromMichael, state, now, verified, this.ownerAliases());
   }
 
@@ -5944,7 +6005,7 @@ The app fills in the id, the sender and the times. Only \`request\` and \`query\
 
 ${SCHEDULES_PROTOCOL}
 ## The task board
-\`tasks.json\` in the hive folder holds the cards (todo, doing, waiting, blocked, done; waiting names who else in waitingOn, never the card\'s own person, a card that only waits for its own person\'s one off step at a set time is todo with nextAt set to that time, scheduled routines get no card, and cards carry no running notes), each with a title and the team member it is assigned to. Only Michael writes \`tasks.json\` and \`board.md\`: when your work moves (finished, waiting on someone, due again at a set time), tell Michael and he moves its card. A done card stays done: only the owner reopens one. At a To do card's \`nextAt\` the app sends its person a "Next step due" message.
+\`tasks.json\` in the hive folder holds the cards (todo, doing, waiting, blocked, done; waiting names who else in waitingOn, never the card\'s own person, a card that only waits for its own person\'s one off step at a set time is todo with nextAt set to that time, scheduled routines get no card, and cards carry no running notes), each with a title and the team member it is assigned to. Only Michael writes \`tasks.json\` and \`board.md\`: when your work moves (finished, waiting on someone, due again at a set time), tell Michael and he moves its card. A done card stays done: only the owner reopens one. At a To do card's \`nextAt\` the app sends its person a "Next step due" message. A Waiting card's \`nextAt\` is when to check back on who it waits on; when it comes the app tells Michael.
 
 ## Asking the owner
 Only Michael asks the owner, on the Ask me board. A team member files what its work needs as one new file in \`triage/\` in the hive folder, named by the time and its id, written once and never changed: \`{ "title": "...", "description": "...", "filedBy": "<your id>", "filedAt": "<time>" }\` with either \`"ask"\` (one activity's questions for the owner, one to a line) or \`"waitingOn"\` (someone outside the office), one filing per source of answers. Something only the owner can do on a website, such as signing in or accepting terms, carries the exact link for it from the email or page (the sender's own site, never a tracking or shortened link), and Michael keeps it in the ask. Michael works the filings oldest first: he answers, merges into a card, drops a duplicate or makes a card (blocked on Ask me, or waiting), then moves the file to \`triage/.done/\`. A question stays on Ask me until the owner answers it or it is withdrawn, so there is one open ask per card: to change it, Michael folds what still matters into one ask and withdraws the old one with \`"dismissedAt"\` and \`"dismissedReason"\`. When the owner leaves some questions of an ask unanswered, Michael sends them with the answers to whoever raised them, who settles what it can and files back only what it still needs; Michael asks the owner again only for that, on the same card, or on a new card when that card is done. The owner's answer goes into the raiser's memory and to Michael, who routes the follow-up: the owner talks only to Michael.

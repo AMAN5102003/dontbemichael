@@ -97,6 +97,7 @@ import { handoffContext } from '../shared/safeClear';
 import { ownerQuestionsContext, ownerRequestsContext, stuckCardsContext } from '../shared/ownerRequests';
 import { lastAssistantText } from './transcriptText';
 import { stopReasonFor, type OfficeStopReason } from '../shared/officeBreak';
+import { RESTARTED_NOTE } from '../shared/upkeep';
 
 /** An MCP tool, or Claude Code's tools for MCP resources. */
 function isMcpCall(tool: string | undefined): boolean {
@@ -1060,7 +1061,7 @@ export class HookServer {
     // The resumed session gets no prompt of its own: this note wakes the member
     // (the inbox nudge) so its work carries on.
     try {
-      this.hive.send({ to: agentId, act: 'inform', subject: 'You were restarted', body: 'Your session stopped on a prompt only a person could answer, so the app restarted it. Carry on with your current work.' }, 'system');
+      this.hive.send({ to: agentId, act: 'inform', ...RESTARTED_NOTE }, 'system', 'restarted');
     } catch { /* Michael checks on them below */ }
     const t = setTimeout(() => this.checkStuckRestarts(), STUCK_CONFIRM_MS + 1_000);
     (t as { unref?: () => void }).unref?.();
