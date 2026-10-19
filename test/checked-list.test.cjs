@@ -157,12 +157,14 @@ test('the app\'s own upkeep waiting in Pete\'s inbox is not counted, and is remo
   await settle();
   hive.send({ to: 'research', act: 'inform', subject: 'Schedule change approved', body: 'Michael approved: News scan.' }, 'scheduler', 'schedule-decision');
   hive.send({ to: 'research', act: 'inform', subject: 'Focus', body: 'Look at flour prices' }, 'human');
+  hive.send({ to: 'research', act: 'request', subject: 'Scheduled: News scan', body: 'Run the news scan' }, 'scheduler');
   await settle();
-  assert.equal(msgsIn(hive, 'research').length, 3, 'delivered');
-  assert.equal(hive.researchWaiting(), 1, 'only the owner\'s note is a question waiting');
+  assert.equal(msgsIn(hive, 'research').length, 4, 'delivered');
+  assert.equal(hive.researchWaiting(), 2, 'the owner\'s note and the scheduled run are waiting; upkeep is not');
   hive.returnResearchInbox();
   assert.equal(msgsIn(hive, 'research').length, 0, 'removed');
-  assert.deepEqual(msgsIn(hive, 'god').map((m) => /A note from the owner/.test(m.body)), [true], 'Michael hears of the owner\'s note only');
+  assert.equal(msgsIn(hive, 'god').filter((m) => /Office open|Schedule change approved/.test(m.body)).length, 0, 'Michael never hears of the upkeep');
+  assert.ok(msgsIn(hive, 'god').some((m) => /A note from the owner/.test(m.body)), 'but does of the owner\'s note');
 });
 
 test('upkeep checked again after a privacy change is still never listed or counted', async (t) => {

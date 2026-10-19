@@ -3098,11 +3098,13 @@ export class HiveManager {
     return n;
   }
 
-  /** App upkeep, delivered: a schedule decision (only the scheduler sends
-   *  as 'scheduler'), or word for word one of the app's fixed notes from the
-   *  owner's side or the app. */
+  /** App upkeep, delivered: a schedule decision (only the scheduler sends as
+   *  'scheduler', and its scheduled runs are real work, so the decision is
+   *  known by its subject), or word for word one of the app's fixed notes from
+   *  the owner's side or the app. */
   private isAppUpkeep(m: { from?: unknown; subject?: unknown; body?: unknown }): boolean {
-    return m.from === 'scheduler' || ((m.from === 'human' || m.from === 'system') && isAnyFixedUpkeep(m.subject, m.body));
+    if (m.from === 'scheduler') return m.subject === 'Schedule change approved' || m.subject === 'Schedule change declined';
+    return (m.from === 'human' || m.from === 'system') && isAnyFixedUpkeep(m.subject, m.body);
   }
 
   /** As Research turns off: every message waiting in its inbox goes back to

@@ -339,7 +339,9 @@ export class ClosingTimeController {
       // Michael waits for it again if he was told it ended or isn't reporting
       // (a member still not reporting stays told: its brief waits with him).
       const ended = this.toldEnded.delete(agentId);
-      const quiet = !this.isSilent(agentId) && this.toldNotReporting.delete(agentId);
+      // Still not reporting: Michael hears that again after the back note,
+      // since its brief waits with him.
+      const quiet = this.isSilent(agentId) ? (this.toldNotReporting.delete(agentId), false) : this.toldNotReporting.delete(agentId);
       if (ended || quiet) {
         this.hive.send({
           to: this.godId,

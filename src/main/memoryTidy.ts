@@ -67,6 +67,15 @@ export interface TidyResult {
   stats?: { added: number; updated: number; deleted: number; procedures: number; repeats: number };
 }
 
+/** A held notes file whose notes are now elsewhere (the index or the inbox):
+ *  removed, or emptied when it can't be (Windows can hold a file open), so no
+ *  pass ever reads the same notes back twice. */
+function dropHeld(file: string): void {
+  try { rmSync(file, { force: true }); } catch {
+    try { writeFileSync(file, '', 'utf8'); } catch { /* left as is */ }
+  }
+}
+
 export class MemoryTidy {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
@@ -139,7 +148,7 @@ export class MemoryTidy {
     // Notes held by a pass that crashed go back into the inbox first.
     const stranded = join(memDir, 'inbox.processing.md');
     if (existsSync(stranded)) {
-      try { appendFileSync(inboxPath, '\n' + readFileSync(stranded, 'utf8')); rmSync(stranded, { force: true }); } catch { /* next pass */ }
+      try { appendFileSync(inboxPath, '\n' + readFileSync(stranded, 'utf8')); dropHeld(stranded); } catch { /* next pass */ }
     }
     if (!existsSync(indexPath) && !existsSync(inboxPath)) return null;
 
@@ -175,8 +184,9 @@ export class MemoryTidy {
     }
     const restore = () => {
       if (!held) return;
-      try { appendFileSync(inboxPath, (existsSync(inboxPath) ? '\n' : '') + held); rmSync(processing, { force: true }); }
-      catch { /* the processing file stays; the next pass reads it back below */ }
+      try { appendFileSync(inboxPath, (existsSync(inboxPath) ? '\n' : '') + held); }
+      catch { return; /* the processing file stays; the next pass reads it back below */ }
+      dropHeld(processing);
     };
 
     const today = localDay(new Date().toISOString());
@@ -224,11 +234,7 @@ export class MemoryTidy {
     // next pass.
     if (outcome.added.length) { try { this.onAdded(id, outcome.added); } catch { /* the notes stand; only the count misses them */ } }
     try { writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8'); } catch { /* tidied again sooner */ }
-    try { rmSync(processing, { force: true }); } catch {
-      // Emptied instead (Windows can hold a file open), so the next pass never
-      // reads notes the index already has back into the inbox.
-      try { writeFileSync(processing, '', 'utf8'); } catch { /* left as is */ }
-    }
+    dropHeld(processing);
 
     const tokens = estimateTokens(entriesBlock(outcome.entries));
     try {

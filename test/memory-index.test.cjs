@@ -245,6 +245,22 @@ test('a pass whose state write fails after the index landed counts its notes onc
   assert.equal(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').split('\n').filter((l) => l.includes('New fact')).length, 1);
 });
 
+test('held notes that cannot be removed after going back to the inbox come back only once', { skip: process.platform === 'win32' }, async (t) => {
+  // Value: protects=a locked processing file never adds the same notes again each pass; fails_when=the stranded recovery appends and then leaves the file full; why_new=ship review cycle 3; seam=a read only memory folder blocks the delete, not the inbox append
+  const f = addedOffice(t);
+  const mem = path.join(f.dir, 'memory');
+  fs.writeFileSync(path.join(mem, 'inbox.md'), '');
+  fs.writeFileSync(path.join(mem, 'inbox.processing.md'), '- a stranded note\n');
+  fs.chmodSync(mem, 0o500);
+  t.after(() => { try { fs.chmodSync(mem, 0o700); } catch { /* gone */ } });
+  f.tidy.askModel = async () => { throw new Error('no model'); };
+  await f.tidy.tidyNow();
+  await f.tidy.tidyNow();
+  fs.chmodSync(mem, 0o700);
+  const inbox = fs.readFileSync(path.join(mem, 'inbox.md'), 'utf8');
+  assert.equal(inbox.split('a stranded note').length - 1, 1, 'back once');
+});
+
 test('a processing file left after the index landed is never read back into the inbox', async (t) => {
   // Value: protects=a cleanup that failed (Windows can hold the file open) never adds or counts notes twice; fails_when=the stranded recovery appends notes the index already has; why_new=ship review cycle 2; seam=the processing file emptied as the fallback leaves it
   const f = addedOffice(t);
