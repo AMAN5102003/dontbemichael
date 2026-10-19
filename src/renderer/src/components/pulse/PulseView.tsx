@@ -286,7 +286,8 @@ export function PulseView() {
     const workGrid: CSSProperties = { display: 'grid', alignItems: 'center', gap: 14, gridTemplateColumns: layout === 'wide' ? '190px minmax(0, 1fr) 66px 86px' : layout === 'mid' ? '170px minmax(0, 1fr) 66px 76px' : 'minmax(0, 1fr) minmax(0, 1fr) 60px 70px' };
     // On a plan or an API key the dollars are a real cost; otherwise a pay per use value.
     const costWord = view.plan || view.billing === 'apiKey' ? 'pulse.work.cost' : 'pulse.work.value';
-    const outcomeLabel = (o: Outcome): string => t(`pulse.outcome.${o.kind}`, { sub: o.sub ?? 0 });
+    // Emails sent names how many went out approved without edits, only once any were sent (owner, 2026-10-19).
+    const outcomeLabel = (o: Outcome): string => t(o.kind === 'sent' && o.total === 0 ? 'pulse.outcome.sentNone' : `pulse.outcome.${o.kind}`, { sub: o.sub ?? 0 });
     const outcomeAria = (o: Outcome): string => `${outcomeLabel(o)}: ${o.by.map((b) => `${nameOf(b.agentId)} ${b.count}`).join(', ')}`;
     // Saved by your changes shows only once a change was applied (owner, 2026-10-15).
     const savedShown = view.saved.state !== 'none';

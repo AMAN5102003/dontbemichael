@@ -240,3 +240,14 @@ test('the Learning number opens the notes behind it, read on open by the same ru
   assert.match(main, /ipcMain\.handle\('pulse:learned'/);
   assert.match(main, /kind: 'note-added', ts, attrs: \{ id: n\.id, source: n\.source \}/, 'the record carries the id and source, never the note');
 });
+
+test('emails sent says how many went out approved without edits, and only once any were sent', () => {
+  // Value: protects=the owner's 2026-10-19 wording ("as written" read as jargon; "0 as written" said nothing at zero); fails_when=the second part returns at zero or the old words come back; why_new=owner ask 2026-10-19; seam=none; no_claim=ar and zh-CN wording (presence only)
+  assert.equal(en.pulse.outcome.sent, 'emails sent for you, {{sub}} approved without edits');
+  assert.equal(en.pulse.outcome.sentNone, 'emails sent for you');
+  assert.match(view, /t\(o\.kind === 'sent' && o\.total === 0 \? 'pulse\.outcome\.sentNone' : `pulse\.outcome\.\$\{o\.kind\}`, \{ sub: o\.sub \?\? 0 \}\)/);
+  for (const loc of ['ar', 'zh-CN']) {
+    const o = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).pulse.outcome;
+    assert.ok(o.sentNone && o.sent.includes('{{sub}}') && !o.sentNone.includes('{{sub}}'), loc);
+  }
+});

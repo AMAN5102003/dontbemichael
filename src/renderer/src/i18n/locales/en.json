@@ -2577,7 +2577,8 @@
     "whatGotDone": "What got done",
     "outcome": {
       "email": "emails organized",
-      "sent": "emails sent for you, {{sub}} as written",
+      "sent": "emails sent for you, {{sub}} approved without edits",
+      "sentNone": "emails sent for you",
       "task": "tasks finished",
       "check": "scheduled checks, {{sub}} found work"
     },
