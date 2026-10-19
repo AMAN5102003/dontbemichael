@@ -186,3 +186,18 @@ test('Spent and Your time fill their tiles: title at the top, plan use or what i
   assert.match(spent, /\.\.\.tight, justifyContent: 'space-between'/);
   assert.match(spent, /width: `\$\{Math\.min\(100, view\.headroom\.usedPct\)\}%`/, 'plan use is a bar at the foot');
 });
+
+test('the Learning number opens the notes behind it, read on open by the same rule, each note as plain text', () => {
+  // Value: protects=the owner can see what was learned (owner, 2026-10-18); fails_when=the link is lost, the list stops reading through pulse:learned, a note is rendered as markdown, or a deleted note shows nothing; why_new=list of new notes; seam=source pin, the renderer has no DOM harness; no_claim=how it looks
+  assert.match(view, /curAdded > 0 && <button type="button" onClick=\{\(\) => setLearnedOpen\(true\)\}/);
+  assert.match(view, /window\.cth\.pulseLearned\(from, to\)/);
+  const detail = view.slice(view.indexOf('function LearnedDetail'), view.indexOf('function Marked'));
+  assert.ok(detail.length > 0 && !/MarkdownPreview/.test(detail), 'agent written lines are never rendered as markdown');
+  assert.match(detail, /dir="auto"/);
+  assert.match(detail, /t\('pulse\.learning\.removed'\)/);
+  for (const k of ['open', 'none', 'removed', 'who']) assert.ok(en.pulse.learning[k], k);
+  assert.doesNotMatch(en.pulse.learning.tip, /day it was written/, 'the tip says a note counts when added, not edited');
+  const main = read('src/main/index.ts');
+  assert.match(main, /ipcMain\.handle\('pulse:learned'/);
+  assert.match(main, /kind: 'note-added', ts, attrs: \{ id: n\.id, source: n\.source \}/, 'the record carries the id and source, never the note');
+});

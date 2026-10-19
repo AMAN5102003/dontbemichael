@@ -21,7 +21,7 @@ import {
 import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, type Advice, type Dismissal, type LadderModel, type MissionFact } from '../shared/teamAdvice';
 import { keptSafe, type KeptSafe } from '../shared/pulseSafety';
 import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan';
-import { learning, type NoteFact } from '../shared/teamLearning';
+import { countFromDay, learnedNotes, learning, type AddedNote, type LearnedNote, type NoteFact } from '../shared/teamLearning';
 import { parseHeld, type HeldRow } from '../shared/heldRecord';
 import { parseChecked, type CheckedList, type CheckedRow } from '../shared/checkedRecord';
 import type { TelemetryStore } from './telemetryStore';
@@ -45,7 +45,7 @@ export interface PulseDeps {
   billing: () => 'account' | 'apiKey';
   /** The owner's plan and its monthly price (Settings first, else detected); null on an API key. */
   plan: () => PlanPrice | null;
-  /** Members' memory notes (date and source only) and procedure counts. */
+  /** Members' memory notes (id, date, source and the line itself) and procedure counts. */
   memory: () => { notes: NoteFact[]; procedures: Record<string, number> };
   /** The held list's private record as text (private/held.jsonl), '' when none. */
   readHeld?: () => string;
@@ -234,7 +234,27 @@ export class PulseService {
     for (const d of this.d.processor.days(office, before && before.from < range.from ? before.from : range.from)) turns.set(d.day, (turns.get(d.day) ?? 0) + (d.turns ?? 0));
     let mem: { notes: NoteFact[]; procedures: Record<string, number> } = { notes: [], procedures: {} };
     try { mem = this.d.memory(); } catch { /* memory unreadable: the row shows what it has */ }
-    return learning({ notes: mem.notes, procedures: mem.procedures, asks, turns: [...turns].map(([day, t]) => ({ day, turns: t })), range, previous: before });
+    const adds = this.adds(office, Math.min(range.fromMs, before?.fromMs ?? range.fromMs));
+    return learning({ notes: mem.notes, ...adds, procedures: mem.procedures, asks, turns: [...turns].map(([day, t]) => ({ day, turns: t })), range, previous: before });
+  }
+
+  /** The office's `note-added` records since a time, and the day they count from. */
+  private adds(office: string, since: number): { added: AddedNote[]; countFrom: string | null } {
+    try {
+      const countFrom = countFromDay(this.d.processor.firstNoteAdded(office));
+      return { added: countFrom ? this.d.processor.notesAdded(office, since) : [], countFrom };
+    } catch { return { added: [], countFrom: null }; }
+  }
+
+  /** The new notes behind the Learning number for a span of days (owner,
+   *  2026-10-18), by the same rule as the count. */
+  learned(from: string, to: string): LearnedNote[] {
+    const office = this.d.office();
+    if (!office || !this.d.db()) return [];
+    const range: DayRange = { from, to, fromMs: new Date(`${from}T00:00:00`).getTime(), toMs: new Date(`${to}T23:59:59.999`).getTime() };
+    let notes: NoteFact[] = [];
+    try { notes = this.d.memory().notes; } catch { /* the records still list, without their text */ }
+    return learnedNotes({ notes, ...this.adds(office, range.fromMs) }, range);
   }
 
   /** Value per week, last four weeks (this week last), per member; on a plan,

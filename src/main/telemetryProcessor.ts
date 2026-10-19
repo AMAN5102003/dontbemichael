@@ -21,6 +21,7 @@ import type Database from 'better-sqlite3';
 import { CostFold } from '../shared/costFold';
 import { dayKey, type MemberDay, type CardFact, type MailDecision, type MailDecisionKind } from '../shared/teamPerformance';
 import type { TelemetryStore, TelemetryRow } from './telemetryStore';
+import type { AddedNote } from '../shared/teamLearning';
 import { trustKeys, checkedKeys, refusalKey, REFUSAL_GATES, type RefusalGate } from '../shared/pulseSafety';
 
 export const RUN_IDLE_END_MS = 2 * 60_000;
@@ -294,6 +295,21 @@ export class TelemetryProcessor {
       try { attrs = r.attrs ? JSON.parse(r.attrs) : undefined; } catch { attrs = undefined; }
       return { id: r.id, office: r.office, agentId: r.agent_id, kind: r.kind, ts: r.ts, ...(r.value !== null ? { value: r.value } : {}), ...(attrs ? { attrs } : {}) };
     });
+  }
+
+  /** Notes new to members' memory since a time (Learning, owner 2026-10-18). */
+  notesAdded(office: string, since: number): AddedNote[] {
+    return this.rows(office, ['note-added'], since)
+      .filter((r) => r.agentId && typeof r.attrs?.id === 'string')
+      .map((r) => ({ agentId: r.agentId!, id: String(r.attrs!.id), source: String(r.attrs?.source ?? 'task'), at: r.ts }));
+  }
+
+  /** When the office's first `note-added` record was made; null before any. */
+  firstNoteAdded(office: string): number | null {
+    const db = this.db();
+    if (!db) return null;
+    const r = db.prepare("SELECT MIN(ts) AS t FROM telemetry_events WHERE office = ? AND kind = 'note-added'").get(office) as { t: number | null } | undefined;
+    return r?.t ?? null;
   }
 
   /** Cards finished or reopened since a time, with time held Blocked or Waiting. */

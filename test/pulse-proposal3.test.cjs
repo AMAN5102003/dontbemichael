@@ -84,6 +84,49 @@ test('Learning: the period\'s notes by source, its questions per 100 requests on
   assert.deepEqual([week.notes, week.procedures, week.knows.pam, week.knows.god], [5, 2, 5, 2], 'in all, whatever the period');
 });
 
+test('Learning counts a note when it is added, not when it is edited, and lists the same notes', () => {
+  // Value: protects=the number and its list (owner, 2026-10-18: "4 new today" were 3 new and an edit); fails_when=an edit or repeat counts, a day before the add records loses its notes, the first record's day counts twice, a deleted note keeps text, a reused id shows the wrong line, or count and list disagree; why_new=count moved to add records; seam=none; no_claim=the store (pulse-telemetry)
+  const { periodRange } = loadTs('src/shared/teamPerformance.ts');
+  const { learnedNotes, countFromDay } = loadTs('src/shared/teamLearning.ts');
+  const now = new Date(2026, 9, 18, 18).getTime(); // Sunday
+  const at = (d, h) => new Date(2026, 9, d, h).getTime();
+  const countFrom = countFromDay(at(14, 9));
+  assert.equal(countFrom, '2026-10-15', 'the first record\'s day still counts by date');
+  const notes = [
+    { agentId: 'pam', id: 'm40', source: 'owner', date: '2026-10-13', text: 'Before the records: counted by date' },
+    { agentId: 'pam', id: 'm41', source: 'task', date: '2026-10-14', text: 'The first record\'s day: by date' },
+    { agentId: 'creed', id: 'm27', source: 'task', date: '2026-10-18', text: 'An old note edited today' },
+    { agentId: 'pam', id: 'm42', source: 'task', date: '2026-10-18', text: 'Cold pitches go to Newsletters' },
+    { agentId: 'sadiq', id: 'm23', source: 'michael', date: '2026-10-18', text: 'Only the owner deletes cloud projects' },
+    { agentId: 'creed', id: 'm30', source: 'task', date: '2026-10-17', text: 'A later note that took a freed id' }
+  ];
+  const added = [
+    { agentId: 'pam', id: 'm42', source: 'task', at: at(18, 10) },
+    { agentId: 'sadiq', id: 'm23', source: 'michael', at: at(18, 11) },
+    { agentId: 'creed', id: 'm29', source: 'task', at: at(18, 12) },        // deleted since
+    { agentId: 'creed', id: 'm30', source: 'task', at: at(16, 9) },         // its id was freed...
+    { agentId: 'creed', id: 'm30', source: 'task', at: at(17, 9) },         // ...and given to this one
+    { agentId: 'creed', id: 'm27', source: 'task', at: at(10, 9) }          // added long ago; today only edited
+  ];
+  const today = learning({ notes, added, countFrom, procedures: {}, asks: [], turns: [], range: periodRange('today', now) });
+  assert.deepEqual(today.period.added, { you: 0, job: 2, michael: 1 }, 'the edit is not new; the deleted note was');
+  const list = learnedNotes({ notes, added, countFrom }, periodRange('today', now));
+  assert.deepEqual(list.map((n) => [n.agentId, n.from, n.text]), [
+    ['creed', 'job', null],
+    ['pam', 'job', 'Cold pitches go to Newsletters'],
+    ['sadiq', 'michael', 'Only the owner deletes cloud projects']
+  ], 'grouped as the legend, newest first, a deleted note without its line');
+  const week = learnedNotes({ notes, added, countFrom }, periodRange('this-week', now));
+  assert.deepEqual(week.filter((n) => n.id === 'm30').map((n) => [n.day, n.text]), [['2026-10-17', 'A later note that took a freed id'], ['2026-10-16', null]], 'a reused id: the latest add owns the line');
+  const month = learning({ notes, added, countFrom, procedures: {}, asks: [], turns: [], range: periodRange('this-month', now) });
+  const monthList = learnedNotes({ notes, added, countFrom }, periodRange('this-month', now));
+  assert.equal(month.period.added.you + month.period.added.job + month.period.added.michael, monthList.length, 'count and list are one rule');
+  assert.ok(monthList.some((n) => n.id === 'm40' && n.at === null) && monthList.some((n) => n.id === 'm41'), 'days up to the first record count by date');
+  assert.ok(!monthList.some((n) => n.id === 'm27' && n.day === '2026-10-18'), 'no add record today, so the edit is not listed');
+  const none = learning({ notes, procedures: {}, asks: [], turns: [], range: periodRange('today', now) });
+  assert.deepEqual(none.period.added, { you: 0, job: 2, michael: 1 }, 'with no records yet, the count is by date as before, the edit included');
+});
+
 test('Team at work: busiest, several times the average, quiet, and costly for its work only against enough peers', () => {
   // Value: protects=the callouts and headline; fails_when=a quiet member is called busy, a member with little time is judged on cost, or costly is called with too few to compare; why_new=owner proposal 3; seam=none; no_claim=none beyond protects
   const h = 3_600_000;
@@ -153,8 +196,8 @@ test('the cost ledger folds with the restart rule and counts only growth inside 
   assert.deepEqual([...m], [['pam\t2026-10-12', 3]]);
 });
 
-test('team memory reads dates and sources only, for the members asked about', (t) => {
-  // Value: protects=Learning's inputs; fails_when=a removed member's memory counts, a procedure is missed, or a free form line counts as a note; why_new=owner proposal 3; seam=temp hive; no_claim=none beyond protects
+test('team memory reads each note\'s id, date, source and line, for the members asked about', (t) => {
+  // Value: protects=Learning's inputs and the list's text (owner, 2026-10-18); fails_when=a removed member's memory counts, a procedure is missed, a free form line counts as a note, or a note loses the id its add record names; why_new=owner proposal 3, list of new notes; seam=temp hive; no_claim=none beyond protects
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'md-mem-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const dir = path.join(root, 'agents', 'pam');
@@ -164,7 +207,10 @@ test('team memory reads dates and sources only, for the members asked about', (t
   fs.mkdirSync(path.join(root, 'agents', 'gone'), { recursive: true });
   fs.writeFileSync(path.join(root, 'agents', 'gone', 'memory.md'), '- [m1] fact | x | owner | 2026-10-01\n');
   const m = readTeamMemory(root, ['pam', 'nobody']);
-  assert.deepEqual(m.notes, [{ agentId: 'pam', source: 'owner', date: '2026-10-01' }, { agentId: 'pam', source: 'task', date: '2026-10-02' }]);
+  assert.deepEqual(m.notes, [
+    { agentId: 'pam', source: 'owner', date: '2026-10-01', id: 'm1', text: 'Invoices go to the shared box' },
+    { agentId: 'pam', source: 'task', date: '2026-10-02', id: 'm2', text: 'Check: steps in x.md' }
+  ]);
   assert.deepEqual(m.procedures, { pam: 1 });
 });
 

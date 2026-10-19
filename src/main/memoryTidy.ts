@@ -78,6 +78,10 @@ export class MemoryTidy {
    * @param isIdle       Whether the office is quiet right now.
    * @param nameOf       An agent's display name, for the index heading.
    * @param appendLog    Sink for `memory-tidy` events (hive log.jsonl).
+   * @param onAdded      The notes a pass added to an index, once the index is
+   *                     written: Pulse records each in the app's own store, so
+   *                     an edit never counts as learning and no agent can
+   *                     change its own count (owner, 2026-10-18).
    */
   constructor(
     private getHome: () => string | null,
@@ -86,7 +90,8 @@ export class MemoryTidy {
     private isIdle: () => boolean,
     private nameOf: (id: string) => string,
     private appendLog: (event: Record<string, unknown>) => void,
-    private getModelEngine: () => HiddenModelEngine = () => ({})
+    private getModelEngine: () => HiddenModelEngine = () => ({}),
+    private onAdded: (agentId: string, added: Array<{ id: string; source: string }>) => void = () => {}
   ) {}
 
   start(): void {
@@ -210,6 +215,7 @@ export class MemoryTidy {
       for (const p of outcome.procedures) atomicWrite(join(memDir, 'procedures', `${p.slug}.md`), p.content);
       if (outcome.archived.length) appendFileSync(join(memDir, 'archive.md'), archiveLines(outcome.archived, today) + '\n');
       atomicWrite(indexPath, renderIndex(this.nameOf(id), id, outcome.entries));
+      if (outcome.added.length) { try { this.onAdded(id, outcome.added); } catch { /* the notes stand; only the count misses them */ } }
       writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8');
       rmSync(processing, { force: true });
     } catch (e) {

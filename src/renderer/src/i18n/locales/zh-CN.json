@@ -2625,7 +2625,7 @@
     },
     "learning": {
       "title": "学习",
-      "tip": "读取自每位成员的记忆：每条笔记都保留写下的日期和来源。向你提出的问题按团队处理的请求数计算。",
+      "tip": "笔记在加入成员记忆的当天计入，修改不计入。向你提出的问题按团队处理的请求数计算。",
       "fromYou": "来自你的回答",
       "onJob": "工作中学到",
       "fromMichael": "来自 {{godName}}",
@@ -2640,7 +2640,11 @@
       "inAll": "共 {{notes}} 条笔记和 {{procedures}} 份书面工作方法",
       "tooFewRate": "请求太少，暂时无法判断。",
       "tooFewBefore": "{{before}}的请求太少，无法判断。",
-      "counts": "{{turns}} 个请求中有 {{asks}} 个问题"
+      "counts": "{{turns}} 个请求中有 {{asks}} 个问题",
+      "open": "查看笔记",
+      "none": "没有新笔记。",
+      "removed": "之后已删除。",
+      "who": "{{name}}，{{day}}"
     },
     "work": {
       "title": "团队工作情况",

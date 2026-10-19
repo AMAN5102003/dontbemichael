@@ -552,7 +552,9 @@ const memoryTidy = new MemoryTidy(
   () => {
     const cfg = readConfig();
     return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
-  }
+  },
+  // Learning counts notes from the app's own record (owner, 2026-10-18).
+  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); }
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
@@ -6761,6 +6763,11 @@ ipcMain.handle('claude:plan', () => {
 // The held tile's list (owner, 2026-10-16): two times, checked here.
 ipcMain.handle('pulse:held', (_evt, fromMs: unknown, toMs: unknown) =>
   (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) ? pulse.held(fromMs, toMs) : []));
+// The new notes behind Learning's number (owner, 2026-10-18): two local days.
+ipcMain.handle('pulse:learned', (_evt, from: unknown, to: unknown) => {
+  const day = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  return day(from) && day(to) ? pulse.learned(from, to) : [];
+});
 // The questions and answers lists (owner, 2026-10-16): two times and a way,
 // checked here. A record that can't be read rejects, so the list says so.
 ipcMain.handle('pulse:checked', (_evt, fromMs: unknown, toMs: unknown, way: unknown) =>

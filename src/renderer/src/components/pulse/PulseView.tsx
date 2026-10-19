@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useTranslation } from 'react-i18next';
 import type { PulseView as PulseData } from '@shared/pulseView';
 import type { Advice } from '@shared/teamAdvice';
+import type { LearnedNote } from '@shared/teamLearning';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
 import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
 import { heldCause, notesPreview, HELD_TO_MEMORY, type HeldRow } from '@shared/heldRecord';
@@ -132,6 +133,8 @@ export function PulseView() {
   const [detail, setDetail] = useState<string | null>(null);
   // The held tile's list (owner, 2026-10-16).
   const [heldOpen, setHeldOpen] = useState(false);
+  // The new notes behind Learning's number (owner, 2026-10-18).
+  const [learnedOpen, setLearnedOpen] = useState(false);
   // The questions and answers lists (owner, 2026-10-16).
   const [checkedOpen, setCheckedOpen] = useState<'in' | 'out' | null>(null);
   const [applied, setApplied] = useState<Array<{ advice: Advice; appliedId: number; text: string }>>([]);
@@ -368,6 +371,7 @@ export function PulseView() {
             {pl && <WeekBars before labels={pairLabels} spoken={pairSpoken} series={[{ values: [pl.added.you, cur.added.you], color: 'var(--cth-green)' }, { values: [pl.added.job, cur.added.job], color: 'var(--cth-ink-4)' }, { values: [pl.added.michael, cur.added.michael], color: 'var(--cth-indigo)' }]} aria={t(`pulse.learning.sub.${s.period}`)} />}
             {!pl && curAdded > 0 && <Stack parts={[{ n: cur.added.you, color: 'var(--cth-green)' }, { n: cur.added.job, color: 'var(--cth-ink-4)' }, { n: cur.added.michael, color: 'var(--cth-indigo)' }]} aria={`${t('pulse.learning.fromYou')} ${cur.added.you}, ${t('pulse.learning.onJob')} ${cur.added.job}, ${t('pulse.learning.fromMichael')} ${cur.added.michael}`} />}
             {curAdded > 0 && <Legend items={[[t('pulse.learning.fromYou'), 'var(--cth-green)', cur.added.you], [t('pulse.learning.onJob'), 'var(--cth-ink-4)', cur.added.job], [t('pulse.learning.fromMichael'), 'var(--cth-indigo)', cur.added.michael]]} />}
+            {curAdded > 0 && <button type="button" onClick={() => setLearnedOpen(true)} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--cth-indigo-text)' }}>{t('pulse.learning.open')}</button>}
             <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.inAll', { notes: learn.notes.toLocaleString(i18n.language), procedures: learn.procedures })}</div>
           </div>
           <div style={tight}>
@@ -533,6 +537,7 @@ export function PulseView() {
           heldCount={checkedOpen === 'in' ? k.heldIn : k.heldOut} onClose={() => setCheckedOpen(null)} onOpenHeld={() => { setCheckedOpen(null); setHeldOpen(true); }} />;
       })()}
       {heldOpen && view && <HeldDetail from={view.snapshot.from} to={view.snapshot.to} count={(view.keptSafe ?? keptSafe([])).held} onClose={() => setHeldOpen(false)} />}
+      {learnedOpen && view && <LearnedDetail from={view.snapshot.from} to={view.snapshot.to} nameOf={nameOf} onClose={() => setLearnedOpen(false)} />}
     </div>
   );
 }
@@ -714,6 +719,42 @@ function HeldDetail({ from, to, count, onClose }: { from: string; to: string; co
         })}
         {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.earlier', { count: earlier })}</div>}
       </div>
+    </ListFrame>
+  );
+}
+
+/** The new notes Learning counted (owner, 2026-10-18), grouped as its legend,
+ *  newest first: the note, then who and which day. A note deleted since says so.
+ *  Read on open, by the same rule as the number. */
+function LearnedDetail({ from, to, nameOf, onClose }: { from: string; to: string; nameOf: (id: string) => string; onClose: () => void }) {
+  const { t, i18n } = useTranslation();
+  const { data: rows, failed, retry } = useListRows<LearnedNote[]>(() => window.cth.pulseLearned(from, to).then((r) => (Array.isArray(r) ? r : [])), [from, to]);
+  const groups: Array<[LearnedNote['from'], string, string]> = [['you', t('pulse.learning.fromYou'), 'var(--cth-green)'], ['job', t('pulse.learning.onJob'), 'var(--cth-ink-4)'], ['michael', t('pulse.learning.fromMichael'), 'var(--cth-indigo)']];
+  const day = (d: string): string => new Date(`${d}T12:00:00`).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
+  return (
+    <ListFrame icon="book" title={t('pulse.learning.learned')} failed={failed} reading={!rows} onRetry={retry} onClose={onClose}>
+      {rows && rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.learning.none')}</div>}
+      {groups.map(([key, label, color]) => {
+        const mine = (rows ?? []).filter((r) => r.from === key);
+        if (!mine.length) return null;
+        return (
+          <section key={key} aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+              <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />{label}<span style={{ ...mono, fontWeight: 400, color: 'var(--cth-ink-3)' }}>{mine.length}</span>
+            </div>
+            <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {mine.map((r) => (
+                <div key={`${r.agentId}-${r.id}-${r.at ?? r.day}`} role="listitem" style={{ ...rowBox, gap: 3 }}>
+                  {r.text !== null
+                    ? <div dir="auto" style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink)', overflowWrap: 'anywhere' }}>{r.text}</div>
+                    : <div style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' }}>{t('pulse.learning.removed')}</div>}
+                  <div style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-3)' }}>{t('pulse.learning.who', { name: nameOf(r.agentId), day: day(r.day) })}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })}
     </ListFrame>
   );
 }

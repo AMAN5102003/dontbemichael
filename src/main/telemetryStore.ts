@@ -30,7 +30,10 @@ export type TelemetryKind =
   // the held count and the held list come from one event, owner 2026-10-16).
   | 'trust-held'
   // One per message the check let through or stopped (owner, 2026-10-16).
-  | 'trust-checked';
+  | 'trust-checked'
+  // A note new to a member's memory index, by id and source, never its text
+  // (Learning, owner 2026-10-18: an edit or a repeat is not a new note).
+  | 'note-added';
 
 export interface TelemetryEvent {
   agentId: string | null;

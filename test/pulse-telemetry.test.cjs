@@ -543,3 +543,23 @@ test('a Claude member\'s transcript total never reaches Pulse cost; an engine wi
   assert.match(src, /if \(sample && \(sample\.sessionId \|\| \(a\.provider \?\? 'claude'\) !== 'claude'\)\) \{\s*pulseTelemetry\.cost\(id, sample\.sessionId \|\| `transcript:\$\{hive\.lastSession\(id\) \?\? ''\}`/);
   assert.doesNotMatch(src, /pulseTelemetry\.cost\(id, sample\.sessionId \|\| 'transcript'/);
 });
+
+test('note-added records come back by office with id and source, and the first one dates the count', (t) => {
+  // Value: protects=the record Learning counts new notes from (owner, 2026-10-18); fails_when=another office's or another kind's rows are read, a row without an id counts, or the first record is not found; why_new=new event kind; seam=real sqlite; no_claim=what writes the records (memory-index tests)
+  const { persist, store, proc } = setup(t);
+  assert.equal(proc.firstNoteAdded('/office'), null, 'no record yet');
+  const at = new Date(2026, 9, 18, 10).getTime();
+  store.record({ agentId: 'pam', kind: 'note-added', ts: at, attrs: { id: 'm42', source: 'task' } });
+  store.record({ agentId: 'sadiq', kind: 'note-added', ts: at + 60_000, attrs: { id: 'm23', source: 'michael' } });
+  store.record({ agentId: 'pam', kind: 'note-added', ts: at + 120_000 });
+  store.record({ agentId: 'pam', kind: 'card-reopen', ts: at, attrs: { id: 'c1' } });
+  store.flush();
+  persist.database().prepare("INSERT INTO telemetry_events (office, agent_id, kind, ts, value, attrs) VALUES ('/other', 'pam', 'note-added', ?, NULL, ?)").run(at - 86_400_000, JSON.stringify({ id: 'm1', source: 'owner' }));
+  assert.equal(proc.firstNoteAdded('/office'), at);
+  assert.deepEqual(proc.notesAdded('/office', at), [
+    { agentId: 'pam', id: 'm42', source: 'task', at },
+    { agentId: 'sadiq', id: 'm23', source: 'michael', at: at + 60_000 }
+  ]);
+  const row = persist.database().prepare("SELECT attrs FROM telemetry_events WHERE kind = 'note-added' AND agent_id = 'pam' AND attrs IS NOT NULL").get();
+  assert.deepEqual(Object.keys(JSON.parse(row.attrs)).sort(), ['id', 'source'], 'never the note itself');
+});

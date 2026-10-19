@@ -2625,7 +2625,7 @@
     },
     "learning": {
       "title": "Learning",
-      "tip": "Read from each member's memory: every note keeps the day it was written and where it came from. Questions to you are counted against the requests the team took.",
+      "tip": "A note counts on the day it is added to a member's memory; an edit does not. Questions to you are counted against the requests the team took.",
       "fromYou": "From your answers",
       "onJob": "Learned on the job",
       "fromMichael": "From {{godName}}",
@@ -2640,7 +2640,11 @@
       "inAll": "{{notes}} notes and {{procedures}} written ways of working in all",
       "tooFewRate": "Too few requests to tell yet.",
       "tooFewBefore": "{{before}} had too few requests to tell.",
-      "counts": "{{asks}} questions in {{turns}} requests"
+      "counts": "{{asks}} questions in {{turns}} requests",
+      "open": "See the notes",
+      "none": "No new notes.",
+      "removed": "Removed since.",
+      "who": "{{name}}, {{day}}"
     },
     "work": {
       "title": "Team at work",
