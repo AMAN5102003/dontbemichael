@@ -57,6 +57,29 @@ test('the lines read as words', () => {
   assert.equal(T.formatLine({ kind: 'every', everyMs: 30 * 60_000, days: [1, 3] }), 'every 30m Mon, Wed');
 });
 
+test('the schedule list reads the lines in the owner\'s language; Michael still reads English', () => {
+  const zh = {
+    day: (d) => ['日', '一', '二', '三', '四', '五', '六'][d],
+    everyDay: '每天', weekdays: '工作日', weekends: '周末',
+    list: (items) => items.join('、'),
+    and: (items) => (items.length > 1 ? `${items.slice(0, -1).join('、')}和${items[items.length - 1]}` : items[0]),
+    at: (days, time) => `${days} ${time}`,
+    every: (interval) => `每 ${interval}`,
+    span: (from, to) => `${from}至${to}`
+  };
+  assert.equal(T.formatTimes(owners, zh), '每 2h 工作日 08:00至18:00、周末 14:00');
+  assert.equal(T.formatTimes([{ kind: 'at', days: [1, 3], minute: 480 }, { kind: 'at', days: [1, 3], minute: 840 }], zh), '一、三 08:00和14:00');
+  assert.equal(T.formatTimes(owners, T.ENGLISH_WHEN), T.formatTimes(owners), 'English is the default');
+  assert.equal(M.whenWords({ intervalMs: 0, times: owners }), 'every 2h weekdays 08:00 to 18:00, weekends at 14:00', 'messages to Michael stay English');
+  const list = read('src/renderer/src/components/triggers/ScheduleList.tsx');
+  assert.match(list, /const words = whenWords\(t, i18n\.language\);/);
+  assert.doesNotMatch(list, /formatWeekly/, 'a weekly job is worded through the same words');
+  for (const loc of ['en', 'zh-CN', 'ar']) {
+    const s = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).schedulesSection;
+    for (const k of ['whenWeekends', 'whenAt', 'whenAnd', 'whenSpan', 'whenSep']) assert.ok(s[k], `${loc}: ${k}`);
+  }
+});
+
 test('agents ask for several times in one request, and the old forms still work', () => {
   const both = M.parseWhen([{ every: '2h', days: ['weekdays'], between: ['08:00', '18:00'] }, { days: ['weekends'], at: '14:00' }]);
   assert.deepEqual(both.times, owners);
@@ -105,7 +128,7 @@ test('main arms times like weekly, refuses bad lines, and agents are told how to
   assert.match(read('src/main/hive.ts'), /One job can have several: \\`"when": \[/);
   const list = read('src/renderer/src/components/triggers/ScheduleList.tsx');
   assert.match(list, /<WhenLines lines=\{lines\} onChange=\{setLines\} \/>/);
-  assert.match(list, /if \(times\) return formatTimes\(times\);/);
+  assert.match(list, /if \(times\) return formatTimes\(times, words\);/);
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const u = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).triggersUi;
     for (const k of ['addTime', 'removeTime', 'onlyBetween', 'and', 'windowHint', 'timeN']) assert.ok(u[k], `${loc}: ${k}`);
@@ -168,18 +191,19 @@ test('two requests from one agent about one job become one card (owner, 2026-09-
   assert.equal(replaced.length, 1);
   assert.equal(replaced[0].op, 'pause');
   const main = read('src/main/index.ts');
-  assert.match(main, /const filed = fileScheduleRequest\(before, built\.request, cfg\.missions \?\? \[\]\);/);
+  assert.match(read('src/main/scheduleRequests.ts'), /const filed = fileScheduleRequest\(before, built\.request, cfg\.missions \?\? \[\]\);/);
   assert.match(main, /const folded = foldScheduleRequests\(pending, cfg\.missions \?\? \[\]\);/);
 });
 
 test('Michael decides team members\' schedule requests; the owner sees only what he passes on (owner, 2026-09-27)', () => {
   const main = read('src/main/index.ts');
-  const intake = main.slice(main.indexOf('function receiveScheduleRequest('), main.indexOf('function tellMichaelAboutRequest('));
+  const requests = read('src/main/scheduleRequests.ts');
+  const intake = requests.slice(requests.indexOf('function receiveScheduleRequest('), requests.indexOf('function tellMichaelAboutRequest('));
   assert.match(intake, /if \(actor === godId && \(op === 'approve' \|\| op === 'decline' \|\| op === 'ask-owner' \|\| op === 'pending'\)\)/);
   assert.match(intake, /tellMichaelAboutRequest\(request, cfg\.missions \?\? \[\]\);/);
   assert.doesNotMatch(intake, /ownerToast/, 'a new request no longer pings the owner');
   assert.match(intake, /if \(actor === godId\) \{[\s\S]{0,200}applyScheduleRequest\(built\.request/, "Michael's own changes apply at once");
-  const decide = main.slice(main.indexOf('function michaelDecides('), main.indexOf('function decideScheduleRequest('));
+  const decide = requests.slice(requests.indexOf('function michaelDecides('), requests.indexOf('function decideScheduleRequest('));
   assert.match(decide, /if \(!note\) return 'Add a "note" saying what you can\\'t settle/);
   assert.match(decide, /escalated: true, escalation: note/);
   assert.match(main, /try \{ sweepScheduleRequests\(\); \}/, 'waiting requests reach Michael, then the owner');
@@ -208,8 +232,9 @@ test('merges keep a rename and a correction as asked; a joined request goes back
   assert.equal(joined.escalated, undefined);
   assert.equal(joined.sentToMichael, undefined);
   const main = read('src/main/index.ts');
-  assert.match(main, /if \(req\.escalated\) return 'That request is with the owner in ASK ME now/);
-  assert.match(main, /const overdue = pending\.filter\(\(r\) => !r\.escalated && r\.sentToMichael && now - \(r\.sentToMichaelAt \?\? r\.createdAt\) > MICHAEL_DECIDES_WITHIN_MS\);/);
+  const requests = read('src/main/scheduleRequests.ts');
+  assert.match(requests, /if \(req\.escalated\) return 'That request is with the owner in ASK ME now/);
+  assert.match(requests, /const overdue = pending\.filter\(\(r\) => !r\.escalated && r\.sentToMichael && at - \(r\.sentToMichaelAt \?\? r\.createdAt\) > MICHAEL_DECIDES_WITHIN_MS\);/);
   assert.match(main, /scheduleSweepTimer = setInterval\(/);
 });
 

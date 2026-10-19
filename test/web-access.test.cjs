@@ -98,20 +98,15 @@ test('Research can hold no mailbox, connector or schedule', () => {
   assert.match(main, /agentId === RESEARCH_ID \|\| typeof key !== 'string'/, 'connectors');
   assert.match(main, /if \(agentId === RESEARCH_ID\) return \{ ok: false \};\n  const quickbooks/, 'QuickBooks');
   assert.match(main, /if \(mission\.to === RESEARCH_ID\) return \{ ok: false, error: `\$\{hive\.researchName\(\)\} has no schedules` \};/);
-  assert.match(main, /if \(actor === RESEARCH_ID\) return 'You have no schedules/);
+  assert.match(read('src/main/scheduleRequests.ts'), /if \(actor === RESEARCH_ID\) return 'You have no schedules/);
 });
 
-test('Research\'s notes reach the shared memory only as a cleaned copy', () => {
-  // Value: protects=web text never enters the team's memory search unchecked; fails_when=the palace mines Research's folder as is, or a note the layer can't check is mined; why_new=ship review D2.9; seam=source (MemoryManager needs mempalace)
+test('Research\'s notes never reach a shared search; teammates ask Research', () => {
+  // Value: protects=web text never enters anything another member searches; fails_when=index.ts or the palace copies Research's notes again; why_new=ship review D2.9, then memory privacy (owner 2026-10-16: an agent's memory is private); seam=source (MemoryManager needs mempalace)
   const main = read('src/main/index.ts');
-  assert.match(main, /memory\.setNotesFilter\(researchNotesForPalace\);/);
-  assert.match(main, /if \(id !== RESEARCH_ID\) return undefined;/);
-  assert.match(main, /const text = readResearchNotes\(agentDir\);/);
-  assert.match(main, /const v = await trustLayer\.outbound\(\{ subject: 'Research notes', body: text \}\);\n  if \(v\.decision === 'deny'\) return clear\(\);/, 'a refused set is mined from nothing, not last time\'s copy');
-  const mem = read('src/main/memory.ts');
-  assert.match(mem, /if \(dir === null\) continue;\n        await this\.mineAgent\(dir, id\);/);
+  assert.doesNotMatch(main, /setNotesFilter|researchNotesForPalace|readResearchNotes/);
+  assert.doesNotMatch(read('src/main/memory.ts'), /mineAgent/);
 });
-
 test('Research runs only on Claude, where its walls work', () => {
   // Value: protects=an engine change can't start Research without its walls; fails_when=the spawn skips the engine check or Edit agent offers other engines for Research; why_new=security review pass 2, ship review D6.2; seam=none
   const main = read('src/main/index.ts');

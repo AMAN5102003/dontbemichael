@@ -112,7 +112,9 @@ export function logPoints(entries: Iterable<Record<string, unknown>>, since: num
         break;
       }
       case 'card-reopen': out.push({ agentId: agent, kind: 'card-reopen', ts, attrs: { id: e.id, ...BF } }); break;
-      case 'trust-layer': out.push({ agentId: null, kind: 'trust', ts, attrs: { way: e.way, decision: e.decision, by: e.by ?? null, flagged: e.flagged === true, ...BF } }); break;
+      case 'trust-layer': out.push({ agentId: null, kind: 'trust', ts, attrs: { way: e.way, decision: e.decision, by: e.by ?? null, flagged: e.flagged === true, ...(typeof e.v === 'number' ? { v: e.v } : {}), ...BF } }); break;
+      case 'trust-checked': if (e.way === 'in' || e.way === 'out') out.push({ agentId: null, kind: 'trust-checked', ts, attrs: { way: e.way, decision: e.decision, flagged: e.flagged === true, ...BF } }); break;
+      case 'trust-held': if (e.way === 'in' || e.way === 'out') out.push({ agentId: null, kind: 'trust-held', ts, attrs: { way: e.way, ...BF } }); break;
       // Before 2026-10-15 an old secret was logged as no-secret too, so only a
       // frame naming the wrong member is sure to be an impostor.
       case 'hook-frame-rejected': if (e.reason === 'wrong-sender') out.push({ agentId: agent, kind: 'refused', ts, attrs: { gate: 'impostor', ...BF } }); break;

@@ -69,7 +69,8 @@ src/
     telemetryProcessor.ts    folds Pulse's points into daily totals and scheduled runs every 30 seconds
     pulse.ts                 the Pulse service: the snapshot the view shows, and Apply, Undo and Not now on a way to
                              save, only from the owner's click; pulseBackfill.ts fills the weeks before Pulse began
-                             from the office log, members' sessions and the cost ledger
+                             from the office log, members' sessions and the cost ledger; checkedBackfill.ts puts
+                             together, once, the privacy check lists for checks made before the lists kept words
     teamMemory.ts            the dates and sources of each member's memory notes, for Pulse's Learning tiles
     claudeAccount.ts         which Claude plan the owner's account is on (plan fields of Claude Code's account record only)
     github.ts                GitHub issue + CI run ingestion via the gh CLI
@@ -89,12 +90,17 @@ src/
                              StopFailure `rate_limit` and the status line's reset time), no credit left, or a sign in or
                              API key that stopped working (docs/designs/office-stopped-account.md); Claude terminals
                              are held, schedules never are (the view and who it holds are in shared/officeBreak.ts)
+    silentWatch.ts           the watch for team members whose engine stops reporting to the app (issue #326): when one
+                             is not reporting, when Michael restarts one that never checked in once, when its terminal
+                             is stopped, and when it reports again (the rules are in shared/silentEngine.ts)
+    messageFile.ts           reads a file an agent could have written without following a link or waiting on a pipe
+                             (the router and Pulse's backfill)
     trustLayer.ts            the trust layer around Pete, the Research team member (docs/designs/research-agent-privacy.md):
                              inbound it passes, cleans or denies anything for him; outbound it strips instructions aimed
                              at agents and flags a steering answer to Michael; fixed patterns mark and recheck what
                              goes in to him; anything unsure, slow or failing is refused
     researchGoal.ts          Pete's Work style and jobs, as the trust layer passed them (his built in text until then)
-    researchNotes.ts         Pete's notes for the shared memory: plain files inside his own folder only
+    researchNotes.ts         Pete's files read only as plain files inside his own folder
     factoryReset.ts          what Settings, Reset & start over erases (app:resetAll in index.ts): everything the app
                              made for the office, in the office folder and the app's data folder; team folders,
                              roster backups, the owner's own files and the Claude sign in stay
@@ -132,7 +138,9 @@ src/
                              (cliUpdate:status push, cliUpdate:current pull)
     folderAccess.ts          who may open and change which folder: sandbox, permission rules, hook checks;
                              Pete's walls (his own folders only; his file tools open no temp folder, his shell
-                             only /tmp) and everyone's wall around his
+                             only /tmp) and everyone's wall around his; every agent's wall, Michael's included,
+                             around each other member's hive folder and the hive's history (withMemberWall,
+                             memberWallDecision)
     ownValue.ts              reads a lookup table by its own keys only, never one inherited from Object
     appName.ts               app name, data folder name, dontbemichael:// URL scheme
     missions.ts              schedules: ownership, next run, the scheduler's arm plan, one-schedule edits,
@@ -172,7 +180,10 @@ src/
                              shell network list everyone else's sandbox gets, Michael included
     teamPerformance.ts       Pulse's measures (docs/designs/team-performance.md); teamAdvice.ts its ways to save,
                              teamLearning.ts its Learning tiles, pulseSafety.ts its Kept safe tiles, pulseView.ts
-                             what the view receives
+                             what the view receives; heldRecord.ts and checkedRecord.ts the rows of its held list
+                             and its privacy check lists (private/held.jsonl, private/checked.jsonl)
+    silentEngine.ts          the rules for a team member whose engine stops reporting to the app, and the card's
+                             shape (branding/DESIGN.md 7.6b; the watch is main/silentWatch.ts)
     claudePlan.ts            the owner's Claude plan and its monthly price, for Pulse's costs on a plan
     costFold.ts              the cost running total rule the lifetime ledger and Pulse share
   preload/                   contextBridge → typed window.cth API
@@ -211,7 +222,8 @@ src/
     WorkStyleUpdateCards,    Ask me cards offering a newer default job description (Use the new one / Keep mine)
     ScheduledJobs,           an agent's scheduled jobs and their focus areas, shown with its Work style
     AddAgentModal,           the hire wizard (Who, Job, Role, Finalize); EditAgentModal edits the plain work style
-                             and holds the Danger zone's Delete (shell/deleteTeamMember.ts)
+                             and holds the Danger zone's Delete (shell/deleteTeamMember.ts); store/leaveGuard.ts
+                             asks before any way out of Edit loses unsaved changes
     ResearchPrivacySettings, Settings > Research & privacy: Pete's on and off row and what the team may send him;
                              shell/research.ts starts and stops it, in every office, and gives its current name
     ErrorBoundary,           a crash in the window shows a recovery screen with Reload, not a blank window
@@ -229,6 +241,8 @@ src/
                              (markdown/remarkFileChips.ts finds them); FileTabView shows an opened file in its tab
                              (store/fileTabs.ts keeps the tabs; docs/designs/open-file-tab.md)
     OfficeBreakNotice,       the office break's card on Ask me and its chip in the top bar
+    SilentEngine,            the Not reporting cards on Needs you, the amber tag on a member's pod and panel, and
+                             the line above its panel's tabs (branding/DESIGN.md 7.6b)
     ThreadsPanel,            hive message conversation viewer (Messages tab)
     MessageQueueComposer,    park messages for a busy agent; on Michael's panel a question goes to his dock (shell/ownerSend.ts)
     scene/studio/            the office studio: isometric SVG stage, pods, Michael's office, life layer (branding/DESIGN.md 8)

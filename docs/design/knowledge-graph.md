@@ -50,7 +50,9 @@ only `node:fs` avoids that entirely, and matches how agents already read `memory
 
 Keyword scoring needs no dependencies, is deterministic and easy to test, and works well when
 people search with their own documents' words. Search by meaning reuses MemPalace, the local
-vector store the app already runs for agents' memory, instead of adding a second embedder.
+vector store the app already ran for agents' memory, instead of adding a second embedder.
+Since 2026-10-16 the palace holds company knowledge only: each agent's memory is private to it
+and is never mined (`src/main/memory.ts`).
 The agent contract (`search`, `list`, `get`) stays the same whichever index answers it.
 
 ---

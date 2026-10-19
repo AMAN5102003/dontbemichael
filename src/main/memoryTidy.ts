@@ -67,6 +67,15 @@ export interface TidyResult {
   stats?: { added: number; updated: number; deleted: number; procedures: number; repeats: number };
 }
 
+/** A held notes file whose notes are now elsewhere (the index or the inbox):
+ *  removed, or emptied when it can't be (Windows can hold a file open), so no
+ *  pass ever reads the same notes back twice. */
+function dropHeld(file: string): void {
+  try { rmSync(file, { force: true }); } catch {
+    try { writeFileSync(file, '', 'utf8'); } catch { /* left as is */ }
+  }
+}
+
 export class MemoryTidy {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
@@ -78,6 +87,10 @@ export class MemoryTidy {
    * @param isIdle       Whether the office is quiet right now.
    * @param nameOf       An agent's display name, for the index heading.
    * @param appendLog    Sink for `memory-tidy` events (hive log.jsonl).
+   * @param onAdded      The notes a pass added to an index, once the index is
+   *                     written: Pulse records each in the app's own store, so
+   *                     an edit never counts as learning and no agent can
+   *                     change its own count (owner, 2026-10-18).
    */
   constructor(
     private getHome: () => string | null,
@@ -86,7 +99,8 @@ export class MemoryTidy {
     private isIdle: () => boolean,
     private nameOf: (id: string) => string,
     private appendLog: (event: Record<string, unknown>) => void,
-    private getModelEngine: () => HiddenModelEngine = () => ({})
+    private getModelEngine: () => HiddenModelEngine = () => ({}),
+    private onAdded: (agentId: string, added: Array<{ id: string; source: string }>) => void = () => {}
   ) {}
 
   start(): void {
@@ -134,7 +148,7 @@ export class MemoryTidy {
     // Notes held by a pass that crashed go back into the inbox first.
     const stranded = join(memDir, 'inbox.processing.md');
     if (existsSync(stranded)) {
-      try { appendFileSync(inboxPath, '\n' + readFileSync(stranded, 'utf8')); rmSync(stranded, { force: true }); } catch { /* next pass */ }
+      try { appendFileSync(inboxPath, '\n' + readFileSync(stranded, 'utf8')); dropHeld(stranded); } catch { /* next pass */ }
     }
     if (!existsSync(indexPath) && !existsSync(inboxPath)) return null;
 
@@ -170,8 +184,9 @@ export class MemoryTidy {
     }
     const restore = () => {
       if (!held) return;
-      try { appendFileSync(inboxPath, (existsSync(inboxPath) ? '\n' : '') + held); rmSync(processing, { force: true }); }
-      catch { /* the processing file stays; the next pass reads it back below */ }
+      try { appendFileSync(inboxPath, (existsSync(inboxPath) ? '\n' : '') + held); }
+      catch { return; /* the processing file stays; the next pass reads it back below */ }
+      dropHeld(processing);
     };
 
     const today = localDay(new Date().toISOString());
@@ -210,12 +225,16 @@ export class MemoryTidy {
       for (const p of outcome.procedures) atomicWrite(join(memDir, 'procedures', `${p.slug}.md`), p.content);
       if (outcome.archived.length) appendFileSync(join(memDir, 'archive.md'), archiveLines(outcome.archived, today) + '\n');
       atomicWrite(indexPath, renderIndex(this.nameOf(id), id, outcome.entries));
-      writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8');
-      rmSync(processing, { force: true });
     } catch (e) {
       restore();
       return this.abort(id, 'write-failed', String(e));
     }
+    // The index holds the notes now: handing them back would add them twice,
+    // and count them twice. A state or cleanup step that fails waits for the
+    // next pass.
+    if (outcome.added.length) { try { this.onAdded(id, outcome.added); } catch { /* the notes stand; only the count misses them */ } }
+    try { writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8'); } catch { /* tidied again sooner */ }
+    dropHeld(processing);
 
     const tokens = estimateTokens(entriesBlock(outcome.entries));
     try {

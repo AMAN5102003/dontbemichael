@@ -174,8 +174,10 @@ export function postGx(i: number, n: number): number {
 }
 
 export const HUB: Pt = [0, 0];
-/** Stage px of Michael's hub card, under his glass pod. */
-export const HUB_CARD = { left: 447, top: 494, w: 196 };
+/** Stage px of Michael's hub card, under his glass pod. 212 px wide so its
+ *  five board counts' labels never touch ("Blocked" is 38.5 px at 10 px;
+ *  design review 2026-10-18, 3A). */
+export const HUB_CARD = { left: 447, top: 494, w: 212 };
 /** Where an escalation leaves the stage, toward the Needs you board. */
 export const EXIT: Pt = [1056, 196];
 /** The top of Michael's pod, where his tokens start. */

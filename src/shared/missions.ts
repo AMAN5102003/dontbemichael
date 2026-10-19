@@ -206,6 +206,38 @@ export function firePayload(m: ScheduledMission): { to: string; subject: string;
   };
 }
 
+/* ───────────────────────────────── run now ───────────────────────────────── */
+// The owner runs one job at once, to see it work without waiting for its clock
+// (docs/designs/schedule-run-now.md). A run now sends exactly what the clock
+// sends (firePayload) and stamps lastFiredAt the same way, so it is a real run.
+
+/** How soon after a run the same job can be run again by hand. A double click,
+ *  or a click right after the clock fired, would otherwise send the job twice. */
+export const RUN_NOW_GAP_MS = 60_000;
+
+export type RunNowCheck =
+  | { ok: true; mission: ScheduledMission }
+  | { ok: false; error: 'not found' | 'not a job' | 'just ran' };
+
+/** May the schedule `id` be run now? Only a job (a dispatch schedule) can: the
+ *  heartbeat is the office's own pulse and a compact row sends nothing. A paused
+ *  job can, so the owner can try it before turning it on. */
+export function runNowCheck(list: ScheduledMission[], id: string, now: number): RunNowCheck {
+  const mission = list.find((m) => m.id === id);
+  if (!mission) return { ok: false, error: 'not found' };
+  if ((mission.kind ?? 'dispatch') !== 'dispatch' || !firePayload(mission)) return { ok: false, error: 'not a job' };
+  const last = mission.lastFiredAt ?? 0;
+  if (last > 0 && now >= last && now - last < RUN_NOW_GAP_MS) return { ok: false, error: 'just ran' };
+  return { ok: true, mission };
+}
+
+/** What a row says after main answers a run now: sent, ran a moment ago (the
+ *  gap above), or failed for any other reason. */
+export function runNowOutcome(res: { ok: boolean; error?: string }): 'sent' | 'justRan' | 'failed' {
+  if (res.ok) return 'sent';
+  return res.error === 'just ran' ? 'justRan' : 'failed';
+}
+
 /* ──────────────────────────── one-schedule edits ──────────────────────────── */
 // Each operation names the one schedule it changes and is applied by main to the
 // list it reads at that moment, so a screen opened earlier can never delete a

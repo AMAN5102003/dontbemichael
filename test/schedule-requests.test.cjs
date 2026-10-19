@@ -106,8 +106,8 @@ test('the renderer can only change one schedule at a time', () => {
 });
 
 test('approving a request goes through the stale check and the one-schedule write', () => {
-  const main = read('src/main/index.ts');
-  const fn = main.slice(main.indexOf('function decideScheduleRequest('), main.indexOf('function describeScheduleRequest('));
+  const requests = read('src/main/scheduleRequests.ts');
+  const fn = requests.slice(requests.indexOf('function decideScheduleRequest('));
   // Applied inside the single writer, against the list as it is when written;
   // applyScheduleRequest refuses a stale request itself.
   assert.match(fn, /applyMissions\(\(list\) => \{\s*const applied = applyScheduleRequest\(req, list,/);
@@ -148,11 +148,14 @@ test('only Michael notifies: every desktop toast in main is his, or one of the a
   for (const t of titles) assert.ok(['michaelName()', 'title'].includes(t), `unexpected toast title ${t}`);
   const toasts = [...main.matchAll(/ownerToast\(([^,]+),/g)].map((m) => m[1].trim()).filter((t) => t !== 'title: string');
   // Two of Michael's are the office break starting and ending (issue 124).
-  assert.deepEqual(toasts.sort(), ["'Agent running degraded'", "'Agents need a restart'", 'michaelName()', 'michaelName()', 'michaelName()', 'michaelName()', 'michaelName()', 'michaelName()'].sort());
+  assert.deepEqual(toasts.sort(), ["'Agent running degraded'", "'Agents need a restart'", 'michaelName()', 'michaelName()', 'michaelName()', 'michaelName()'].sort());
+  // Schedule requests (scheduleRequests.ts) toast only as Michael too.
+  const requests = read('src/main/scheduleRequests.ts');
+  assert.deepEqual([...requests.matchAll(/deps\.ownerToast\(([^,]+),/g)].map((m) => m[1].trim()), ['deps.michaelName()', 'deps.michaelName()']);
   assert.match(main, /toast: \(body\) => ownerToast\(michaelName\(\), body\)/, 'an email to approve is announced by Michael');
   assert.doesNotMatch(main, /constrained`/, 'a constrain no longer toasts');
   assert.match(main, /ownerToast\(michaelName\(\), `I stopped \$\{name\}: \$\{reason\}`\);/);
-  assert.match(main, /ownerToast\(michaelName\(\), `\$\{name\}'s schedule change needs you in ASK ME\.`\);/, 'only when Michael passes it on');
+  assert.match(requests, /deps\.ownerToast\(deps\.michaelName\(\), `\$\{name\}'s schedule change needs you in ASK ME\.`\);/, 'only when Michael passes it on');
   assert.match(read('src/main/hooks.ts'), /if \(!agentId \|\| !this\.isGod\(agentId\)\) return(?: false)?;/);
 });
 

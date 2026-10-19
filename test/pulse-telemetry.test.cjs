@@ -19,11 +19,15 @@ if (!process.env.PULSE_UNDER_ELECTRON) {
   try { bin = require('electron'); } catch { bin = null; }
   const ok = typeof bin === 'string' && fs.existsSync(bin);
   test('telemetry store and processor (run under Electron\'s Node)', { skip: ok ? false : 'no Electron binary' }, () => {
-    const r = spawnSync(bin, ['--test', __filename], {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PULSE_UNDER_ELECTRON: '1' },
-      encoding: 'utf8', timeout: 300_000
-    });
+    // Value: protects=a failing test in this file fails the suite; fails_when=the nested run inherits NODE_TEST_CONTEXT and exits 0 on a failure; why_new=ship coverage audit 2026-10-17 found a red inner test reported green; seam=none; no_claim=none beyond protects
+    // `node --test` sets NODE_TEST_CONTEXT for each file it runs; inherited, it
+    // makes the nested run report to a parent that is not listening and exit 0
+    // whatever fails, so it is taken out of the child's environment.
+    const env = { ...process.env, ELECTRON_RUN_AS_NODE: '1', PULSE_UNDER_ELECTRON: '1' };
+    delete env.NODE_TEST_CONTEXT;
+    const r = spawnSync(bin, ['--test', __filename], { env, encoding: 'utf8', timeout: 300_000 });
     assert.equal(r.status, 0, `${r.stdout}\n${r.stderr}`);
+    assert.match(r.stdout, /# fail 0/, 'the nested run reported its own results');
   });
   return;
 }
@@ -126,11 +130,11 @@ test('cost counts a restart whole, repeats are not stored, and a crash mid batch
 test('a failed write is counted for its day and the day is reported; records keep the presence and card facts', (t) => {
   // Value: protects=D15 and E2, E3, E4 sources; fails_when=a failed write is silent, or reopen, held time or away share is lost; why_new=D15; seam=none; no_claim=disk full on a real disk (closed handle stands in)
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-pulse-fail-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   let open = false;
   const persist = new PersistStore(path.join(dir, 'harness.db'));
   persist.open();
-  t.after(() => persist.close());
+  // Closed before the folder goes: Windows can't delete an open database.
+  t.after(() => { persist.close(); fs.rmSync(dir, { recursive: true, force: true }); });
   const when = new Date(2026, 9, 14, 10).getTime();
   const store = new TelemetryStore(() => (open ? persist.database() : null), () => '/office', () => when);
   store.record({ agentId: 'pam', kind: 'email', ts: when, value: 3 });
@@ -191,7 +195,7 @@ function service(t, opts = {}) {
 test('Apply changes a schedule only if it still is what the advice saw; Undo restores it; Not now hides it', (t) => {
   // Value: protects=D10 apply and undo, compare and set, D13 dismiss; fails_when=a stale or double click overwrites a schedule, Undo restores the wrong value, or a dismissed card stays; why_new=new apply path; seam=none; no_claim=the Schedules UI refresh (missions:updated is sent by applyMissions)
   const { svc, missions, setMissions } = service(t);
-  const view = svc.snapshot('last-week');
+  const view = svc.snapshot('this-week');
   assert.equal(view.available, true);
   const [advice] = view.advice;
   assert.equal(advice.kind, 'run-less');
@@ -285,8 +289,26 @@ test('trust layer decisions and refusals become Kept safe counters', (t) => {
   const { keptSafe } = loadTs('src/shared/pulseSafety.ts');
   const day = new Date(ts); const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
   assert.deepEqual(keptSafe(proc.safetyRows('/office', key, key)), {
-    toInternet: { pass: 1, clean: 1, stop: 1 }, webAnswers: { pass: 1, clean: 1, flagged: 1 }, held: 2, rules: { quickbooks: 1 }, any: true
+    toInternet: { pass: 1, clean: 1, stop: 1 }, webAnswers: { pass: 1, clean: 1, flagged: 1 }, held: 2, heldIn: 1, heldOut: 1, rules: { quickbooks: 1 }, any: true
   });
+});
+
+test('from v 3 the hive\'s trust-checked line is what counts; the trust layer\'s own v 3 line adds nothing', (t) => {
+  // Value: protects=eng D5 through the real processor: one count per message, the tile equals the list; fails_when=the processor drops trust-checked, counts an answer's stop, or a v 3 trust line counts a second time; why_new=checked-list.test.cjs pins the fold in source only; seam=none; no_claim=the hive writing the lines (checked-list.test.cjs)
+  const { store, proc, clock } = setup(t);
+  const ts = clock.now();
+  // The same three messages, as the trust layer (v 3) and the hive log them.
+  for (const a of [{ way: 'in', decision: 'clean', v: 3 }, { way: 'in', decision: 'deny', by: 'model', v: 3 }, { way: 'out', decision: 'pass', flagged: true, v: 3 }]) store.record({ agentId: null, kind: 'trust', ts, attrs: a });
+  for (const a of [{ way: 'in', decision: 'clean' }, { way: 'in', decision: 'stop' }, { way: 'out', decision: 'pass', flagged: true }, { way: 'out', decision: 'stop' }, { way: 'sideways', decision: 'pass' }]) store.record({ agentId: null, kind: 'trust-checked', ts, attrs: a });
+  store.record({ agentId: null, kind: 'trust-held', ts, attrs: { way: 'out' } });
+  store.record({ agentId: null, kind: 'trust-held', ts, attrs: { way: 'nowhere' } });
+  proc.tick('/office');
+  const { keptSafe } = loadTs('src/shared/pulseSafety.ts');
+  const day = new Date(ts); const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+  const k = keptSafe(proc.safetyRows('/office', key, key));
+  assert.deepEqual(k.toInternet, { pass: 0, clean: 1, stop: 1 }, 'once each, from the hive\'s lines');
+  assert.deepEqual(k.webAnswers, { pass: 1, clean: 0, flagged: 1 }, 'an answer\'s stop is no count');
+  assert.deepEqual([k.held, k.heldIn, k.heldOut], [1, 0, 1], 'a line with no known way is skipped');
 });
 
 test('the backfill reads the office log, sessions and cost ledger once, before the first live point', async (t) => {
@@ -342,7 +364,7 @@ test('the backfill reads the office log, sessions and cost ledger once, before t
 test("on a plan, each member's cost is their part of the plan's cost so far this period; on an API key nothing is split", (t) => {
   // Value: protects=the owner's realistic cost (2026-10-15); fails_when=members' costs do not add up to the period's plan cost, a share changes, the pay per use figure is lost, or an API key is split; why_new=owner 2026-10-15; seam=none; no_claim=the plan price itself (owner or list)
   const { planCostFor } = loadTs('src/shared/claudePlan.ts');
-  const { periodRange } = loadTs('src/shared/teamPerformance.ts');
+  const { periodRange, previousRange } = loadTs('src/shared/teamPerformance.ts');
   const add = (env) => {
     const now = env.clock.now();
     env.store.cost('toby', 'x', 3, 100, null, now - 3600_000);
@@ -363,24 +385,65 @@ test("on a plan, each member's cost is their part of the plan's cost so far this
   const k = onKey.svc.snapshot('this-week');
   assert.equal(k.plan, null);
   assert.equal(k.snapshot.totalUsd, 4);
+  // Today and the span before Compare draws (owner, 2026-10-16).
+  const today = onPlan.svc.snapshot('today');
+  const tr = periodRange('today', onPlan.clock.now());
+  assert.ok(Math.abs(today.snapshot.totalUsd - planCostFor(200, tr.fromMs, tr.toMs, onPlan.clock.now())) < 1e-9, 'today: the plan cost so far today');
+  onPlan.store.cost('toby', 'z', 2, 100, null, new Date(2026, 9, 6, 10).getTime());
+  onPlan.proc.tick('/office');
+  const cmp = onPlan.svc.snapshot('this-week', true);
+  const pr = previousRange('this-week', onPlan.clock.now());
+  assert.ok(Math.abs(cmp.compare.snapshot.totalUsd - planCostFor(200, pr.fromMs, pr.toMs, onPlan.clock.now())) < 1e-9, 'the span before: its plan cost up to the end of its same day');
 });
 
-test('Last 4 weeks comes with week by week figures that add up to the period; a single week has none', (t) => {
-  // Value: protects=the trend charts on a multi week period (owner, 2026-10-15); fails_when=a week is missing, the weeks do not add up to the period, or one week periods carry weeks; why_new=owner ask; seam=none; no_claim=chart drawing (source pins in pulse-view)
-  const env = service(t);
-  const now = env.clock.now();
-  for (const back of [1, 8, 15]) {
-    env.store.record({ agentId: 'toby', kind: 'email', ts: now - back * 86_400_000, value: back });
-    env.store.record({ agentId: 'toby', kind: 'sent', ts: now - back * 86_400_000 });
-  }
+test('Compare runs the same snapshot for the span before, only when on and ready, up to the same day', (t) => {
+  // Value: protects=D6, D7, D8, D9 (owner, 2026-10-16); fails_when=the span before counts the wrong days, a bar and its tile number come from different sums, compare shows before live recording, or off still sends a span before; why_new=new contract; seam=none; no_claim=bar drawing (source pins in pulse-view)
+  const env = service(t); // live since Thu 1 Oct, now Fri 16 Oct 09:00
+  const email = (day, n) => env.store.record({ agentId: 'toby', kind: 'email', ts: new Date(2026, 9, day, 10).getTime(), value: n });
+  email(5, 2); email(10, 4); email(13, 3); // last Monday, last Saturday (past the same weekday), this Tuesday
   env.proc.tick('/office');
-  assert.equal(env.svc.snapshot('this-week').weeks, null);
-  const v = env.svc.snapshot('4-weeks');
-  assert.equal(v.weeks.from.length, 4);
-  const total = (k) => v.snapshot.outcomes.find((o) => o.kind === k).total;
-  assert.equal(v.weeks.emails.reduce((a, b) => a + b, 0), total('email'));
-  assert.equal(v.weeks.sent.reduce((a, b) => a + b, 0), total('sent'));
-  assert.equal(v.weeks.toInternet.length, 4);
+  const total = (s) => s.outcomes.find((o) => o.kind === 'email').total;
+  const off = env.svc.snapshot('this-week');
+  assert.equal(off.compare, null, 'off sends no span before');
+  assert.equal(off.compareReady, true);
+  const on = env.svc.snapshot('this-week', true);
+  assert.deepEqual([on.compare.snapshot.from, on.compare.snapshot.to], ['2026-10-05', '2026-10-09']);
+  assert.equal(total(on.compare.snapshot), 2, 'Saturday is past the same weekday');
+  assert.equal(total(on.snapshot), 3);
+  assert.equal(total(on.snapshot), total(off.snapshot), 'the tile number is the same with Compare on');
+  assert.ok(on.compare.keptSafe && on.learning.previous, 'Kept safe and Learning carry the span before');
+  assert.equal(off.learning.previous, null);
+  const month = env.svc.snapshot('this-month', true);
+  assert.deepEqual([month.compare, month.compareReady, month.compareFrom], [null, false, '2026-11-01'], 'September was not recorded live');
+});
+
+test('held is counted from the hive\'s trust-held line, and the held list reads the period\'s rows newest first', (t) => {
+  // Value: protects=D2 (the tile count equals the list) and the IPC range; fails_when=trust-held is not folded, a v 2 trust line counts again, or rows outside the span show; why_new=held list (owner, 2026-10-16); seam=readHeld dep; no_claim=the file on disk (hive tests write it)
+  const env = service(t);
+  const at = (d, h) => new Date(2026, 9, d, h).getTime();
+  env.store.record({ agentId: null, kind: 'trust', ts: at(14, 10), attrs: { way: 'in', decision: 'deny', by: 'no-answer', v: 2 } });
+  env.store.record({ agentId: null, kind: 'trust-held', ts: at(14, 10), attrs: { way: 'in' } });
+  env.store.record({ agentId: null, kind: 'trust-held', ts: at(15, 9), attrs: { way: 'out' } });
+  env.store.record({ agentId: null, kind: 'trust', ts: at(13, 9), attrs: { way: 'in', decision: 'deny', by: 'length' } }); // an older line: still held
+  env.proc.tick('/office');
+  assert.equal(env.svc.snapshot('this-week').keptSafe.held, 3);
+  const row = (d, h, subject) => JSON.stringify({ at: at(d, h), way: 'in', from: 'pam', to: 'research', subject, opening: '', why: 'no-answer', told: 'sender' });
+  const svc = new PulseService({ ...env.svc.d, readHeld: () => [row(1, 9, 'September'), row(14, 10, 'first'), 'not a row', row(15, 9, 'second')].join('\n') });
+  assert.deepEqual(svc.held(at(12, 0), at(18, 23)).map((r) => r.subject), ['second', 'first']);
+  assert.deepEqual(new PulseService({ ...env.svc.d }).held(0, Date.now()), [], 'no record: no rows');
+});
+
+test('a past span\'s Michael counts stop at its end', (t) => {
+  // Value: protects=D11; fails_when=later requests or cards leak into a past span's counts; why_new=michaelCounts had no end; seam=none; no_claim=no screen shows these counts yet
+  const { store, proc } = setup(t);
+  for (const day of [5, 14]) {
+    store.record({ agentId: 'god', kind: 'message', ts: new Date(2026, 9, day, 10).getTime(), attrs: { act: 'request' } });
+    store.record({ agentId: 'god', kind: 'card-status', ts: new Date(2026, 9, day, 11).getTime(), attrs: { id: `c${day}`, from: null, to: 'todo' } });
+  }
+  store.flush();
+  const from = new Date(2026, 9, 1).getTime();
+  assert.deepEqual(proc.michaelCounts('/office', 'god', from, new Date(2026, 9, 9, 23, 59).getTime()), { routed: 1, cardsOpened: 1 });
+  assert.deepEqual(proc.michaelCounts('/office', 'god', from), { routed: 2, cardsOpened: 2 }, 'no end: up to now');
 });
 
 // ─── coverage audit, 2026-10-16: the board, presence, headroom, the advice gate ──
@@ -481,4 +544,38 @@ test('a Claude member\'s transcript total never reaches Pulse cost; an engine wi
   const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
   assert.match(src, /if \(sample && \(sample\.sessionId \|\| \(a\.provider \?\? 'claude'\) !== 'claude'\)\) \{\s*pulseTelemetry\.cost\(id, sample\.sessionId \|\| `transcript:\$\{hive\.lastSession\(id\) \?\? ''\}`/);
   assert.doesNotMatch(src, /pulseTelemetry\.cost\(id, sample\.sessionId \|\| 'transcript'/);
+});
+
+test('a session total that stays quiet for the keep window leaves the saved state', (t) => {
+  const { persist, store, proc, clock } = setup(t);
+  const state = () => JSON.parse(persist.database().prepare("SELECT value FROM kv WHERE key = 'pulse:state:/office'").get().value);
+  store.cost('pam', 's1', 1.0, 10, 'model-a', clock.now());
+  proc.tick('/office');
+  assert.deepEqual(Object.keys(state().costs).sort(), ['pam\ts1', 'pam\ts1#t']);
+  // A month and a day later, with another session still spending, the daily prune drops only s1.
+  clock.add(31 * 86_400_000);
+  store.cost('jim', 's2', 0.5, 5, 'model-a', clock.now());
+  proc.tick('/office');
+  assert.deepEqual(Object.keys(state().costs).sort(), ['jim\ts2', 'jim\ts2#t']);
+  assert.deepEqual(Object.keys(state().costsAt).sort(), ['jim\ts2', 'jim\ts2#t']);
+});
+
+test('note-added records come back by office with id and source, and the first one dates the count', (t) => {
+  // Value: protects=the record Learning counts new notes from (owner, 2026-10-18); fails_when=another office's or another kind's rows are read, a row without an id counts, or the first record is not found; why_new=new event kind; seam=real sqlite; no_claim=what writes the records (memory-index tests)
+  const { persist, store, proc } = setup(t);
+  assert.equal(proc.firstNoteAdded('/office'), null, 'no record yet');
+  const at = new Date(2026, 9, 18, 10).getTime();
+  store.record({ agentId: 'pam', kind: 'note-added', ts: at, attrs: { id: 'm42', source: 'task' } });
+  store.record({ agentId: 'sadiq', kind: 'note-added', ts: at + 60_000, attrs: { id: 'm23', source: 'michael' } });
+  store.record({ agentId: 'pam', kind: 'note-added', ts: at + 120_000 });
+  store.record({ agentId: 'pam', kind: 'card-reopen', ts: at, attrs: { id: 'c1' } });
+  store.flush();
+  persist.database().prepare("INSERT INTO telemetry_events (office, agent_id, kind, ts, value, attrs) VALUES ('/other', 'pam', 'note-added', ?, NULL, ?)").run(at - 86_400_000, JSON.stringify({ id: 'm1', source: 'owner' }));
+  assert.equal(proc.firstNoteAdded('/office'), at);
+  assert.deepEqual(proc.notesAdded('/office', at), [
+    { agentId: 'pam', id: 'm42', source: 'task', at },
+    { agentId: 'sadiq', id: 'm23', source: 'michael', at: at + 60_000 }
+  ]);
+  const row = persist.database().prepare("SELECT attrs FROM telemetry_events WHERE kind = 'note-added' AND agent_id = 'pam' AND attrs IS NOT NULL").get();
+  assert.deepEqual(Object.keys(JSON.parse(row.attrs)).sort(), ['id', 'source'], 'never the note itself');
 });

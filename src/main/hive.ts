@@ -21,7 +21,7 @@
 import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, type SandboxNetwork } from '../shared/webAccess';
 import {
   addressedToResearch, ANSWER_UNCHECKED, ANSWER_UNCHECKED_SUBJECT, hasAttachments, looksLikeInjection, NOT_SENT_SUBJECT,
-  PRIVACY_CHECK_SENDER, REFUSAL_CHECK_FAILED, REFUSAL_FILES, REFUSAL_OFF, RESEARCH_HOUSE_RULE, RESEARCH_ID, RESEARCH_REPLY_LABEL,
+  PRIVACY_CHECK_SENDER, REFUSAL_CHECK_FAILED, REFUSAL_FILES, REFUSAL_NOT_DELIVERED, REFUSAL_OFF, REFUSAL_TOO_LONG, RESEARCH_HOUSE_RULE, RESEARCH_ID, RESEARCH_REPLY_LABEL,
   RESEARCH_UNCHECKED_TOOL, NOT_SENT_SUBJECT_OUT, RESEARCH_ONLY_ASKERS, RESEARCH_NAME, RESEARCH_ROLE, isReservedName,
   SENT_AS_SUBJECT, sentAsBody, nameKey, researchText, cleanResearchName, RESEARCH_ONLY_SKILLS
 } from '../shared/research';
@@ -44,7 +44,11 @@ import { join, dirname, basename, isAbsolute, relative, resolve, sep } from 'nod
 import { homedir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash, createHmac } from 'node:crypto';
-import type { InboundVerdict, OutboundVerdict, TrustLayer } from './trustLayer';
+import { readMessageFile, researchDeliveredId } from './messageFile';
+import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
+import { CHECKED_ARCHIVE_DIR, CHECKED_FILE, keepText, splitForArchive, type CheckedOutcome, type CheckedRow } from '../shared/checkedRecord';
+import { isAnyFixedUpkeep, isFixedUpkeep, type UpkeepKind } from '../shared/upkeep';
+import { heldWaits, heldWhy, tidy, HELD_FILE, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
 import {
@@ -56,12 +60,12 @@ import {
   type AgentProvider
 } from '../shared/agentProvider';
 import { MCP_CATALOG } from '../shared/mcpCatalog';
-import { cardConversation, openAskIndexes } from '../shared/askMeRouting';
+import { answeredAtOf, cardConversation, openAskIndexes } from '../shared/askMeRouting';
 import { selectBroadcastTargets } from '../shared/broadcast';
 import { preferredAgentRole } from '../shared/agentRole';
 import { mergeTaskLedger } from '../shared/taskLedger';
 import {
-  answersWithoutRequest, asksToTidy, blockedWithNothingAsked, closesOwnerQuestion, memberDeletedNote, openOwnerQuestions, openOwnerRequests, ownerChangeNote, reopenedNote, restoredDoneNote, untriagedNote, nextStepDueNote, nextStepBackstopNote, ownerConversation,
+  answersWithoutRequest, asksToTidy, blockedWithNothingAsked, closesOwnerQuestion, memberDeletedNote, openOwnerQuestions, openOwnerRequests, ownerChangeNote, reopenedNote, restoredDoneNote, untriagedNote, nextStepDueNote, nextStepBackstopNote, waitingDueNote, ownerConversation,
   ownerDock, ownerQuestionOf, OWNER_ALIASES, OWNER_NUDGE_EVERY_MS, OWNER_REQUESTS_FLOOR, unmatchedReplyNote,
   type CardLike, type MessageLike, type OpenOwnerQuestion, type OwnerCardChange, type OwnerDock, type OwnerDockState, type OwnerRequest,
   type OwnerRequestFlags, type StuckCard, type ThreadMessage
@@ -80,7 +84,7 @@ import {
   privateOwnerSentDir, privateOwnerStatePath, privateRoot
 } from '../shared/agentPrivatePaths';
 import { HOUSE_RULES_CHANGED_SUBJECT, houseRulesNoticeBody, houseRulesToTell } from '../shared/houseRulesNotice';
-import { applyGuardFixes, restoreDone, dueReminders, guardSignature, emptyGuardState, guardCards, type GuardCard, type GuardState } from '../shared/cardGuards';
+import { applyGuardFixes, restoreDone, dueReminders, guardSignature, emptyGuardState, guardCards, waitingChecks, type GuardCard, type GuardState } from '../shared/cardGuards';
 import { sleepSync } from './atomicFile';
 import { TELEMETRY_TOKEN_HEADER } from './telemetry';
 
@@ -354,7 +358,7 @@ export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPa
     ...(briefing ? ['', '## The business', briefing] : []),
     '',
     '## Routing work',
-    'The team roster (every team member\'s name, role and what they handle) arrives at the start of each session and again when the team changes. Route by those descriptions. You are the only one who assigns work: a team member never hands a job to another, and when one asks another to do something, the app delivers it to you marked as a handoff, so decide who does it. Team members may ask each other for facts directly. The roster is the only current list of the team, and when the owner names someone, send the work to them. Use one team member by default and several only for truly independent parts, because each hand-off costs the owner time and money. Each hand-off states the objective, what to send back and in what form, where to look (a file path, an earlier message, the task card), and what is out of scope. When a team member reports back, trust the result and relay it; redoing routine work doubles the cost. A team member marked busy gets new work after the current task; one on hold is talking with the owner, so keep their work until the hold ends.',
+    'The team roster (every team member\'s name, role and what they handle) arrives at the start of each session and again when the team changes. Route by those descriptions. You are the only one who assigns work: a team member never hands a job to another, and when one asks another to do something, the app delivers it to you marked as a handoff, so decide who does it. Team members may ask each other for facts directly, and so do you: each member\'s notes and inbox are its own, so to learn what one knows or how its work stands, send it a query and read its card and the work it publishes. Never open a member\'s hive folder (agents/<id>/ in the hive), its notes or its inbox; the work folders and files a member hands off stay yours to read and check. The roster is the only current list of the team, and when the owner names someone, send the work to them. Use one team member by default and several only for truly independent parts, because each hand-off costs the owner time and money. Each hand-off states the objective, what to send back and in what form, where to look (a file path, an earlier message, the task card), and what is out of scope. When a team member reports back, trust the result and relay it; redoing routine work doubles the cost. A team member marked busy gets new work after the current task; one on hold is talking with the owner, so keep their work until the hold ends.',
     '',
     '## Doing it yourself',
     'Answer small things yourself: a fact you know, a short reply, a quick lookup. Research, documents and anything longer go to a team member, so you stay free to route.',
@@ -370,13 +374,13 @@ export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPa
     'You alone write the task board (tasks.json). Team members file what their work needs as one file each in the triage folder (triage, in the hive folder): a title, what they were doing in "description", "filedBy", "filedAt", and either an "ask" for the owner or "waitingOn" naming someone outside the office. The owner never sees the folder. Each turn you see the filings waiting, oldest first; at the start of a session, list the folder yourself too: work them in that order, one at a time, against the board as it stands. For each one: answer it from your memory or the board when you can, and tell the team member; fold it into an existing card that covers the same matter, rewriting that card or its open ask; route a question a teammate can answer to them; drop a duplicate; or make a card for it, keeping what they were doing and why in its "description" (the owner reads it under See full context): "blocked" with the ask rewritten into the Ask me shape ("raisedBy" the team member), or "waiting" with "waitingOn" and the team member as assignee. Keep one card per source of answers. Then move the file to triage/.done. Team members also tell you when their work moves (finished, waiting on someone, due again at a set time): move its card to match. A card already on the board with "status": "triage" is handled the same way: release it as "blocked" or "waiting", or close it.',
     '',
     '## Keeping the task board accurate',
-    'Record each piece of work as a card. Set its assignee to the team member when you hand the work off and keep it through every status change, because the owner reads the board by who did what. Write no running "notes" on a card (house rule 8): its status, "waitingOn", "nextAt", Ask me question and "result" say where it stands. Move cards between todo, doing, waiting, blocked and done as the work moves, so the board is right whenever the owner looks. A card is "blocked" only while its question for the owner is open on Ask me, because Blocked tells the owner the card waits on them. A card waiting on someone outside the office, or on a team member, is "waiting", with "waitingOn" naming who in a few words (like "customer Gopi" or "Nick"), never the card\'s own person; move it back to "doing" when they answer and the work starts again. A card whose one off next step is its own person\'s at a set time is "todo", with "nextAt" set to that time; scheduled routines get no card (house rule 8). "doing" means someone is working on it now. When you close a request from the owner, leave its card in one of these states. When a To do card\'s "nextAt" arrives, the app sends its person a "Next step due" message; you hear about it only if the card is still in To do hours later. You alone write tasks.json and board.md, the office\'s notes on plans and priorities; team members send you changes.',
+    'Record each piece of work as a card. Set its assignee to the team member when you hand the work off and keep it through every status change, because the owner reads the board by who did what. Write no running "notes" on a card (house rule 8): its status, "waitingOn", "nextAt", Ask me question and "result" say where it stands. Move cards between todo, doing, waiting, blocked and done as the work moves, so the board is right whenever the owner looks. A card is "blocked" only while its question for the owner is open on Ask me, because Blocked tells the owner the card waits on them. A card waiting on someone outside the office, or on a team member, is "waiting", with "waitingOn" naming who in a few words (like "customer Gopi" or "Nick"), never the card\'s own person, and "nextAt" set to when to check back: the date the team member gave you (a date the other side named, else their judgement), or none, and the app checks back in three business days. Move it back to "doing" when they answer and the work starts again. When the app tells you a Waiting card\'s check back time has come, have its person follow up and set a new "nextAt"; after two follow ups with no reply, ask the owner on Ask me whether to keep waiting or close it. A card whose one off next step is its own person\'s at a set time is "todo", with "nextAt" set to that time; scheduled routines get no card (house rule 8). "doing" means someone is working on it now. When you close a request from the owner, leave its card in one of these states. When a To do card\'s "nextAt" arrives, the app sends its person a "Next step due" message; you hear about it only if the card is still in To do hours later. You alone write tasks.json and board.md, the office\'s notes on plans and priorities; team members send you changes.',
     '',
     '## Schedule requests',
     'You manage the office, so you decide the team\'s schedule requests. Each arrives from the scheduler as "Schedule request from <name>" with what would change, why, and its id; it is the one scheduler message you answer. Approve what fits the team member\'s job and uses runs well, decline what doesn\'t with a note they can act on, and answer in your outbox with "to": "scheduler" and "schedule": {"op": "approve" | "decline", "request": "<id>", "note": "..."}. Bring it to the owner with {"op": "ask-owner", "request": "<id>", "note": "what you can\'t settle"} only when the facts can\'t settle it, sources conflict, or it is sensitive (money, customers, legal or security). {"op": "pending"} lists what is waiting. Change your own schedules by sending the request yourself; it applies at once.',
     '',
     '## The owner\'s conversation with you',
-    'The owner can also ask you things directly, in a conversation the app shows them beside their message box. Each question reaches you typed, with its id. Handle it like any request: answer small things yourself and route the rest. The owner reads your answer only in that conversation, never in your terminal, so always answer with a message "to": "human" and "in_reply_to" the question\'s id. Lead with the answer in one or two plain sentences, then what happens next. Name files by their full path in backticks so the owner can open them; never paste a report. Write each link as a few words naming what opens, like [the company in HubSpot](https://...), never the bare address. Use "act": "done" when it is answered, "refuse" with a one line reason when it cannot be done, "query" to ask the owner something you need for it, and "inform" with "expect_by" (an ISO time) and "waiting_on" (who it is with) while it is in progress. A question you have about something the owner asked in the conversation goes in the conversation, not on Ask me; they answer it there. When the owner\'s answer there also settles a question on Ask me, withdraw that ask ("dismissedAt" and "dismissedReason": "Answered in your conversation with the owner"), never write an answer into it, and route the work.',
+    'The owner can also ask you things directly, in a conversation the app shows them beside their message box. Each question reaches you typed, with its id. Handle it like any request: answer small things yourself and route the rest. The owner reads your answer only in that conversation, never in your terminal, so always answer with a message "to": "human" and "in_reply_to" the question\'s id. Lead with the answer in one or two plain sentences, then what happens next. When an answer runs longer than a couple of sentences, keep the answer itself in the first sentence, then lay out the rest in the shape that reads best in a narrow panel: a short list with one item or figure per line, a small table of 2 or 3 columns when you compare several things on the same points (right align an amount column with --:), or short paragraphs under a short bold label. End with what happens next, and make an offer a question. Rewrite a report from the team into this shape. Copy each figure a team member gave you exactly, with its currency; never recompute, convert or round one unless the owner asks, and say so when you worked a figure out yourself. Name files by their full path in backticks so the owner can open them, and put longer detail in a file rather than the answer; never paste a report. Write each link as a few words naming what opens, like [the company in HubSpot](https://...), never the bare address. Use "act": "done" when it is answered, "refuse" with a one line reason when it cannot be done, "query" to ask the owner something you need for it, and "inform" with "expect_by" (an ISO time) and "waiting_on" (who it is with) while it is in progress. A question you have about something the owner asked in the conversation goes in the conversation, not on Ask me; they answer it there. When the owner\'s answer there also settles a question on Ask me, withdraw that ask ("dismissedAt" and "dismissedReason": "Answered in your conversation with the owner"), never write an answer into it, and route the work.',
     '',
     '## Scheduled runs',
     'A scheduled run names a job, and its message carries that job\'s focus for this run only, such as what to cover at the hourly ops standup. A scheduled run needs no reply, so do not answer it.',
@@ -415,13 +419,13 @@ export function teamMemberInstructions(name: string, role: string, michael: stri
   return [
     `You are ${name}, the ${role} on the team at ${where(b)}. ${michael} is the office manager: he gives you work and is your only link to the owner. Anything you need from the owner, such as an approval, an answer or a file, you file for ${michael} to check, and he puts it on the owner's Ask me board.`,
     '',
-    `When your work needs answers from someone, file it for ${michael} as one new file in the triage folder (${join(p.hiveRoot, 'triage')}), named by the time you file it and your id, like 20261011T143000-<your id>.json. Write {"title": "<a few plain words>", "description": "<what you were doing and why you need it>", "filedBy": "<your id>", "filedAt": "<time>"} with either "ask": "<the questions for the owner>" or "waitingOn": "<who outside the office>". When something only the owner can do happens on a website, such as signing in, accepting terms or paying, give the exact link the email or page offers for it, copied as it is, in your filing or message to ${michael}, so it reaches the owner's ask: only a link on the sender's own site, never a tracking or shortened one. Put all the questions one activity raised for the owner in one ask, one question to a line with any choices you would offer, and merge the ones that ask the same thing. When the same activity also needs an answer from someone outside the office, file a second one naming them in "waitingOn". Write each filing once and never change it. ${michael} reads the filings in the order they were filed and turns each into a card on the board. You never write tasks.json, your own cards included: when your work moves, such as finished, waiting on someone, or due again at a set time, tell ${michael} and he moves its card. A "Next step due" message from the app means a step of yours parked for a set time is due now: do it, then tell ${michael}. When the owner's answers come back through ${michael} with questions left unanswered, settle what you can yourself and file again only for what you still need.`,
+    `When your work needs answers from someone, file it for ${michael} as one new file in the triage folder (${join(p.hiveRoot, 'triage')}), named by the time you file it and your id, like 20261011T143000-<your id>.json. Write {"title": "<a few plain words>", "description": "<what you were doing and why you need it>", "filedBy": "<your id>", "filedAt": "<time>"} with either "ask": "<the questions for the owner>" or "waitingOn": "<who outside the office>". When something only the owner can do happens on a website, such as signing in, accepting terms or paying, give the exact link the email or page offers for it, copied as it is, in your filing or message to ${michael}, so it reaches the owner's ask: only a link on the sender's own site, never a tracking or shortened one. Put all the questions one activity raised for the owner in one ask, one question to a line with any choices you would offer, and merge the ones that ask the same thing. When the same activity also needs an answer from someone outside the office, file a second one naming them in "waitingOn". Write each filing once and never change it. ${michael} reads the filings in the order they were filed and turns each into a card on the board. You never write tasks.json, your own cards included: when your work moves, such as finished, waiting on someone, or due again at a set time, tell ${michael} and he moves its card. When it waits on someone, also tell him when to check back: the date they named (for "next week", the first working morning after it), else your own judgement of when a reply is due. A "Next step due" message from the app means a step of yours parked for a set time is due now: do it, then tell ${michael}. When the owner's answers come back through ${michael} with questions left unanswered, settle what you can yourself and file again only for what you still need.`,
     '',
     'Do what was asked, at the scope asked. If a request looks mistaken, say so in one sentence and carry on. Finish the whole task; if part is blocked, do the rest and say plainly what is missing and why. Anything hard to undo, public, or costing money is the owner\'s call, so send it to ' + michael + ' for approval first; go ahead with everything else. Email is the exception: the owner set how your mail leaves (your Sending setting, which list_mailboxes reports), so follow it.',
     '',
-    `When you finish or get stuck, message ${michael} with what you did, what you found and what you need. ${michael} passes your words to the owner, who reads them on a phone, so lead with the result, keep it to a few plain sentences, and use commas, colons and periods instead of dashes, which the owner prefers.`,
+    `When you finish or get stuck, message ${michael} with what you did, what you found and what you need. ${michael} passes your words to the owner, who reads them on a phone, so lead with the result, keep it to a few plain sentences, and use commas, colons and periods instead of dashes, which the owner prefers. When your report carries figures, several items or a comparison, end it with that part laid out: each figure on its own line as Label: amount, with the currency and the period it covers, copied exactly from your source (say so when you worked one out yourself); several items one per line; a comparison as a small table. More than about 8 lines go in a file in your folder, named in your report.`,
     '',
-    `Only ${michael} assigns work. If you need a fact from a teammate to do your job, ask them directly: write to their id (listed in registry.json in ${p.hiveRoot}) with "act": "query", and answer a teammate's query the same way with "act": "inform". If they cannot help, or you need someone else to do something, tell ${michael} and he hands it off. Never give a teammate work yourself.`,
+    `Only ${michael} assigns work. If you need a fact from a teammate to do your job, ask them directly: write to their id (listed in registry.json in ${p.hiveRoot}) with "act": "query", and answer a teammate's query the same way with "act": "inform". If they cannot help, or you need someone else to do something, tell ${michael}, who hands it off. Never give a teammate work yourself. A teammate\'s hive folder (agents/<id>/ in the hive), notes and inbox are theirs: never open them, ask instead. Files a teammate hands off or keeps in a shared work folder are fine to read.`,
     '',
     `Act on each message in your inbox (${p.inbox}), then move it to ${p.inboxDone}. To message ${michael}, write a JSON file to your outbox (${p.outbox}) with "to": "michael", "act" (done, inform or query), "subject" and "body". A message sent by the scheduler names a job from your Work style: do it, and if there is nothing to do, stop without messaging anyone. Its replies about your schedule requests (subject "Schedule request", "Schedule change approved" or "Schedule change declined") are notices, not jobs: read them and do nothing else. Never ask the owner in your terminal (nobody answers it): file the question in the triage folder.${p.docText ? ` To read a Word, Excel or PowerPoint file, run ${p.docText} "<file>".` : ''} ${p.protocol} has the full message format.`
   ].join('\n');
@@ -514,24 +518,6 @@ function shortRand(): string {
   return randomBytes(3).toString('hex');
 }
 
-/** The most a message file may hold for the app to read it. */
-const MAX_MESSAGE_FILE_BYTES = 4 * 1024 * 1024;
-
-/** A message file read without following a link or waiting on a pipe: an
- *  agent's own folder may hold either, and the app reads with the owner's
- *  rights (red team, third ship). Null for anything but a plain file. */
-function readMessageFile(path: string): string | null {
-  let fd = -1;
-  try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-    const st = fstatSync(fd);
-    if (!st.isFile() || st.size > MAX_MESSAGE_FILE_BYTES) return null;
-    return readFileSync(fd, 'utf8');
-  } catch { return null; } finally {
-    if (fd >= 0) try { closeSync(fd); } catch { /* closed */ }
-  }
-}
-
 /** Write over an agent's own file in place, only when it is a plain file
  *  with one name: never through a link or a second name it made for a file
  *  of someone else's (red team, third ship). Throws otherwise. */
@@ -547,7 +533,9 @@ function rewriteOwnFile(path: string, text: string): void {
 
 /** Non-memory files `mempalace mine` must not ingest (Claude Code hooks config,
  *  cursor, raw inbox/outbox JSON). `mempalace mine` honors .gitignore, so we drop
- *  one in each agent dir; written on birth here and refreshed by the mine loop.
+ *  one in each agent dir; written on birth here and refreshed once per process
+ *  (untrackCodexHomes). The palace mines company knowledge only now (owner,
+ *  2026-10-16), so the file's lasting job is keeping .codex out of git.
  *
  *  `.codex/` is here for a second reason as well, and it is the load-bearing one:
  *  a Codex worker's CODEX_HOME lives INSIDE its agent dir (see installCodexHooks —
@@ -725,6 +713,11 @@ export class HiveManager {
     this.hookTokens.delete(agentId);
   }
 
+  /** Whether the app made a hook secret for this agent's current start. */
+  hasHookToken(agentId: string): boolean {
+    return this.hookTokens.has(agentId);
+  }
+
   /** The agent a hook secret belongs to, or undefined for a missing, unknown
    *  or retired one. */
   hookTokenOwner(token: unknown): string | undefined {
@@ -793,6 +786,11 @@ export class HiveManager {
    *  spawn or its last update. Lets an owner's toggle reach running agents
    *  without a restart (knowledgeUpdate). */
   private knowledgeTold = new Map<string, boolean>();
+  /** Per agent: the members whose hive folders its Read rules hid when it
+   *  started (AgentFolderPolicy.walledMembers). The hook refuses a search over
+   *  every member's folder while someone hired since is not among them. */
+  private walledAtStart = new Map<string, readonly string[]>();
+  walledMembersOf(id: string): readonly string[] | null { return this.walledAtStart.get(id) ?? null; }
 
   /**
    * What a running agent should be told because the owner turned company
@@ -1037,6 +1035,32 @@ export class HiveManager {
     return [this.nodeLauncher() ?? 'node', script, ...args].join(' ');
   }
 
+  /** The Codex hook command on Windows: the bare name of a `.cmd` written into
+   *  `runtimeBinDir()`, which every agent's PATH ends with
+   *  (pty.ts withHiveRuntimeFallback). The paths, quoted, live inside the
+   *  `.cmd`, so the command itself has no space and no quote.
+   *
+   *  Codex runs a hook as `cmd.exe /C` plus the command. With a space in the
+   *  hive path (the default ~/HarnessAgents under a Windows user name like
+   *  "Jane Smith"), the unquoted command splits at the space and every hook
+   *  fails. Quoting it does not help on every Codex: codex-cli 0.162.1 passes
+   *  the command as an escaped argument, so cmd.exe reads its inner quotes as
+   *  `\"` and fails the same way. A bare name runs under both shapes.
+   *  Null when the file cannot be written: the caller keeps the old command. */
+  private codexHookWindows(shim: string): string | null {
+    const dir = this.runtimeBinDir();
+    if (!dir) return null;
+    try {
+      mkdirSync(dir, { recursive: true });
+      this.writeIfChanged(join(dir, 'hive-codex-hook.cmd'),
+        `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${process.execPath}" "${shim}" %*\r\n`);
+      return 'hive-codex-hook';
+    } catch (e) {
+      console.error('[hive] codexHookWindows failed:', e);
+      return null;
+    }
+  }
+
   /** One proxy sidecar per live proxy-tier agent, keyed by agentId. Spawned in
    *  ensureAgent, killed on PTY exit / removeAgent / app quit (index.ts) — so a
    *  dead agent never leaks an orphan loopback listener. */
@@ -1148,7 +1172,6 @@ export class HiveManager {
   async ensureAgent(
     meta: AgentMeta,
     opts: {
-      semanticMemory?: boolean;
       knowledgeGraph?: boolean;
       /** ABSOLUTE path to the Knowledge-Graph CLI (`knowledge.env().KG_CLI`), baked
        *  into the agent's prompt instead of a `$KG_CLI` shell reference — `$VAR` is
@@ -1324,7 +1347,7 @@ export class HiveManager {
     if (!isHiveAwareProvider(meta.provider)) {
       const preset = providerPreset(meta.provider ?? 'claude');
       const flag = preset.initialPromptFlag;
-      const prompt = this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
+      const prompt = this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business);
       // agy, codex, and grok expose a Claude-style lifecycle-hook surface, so each
       // gets the SAME live status + Stop→inbox-drain Claude does — selected by the
       // preset's `hookBridge`. agy needs a translating shim (its hook stdin/stdout
@@ -1481,7 +1504,7 @@ export class HiveManager {
     const args: string[] = [];
     if (!claudeProvider) return { args, env };
 
-    args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.semanticMemory ?? false, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business));
+    args.push('--append-system-prompt', this.injectedPrompt(meta, dir, root, opts.knowledgeGraph ?? false, opts.kgCliPath, opts.businessFolder, opts.docTextCliPath, opts.kgRoot, opts.meaningSearch, opts.business));
 
     // Phase 1 — autonomy: attach lifecycle hooks via --settings (no edits to the
     // user's repo) so the agent reports activity and drains its inbox on Stop.
@@ -1509,6 +1532,8 @@ export class HiveManager {
       mkdirSync(dirname(settingsPath), { recursive: true });
       this.writeJson(settingsPath, this.hookSettings(shim, meta.cwd, opts.mcpDefaults, opts.theme, this.sandboxWritableDirs(meta, dir, root, opts.extraWritableDirs), opts.folderPolicy, stripConnectors ? [] : opts.connectors?.deny ?? [], shell.shell, opts.network, meta.isResearch ? this.researchShellWrite(dir, meta.cwd) : undefined));
       args.push('--settings', settingsPath);
+      if (opts.folderPolicy?.walledMembers) this.walledAtStart.set(meta.id, opts.folderPolicy.walledMembers);
+      else this.walledAtStart.delete(meta.id);
       // A `claude` the agent starts from its shell has no hook and no deny
       // rules, so it would load every connector on the account (TODOS, P1).
       // Claude Code sources CLAUDE_ENV_FILE before each shell command, so the
@@ -2107,7 +2132,7 @@ export class HiveManager {
    *
    * 🔒 PROMPT-CACHE INVARIANT — keep this prefix VOLATILE-FREE. It interpolates
    * only values stable for an agent's whole lifetime (name, id, dir, root,
-   * semanticMemory). Do NOT add dates, UUIDs, counters, board/registry state, or
+   * the knowledge settings). Do NOT add dates, UUIDs, counters, board/registry state, or
    * any `Date.now()`-derived text here: a prefix that changes per spawn defeats
    * Anthropic's prompt cache (re-priming the whole system prompt every turn).
    * Volatile context belongs on the live channels — the inbox (hive messages) and
@@ -2128,7 +2153,6 @@ export class HiveManager {
     meta: AgentMeta,
     dir: string,
     root: string,
-    semanticMemory: boolean,
     knowledgeGraph: boolean,
     kgCliPath?: string,
     businessFolder?: string,
@@ -2151,12 +2175,12 @@ export class HiveManager {
       : '';
     const ctxLine = 'LIVE CONTEXT: each agent row in the LIVE ROSTER carries a `ctx NN%` tag — its live context-window occupancy. Treat it as the real headroom signal when routing: prefer an agent with a LOW `ctx` for a big task; treat a HIGH `ctx` (near 100%) as busy rather than idle, even if the cumulative token count looks modest.';
 
-    const memoryLine = semanticMemory
-      // The palace location is named, not spelled as `$MEMPALACE_PALACE_PATH`:
-      // `mempalace` reads that env var itself, and the POSIX `$` form was noise
-      // (or an empty expansion) for a Windows agent that tried to use it literally.
-      ? 'Semantic memory: the whole hive shares a searchable MemPalace at the path in your MEMPALACE_PALACE_PATH environment variable. To recall relevant past knowledge across the team, run `mempalace search "<query>"`; run `mempalace wake-up` at the start of a task for a memory digest. Your memory index is mined into the palace automatically.'
-      : '';
+    // Each member's memory is its own (owner, 2026-10-16): nobody, Michael
+    // included, opens another's notes; they ask. Company knowledge is the one
+    // store everyone searches (knowledgeLine).
+    const memoryLine = meta.isGod
+      ? 'PRIVATE MEMORY: each team member\'s notes, memory and inbox are its own. Never open a team member\'s hive folder (agents/<id>/), its notes or inbox, or the hive\'s change history (.git). To learn what one knows or how its work stands, send it a "query", and read its card on the board and the work it publishes; its work folder and the files it hands off stay yours to read.'
+      : 'PRIVATE MEMORY: your notes and memory are yours alone, and each teammate\'s are theirs. Never open another team member\'s hive folder (agents/<id>/), its notes or inbox, or the hive\'s change history (.git). To learn what a teammate knows, ask them with a "query" message; files a teammate hands off are fine to read. The one store everyone searches is company knowledge.';
     // Company knowledge (on by default). Volatile-free: the bundled-node launcher
     // and the KG CLI are both fixed absolute paths for an install, so baking them
     // keeps the prefix prompt-cache-stable while making the command runnable in
@@ -2332,8 +2356,20 @@ export class HiveManager {
   /** Checks under way or finished, by the outbox file's content. A message
    *  waits in its outbox until its check finishes; an app restart checks it
    *  again; an entry nobody claims is forgotten after TRUST_CHECK_KEEP_MS. */
-  private trustChecks = new Map<string, { done: boolean; at: number; verdict?: InboundVerdict | OutboundVerdict }>();
+  private trustChecks = new Map<string, { done: boolean; at: number; verdict?: InboundVerdict | OutboundVerdict; firstAt: number; tries: number; retryAt?: number }>();
   static readonly TRUST_CHECK_KEEP_MS = 10 * 60_000;
+  /** A check that could not run (no answer, an unreadable one, a failure) is
+   *  tried again for this long before the message is held: the check's hidden
+   *  session can take minutes while the whole team starts (owner, 2026-10-16:
+   *  "why messages are not queued and waited", D1 30 minutes). Nothing goes
+   *  out unchecked meanwhile. */
+  static TRUST_WAIT_MS = 30 * 60_000;
+  /** The gap before try `tries + 1`: 30 s, 1, 2 and 4 minutes, then every 5. */
+  static trustRetryDelayMs(tries: number): number { return Math.min(5 * 60_000, 30_000 * 2 ** Math.max(0, tries)); }
+  /** A deny that only says the check could not run this time. */
+  private checkMayRunLater(v: InboundVerdict | OutboundVerdict): boolean {
+    return v.decision === 'deny' && heldWaits(heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG));
+  }
   /** Ids of clean copies the trust layer produced; only these reach Research. */
   private researchCleared = new Set<string>();
   /** The sender's message behind each clean copy, by the copy's id and its
@@ -2371,6 +2407,12 @@ export class HiveManager {
   }
   /** App and owner messages for Research whose check is under way. */
   private researchQueued = 0;
+  /** Checked messages for Research whose delivery failed (a disk error), by
+   *  id: each routing pass tries them again with the verdict they already have. */
+  private readonly researchUndelivered = new Map<string, () => void>();
+  /** About a minute of tries at the router's 1.5 s pace, so a disk that
+   *  fills up or locks for a moment doesn't cost the owner a note. */
+  static readonly RESEARCH_DELIVERY_TRIES = 40;
   private stampKey: Buffer | null = null;
 
   /** Research while it is on: the reserved id, the owner's switch, a live entry. */
@@ -2545,7 +2587,7 @@ export class HiveManager {
     const what = from === 'human' ? 'A note from the owner'
       : from === 'system' ? 'A message from the app'
         : `${reg.agents[from]?.name?.trim() || from}'s message`;
-    const next = reason === REFUSAL_CHECK_FAILED
+    const next = reason === REFUSAL_CHECK_FAILED || reason === REFUSAL_NOT_DELIVERED
       ? 'This is an app problem. If it keeps happening, tell the owner.'
       : reason === REFUSAL_OFF
         ? `The owner turns ${n} on in Settings, Research & privacy.`
@@ -2555,22 +2597,122 @@ export class HiveManager {
       // The subject is the sender's words: every kind of quote mark and line
       // break is dropped so it can't close the quote and add text in the app's
       // voice. The reason's own "Not sent..." opening is not repeated.
-      body: `${what} for ${n} ("${String(subject ?? '').replace(/[\p{Pi}\p{Pf}"\u201e\u201f\u2033\uff02\s]+/gu, ' ').trim().slice(0, 80)}") was not sent: ${researchText(reason, n).replace(/^Not sent( to [^:]+)?: /, '')} ${next}`
+      body: `${what} for ${n} ("${tidy(subject, HELD_SUBJECT_MAX)}") was not sent: ${researchText(reason, n).replace(/^Not sent( to [^:]+)?: /, '')} ${next}`
     }, PRIVACY_CHECK_SENDER), godId);
   }
 
+  /** Michael hears of a Research answer the check could not clear, as he does
+   *  of a held question, so a card waiting on it never stalls unseen (owner,
+   *  2026-10-16, D5). */
+  private tellMichaelAnswerHeld(to: string | null, subject: unknown): void {
+    const reg = this.registry();
+    const godId = reg.godId ?? 'god';
+    const n = this.researchName();
+    // `to` null: the answer was for Michael himself.
+    const toName = to ? reg.agents[to]?.name?.trim() || to : null;
+    this.deliver(this.normalize({
+      to: godId, act: 'inform', subject: `${n}'s answer was not delivered`,
+      body: toName
+        ? `${n}'s answer to ${toName} ("${tidy(subject, HELD_SUBJECT_MAX)}") was not delivered: the privacy check could not run, so nothing went out unchecked. ${toName} was told to ask again if the work still needs it. This is an app problem. If it keeps happening, tell the owner.`
+        : `${n}'s answer to you ("${tidy(subject, HELD_SUBJECT_MAX)}") was not delivered: the privacy check could not run, so nothing went out unchecked. Ask ${n} again if the work still needs it. This is an app problem. If it keeps happening, tell the owner.`
+    }, PRIVACY_CHECK_SENDER), godId);
+  }
+
+  /** One row per hold in the owner's private folder, never the committed log
+   *  (it carries the subject and the opening of the message), and one
+   *  trust-held line with no text, which Pulse counts (owner, 2026-10-16). */
+  recordHeld(way: 'in' | 'out', from: string, to: string, subject: unknown, body: unknown, why: HeldWhy, error: string | undefined, told: HeldTold): void {
+    this.appendLog({ kind: 'trust-held', way });
+    const home = this.getHome();
+    if (!home) return;
+    const reg = this.registry();
+    const nameOf = (id: string): string | null => (id === 'human' || id === 'system' ? null : id === RESEARCH_ID ? this.researchName() : reg.agents[id]?.name?.trim() || null);
+    const row: HeldRow = {
+      at: Date.now(), way, from, fromName: nameOf(from), to, toName: nameOf(to),
+      subject: tidy(asText(subject), HELD_SUBJECT_MAX), opening: tidy(asText(body), HELD_OPENING_MAX),
+      why, ...(error ? { error: tidy(error, 200) } : {}), told
+    };
+    const file = join(privateRoot(home), HELD_FILE);
+    try {
+      mkdirSync(privateRoot(home), { recursive: true });
+      appendFileSync(file, `${JSON.stringify(row)}\n`, 'utf8');
+      // Once a day, rows past the keep window go (Pulse keeps raw events as long).
+      if (row.at - this.heldPrunedAt > 86_400_000) {
+        this.heldPrunedAt = row.at;
+        const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
+        const keep = lines.filter((l) => { try { return (JSON.parse(l) as HeldRow).at >= row.at - HELD_KEEP_MS; } catch { return false; } });
+        // Written again only when a row went.
+        if (keep.length !== lines.length) writeFileSync(file, keep.length ? `${keep.join('\n')}\n` : '', 'utf8');
+      }
+    } catch { /* best effort: the count still shows, and the list says what it cannot show */ }
+  }
+  private heldPrunedAt = 0;
+
+  /** One row per message the check let through or stopped, both ways, in the
+   *  owner's private folder (both texts, whole up to 4,000 characters; eng D1),
+   *  and one trust-checked line with no text, which Pulse counts (eng D5).
+   *  Once a day rows past 62 days move to the archive, which the app never
+   *  deletes (eng D2; only a reset does, D3). A hold is recordHeld's. */
+  recordChecked(way: 'in' | 'out', from: string, to: string, outcome: CheckedOutcome, wrote: { subject?: unknown; body?: unknown },
+    sent?: { subject?: unknown; body?: unknown }, extra: { kinds?: readonly string[]; flagged?: boolean } = {}): void {
+    this.appendLog({ kind: 'trust-checked', way, decision: outcome, ...(way === 'out' ? { flagged: extra.flagged === true } : {}) });
+    const home = this.getHome();
+    if (!home) return;
+    const reg = this.registry();
+    const nameOf = (id: string): string | null => (id === 'human' || id === 'system' ? null : id === RESEARCH_ID ? this.researchName() : reg.agents[id]?.name?.trim() || null);
+    const keep = (t: { subject?: unknown; body?: unknown }) => { const s = keepText(asText(t.subject)); const b = keepText(asText(t.body)); return { text: { subject: s.text, body: b.text }, cut: s.cut || b.cut }; };
+    const w = keep(wrote);
+    const g = sent ? keep(sent) : null;
+    const changed = !!g && (g.text.subject !== w.text.subject || g.text.body !== w.text.body);
+    const row: CheckedRow = {
+      at: Date.now(), way, from, fromName: nameOf(from), to, toName: nameOf(to), outcome, wrote: w.text,
+      ...(changed && g ? { sent: g.text } : {}),
+      ...(extra.kinds?.length ? { kinds: [...extra.kinds] } : {}),
+      ...(extra.flagged ? { flagged: true } : {}),
+      ...(w.cut || (changed && g?.cut) ? { cut: true } : {})
+    };
+    const file = join(privateRoot(home), CHECKED_FILE);
+    try {
+      mkdirSync(privateRoot(home), { recursive: true });
+      appendFileSync(file, `${JSON.stringify(row)}\n`, 'utf8');
+      if (row.at - this.checkedArchivedAt > 86_400_000) {
+        this.checkedArchivedAt = row.at;
+        const { keep: live, archive } = splitForArchive(readFileSync(file, 'utf8').split('\n'), row.at);
+        if (archive.size) {
+          // The archive first: a stop in between leaves a row in both, never in neither.
+          const dir = join(privateRoot(home), CHECKED_ARCHIVE_DIR);
+          mkdirSync(dir, { recursive: true });
+          for (const [month, lines] of archive) appendFileSync(join(dir, `${month}.jsonl`), `${lines.join('\n')}\n`, 'utf8');
+          writeFileSync(file, live.length ? `${live.join('\n')}\n` : '', 'utf8');
+        }
+      }
+    } catch { /* best effort: the count still shows, and the list says how many have no details */ }
+  }
+  private checkedArchivedAt = 0;
+
   /** Start a check, or read the one under way. `key` is the content hash. */
   private trustCheck(key: string, start: () => Promise<InboundVerdict | OutboundVerdict>): InboundVerdict | OutboundVerdict | 'hold' {
+    const now = Date.now();
     const c = this.trustChecks.get(key);
-    if (!c) {
-      this.trustChecks.set(key, { done: false, at: Date.now() });
+    const launch = (firstAt: number, tries: number): 'hold' => {
+      this.trustChecks.set(key, { done: false, at: now, firstAt, tries });
       start().then(
-        (verdict) => { this.trustChecks.set(key, { done: true, at: Date.now(), verdict }); },
-        () => { this.trustChecks.set(key, { done: true, at: Date.now(), verdict: { decision: 'deny', reason: REFUSAL_CHECK_FAILED } }); }
+        (verdict) => { this.trustChecks.set(key, { done: true, at: Date.now(), verdict, firstAt, tries }); },
+        () => { this.trustChecks.set(key, { done: true, at: Date.now(), verdict: { decision: 'deny', reason: REFUSAL_CHECK_FAILED }, firstAt, tries }); }
       );
       return 'hold';
+    };
+    if (!c) return launch(now, 0);
+    // Waiting for its next try, or running.
+    if (!c.done) return c.retryAt !== undefined && now >= c.retryAt ? launch(c.firstAt, c.tries + 1) : 'hold';
+    if (!c.verdict) return 'hold';
+    // The check could not run: the message keeps waiting in its outbox and is
+    // tried again, until TRUST_WAIT_MS from its first try.
+    if (this.checkMayRunLater(c.verdict) && now - c.firstAt < HiveManager.TRUST_WAIT_MS) {
+      this.trustChecks.set(key, { done: false, at: now, firstAt: c.firstAt, tries: c.tries, retryAt: now + HiveManager.trustRetryDelayMs(c.tries) });
+      this.appendLog({ kind: 'trust-wait', way: key.startsWith('out:') ? 'out' : 'in', tries: c.tries + 1 });
+      return 'hold';
     }
-    if (!c.done || !c.verdict) return 'hold';
     this.trustChecks.delete(key);
     return c.verdict;
   }
@@ -2588,27 +2730,43 @@ export class HiveManager {
   private pruneTrustChecks(now = Date.now()): void {
     // Only finished checks: one still running or waiting its turn is kept, so
     // a long queue never starts a second paid check for the same message.
-    for (const [k, c] of this.trustChecks) if (c.done && now - c.at > HiveManager.TRUST_CHECK_KEEP_MS) this.trustChecks.delete(k);
+    for (const [k, c] of this.trustChecks) {
+      // A finished check nobody claimed, or one waiting to be tried again whose
+      // message is gone (it would have been held by now).
+      if ((c.done && now - c.at > HiveManager.TRUST_CHECK_KEEP_MS) || (c.retryAt !== undefined && now - c.firstAt > HiveManager.TRUST_WAIT_MS + HiveManager.TRUST_CHECK_KEEP_MS)) this.trustChecks.delete(k);
+    }
   }
 
   /** A teammate's or Michael's message to Research, from its outbox. Held
    *  until the trust layer answers; then the clean copy goes to Research and the
    *  sender hears what was asked, or the sender alone hears why not. */
   private researchInboundGate(senderId: string, msg: HiveMessage, partial: Partial<HiveMessage>, raw: string, on: boolean): 'hold' | 'denied' | 'sent' {
-    const deny = (reason: string): 'denied' => {
+    const deny = (reason: string, held?: { why: HeldWhy; error?: string }): 'denied' => {
       this.appendLog({ kind: 'trust-denied', from: senderId, id: msg.id });
       this.tellSender(senderId, msg.id, msg.conversation, NOT_SENT_SUBJECT, reason);
       this.tellMichaelNotSent(senderId, partial.subject, reason);
+      if (held) this.recordHeld('in', senderId, RESEARCH_ID, partial.subject, partial.body, held.why, held.error, senderId === (this.registry().godId ?? 'god') ? 'sender' : 'sender+michael');
       return 'denied';
     };
     if (!on) return deny(REFUSAL_OFF);
+    // Research not reporting (SD16): the question waits with Michael as it is,
+    // before any check is paid for, and nobody is told it reached Research.
+    if (this.memberMail?.(RESEARCH_ID) === 'hold') {
+      this.holdForMichael({ ...msg, from: senderId }, [RESEARCH_ID], this.registry().godId ?? 'god');
+      return 'sent';
+    }
     if (hasAttachments(partial)) return deny(REFUSAL_FILES);
-    if (!this.trustLayer) return deny(REFUSAL_CHECK_FAILED);
+    if (!this.trustLayer) return deny(REFUSAL_CHECK_FAILED, { why: 'no-layer' });
     const layer = this.trustLayer;
     const v = this.trustCheck(`in:${this.trustKey(layer, raw)}`, () => layer.inbound({ subject: partial.subject, body: partial.body }));
     if (v === 'hold') return 'hold';
-    if (v.decision === 'deny') return deny(v.reason);
+    if (v.decision === 'deny') {
+      const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
+      if (!why) this.recordChecked('in', senderId, RESEARCH_ID, 'stop', partial, undefined, { kinds: 'kinds' in v ? v.kinds : undefined });
+      return deny(v.reason, why ? { why, error: v.error } : undefined);
+    }
     this.deliverToResearch(senderId, msg, v.subject, v.body);
+    this.recordChecked('in', senderId, RESEARCH_ID, v.decision, partial, v, { kinds: 'removed' in v ? v.removed : undefined });
     if (v.decision === 'clean') this.tellSender(senderId, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
     return 'sent';
   }
@@ -2616,7 +2774,7 @@ export class HiveManager {
   /** A message the app itself or the owner sends Research (a card reminder,
    *  an owner answer, a house rule note): it passes the same trust layer, in
    *  the background, before Research sees it (ship review D2.1). */
-  private queueForResearch(msg: HiveMessage): void {
+  private queueForResearch(msg: HiveMessage, upkeep = false): void {
     const fromAgent = msg.from !== RESEARCH_ID && !!this.registry().agents[msg.from];
     // A teammate hears why its own message was refused, and Michael hears of
     // every refusal, the owner's and the app's too, so nothing sent to
@@ -2627,9 +2785,17 @@ export class HiveManager {
       else if (msg.from !== 'human' && msg.from !== 'system') return;
       this.tellMichaelNotSent(msg.from, msg.subject, reason);
     };
+    // Who heard of a hold: the sender (a teammate) and Michael, or Michael alone.
+    const told: HeldTold = fromAgent ? (msg.from === (this.registry().godId ?? 'god') ? 'sender' : 'sender+michael') : 'michael';
+    // Upkeep is never research, so it is left out of what the owner reviews.
+    const held = (why: HeldWhy, error?: string): void => { if (!upkeep) this.recordHeld('in', msg.from, RESEARCH_ID, msg.subject, msg.body, why, error, told); };
+    const checked = (outcome: CheckedOutcome, sent?: { subject?: unknown; body?: unknown }, kinds?: readonly string[]): void => {
+      if (!upkeep) this.recordChecked('in', msg.from, RESEARCH_ID, outcome, msg, sent, { kinds });
+    };
     if (!this.researchOn() || !this.trustLayer) {
       this.appendLog({ kind: 'trust-denied', from: msg.from, id: msg.id, reason: this.trustLayer ? 'research-off' : 'no-layer' });
       tell(this.trustLayer ? REFUSAL_OFF : REFUSAL_CHECK_FAILED);
+      if (!this.trustLayer && this.researchOn()) held('no-layer');
       return;
     }
     this.researchQueued++;
@@ -2642,44 +2808,110 @@ export class HiveManager {
     };
     const layer = this.trustLayer;
     const policy = this.policyOf(layer);
-    layer.inbound({ subject: msg.subject, body: msg.body }).then((v) => {
+    const firstAt = Date.now();
+    const attempt = (tries: number): void => { layer.inbound({ subject: msg.subject, body: msg.body }).then((v) => {
+      // The check could not run: tried again with growing gaps, still waiting
+      // and still in the pending list, until TRUST_WAIT_MS (owner, 2026-10-16).
+      if (this.checkMayRunLater(v) && Date.now() - firstAt < HiveManager.TRUST_WAIT_MS && this.researchOn() && this.policyOf(layer) === policy) {
+        this.appendLog({ kind: 'trust-wait', way: 'in', tries: tries + 1 });
+        setTimeout(() => attempt(tries + 1), HiveManager.trustRetryDelayMs(tries));
+        return;
+      }
+      this.researchQueued--;
+      // Its pending row stays until it is delivered or refused. A delivery
+      // that fails (a disk error) is tried again with this verdict on the next
+      // routing passes, then told to Michael, so nothing is dropped unseen
+      // (TODOS.md, Codex review of the mit/named-links ship).
+      let deliveries = 0;
+      const deliverOrRefuse = (): 'done' | 'again' | 'recheck' => {
+        // The owner changed what stays private while it was checked, or
+        // since: checked again under the new settings (Codex review, third ship).
+        if (this.policyOf(layer) !== policy) return 'recheck';
+        // Turned off while it waited for a check that could not run.
+        if (!this.researchOn() && this.checkMayRunLater(v)) { refuse(REFUSAL_OFF, 'research-off'); return 'done'; }
+        if (v.decision === 'deny') {
+          const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
+          if (why) held(why, v.error);
+          else checked('stop', undefined, v.kinds);
+          refuse(v.reason);
+          return 'done';
+        }
+        // Research may have been turned off while the check ran.
+        if (!this.researchOn()) { refuse(REFUSAL_OFF, 'research-off'); return 'done'; }
+        const routedBefore = this.lastRouted;
+        try { this.deliverToResearch(msg.from, msg, v.subject, v.body); } catch (e) {
+          console.error('[research] delivering a checked message', e);
+          // It reached Research's inbox and a step after the write failed
+          // (the floor's envelope): delivered, so never sent twice.
+          const landed = this.lastRouted !== routedBefore && !!this.lastRouted?.delivered.includes(RESEARCH_ID);
+          if (!landed) {
+            if (deliveries < HiveManager.RESEARCH_DELIVERY_TRIES) return 'again';
+            refuse(REFUSAL_NOT_DELIVERED, 'undelivered');
+            return 'done';
+          }
+        }
+        try {
+          checked(v.decision, v, v.decision === 'clean' ? v.removed : undefined);
+          if (v.decision === 'clean' && fromAgent) this.tellSender(msg.from, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
+          this.commit('hive: trust layer delivered to research');
+        } catch (e) { console.error('[research] after delivering a checked message', e); }
+        return 'done';
+      };
+      const settle = (): void => {
+        deliveries++;
+        // A refusal that could not be told keeps its row, so the next start
+        // tells Michael instead of nobody.
+        let outcome: 'done' | 'again' | 'recheck' | 'keep' = 'keep';
+        try { outcome = deliverOrRefuse(); } catch (e) { console.error('[research] settling a checked message', e); }
+        if (outcome === 'again') {
+          // Its row now says it passed its check, so a start after a close
+          // tells Michael it was not delivered, not that it was being checked.
+          if (deliveries === 1 && !fromAgent) this.researchPending(msg, true, true);
+          this.researchUndelivered.set(msg.id, settle);
+          return;
+        }
+        if (outcome === 'keep') return;
+        if (!fromAgent) this.researchPending(msg, false);
+        if (outcome === 'recheck') this.queueForResearch(msg, upkeep);
+      };
+      settle();
+    }, () => {
+      if (Date.now() - firstAt < HiveManager.TRUST_WAIT_MS && this.researchOn() && this.policyOf(layer) === policy) {
+        this.appendLog({ kind: 'trust-wait', way: 'in', tries: tries + 1 });
+        setTimeout(() => attempt(tries + 1), HiveManager.trustRetryDelayMs(tries));
+        return;
+      }
       this.researchQueued--;
       if (!fromAgent) this.researchPending(msg, false);
       try {
-        // The owner changed what stays private while it was checked: checked
-        // again under the new settings (Codex review, third ship).
-        if (this.policyOf(layer) !== policy) { this.queueForResearch(msg); return; }
-        if (v.decision === 'deny') return refuse(v.reason);
-        // Research may have been turned off while the check ran.
-        if (!this.researchOn()) return refuse(REFUSAL_OFF, 'research-off');
-        this.deliverToResearch(msg.from, msg, v.subject, v.body);
-        if (v.decision === 'clean' && fromAgent) this.tellSender(msg.from, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
-        this.commit('hive: trust layer delivered to research');
-      } catch (e) { console.error('[research] delivering a checked message', e); }
-    }, () => {
-      this.researchQueued--;
-      if (!fromAgent) this.researchPending(msg, false);
-      try { refuse(REFUSAL_CHECK_FAILED, 'failed'); } catch { /* logged above */ }
-    });
+        // The owner changed what stays private meanwhile: checked again under
+        // the new settings, as a check that answered is (ship review 2026-10-17).
+        if (this.researchOn() && this.policyOf(layer) !== policy) { this.queueForResearch(msg, upkeep); return; }
+        if (!this.researchOn()) refuse(REFUSAL_OFF, 'research-off');
+        else { refuse(REFUSAL_CHECK_FAILED, 'failed'); held('failed'); }
+      } catch { /* logged above */ }
+    }); };
+    attempt(0);
   }
 
   /** The owner's and the app's messages for Research whose check is under
-   *  way, by id: what they were and who sent them, nothing more. */
-  private researchPending(msg: HiveMessage, add: boolean): void {
+   *  way, or that passed it and wait to be delivered (`checked`), by id: what
+   *  they were and who sent them, nothing more. */
+  private researchPending(msg: HiveMessage, add: boolean, checked = false): void {
     // Anything left from before this start is told first, never this run's.
     this.tellLostResearchPending();
     const home = this.getHome();
     if (!home) return;
     const file = join(privateRoot(home), 'research-pending.json');
-    let rows: Array<{ id: string; from: string; subject: string }> = [];
+    let rows: Array<{ id: string; from: string; subject: string; checked?: boolean }> = [];
     try { const r = JSON.parse(readFileSync(file, 'utf8')); if (Array.isArray(r)) rows = r; } catch { /* none yet */ }
     rows = rows.filter((r) => r && r.id !== msg.id);
-    if (add) { rows.push({ id: msg.id, from: msg.from, subject: String(msg.subject ?? '').slice(0, 80) }); this.researchPendingMine.add(msg.id); }
+    if (add) { rows.push({ id: msg.id, from: msg.from, subject: String(msg.subject ?? '').slice(0, 80), ...(checked ? { checked: true } : {}) }); this.researchPendingMine.add(msg.id); }
     try { mkdirSync(privateRoot(home), { recursive: true }); this.atomicWriteJson(file, rows); } catch { /* best effort */ }
   }
 
-  /** At start: an owner or app message whose check never finished (the app
-   *  closed or crashed) is told to Michael (Codex review, D8.2). The rows are
+  /** At start: an owner or app message whose check or delivery never
+   *  finished (the app closed or crashed) is told to Michael (Codex review, D8.2). The rows are
    *  moved aside first, so this run's own checks start a fresh list, and each
    *  stays until Michael's inbox takes its note: tried again on every routing
    *  pass, and at the next start if the app closes first (Codex, second ship). */
@@ -2689,7 +2921,7 @@ export class HiveManager {
     if (!home) return;
     const file = join(privateRoot(home), 'research-pending.json');
     const lost = join(privateRoot(home), 'research-pending-lost.json');
-    let rows: Array<{ id: string; from: string; subject: string }> = [];
+    let rows: Array<{ id: string; from: string; subject: string; checked?: boolean }> = [];
     try { const r = JSON.parse(readFileSync(lost, 'utf8')); if (Array.isArray(r)) rows = r; } catch { /* none left over */ }
     if (!this.researchPendingMoved) {
       let earlier: typeof rows = [];
@@ -2712,7 +2944,7 @@ export class HiveManager {
       if (!r || (r.from !== 'human' && r.from !== 'system') || this.researchLostTold.has(r.id)) return false;
       const ok = this.deliver(this.normalize({
         to: godId, act: 'inform', subject: researchText(NOT_SENT_SUBJECT, this.researchName()),
-        body: `${r.from === 'human' ? 'A note from the owner' : 'A message from the app'} for ${this.researchName()} ("${String(r.subject ?? '').slice(0, 80)}") was not sent: the app closed while it was being checked. Send it again if it still matters.`
+        body: `${r.from === 'human' ? 'A note from the owner' : 'A message from the app'} for ${this.researchName()} ("${String(r.subject ?? '').slice(0, 80)}") was not sent: the app closed while it was being ${r.checked === true ? 'delivered' : 'checked'}. Send it again if it still matters.`
       }, PRIVACY_CHECK_SENDER), godId);
       if (ok) this.researchLostTold.add(r.id);
       return !ok;
@@ -2730,6 +2962,16 @@ export class HiveManager {
   /** This run's own notes under check, and the lost ones already told. */
   private readonly researchPendingMine = new Set<string>();
   private readonly researchLostTold = new Set<string>();
+
+  /** One of the app's fixed upkeep notes, straight to Research: its words are
+   *  the app's own, so there is nothing private to check and it is not a
+   *  question. Logged with its kind; with Research off it is dropped quietly. */
+  private upkeepToResearch(msg: HiveMessage, upkeep: UpkeepKind): void {
+    if (!this.researchOn()) { this.appendLog({ kind: 'drop', reason: 'research-off', from: msg.from, id: msg.id, upkeep }); return; }
+    this.appendLog({ kind: 'upkeep-to-research', from: msg.from, id: msg.id, upkeep });
+    this.researchCleared.add(msg.id);
+    try { this.routeMessage(msg); } finally { this.researchCleared.delete(msg.id); }
+  }
 
   /** The clean copy Research receives: built only from what the trust layer
    *  returned, with an id, time and thread the app chose. */
@@ -2770,9 +3012,17 @@ export class HiveManager {
     const lowerTo = typeof msg.to === 'string' ? msg.to.trim().toLowerCase() : '';
     const logTo = recipient ?? (['god', 'michael', 'human'].includes(lowerTo) ? lowerTo : 'invalid');
     const logId = createHash('sha256').update(String(msg.id)).digest('hex').slice(0, 16);
-    const deny = (): 'denied' => {
+    // Every outbound deny is a hold: the check could not run. The waiting
+    // member and Michael are told (owner, 2026-10-16, D5), and Pulse lists it.
+    const deny = (v?: { reason: string; by?: string; error?: string }): 'denied' => {
       this.appendLog({ kind: 'trust-denied', from: RESEARCH_ID, to: logTo, id: logId });
-      if (recipient && recipient !== RESEARCH_ID) this.tellSender(recipient, null, msg.conversation, ANSWER_UNCHECKED_SUBJECT, ANSWER_UNCHECKED);
+      const tellsRecipient = !!recipient && recipient !== RESEARCH_ID;
+      if (tellsRecipient) this.tellSender(recipient!, null, msg.conversation, ANSWER_UNCHECKED_SUBJECT, ANSWER_UNCHECKED);
+      const michaelIsRecipient = toMichael || recipient === godId;
+      // Michael as the registered recipient already heard it from tellSender.
+      if (!(tellsRecipient && recipient === godId)) this.tellMichaelAnswerHeld(michaelIsRecipient ? null : recipient, partial.subject);
+      const why = v ? heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG) ?? 'failed' : 'no-layer';
+      this.recordHeld('out', RESEARCH_ID, michaelIsRecipient ? godId : recipient ?? logTo, partial.subject, partial.body, why, v?.error, michaelIsRecipient ? 'recipient' : tellsRecipient ? 'recipient+michael' : 'michael');
       return 'denied';
     };
     // Research writes only to someone whose question it is answering, or to
@@ -2801,7 +3051,7 @@ export class HiveManager {
     const layer = this.trustLayer;
     const v = this.trustCheck(`out:${this.trustKey(layer, raw)}`, () => layer.outbound({ subject: partial.subject, body: partial.body }));
     if (v === 'hold') return 'hold';
-    if (v.decision === 'deny') return deny();
+    if (v.decision === 'deny') return deny(v);
     // Back into the sender's own thread, only when it goes back to that
     // sender; Research knows only the clean copies' ids, so any other reply
     // id it writes is dropped (ship review pass 3).
@@ -2813,7 +3063,7 @@ export class HiveManager {
     const out = this.normalize({
       // The app's id, the same for the same file, so an answer delivered
       // again after a crash replaces itself instead of arriving twice.
-      id: `research-${createHash('sha256').update(fileKey).digest('hex').slice(0, 24)}`,
+      id: researchDeliveredId(fileKey),
       to: msg.to,
       act: 'inform',
       subject: v.subject,
@@ -2823,6 +3073,8 @@ export class HiveManager {
     }, RESEARCH_ID);
     const flagged = ('flagged' in v && v.flagged) || looksLikeInjection(`${v.subject}\n${v.body}`);
     this.routeMessage(out);
+    // What the team read, without the label the app puts above it (eng O4, DD1).
+    this.recordChecked('out', RESEARCH_ID, out.to, v.decision, partial, v, { flagged });
     if (flagged) {
       const toName = reg.agents[out.to]?.name ?? out.to;
       this.appendLog({ kind: 'research-reply-flagged', to: logTo, id: out.id });
@@ -2840,13 +3092,24 @@ export class HiveManager {
   }
 
   /** Asks waiting for Research: delivered and not yet read, plus those in a
-   *  check. Turning Research off sends these back (design review D7). */
+   *  check or waiting to be delivered again. Turning Research off sends these
+   *  back (design review D7). */
   researchWaiting(): number {
-    let n = this.researchQueued;
+    let n = this.researchQueued + this.researchUndelivered.size;
     for (const [k, c] of this.trustChecks) if (k.startsWith('in:') && !c.done) n++;
     // Only what the app delivered counts.
-    n += this.listMessages(join(this.agentDir(RESEARCH_ID), 'inbox')).length;
+    // The app's own upkeep is never a question waiting (shared/upkeep.ts).
+    n += this.listMessages(join(this.agentDir(RESEARCH_ID), 'inbox')).filter((m) => !this.isAppUpkeep(m)).length;
     return n;
+  }
+
+  /** App upkeep, delivered: a schedule decision (only the scheduler sends as
+   *  'scheduler', and its scheduled runs are real work, so the decision is
+   *  known by its subject), or word for word one of the app's fixed notes from
+   *  the owner's side or the app. */
+  private isAppUpkeep(m: { from?: unknown; subject?: unknown; body?: unknown }): boolean {
+    if (m.from === 'scheduler') return m.subject === 'Schedule change approved' || m.subject === 'Schedule change declined';
+    return (m.from === 'human' || m.from === 'system') && isAnyFixedUpkeep(m.subject, m.body);
   }
 
   /** As Research turns off: every message waiting in its inbox goes back to
@@ -2871,6 +3134,8 @@ export class HiveManager {
           const own = back && back.from === m.from ? back : null;
           this.tellSender(m.from, own ? own.origId : null, own ? own.conversation : null, NOT_SENT_SUBJECT, REFUSAL_OFF);
           n++;
+        } else if (this.isAppUpkeep(m)) {
+          // The app's own upkeep: removed quietly, never told (owner, 2026-10-18).
         } else if (m.from === 'human' || m.from === 'system') {
           // An owner or app note waiting for Research is told to Michael (D8.2).
           const godId = this.registry().godId ?? 'god';
@@ -2916,15 +3181,17 @@ export class HiveManager {
     return tell;
   }
 
-  /** Inject a message directly (used by the orchestrator / UI / tests). */
-  send(partial: Partial<HiveMessage>, from = 'system'): HiveMessage {
+  /** Inject a message directly (used by the orchestrator / UI / tests).
+   *  `upkeep`: the app's own upkeep note (shared/upkeep.ts), stamped here by
+   *  the code that sends it, never read from a message's file or words. */
+  send(partial: Partial<HiveMessage>, from = 'system', upkeep?: UpkeepKind): HiveMessage {
     const msg = this.normalize(partial, from);
-    this.routeMessage(msg);
+    this.routeMessage(msg, upkeep);
     this.commit(`hive: msg ${msg.from}→${msg.to} (${msg.act})`);
     return msg;
   }
 
-  private routeMessage(msg: HiveMessage): void {
+  private routeMessage(msg: HiveMessage, upkeep?: UpkeepKind): void {
     if (msg.hops > HOP_CAP) {
       // loop guard — drop a runaway message rather than let agents ping-pong.
       // There's no human queue to fall back on; the god agent owns conflicts,
@@ -2981,6 +3248,7 @@ export class HiveManager {
     // An owner question asked in the dock (michael-replies.md) closes only on
     // done or refuse: a holding reply or a question back keeps it open.
     const toOwner = msg.from === godId && resolveTo(msg.to) === godId;
+    // gstack-shortcut(dec-383ee82c): figures in Michael's answer are not checked against the team's report, upgrade when an answer records the reports it used or a wrong figure reaches the owner
     if (toOwner && msg.in_reply_to && (!this.isOwnerQuestion(msg.in_reply_to) || closesOwnerQuestion(msg.act))) {
       this.appendLog({ kind: 'owner-request-closed', id: msg.id, in_reply_to: msg.in_reply_to });
     }
@@ -2998,9 +3266,21 @@ export class HiveManager {
     }
     // Anything else for Research (an app note, an owner answer, a send()) goes
     // through the trust layer first, in the background (ship review D2.1).
+    // Research not reporting: its questions wait with Michael like anyone's (SD16).
+    if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && this.memberMail?.(RESEARCH_ID) === 'hold') {
+      // The app's upkeep notes are not Michael's to pass on (his resend would
+      // make them a listed question): dropped quietly, as with Research off.
+      if (upkeep) { this.appendLog({ kind: 'drop', reason: 'research-held', from: msg.from, id: msg.id, upkeep }); return; }
+      this.holdForMichael(msg, [RESEARCH_ID], godId);
+      return;
+    }
     if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && !this.researchCleared.has(msg.id)) {
+      // The app's fixed upkeep notes are not research: no paid check, never
+      // listed (owner, 2026-10-17). Anything else, upkeep with someone's words
+      // included, is checked; only research is listed and counted.
+      if (upkeep && isFixedUpkeep(upkeep, msg.subject, msg.body)) { this.upkeepToResearch({ ...msg, to: RESEARCH_ID }, upkeep); return; }
       this.appendLog({ kind: 'message-held-for-trust-layer', from: msg.from, id: msg.id });
-      this.queueForResearch({ ...msg, to: RESEARCH_ID });
+      this.queueForResearch({ ...msg, to: RESEARCH_ID }, !!upkeep);
       return;
     }
     const targets = msg.to === 'broadcast'
@@ -3015,6 +3295,8 @@ export class HiveManager {
     // Targets that actually took delivery. The log below reports these instead of
     // intent, so a bounced or dropped message can never read as delivered.
     const delivered: string[] = [];
+    // Members not reporting whose copy goes to Michael, as one held copy.
+    const held: string[] = [];
     for (const t of targets) {
       // The send-only prep assistant must never be a delivery target: it doesn't
       // drain an inbox, so direct mail to it would rot unread (observed live: a
@@ -3027,6 +3309,14 @@ export class HiveManager {
           to: godId,
           subject: `[bounced — "${t}" is the send-only prep assistant; route work to a real agent] ${msg.subject}`
         }, godId);
+        continue;
+      }
+      // Not reporting (issue #326): held for Michael, or by terminal when kept.
+      const silent = t !== godId ? this.memberMail?.(t) ?? null : null;
+      if (silent === 'hold') { held.push(t); continue; }
+      if (silent === 'handoff') {
+        if (!this.emitTerminalHandoff(msg, t)) held.push(t);
+        else delivered.push(t);
         continue;
       }
       // A provider without safe-idle lifecycle state (a hookless custom command)
@@ -3075,6 +3365,7 @@ export class HiveManager {
         }, godId);
       }
     }
+    if (held.length) this.holdForMichael(msg, held, godId);
     this.appendLog({ kind: 'message', from: msg.from, to: msg.to, act: msg.act, subject: msg.subject, id: msg.id, delivered });
     this.lastRouted = { id: msg.id, delivered };
     this.emitMessage(msg, targets);
@@ -3206,6 +3497,11 @@ export class HiveManager {
     if (!existsSync(agentsDir)) return 0;
     const researchOn = this.researchOn();
     try { this.tellLostResearchPending(); } catch { /* next start */ }
+    // Checked messages for Research whose delivery failed get another try.
+    for (const [id, retry] of [...this.researchUndelivered]) {
+      this.researchUndelivered.delete(id);
+      try { retry(); } catch { /* its pending row stays, so the next start tells Michael */ }
+    }
     try { this.sweepResearchInbox(researchOn); } catch { /* next tick */ }
     this.pruneTrustChecks();
     // Read once per tick, when the first message needs them, not once per file.
@@ -3274,8 +3570,36 @@ export class HiveManager {
               repair: 'literal-line-break'
             });
           }
-          const msg = this.normalize(partial, id);
+          // Mail is only the agent's own plain file with one name: a hard link
+          // to someone else's message (another member's inbox, Michael's sent
+          // mail) is set aside, never sent again as new (Codex review, ship
+          // 2026-10-18). It is also the file stamped in place below.
+          if (!research) {
+            const st = lstatSync(full);
+            if (!st.isFile() || st.nlink !== 1) {
+              this.appendLog({ kind: 'drop', reason: 'outbox-not-a-file', from: id, file: logFile });
+              this.archiveOutboxFile(full, badDir, `bad-${f}`);
+              continue;
+            }
+          }
+          // The app makes every id: one an agent wrote can repeat (a second
+          // message with it overwrote the first in the inbox) or be missing
+          // from the sent copy, so the conversation read every reply as "".
+          const msg = this.normalize({ ...partial, id: undefined }, id);
           msg.from = id; // sender is authoritative — the owning directory
+          // The time is the app's too: a time an agent typed, later or earlier,
+          // could close the owner's next question or hide a message (Codex
+          // review, ship 2026-10-18).
+          msg.created_at = new Date().toISOString();
+          // The sent copy carries what was delivered: the app's id, sender and
+          // time (and repaired text), written in place before the one rename
+          // that archives it. Only a plain file of the agent's own is written
+          // over (red team, third ship); anything else is archived as written.
+          const stampSent = (): void => {
+            const sent = JSON.stringify({ ...partial, id: msg.id, from: msg.from, created_at: msg.created_at }, null, 2);
+            if (repairedText !== null) rewriteOwnFile(full, sent);
+            else try { rewriteOwnFile(full, sent); } catch { /* not a plain file */ }
+          };
           const schedule = (partial as { schedule?: unknown }).schedule;
           if (msg.to === 'scheduler' && schedule !== undefined && this.scheduleRequestHandler) {
             // A schedule request, not mail: main files it for the owner and the
@@ -3288,6 +3612,8 @@ export class HiveManager {
             }
             this.appendLog({ kind: 'schedule-request', from: id, id: msg.id });
             this.routeMessage(this.normalize({ to: id, act: 'inform', subject: 'Schedule request', body: reply }, 'scheduler'));
+            // Research's file is moved as it is, as at its gate below.
+            if (!research) stampSent();
             this.archiveOutboxFile(full, join(outbox, '.sent'), f);
             routed++;
             continue;
@@ -3307,27 +3633,15 @@ export class HiveManager {
             mkdirSync(dest, { recursive: true });
             // Research's archive is the app's own record: its file is moved as
             // it is, never written through (red team, third ship).
-            if (repairedText !== null && !research) rewriteOwnFile(full, repairedText);
+            if (!research) stampSent();
             this.archiveOutboxFile(full, dest, f);
             routed++;
             continue;
           }
-          // A repaired file is written over below, so it must be the agent's
-          // own plain file with one name; anything else is set aside before
-          // it is delivered (red team, third ship).
-          if (repairedText !== null) {
-            const st = lstatSync(full);
-            if (!st.isFile() || st.nlink !== 1) {
-              this.appendLog({ kind: 'drop', reason: 'outbox-not-a-file', from: id, file: logFile });
-              this.archiveOutboxFile(full, badDir, `bad-${f}`);
-              continue;
-            }
-          }
           this.routeMessage(msg);
-          // Repaired text replaces the original in place, then one rename
-          // archives it, so a failed step can never deliver it twice. Only a
-          // plain file of the agent's own is written over (red team, third ship).
-          if (repairedText !== null) rewriteOwnFile(full, repairedText);
+          // Stamped in place, then one rename archives it. A crash between
+          // the delivery and the rename delivers it again, under a new id.
+          stampSent();
           this.archiveOutboxFile(full, join(outbox, '.sent'), f); // archive, don't reprocess
           routed++;
         } catch {
@@ -3381,9 +3695,10 @@ export class HiveManager {
     // What the app writes is what the guard knows: Done cards and where each
     // open card stands, so a restore never brings back a copy from before it.
     const guard = this.guardState();
+    const now = new Date().toISOString();
     for (const t of merged as HiveTask[]) {
       if (!t || typeof t.id !== 'string') continue;
-      if (t.status === 'done') { guard.done[t.id] = t as unknown as GuardCard; delete guard.placed[t.id]; }
+      if (t.status === 'done') { guard.done[t.id] = t as unknown as GuardCard; delete guard.placed[t.id]; (guard.doneAt ??= {})[t.id] ??= now; }
       else if (t.status && t.status !== 'triage') guard.placed[t.id] = { ...(t as unknown as GuardCard), status: t.status };
     }
     this.saveGuard();
@@ -3423,6 +3738,7 @@ export class HiveManager {
     // Forgotten as Done only once the move is on disk.
     if (patch.status && patch.status !== 'done' && tasks[index].status === 'done') {
       delete this.guardState().done[id];
+      delete this.guardState().doneAt?.[id];
       this.saveGuard();
     }
     return true;
@@ -3673,6 +3989,8 @@ export class HiveManager {
    *  cards it saw Done, where each open card was, and the reminders it sent.
    *  Kept in the private folder; null until the first tick loads it. */
   private guard: GuardState | null = null;
+  /** Waiting cards past their check back time, for Michael's list (guardBoard). */
+  private goneQuiet: StuckCard[] = [];
   /** The guard state's signature as last saved, so a quiet tick writes nothing. */
   private guardSaved = '';
   /** Team members' filings waiting in triage/, oldest first, as of the last tick. */
@@ -3755,6 +4073,9 @@ export class HiveManager {
     if (!tasks) return;
     const before = this.guardState();
     const fixed = guardCards(tasks, before);
+    // guardCards builds its state without the Waiting clocks: carry them over
+    // before any save, so the file never lacks them and a quiet tick writes nothing.
+    const next: GuardState = { ...fixed.state, ...(before.waiting ? { waiting: before.waiting } : {}) };
     const godId = this.registry().godId;
     // Every note and reminder of one tick shares one commit, so a restart
     // with many overdue steps never stalls the app on a commit per message.
@@ -3775,13 +4096,13 @@ export class HiveManager {
       // A board being written this moment waits for the next tick.
       const now = readBoard();
       if (!now) return;
-      this.guard = fixed.state;
+      this.guard = next;
       this.writeTasks(applyGuardFixes(now, fixed.fixes, fixed.restored) as HiveTask[]);
       for (const r of fixed.reopened) tell(reopenedNote(r.card, r.to, r.openAsk), r.card.id);
       for (const t of fixed.restored) tell(restoredDoneNote(t), t.id);
       for (const u of fixed.untriaged) tell(untriagedNote(u.card, u.to), u.card.id);
     }
-    this.guard = fixed.state;
+    this.guard = next;
     const reg = this.registry();
     const godName = resolveGodName(reg.agents[godId ?? 'god']?.name);
     const reminders = dueReminders(tasks.map((t) => {
@@ -3817,6 +4138,27 @@ export class HiveManager {
       } catch { unsent(); }
     }
     if (godId) for (const t of reminders.backstop) tell(nextStepBackstopNote(t, reminders.reminders[t.id]?.to), t.id);
+    // Waiting cards come back (card-lifecycle.md section 8): Michael is told
+    // once when a check back time comes, and keeps a gone quiet list while
+    // the card stays overdue. Without him the clock waits for the next tick.
+    if (godId) {
+      const now = Date.now();
+      const quiet = waitingChecks(tasks.map((t) => {
+        const id = (t as GuardCard | null)?.id;
+        return typeof id === 'string' && fixed.fixes[id] ? { ...(t as GuardCard), ...fixed.fixes[id] } : t;
+      }) as GuardCard[], before.waiting ?? {}, now);
+      this.guard.waiting = quiet.waiting;
+      this.goneQuiet = quiet.overdue
+        .sort((a, b) => Date.parse(a.clock.since) - Date.parse(b.clock.since))
+        .map(({ card, clock }) => ({
+          id: card.id, title: String(card.title ?? card.id).trim() || card.id,
+          ...(card.assignee ? { assignee: card.assignee } : {}), issue: 'gone-quiet' as const,
+          quiet: { ...(typeof card.waitingOn === 'string' ? { waitingOn: card.waitingOn } : {}), since: clock.since, followUps: clock.followUps }
+        }));
+      // Recorded as told before it goes out, so a crash never sends it twice.
+      this.saveGuard();
+      for (const d of quiet.due) tell(waitingDueNote(d.card, d.clock, d.askOwner, now), d.card.id);
+    }
     if (sent) this.commit(`hive: board guard (${sent} message${sent === 1 ? '' : 's'})`);
     this.saveGuard();
   }
@@ -3882,10 +4224,11 @@ export class HiveManager {
     try { this.tasksObserver?.(tasks); } catch (e) { console.error('[hive] tasks observer:', e); }
     // A card that has ended (Done, or closed by the owner) needs no routing,
     // unless the owner answered after it closed: an open question stays on Ask
-    // me on a Done card, and that answer is still Michael's to route. Only an
-    // owner's close is timed (closedAt; a card keeps no other update time), so
-    // a request on a card Michael or the app marked Done is taken as settled.
-    const closedAt = new Map(tasks.filter((t) => t?.status === 'done').map((t) => [t.id, (t as { closedAt?: unknown }).closedAt]));
+    // me on a Done card, and that answer is still Michael's to route. The time
+    // is the owner's close (closedAt), else when the app first saw the card
+    // Done, so a card Michael marked Done keeps an answer given after it.
+    const doneAt = this.guardState().doneAt ?? {};
+    const closedAt = new Map(tasks.filter((t) => t?.status === 'done').map((t) => [t.id, (t as { closedAt?: unknown }).closedAt ?? doneAt[t.id]]));
     this.ownerRequestsCache = openOwnerRequests(toMichael, fromMichael, aliases).filter((r) => {
       if (!closedAt.has(r.taskId)) return true;
       const at = closedAt.get(r.taskId);
@@ -3897,7 +4240,7 @@ export class HiveManager {
     try { this.filingsCache = this.pendingFilings(); } catch (e) { console.error('[hive] triage filings:', e); }
     // A list-style ask is flagged only when written since the reminder first
     // ran here, so asks already on the board keep their look (ask-me-options.md, 1A).
-    this.stuckCardsCache = [...blockedWithNothingAsked(tasks, this.ownerRequestsCache), ...asksToTidy(tasks, this.askListSince())];
+    this.stuckCardsCache = [...blockedWithNothingAsked(tasks, this.ownerRequestsCache), ...this.goneQuiet, ...asksToTidy(tasks, this.askListSince())];
     return this.ownerRequestsCache;
   }
 
@@ -3920,7 +4263,9 @@ export class HiveManager {
           // An agent's own outbox file often has no created_at (the router adds
           // it in memory; the archived copy keeps the raw file): use its time.
           const at = typeof raw.created_at === 'string' && raw.created_at ? raw.created_at : new Date(statSync(p).mtimeMs).toISOString();
-          m = { id: String(raw.id ?? ''), from: String(raw.from ?? ''), act: String(raw.act ?? ''), conversation: raw.conversation, in_reply_to: raw.in_reply_to, subject: raw.subject, created_at: at, to: raw.to };
+          // Sent copies archived before the app stamped them have no id: the
+          // file name stands in, so each still has its own one to answer.
+          m = { id: String(raw.id ?? '') || `sent-${f.slice(0, -'.json'.length)}`, from: String(raw.from ?? ''), act: String(raw.act ?? ''), conversation: raw.conversation, in_reply_to: raw.in_reply_to, subject: raw.subject, created_at: at, to: raw.to, answeredAt: answeredAtOf(raw.body) };
           // The owner's conversation needs the words (michael-replies.md); other
           // mail keeps only its envelope in memory.
           const ownerSide = raw.from === 'human' || OWNER_ALIASES.has(String(raw.to ?? '').toLowerCase()) || !!ownerQuestionOf(raw.conversation);
@@ -4180,7 +4525,9 @@ export class HiveManager {
   private ownerDockRaw(state: OwnerDockState, now: number, verified?: (m: ThreadMessage) => boolean): OwnerDock {
     const godDir = this.agentDir(this.registry().godId ?? 'god');
     const ownerSent = this.ownerMessages(this.ownerSentDir()) as ThreadMessage[];
-    const fromMichael = [...this.ownerMessages(join(godDir, 'outbox')), ...this.ownerMessages(join(godDir, 'outbox', '.sent'))] as ThreadMessage[];
+    // Routed replies only: one still in his outbox has no id of its own yet, and a
+    // Reply to it would point at an id that changes when it is routed (D14).
+    const fromMichael = this.ownerMessages(join(godDir, 'outbox', '.sent')) as ThreadMessage[];
     return ownerDock(ownerSent, fromMichael, state, now, verified, this.ownerAliases());
   }
 
@@ -4232,6 +4579,25 @@ export class HiveManager {
   /** Main is told of each reply Michael sends to an owner question, for the
    *  one notification per final reply (12A). */
   private ownerReplyListener: ((msg: HiveMessage) => void) | null = null;
+  /** A member that isn't reporting to the app (issue #326, SD12): its new mail
+   *  is held for Michael ('hold'), or reaches it by its terminal when the owner
+   *  kept it working unchecked ('handoff'); null flows as usual. Set by index.ts. */
+  memberMail: ((agentId: string) => 'hold' | 'handoff' | null) | null = null;
+  /** Mail for a member that isn't reporting goes to Michael instead (SD12). */
+  /** One copy for Michael per message, naming every member it was held for,
+   *  under its own id so it never replaces his own copy of a broadcast or
+   *  another held one (ship review 2026-10-17). The note when a member reports
+   *  again tells him to send what still needs doing. */
+  private holdForMichael(msg: HiveMessage, ids: readonly string[], godId: string): void {
+    const reg = this.registry();
+    const names = ids.map((t) => (t === RESEARCH_ID ? this.researchName() : reg.agents[t]?.name ?? t));
+    for (const t of ids) this.appendLog({ kind: 'message-held-not-reporting', to: t, id: msg.id });
+    const who = names.map((n) => `"${n}"`).join(', ');
+    const what = names.length === 1
+      ? `${who} isn't reporting to the app; route this to someone else, or send it to ${names[0]} again once ${names[0]} reports`
+      : `${who} aren't reporting to the app; route this to someone else, or send it to them again once they report`;
+    this.deliver({ ...msg, id: `${msg.id}-held`, to: godId, subject: `[held: ${what}] ${msg.subject}` }, godId);
+  }
   onOwnerReply(cb: ((msg: HiveMessage) => void) | null): void { this.ownerReplyListener = cb; }
 
   /** Michael's terminal words for a question his turn sent nothing about
@@ -4732,11 +5098,9 @@ export class HiveManager {
       if (shim) {
         const events = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
           'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'];
-        // Preserve the existing Windows .cmd shape: nested command quotes pass
-        // through a different shell stack there (#350). The reported Codex bug
-        // is POSIX, where ordinary shell quoting is both necessary and verified.
+        // On Windows a command with no space and no quote: see codexHookWindows.
         const command = process.platform === 'win32'
-          ? this.nodeRunUnquoted(shim)
+          ? this.codexHookWindows(shim) ?? this.nodeRunUnquoted(shim)
           : this.nodeRun(shim);
         config += '\n# --- munder-hive lifecycle hooks (auto-generated; do not edit) ---\n';
         for (const ev of events) {
@@ -5339,8 +5703,8 @@ export class HiveManager {
    * record (those carry user.email / account / org / hashed-user-id). The sample
    * is PII-free by construction upstream (the provider's normalize step), so we
    * add no redaction here; we just must not widen what we write. The file lives
-   * at the hive ROOT, so `mempalace mine` (which only scans per-agent dirs) never
-   * ingests it — no palace noise, no MINE_IGNORE entry needed.
+   * at the hive ROOT, which the palace never mines (it holds company knowledge
+   * only), so no MINE_IGNORE entry is needed.
    *
    * Like appendLog: append to disk now (durable immediately), let it ride the
    * next natural commit. Best-effort — never throws into the beat.
@@ -5454,8 +5818,7 @@ export class HiveManager {
    * predates that ignore line goes on committing every SQLite and transcript
    * revision exactly as before — the .gitignore reads as a fix while the repo
    * keeps growing. This closes that: once per process, refresh every agent's
-   * ignore file (agents that are not running never pass through spawn, and the
-   * mine loop only reaches them if mempalace is installed) and drop any tracked
+   * ignore file (agents that are not running never pass through spawn) and drop any tracked
    * `.codex` path from the index. The files stay on disk, so `codex --resume`
    * is unaffected; only their history stops.
    */
@@ -5704,20 +6067,16 @@ You (god) are responsible for situational awareness. To see the live state of ev
 breaker level, last tool, last-active time, and inbox backlog. Pair it with \`registry.json\` (the roster)
 and \`log.jsonl\` (the event feed). IMPORTANT: \`claude agents\` will NOT show your hive's sibling
 sessions (they're spawned independently) — \`fleet.json\` is your source of truth for them. For a deeper
-look at one agent, read its \`agents/<id>/memory.md\` and \`inbox/\`, or send it a \`query\`. A full
+look at one agent, send it a \`query\` and read its card on the board: its \`agents/<id>/\` folder, notes and inbox are its own, never yours to open (owner, 2026-10-16). A full
 Claude Code command reference (slash = your own session only; CLI = your shell, can target the fleet)
 is in \`COMMANDS.md\` in the hive root.
 
-${ALLOW_TEMP_WORKERS ? SPAWN_WORKER_MD : ''}## Semantic memory (optional — when \`mempalace\` is installed)
-When \`MEMPALACE_PALACE_PATH\` is set in your environment, the hive shares a
-searchable MemPalace and you have the \`mempalace\` CLI:
-- \`mempalace search "<query>"\` — recall relevant past knowledge across the whole
-  team by meaning (not just keywords). Add \`--wing <agent-id>\` to scope to one
-  agent, \`--results N\` to widen.
-- \`mempalace wake-up\` — a short digest of what matters, good at the start of a task.
-
-Your memory index is mined into the palace automatically, so what the app keeps
-there becomes searchable by every agent. You don't run \`mine\` yourself.
+${ALLOW_TEMP_WORKERS ? SPAWN_WORKER_MD : ''}## Private memory
+Your notes and memory are yours alone, and each other agent's are theirs: never
+open another agent's \`agents/<id>/\` folder, its notes or inbox, or the hive's git
+history. To learn what another agent knows, send it a \`query\`. The one store every
+agent searches is company knowledge (by meaning: \`mempalace search "<query>" --wing company\`
+when \`mempalace\` is installed).
 `;
 
 /** PROTOCOL.md for a business office: the message format and the files, in
@@ -5752,7 +6111,7 @@ The app fills in the id, the sender and the times. Only \`request\` and \`query\
 
 ${SCHEDULES_PROTOCOL}
 ## The task board
-\`tasks.json\` in the hive folder holds the cards (todo, doing, waiting, blocked, done; waiting names who else in waitingOn, never the card\'s own person, a card that only waits for its own person\'s one off step at a set time is todo with nextAt set to that time, scheduled routines get no card, and cards carry no running notes), each with a title and the team member it is assigned to. Only Michael writes \`tasks.json\` and \`board.md\`: when your work moves (finished, waiting on someone, due again at a set time), tell Michael and he moves its card. A done card stays done: only the owner reopens one. At a To do card's \`nextAt\` the app sends its person a "Next step due" message.
+\`tasks.json\` in the hive folder holds the cards (todo, doing, waiting, blocked, done; waiting names who else in waitingOn, never the card\'s own person, a card that only waits for its own person\'s one off step at a set time is todo with nextAt set to that time, scheduled routines get no card, and cards carry no running notes), each with a title and the team member it is assigned to. Only Michael writes \`tasks.json\` and \`board.md\`: when your work moves (finished, waiting on someone, due again at a set time), tell Michael and he moves its card. A done card stays done: only the owner reopens one. At a To do card's \`nextAt\` the app sends its person a "Next step due" message. A Waiting card's \`nextAt\` is when to check back on who it waits on; when it comes the app tells Michael.
 
 ## Asking the owner
 Only Michael asks the owner, on the Ask me board. A team member files what its work needs as one new file in \`triage/\` in the hive folder, named by the time and its id, written once and never changed: \`{ "title": "...", "description": "...", "filedBy": "<your id>", "filedAt": "<time>" }\` with either \`"ask"\` (one activity's questions for the owner, one to a line) or \`"waitingOn"\` (someone outside the office), one filing per source of answers. Something only the owner can do on a website, such as signing in or accepting terms, carries the exact link for it from the email or page (the sender's own site, never a tracking or shortened link), and Michael keeps it in the ask. Michael works the filings oldest first: he answers, merges into a card, drops a duplicate or makes a card (blocked on Ask me, or waiting), then moves the file to \`triage/.done/\`. A question stays on Ask me until the owner answers it or it is withdrawn, so there is one open ask per card: to change it, Michael folds what still matters into one ask and withdraws the old one with \`"dismissedAt"\` and \`"dismissedReason"\`. When the owner leaves some questions of an ask unanswered, Michael sends them with the answers to whoever raised them, who settles what it can and files back only what it still needs; Michael asks the owner again only for that, on the same card, or on a new card when that card is done. The owner's answer goes into the raiser's memory and to Michael, who routes the follow-up: the owner talks only to Michael.

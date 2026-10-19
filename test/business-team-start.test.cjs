@@ -58,3 +58,10 @@ test('the onboarding team starts once, each member in its folder, and Michael ke
   const ready = hive.lastIndexOf("useStore.getState().setGodStatus('ready');", start);
   assert.ok(ready > 0 && start > ready && start - ready < 400, 'started right after Michael is ready');
 });
+
+test('members that did not start are named to Michael, who tells the owner', () => {
+  const at = hive.indexOf('async function startBusinessTeam(config: HarnessConfig)');
+  const fn = hive.slice(at, hive.indexOf('\nexport function useHive', at));
+  assert.match(fn, /if \(failed\.length\) \{\s*const note = didNotStartNote\(failed\.map\(\(id\) => teamMemberName\(defs\.get\(id\)!\)\), !!retry\);\s*await window\.cth\.hiveSend\(\{ to: GOD_ID, act: 'inform', \.\.\.note \}, 'system'\)/);
+  assert.ok(fn.indexOf('didNotStartNote(') > fn.indexOf('businessTeamRetry: failed'), 'after the retry list is saved');
+});

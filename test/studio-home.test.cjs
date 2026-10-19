@@ -227,8 +227,13 @@ test('more life: plane to Needs you, pointing, conversations, owner messages, hi
 
 test('lights come up as people clock in, the way closing time turns them off (owner, 2026-09-30)', () => {
   const stage = read('src/renderer/src/scene/studio/StudioStage.tsx');
-  assert.match(stage, /if \(a\.action !== ACTION_CLOCKING_IN\) \{ since\.current\.delete\(a\.id\); continue; \}/);
-  assert.match(stage, /now - \(since\.current\.get\(a\.id\) \?\? now\) < 60_000/, 'never dark for more than a minute');
+  // The rule lives in shell/clockingIn.ts, shared with the opening card (2026-10-17).
+  assert.match(stage, /import \{ useClockingIn \} from '@\/hooks\/useClockingIn';/);
+  const rule = read('src/renderer/src/shell/clockingIn.ts');
+  assert.match(rule, /if \(a\.action !== marker\) \{ since\.delete\(a\.id\); continue; \}/);
+  assert.match(rule, /now - \(since\.get\(a\.id\) \?\? now\) < CLOCK_IN_CAP_MS/, 'never dark for more than a minute');
+  assert.match(rule, /export const CLOCK_IN_CAP_MS = 60_000;/);
+  assert.match(read('src/renderer/src/hooks/useClockingIn.ts'), /clockingIn\(agents, since\.current, Date\.now\(\), ACTION_CLOCKING_IN\)/);
   assert.match(stage, /\|\| pod\.members\.every\(\(a\) => away\.has\(a\.id\)\)\}/);
   assert.match(stage, /const hubAway = godStatus === 'booting' \|\| \(!!god && away\.has\(god\.id\)\);/);
   const art = read('src/renderer/src/scene/studio/StudioArt.tsx');
@@ -296,8 +301,9 @@ test('Michael\'s numbers live on his walls; a chip replaces the always-on card (
   assert.match(art, /function StatsSign\(/);
   assert.match(art, /\{stats && <StatsSign at=\{P\(-0\.6, -a \+ 0\.01, z1 - 3\)\}/);
   assert.match(art, /<text key=\{n\} className="cth-st-tick"/, 'numbers tick when they change');
-  // Board columns read left to right on the wall: To do, Doing, Blocked, Done.
-  assert.match(art, /\[0\.15, '#9C97CC', board\.todo\], \[-0\.21, T\.blue, board\.doing\], \[-0\.57, T\.coral, board\.blocked\], \[-0\.93, T\.green, board\.done\]/);
+  // Board columns read left to right on the wall, as the Tasks view does:
+  // To do, Doing, Waiting, Blocked, Done (owner, 2026-10-18).
+  assert.match(art, /\['#9C97CC', board\.todo\], \[T\.blue, board\.doing\], \[T\.amber, board\.waiting\], \[T\.coral, board\.blocked\], \[T\.green, board\.done\]/);
   const stage = read('src/renderer/src/scene/studio/StudioStage.tsx');
   // The name plate on his glass is the way in; no floating chip (owner, 2026-09-30).
   assert.doesNotMatch(stage, /HubChip/);
@@ -365,4 +371,20 @@ test('a flying token stays hidden until its motion has begun, so it never sits a
   assert.match(life, /const \[launched, setLaunched\] = useState\(false\);/);
   assert.match(life, /ref\.current\?\.beginElement\(\); setLaunched\(true\);/, 'shown only after beginElement ran');
   assert.match(life, /<g visibility=\{launched \? 'visible' : 'hidden'\}>\s*<animateMotion ref=\{ref\}/, 'the moving head is hidden before it launches');
+});
+
+test('Michael\'s wall and hub card count Waiting: five columns in the Tasks order, on a card wide enough for their labels (owner, 2026-10-18)', () => {
+  // Value: protects=design review D2 A, 1A and 3A, the wall adds up to the Tasks view; fails_when=Waiting drops off either surface, the order differs from Tasks, the five columns overrun the board, or the card shrinks so English labels touch; why_new=owner report (wall missing the waiting count); seam=pure geometry from the tuple, source pins; no_claim=the drawn pixels (lab screenshot)
+  const art = read('src/renderer/src/scene/studio/StudioArt.tsx');
+  assert.match(art, /board: \{ todo: number; doing: number; waiting: number; blocked: number; done: number \};/);
+  assert.match(art, /\.map\(\(\[c, n\], i\) => \[0\.47 - 0\.32 \* cw - i \* 0\.36 \* cw, c, n\]\);/);
+  const cw = Number(/const cw = ([\d.]+);/.exec(art)[1]);
+  const last = 0.47 - 0.32 * cw - 4 * 0.36 * cw;
+  assert.ok(Math.abs(last - 0.04 * cw - -0.97) < 0.08, `the fifth column ends at the board's edge (${last.toFixed(3)})`);
+  const stage = read('src/renderer/src/scene/studio/StudioStage.tsx');
+  assert.match(stage, /gridTemplateColumns: 'repeat\(5, 1fr\)'/);
+  assert.match(stage, /\{col\(board\.doing, t\('studio\.doingCol'\), 'var\(--cth-blue\)'\)\}\n\s+\{col\(board\.waiting, t\('kanban\.colWaiting'\), 'var\(--cth-amber\)'\)\}\n\s+\{col\(board\.blocked/);
+  const L = loadTs('src/renderer/src/scene/studio/layout.ts');
+  assert.equal(L.HUB_CARD.w, 212, 'five columns of at least 40 px ("Blocked" is 38.5 px)');
+  assert.match(read('src/renderer/src/scene/studio/OnboardingStudio.tsx'), /board=\{\{ todo: 0, doing: 0, waiting: 0, blocked: 0, done: 0 \}\}/);
 });
