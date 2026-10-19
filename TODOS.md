@@ -262,18 +262,6 @@
 **Priority:** P1
 **Depends on:** None
 
-### Tell Michael when a timed out restart worked after all
-
-**What:** When a restarted member's session starts after the 61 s confirm window already told Michael they were stuck, send him a short follow up that the restart went through.
-
-**Why:** Otherwise Michael may move work the member is already doing and keep an Ask me question about a member who is fine.
-
-**Context:** From the /ship fix review, 2026-10-16 (confidence 4). `hooks.ts` checkStuckRestarts and stuckProgress.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
 ### Fill in Pulse's earlier checks off the main process
 
 **What:** Run the one-time backfill of Pulse's questions and answers lists, and the parse of the 62 day list, off the main process (a worker, or rows in the telemetry database queried by time and way).
