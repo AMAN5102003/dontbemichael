@@ -274,18 +274,6 @@
 **Priority:** P3
 **Depends on:** None
 
-### Pulse buttons use PixelButton
-
-**What:** Draw Apply, Not now, Undo and Try again with PixelButton (sm) so they get the hover and the 45% disabled state of DESIGN.md 7.7.
-
-**Why:** Apply looks unchanged while it is busy.
-
-**Context:** From the /ship design review, 2026-10-16. `PulseView.tsx` btn().
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
 ### Fill in Pulse's earlier checks off the main process
 
 **What:** Run the one-time backfill of Pulse's questions and answers lists, and the parse of the 62 day list, off the main process (a worker, or rows in the telemetry database queried by time and way).
