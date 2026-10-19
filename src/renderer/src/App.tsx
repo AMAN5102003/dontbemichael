@@ -106,23 +106,13 @@ export function App() {
   useEffect(() => {
     const onOpenSettings = (e: Event): void => {
       const section = (e as CustomEvent<{ section?: string }>).detail?.section;
-      const nextSection: SettingsSection = section === 'General' ||
-        section === 'Company profile' ||
-        section === 'Prerequisites' ||
-        section === 'Agents' ||
-        section === 'Skills' ||
-        section === 'Connections' ||
-        section === 'Research & privacy' ||
-        section === 'Voice' ||
-        section === 'Memory & Knowledge'
-          ? section
-          : 'General';
-      setSettingsSection(nextSection);
+      setSettingsSection(section as SettingsSection | undefined);
       setSettingsOpen(true);
     };
     window.addEventListener('cth:open-settings', onOpenSettings);
     return () => window.removeEventListener('cth:open-settings', onOpenSettings);
   }, []);
+
 
   // Initial config load
   useEffect(() => {

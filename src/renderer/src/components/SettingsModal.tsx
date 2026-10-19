@@ -217,7 +217,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? t('common.orchestrator');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [activeSection, setActiveSection] = useState<Section>(initialSection ?? 'General');
+  const [activeSection, setActiveSection] = useState<Section>(initialSection && VISIBLE_SECTIONS.includes(initialSection) ? initialSection : 'General');
 
   // Change-home flow: null until the user picks a new folder, then the sub-modal
   // confirms move-vs-fresh. Pre-selects 'move' (recommended - keeps the data).
