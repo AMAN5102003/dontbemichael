@@ -619,6 +619,7 @@ test('a team member that is not reporting is shown apart, not waited on, and Mic
   assert.deepEqual(ev.waiting, ['pam']);
   assert.deepEqual(ev.notReporting, ['dwight']);
   const told = () => f.sent.filter((m) => m.to === 'god' && /isn't reporting to the app/.test(m.subject));
+  assert.equal(told().length, 1, 'with the brief, not on the first row update');
   f.ct.refresh();
   f.ct.refresh();
   assert.equal(told().length, 1, 'Michael hears once');

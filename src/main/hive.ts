@@ -3565,16 +3565,27 @@ export class HiveManager {
               repair: 'literal-line-break'
             });
           }
+          // Mail is only the agent's own plain file with one name: a hard link
+          // to someone else's message (another member's inbox, Michael's sent
+          // mail) is set aside, never sent again as new (Codex review, ship
+          // 2026-10-18). It is also the file stamped in place below.
+          if (!research) {
+            const st = lstatSync(full);
+            if (!st.isFile() || st.nlink !== 1) {
+              this.appendLog({ kind: 'drop', reason: 'outbox-not-a-file', from: id, file: logFile });
+              this.archiveOutboxFile(full, badDir, `bad-${f}`);
+              continue;
+            }
+          }
           // The app makes every id: one an agent wrote can repeat (a second
           // message with it overwrote the first in the inbox) or be missing
           // from the sent copy, so the conversation read every reply as "".
           const msg = this.normalize({ ...partial, id: undefined }, id);
           msg.from = id; // sender is authoritative — the owning directory
-          // One canonical time, never later than now: readers compare times as
-          // strings, and a later one could close the owner's next question in
-          // that conversation.
-          const typedAt = Date.parse(msg.created_at);
-          msg.created_at = new Date(Number.isFinite(typedAt) ? Math.min(typedAt, Date.now()) : Date.now()).toISOString();
+          // The time is the app's too: a time an agent typed, later or earlier,
+          // could close the owner's next question or hide a message (Codex
+          // review, ship 2026-10-18).
+          msg.created_at = new Date().toISOString();
           // The sent copy carries what was delivered: the app's id, sender and
           // time (and repaired text), written in place before the one rename
           // that archives it. Only a plain file of the agent's own is written
@@ -3621,17 +3632,6 @@ export class HiveManager {
             this.archiveOutboxFile(full, dest, f);
             routed++;
             continue;
-          }
-          // A repaired file is written over below, so it must be the agent's
-          // own plain file with one name; anything else is set aside before
-          // it is delivered (red team, third ship).
-          if (repairedText !== null) {
-            const st = lstatSync(full);
-            if (!st.isFile() || st.nlink !== 1) {
-              this.appendLog({ kind: 'drop', reason: 'outbox-not-a-file', from: id, file: logFile });
-              this.archiveOutboxFile(full, badDir, `bad-${f}`);
-              continue;
-            }
           }
           this.routeMessage(msg);
           // Stamped in place, then one rename archives it. A crash between

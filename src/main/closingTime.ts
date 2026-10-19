@@ -212,6 +212,9 @@ export class ClosingTimeController {
     for (const id of this.workers) this.control?.steer(id, WORKER_STEER);
 
     this.armTimeout();
+    // A member already not reporting can never ACK: Michael hears so with the
+    // brief, not on the first row update (Codex review, ship 2026-10-18).
+    this.tellMichaelAboutEnded();
     this.emitState('started');
     return { ok: true };
   }

@@ -1150,8 +1150,8 @@ test('a repaired outbox file is written over only when it is the agent\'s own pl
   assert.match(fs.readFileSync(path.join(hive.root(), 'log.jsonl'), 'utf8'), /outbox-not-a-file/);
 });
 
-test('a plain outbox file linked from outside the hive is delivered and never written through', posixOnly('hard links'), async (t) => {
-  // Value: protects=stamping the sent copy never writes an agent's text into a file it linked from elsewhere; fails_when=rewriteOwnFile loses its one name check; why_new=every routed file is stamped since the app makes every id (ship review); seam=none
+test('a plain outbox file linked from elsewhere is set aside, never sent again as new or written through', posixOnly('hard links'), async (t) => {
+  // Value: protects=an agent can't resend someone else's message (another member's inbox, Michael's sent mail) as its own new mail, and nothing is written through the link; fails_when=only repaired files get the one name check; why_new=Codex review, ship 2026-10-18; seam=none
   const { hive } = await office(t);
   const outside = path.join(path.dirname(hive.root()), 'linked-ok.json');
   fs.writeFileSync(outside, JSON.stringify({ to: 'god', act: 'inform', subject: 'linked', body: 'b' }));
@@ -1159,22 +1159,21 @@ test('a plain outbox file linked from outside the hive is delivered and never wr
   fs.linkSync(outside, path.join(hive.root(), 'agents', 'pam', 'outbox', 'm.json'));
   hive.routeOnce();
   assert.equal(fs.readFileSync(outside, 'utf8'), before, 'nothing written through the link');
-  assert.equal(msgsIn(hive, 'god').filter((m) => m.subject === 'linked').length, 1, 'still delivered');
+  assert.equal(msgsIn(hive, 'god').filter((m) => m.subject === 'linked').length, 0, 'not delivered');
+  assert.match(fs.readFileSync(path.join(hive.root(), 'log.jsonl'), 'utf8'), /outbox-not-a-file/);
 });
 
-test('a time an agent typed later than now is replaced by the app\'s', async (t) => {
-  // Value: protects=a forward time never closes the owner's next question in the conversation; fails_when=an outbox created_at in the future is kept; why_new=red team, ship review; seam=none
+test('a time an agent typed is replaced by the app\'s', async (t) => {
+  // Value: protects=a typed time, later or earlier, never closes the owner's next question or hides a message; fails_when=an outbox created_at is kept; why_new=red team and Codex review, ship 2026-10-18; seam=none
   const { hive } = await office(t);
   send(hive, 'pam', { to: 'god', act: 'inform', subject: 'late', body: 'b', created_at: '2099-01-01T00:00:00Z' });
-  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'early', body: 'b', created_at: '2026-01-01T00:00:00Z' }, 'm2.json');
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'early', body: 'b', created_at: '2026-01-01T10:00:00-05:00' }, 'm2.json');
   const before = Date.now();
   hive.routeOnce();
-  const got = Object.fromEntries(msgsIn(hive, 'god').map((m) => [m.subject, Date.parse(m.created_at)]));
-  assert.ok(got.late >= before - 1000 && got.late <= Date.now(), 'the app\'s time');
-  assert.equal(got.early, Date.parse('2026-01-01T00:00:00Z'), 'an earlier time is kept');
-  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'offset', body: 'b', created_at: '2026-01-01T10:00:00-05:00' }, 'm3.json');
-  hive.routeOnce();
-  assert.equal(msgsIn(hive, 'god').find((m) => m.subject === 'offset').created_at, '2026-01-01T15:00:00.000Z', 'one canonical form, so string order is time order');
+  for (const m of msgsIn(hive, 'god').filter((x) => x.from === 'pam')) {
+    assert.ok(Date.parse(m.created_at) >= before - 1000 && Date.parse(m.created_at) <= Date.now(), `${m.subject}: the app's time`);
+    assert.match(m.created_at, /Z$/, 'one canonical form');
+  }
 });
 
 test('Research\'s schedule request is archived as Research wrote it', async (t) => {
