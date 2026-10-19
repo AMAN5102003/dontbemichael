@@ -18,7 +18,7 @@ import {
   compareFrom, dayKey, keptAsIs, measuredSaving, periodRange, planHeadroom, previousRange, pulseSnapshot,
   type AskFact, type DayRange, type Period, type PlanReading, type PulseSnapshot
 } from '../shared/teamPerformance';
-import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, type Advice, type Dismissal, type LadderModel, type MissionFact } from '../shared/teamAdvice';
+import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, type Advice, type Dismissal, type EarlyMode, type LadderModel, type MissionFact } from '../shared/teamAdvice';
 import { keptSafe, type KeptSafe } from '../shared/pulseSafety';
 import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan';
 import { countFromDay, learnedNotes, learning, type AddedNote, type LearnedNote, type NoteFact } from '../shared/teamLearning';
@@ -60,6 +60,16 @@ import type { AppliedChange, PulseView } from '../shared/pulseView';
 /** Window lengths by Claude Code's rate limit names. */
 function windowMs(name: string): number {
   return /five_hour|5h/i.test(name) ? 5 * 3_600_000 : 7 * 86_400_000;
+}
+
+/** Early patterns need half the evidence advice needs (owner, 2026-10-19, eng D1). */
+export const EARLY_SCALE = 0.5;
+/** At most this many early lines, the most evidence first. */
+export const EARLY_MAX = 3;
+/** The early lines to show: the most evidence first, at most EARLY_MAX. */
+export function earliest(all: Advice[]): Advice[] {
+  const weight = (a: Advice): number => a.evidence.runs ?? (a.evidence.decisions ?? 0) + (a.evidence.reopens ?? 0);
+  return [...all].sort((a, b) => weight(b) - weight(a)).slice(0, EARLY_MAX);
 }
 
 export class PulseService {
@@ -107,10 +117,11 @@ export class PulseService {
     }));
   }
 
-  /** Every suggestion the last 14 days support, before dismissals. */
-  private allAdvice(office: string): Advice[] {
+  /** Every suggestion the last 14 days support, before dismissals. In the
+   *  early mode, what the live days so far show at half the evidence (eng D1). */
+  private allAdvice(office: string, early?: EarlyMode): Advice[] {
     const now = this.now();
-    const since = now - ADVICE_WINDOW_MS;
+    const since = early ? Math.max(early.from, now - ADVICE_WINDOW_MS) : now - ADVICE_WINDOW_MS;
     const days = this.d.processor.days(office, dayKey(since)).filter((x) => x.day >= dayKey(since));
     const cards = this.d.processor.cards(office, since);
     const decisions = this.d.processor.decisions(office, since);
@@ -120,7 +131,7 @@ export class PulseService {
       .map((m) => ({ id: m.id, to: m.to === 'god' && godId ? godId : m.to, label: m.label, intervalMs: m.intervalMs, timed: !!(m.times?.length || m.weekly) }));
     const members = this.d.models().map((m) => {
       const mine = days.filter((x) => x.agentId === m.agentId);
-      const kept = keptAsIs(m.agentId, decisions, cards);
+      const kept = keptAsIs(m.agentId, decisions, cards, early ? Math.ceil(10 * early.scale) : undefined);
       return {
         agentId: m.agentId, provider: m.provider, model: m.model, isGod: m.agentId === godId,
         pieces: mine.reduce((s, x) => s + x.emails + x.sent + x.tasks + x.checks, 0),
@@ -136,7 +147,7 @@ export class PulseService {
     return adviceFor({
       now, runs: this.d.processor.runs(office, since), missions, members,
       ladder: this.d.ladder(), gapDays: this.d.store.failureDays(office), priceOf: this.d.priceOf
-    }).filter((a) => !recent.has(a.id));
+    }, early).filter((a) => !recent.has(a.id));
   }
 
   snapshot(period: Period, compare = false): PulseView {
@@ -147,7 +158,7 @@ export class PulseService {
     const db = this.d.db();
     const range = periodRange(period, now);
     const empty = pulseSnapshot({ period, now, days: [], cards: [], decisions: [], asks: [], members: [] });
-    if (!office || !db) return { available: false, billing, collectingSince: null, liveSince: null, snapshot: empty, advice: [], adviceFrom: null, saved: { state: 'none' }, headroom: null, applied: [], trend: {}, keptSafe: keptSafe([]), learning: learning({ notes: [], procedures: {}, asks: [], turns: [], range }), plan: null, compare: null, compareReady: false, compareFrom: null };
+    if (!office || !db) return { available: false, billing, collectingSince: null, liveSince: null, snapshot: empty, advice: [], early: [], adviceFrom: null, saved: { state: 'none' }, headroom: null, applied: [], trend: {}, keptSafe: keptSafe([]), learning: learning({ notes: [], procedures: {}, asks: [], turns: [], range }), plan: null, compare: null, compareReady: false, compareFrom: null };
     const first = this.d.processor.firstDay(office);
     // Recommendations and Compare count from live recording, never from a backfill.
     const live = this.d.processor.firstDay(office, true);
@@ -191,6 +202,8 @@ export class PulseService {
       liveSince: live,
       snapshot: cur.snapshot,
       advice: adviceReady ? visibleAdvice(this.allAdvice(office), this.dismissed(office), now) : [],
+      // Before advice can show: what the live days so far show, as facts (eng D1).
+      early: adviceReady || !live ? [] : earliest(this.allAdvice(office, { from: firstMs, scale: EARLY_SCALE })),
       adviceFrom: adviceReady ? null : dayKey(firstMs + ADVICE_WINDOW_MS),
       saved: this.saved(office, applied),
       headroom: billing === 'account' ? planHeadroom(this.reading) : null,

@@ -167,8 +167,9 @@ function service(t, opts = {}) {
   const env = setup(t);
   const t0 = new Date(2026, 9, 1, 9).getTime();
   env.clock.at(t0);
-  // 14 runs over two weeks of Toby's check, 12 found nothing.
-  for (let i = 0; i < 14; i++) {
+  // 14 runs over two weeks of Toby's check, 12 found nothing (opts.days stops sooner).
+  const runDays = opts.days ?? 14;
+  for (let i = 0; i < runDays; i++) {
     const at = t0 + i * 86_400_000;
     env.store.record({ agentId: 'toby', kind: 'run-dispatch', ts: at, attrs: { mission: 'm1' } });
     env.store.record({ agentId: 'toby', kind: 'prompt', ts: at + 1000 });
@@ -177,7 +178,7 @@ function service(t, opts = {}) {
     env.clock.at(at + 2000 + 3 * 60_000);
     env.proc.tick('/office');
   }
-  env.clock.at(t0 + 15 * 86_400_000);
+  env.clock.at(t0 + (runDays + 1) * 86_400_000);
   let missions = [{ id: 'm1', label: 'Benefits inbox check', to: 'toby', intervalMs: 2 * 3600_000, body: '', enabled: true, kind: 'dispatch' }];
   const models = opts.models ?? [{ agentId: 'toby', provider: 'claude', model: 'claude-opus-5-5' }];
   const svc = new PulseService({
@@ -189,6 +190,21 @@ function service(t, opts = {}) {
   });
   return { ...env, svc, missions: () => missions, setMissions: (m) => { missions = m; } };
 }
+
+test('before 14 live days Pulse shows what the advice rules see so far, as facts; on day 15 the advice takes over (owner, 2026-10-19)', (t) => {
+  // Value: protects=eng D1 (the four rules early, at half their evidence, live days only) and the hand over to advice; fails_when=early lines show after advice is ready, show nothing at half the evidence, or advice shows before 14 days; why_new=new early mode; seam=none; no_claim=the wording on screen (pulse-view pins)
+  const early = service(t, { days: 8 });
+  const v8 = early.svc.snapshot('this-week');
+  assert.deepEqual(v8.advice, [], 'no advice before 14 live days');
+  assert.equal(v8.early.length, 1);
+  assert.equal(v8.early[0].kind, 'run-less');
+  assert.deepEqual(v8.early[0].evidence, { runs: 8, nothing: 6 }, 'counted over the 8 live days only');
+  const few = service(t, { days: 4 });
+  assert.deepEqual(few.svc.snapshot('this-week').early, [], '4 runs: under half the 10 run minimum');
+  const ready = service(t).svc.snapshot('this-week');
+  assert.deepEqual(ready.early, [], 'no early lines once advice can show');
+  assert.equal(ready.advice[0].kind, 'run-less');
+});
 
 test('Apply changes a schedule only if it still is what the advice saw; Undo restores it; Not now hides it', (t) => {
   // Value: protects=D10 apply and undo, compare and set, D13 dismiss; fails_when=a stale or double click overwrites a schedule, Undo restores the wrong value, or a dismissed card stays; why_new=new apply path; seam=none; no_claim=the Schedules UI refresh (missions:updated is sent by applyMissions)

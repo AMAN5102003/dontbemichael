@@ -1270,6 +1270,10 @@ half written message survives the switch.
   days, then mono dollars in `green` text; before any change it is not there. With nothing to
   recommend, no card: one short `t-meta` `ink-3` line under the header, "Nothing to change
   this week", or before two full weeks of work "Advice from Thu, Oct 29" (owner, 2026-10-19).
+  Above that line, before two full weeks, what the advice rules see so far (owner,
+  2026-10-19): a bold 12 px `ink` line "What Pulse sees so far, not advice yet." and up to
+  three plain facts in 12 px `ink-2` ("Toby's "Benefits inbox check" found nothing to do on
+  6 of 8 runs so far"), with no buttons; a model fact names no model.
   The header's (i) then gives the start date and why, in business words (never "records"): a
   few unusually busy or quiet days alone could lead to the wrong advice.
 - **What got done**: four tiles (emails organized, emails sent for you, tasks finished,

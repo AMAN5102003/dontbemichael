@@ -198,6 +198,18 @@ export function PulseView() {
     }
   };
 
+  // An early line states what a rule sees so far and names no model (eng D2).
+  const earlyText = (a: Advice): string => {
+    const name = nameOf(a.agentId);
+    const e = a.evidence;
+    switch (a.kind) {
+      case 'run-less': return t('pulse.early.runLess', { name, job: jobOf(a.missionId), nothing: e.nothing, runs: e.runs });
+      case 'run-more': return t('pulse.early.runMore', { name, job: jobOf(a.missionId), didWork: e.didWork, runs: e.runs });
+      case 'cheaper-model': return t('pulse.early.kept', { name, kept: e.kept, decisions: e.decisions });
+      default: return e.reopens && e.reopens >= 2 ? t('pulse.early.reopened', { name, reopens: e.reopens }) : t('pulse.early.keptFew', { name, kept: e.kept ?? 0, decisions: e.decisions });
+    }
+  };
+
   const apply = async (a: Advice): Promise<void> => {
     if (a.change.kind === 'editor') { openAgentProfile(a.agentId); return; }
     if (busy) return;
@@ -292,6 +304,8 @@ export function PulseView() {
     // Saved by your changes shows only once a change was applied (owner, 2026-10-15).
     const savedShown = view.saved.state !== 'none';
     const noAdvice = shownAdvice.length === 0 && applied.length === 0;
+    // A main process older than this view sends no early lines.
+    const early = view.early ?? [];
     // What shows and what folds (owner, 2026-10-19; pulse-smart-view.md, eng D2):
     // one grid in today's order, then a chip for each quiet tile.
     const tilesNow = pulseTiles({ snapshot: s, keptSafe: safe, learning: cur }, pv && pk ? { snapshot: pv, keptSafe: pk, learning: pl } : null, opened);
@@ -448,6 +462,14 @@ export function PulseView() {
 
         {/* Before any advice: one short line, the why behind the (i) (1D). */}
         <Section title={t('pulse.recommendations')} tip={noAdvice && view.adviceFrom ? t('pulse.adviceStarts', { day: fmtDay(view.adviceFrom), since: fmtDay(view.liveSince ?? Date.now()) }) : t('pulse.recommendationsTip')}>
+          {/* Before advice: what the advice rules see so far, as plain facts under
+              a bold line saying so, never anything to apply (owner, 2026-10-19). */}
+          {noAdvice && early.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--cth-ink)', lineHeight: '17px' }}>{t('pulse.early.title')}</div>
+              {early.map((a) => <div key={a.id} style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px' }}>{earlyText(a)}</div>)}
+            </div>
+          )}
           {noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
           {(!noAdvice || savedShown) && <div style={grid(sugCols)}>
             {applied.map((x) => (

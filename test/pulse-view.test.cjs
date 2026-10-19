@@ -251,3 +251,20 @@ test('emails sent says how many went out approved without edits, and only once a
     assert.ok(o.sentNone && o.sent.includes('{{sub}}') && !o.sentNone.includes('{{sub}}'), loc);
   }
 });
+
+test('before advice, Pulse shows what the rules see so far under a bold line, as facts with nothing to apply (owner, 2026-10-19)', () => {
+  // Value: protects=the owner's bold "not advice yet" ask, eng D1 and D2 on screen; fails_when=the bold line goes, an early line gets Apply or a model name, or an older main without early crashes the view; why_new=new UI; seam=none; no_claim=layout (live look)
+  assert.equal(en.pulse.early.title, 'What Pulse sees so far, not advice yet.');
+  assert.match(view, /const early = view\.early \?\? \[\];/, 'an older main sends no early lines');
+  assert.match(view, /\{noAdvice && early\.length > 0 && \([\s\S]{0,200}fontWeight: 700[\s\S]{0,120}t\('pulse\.early\.title'\)/);
+  const block = view.slice(view.indexOf("t('pulse.early.title')"), view.indexOf("t('pulse.adviceFrom'"));
+  assert.doesNotMatch(block, /PixelButton|pulse\.apply|pulse\.notNow|savesAbout/, 'facts only, nothing to apply');
+  const facts = Object.values(en.pulse.early).join(' ');
+  assert.doesNotMatch(facts, /\{\{model\}\}|model/i, 'a model fact names no model');
+  for (const loc of ['ar', 'zh-CN']) {
+    const o = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).pulse.early;
+    assert.deepEqual(Object.keys(o).sort(), Object.keys(en.pulse.early).sort(), loc);
+    assert.doesNotMatch(Object.values(o).join(' '), /[\u2013\u2014]/, `${loc}: no dashes`);
+  }
+});
+

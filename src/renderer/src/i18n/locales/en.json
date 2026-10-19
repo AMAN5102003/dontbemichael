@@ -2567,6 +2567,14 @@
     "savesAbout": "Saves about {{usd}} a week",
     "adviceStarts": "Recommendations start on {{day}}, once Pulse has seen two full weeks of your team at work. It began on {{since}}, and a few unusually busy or quiet days alone could lead to the wrong advice.",
     "adviceFrom": "Advice from {{day}}",
+    "early": {
+      "title": "What Pulse sees so far, not advice yet.",
+      "runLess": "{{name}}'s \"{{job}}\" found nothing to do on {{nothing}} of {{runs}} runs so far.",
+      "runMore": "{{name}}'s \"{{job}}\" found work on {{didWork}} of {{runs}} runs so far.",
+      "kept": "{{kept}} of {{decisions}} pieces of {{name}}'s work kept as is so far.",
+      "keptFew": "Only {{kept}} of {{decisions}} pieces of {{name}}'s work kept as is so far.",
+      "reopened": "You reopened {{reopens}} of {{name}}'s cards so far."
+    },
     "nothingToChange": "Nothing to change this week.",
     "savedByChanges": "Saved by your changes",
     "savedTip": "Measured from the records: what each piece of work cost before your change, against what it costs since. At API prices.",

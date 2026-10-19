@@ -224,7 +224,7 @@ export function costForWork(member: Record<WorkKind, number>, perPiece: Partial<
 
 /** Kept as is (E2): drafts approved without edits plus finished cards never
  *  reopened, over drafts decided (not cancelled) plus finished cards. */
-export function keptAsIs(agentId: string, decisions: MailDecision[], cards: CardFact[]): { kept: number; decisions: number; share: number | null } {
+export function keptAsIs(agentId: string, decisions: MailDecision[], cards: CardFact[], minDecisions = MIN_DECISIONS): { kept: number; decisions: number; share: number | null } {
   let kept = 0, total = 0;
   for (const d of decisions) {
     if (d.agentId !== agentId || d.decision === 'cancelled') continue;
@@ -236,7 +236,7 @@ export function keptAsIs(agentId: string, decisions: MailDecision[], cards: Card
     total++;
     if (!c.reopened) kept++;
   }
-  return { kept, decisions: total, share: total >= MIN_DECISIONS ? kept / total : null };
+  return { kept, decisions: total, share: total >= minDecisions ? kept / total : null };
 }
 
 /** The whole Pulse snapshot for a period. */

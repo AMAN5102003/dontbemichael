@@ -27,6 +27,10 @@ export interface PulseView {
   liveSince: string | null;
   snapshot: PulseSnapshot;
   advice: Advice[];
+  /** Before advice can show: what the advice rules see in the live days so far,
+   *  at half their evidence, shown as facts with nothing to apply (owner,
+   *  2026-10-19). Empty once advice can show. Missing from an older main. */
+  early?: Advice[];
   /** When suggestions start (14 days after the first record), or null once they can show. */
   adviceFrom: string | null;
   saved: { state: 'none' } | { state: 'measuring'; firstAt: number } | { state: 'measured'; usd: number; since: number };

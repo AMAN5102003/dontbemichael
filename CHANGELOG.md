@@ -8,6 +8,10 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 
 ## [Unreleased]
 
+### Added
+
+- **Pulse shows what it sees in your first two weeks.** Before recommendations can start, Pulse runs the same checks on the days so far and shows what they find, under a bold "What Pulse sees so far, not advice yet.": for example a scheduled check that has found nothing on 6 of 8 runs, or how much of a member's work you kept as is. These are facts with nothing to apply; on day 14 the recommendations take over.
+
 ### Changed
 
 - **Pulse shows only what has something to say.** Tiles with nothing in the period fold into a row of small quiet chips under the others ("emails sent 0"); a chip opens its tile. Spent always shows, and with Compare on a tile stays while the span before had something. Team at work folds members with no working time into one "9 more were quiet" row and says "Nobody has worked yet today" when that is so. Before advice starts, Recommendations is one short line, with the why behind its (i).

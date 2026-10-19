@@ -2567,6 +2567,14 @@
     "savesAbout": "每周约节省 {{usd}}",
     "adviceStarts": "建议将于 {{day}} 开始，届时 Pulse 已观察你的团队工作满两周。它从 {{since}} 开始，仅凭几天异常忙碌或清闲的情况可能会给出错误的建议。",
     "adviceFrom": "{{day}} 起提供建议",
+    "early": {
+      "title": "脉搏目前看到的情况，还不是建议。",
+      "runLess": "{{name}} 的“{{job}}”目前 {{runs}} 次运行中有 {{nothing}} 次没有可做的事。",
+      "runMore": "{{name}} 的“{{job}}”目前 {{runs}} 次运行中有 {{didWork}} 次找到了工作。",
+      "kept": "{{name}} 的工作目前 {{decisions}} 件中有 {{kept}} 件原样保留。",
+      "keptFew": "{{name}} 的工作目前 {{decisions}} 件中只有 {{kept}} 件原样保留。",
+      "reopened": "你目前重新打开了 {{name}} 的 {{reopens}} 张卡片。"
+    },
     "nothingToChange": "本周没有需要更改的。",
     "savedByChanges": "你的更改节省了",
     "savedTip": "根据记录测量：你更改前每项工作的成本，对比之后的成本。按 API 价格计算。",
