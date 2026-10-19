@@ -373,15 +373,6 @@
 **Effort:** S
 **Priority:** P2
 
-### Deliver an outbox message once across a crash
-
-**What:** The router delivers a message, then stamps and archives the agent's file. If the app dies in between, the file is routed again on restart under a new app id, so the recipient gets it twice. Move the file into a router owned pending area (or record the id the app chose) before the first delivery, and reuse that id on replay so the second copy replaces the first.
-
-**Why:** Found by the Codex adversarial review (ship, 2026-10-18). Agent written ids used to make a replay overwrite itself; the app now makes every id, so nothing dedupes a replay. Rare (a crash in a few milliseconds), but it doubles owner traffic and task notes when it happens.
-
-**Effort:** M
-**Priority:** P2
-
 ### Compare To do reminder times by the instant
 
 **What:** `dueReminders` and `guardCards` in `src/shared/cardGuards.ts` compare `nextAt` as text. Compare by `Date.parse`, as `waitingChecks` now does.

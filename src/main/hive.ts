@@ -38,7 +38,7 @@ import {
   existsSync, mkdirSync, readFileSync, writeFileSync, renameSync,
   readdirSync, statSync, lstatSync, realpathSync, rmSync, appendFileSync,
   symlinkSync, unlinkSync, copyFileSync, cpSync, chmodSync,
-  openSync, fstatSync, closeSync, ftruncateSync, writeSync, constants
+  openSync, fstatSync, closeSync, ftruncateSync, writeSync, constants, type Stats
 } from 'node:fs';
 import { join, dirname, basename, isAbsolute, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
@@ -505,6 +505,9 @@ const HOP_CAP = 12;
  *  value holding `/`, `\`, `..`, control characters or newlines could escape the
  *  hive or inject keystrokes. Only accept the shape the harness itself mints
  *  (`stamp() + '-' + shortRand()`); anything else gets a fresh generated id. */
+/** One outbox file's entry in the outbox journal (HiveManager.routingFile). */
+interface RoutingRecord { ino: number; birth: number; id: string; created_at: string; delivered: boolean }
+
 function isSafeMessageId(id: unknown): id is string {
   return typeof id === 'string' && /^[\w.-]+$/.test(id) && id !== '.' && id !== '..';
 }
@@ -3452,6 +3455,55 @@ export class HiveManager {
    *  unique prefix instead of replacing the earlier message (rename overwrites),
    *  and a file that cannot be moved at all is removed, so it is never routed
    *  again on the next tick. */
+  /** The outbox journal (Codex review, ship 2026-10-18): the id and time the
+   *  app chose for a member's outbox file, kept until the file is archived. A
+   *  pass that died after delivering it delivers it again under the same id,
+   *  so the copy replaces itself, or, once marked delivered, only archives it.
+   *  Keyed by the file's identity, not its name or words (the sent stamp
+   *  rewrites the words in place). In the app's private folder, out of every
+   *  agent's reach. */
+  private routingFile(agentId: string, f: string): string | null {
+    const home = this.getHome();
+    return home ? join(privateRoot(home), 'outbox-routing', agentId, f) : null;
+  }
+
+  private readRouting(agentId: string, f: string, st: Stats): RoutingRecord | null {
+    const file = this.routingFile(agentId, f);
+    if (!file || !existsSync(file)) return null;
+    try {
+      const r = JSON.parse(readFileSync(file, 'utf8')) as Partial<RoutingRecord>;
+      if (r.ino === st.ino && r.birth === st.birthtimeMs && isSafeMessageId(r.id) && typeof r.created_at === 'string' && Number.isFinite(Date.parse(r.created_at))) {
+        return { ino: r.ino, birth: r.birth, id: r.id, created_at: r.created_at, delivered: r.delivered === true };
+      }
+    } catch { /* unreadable: started afresh */ }
+    // Another file under the same name: its record is stale.
+    try { rmSync(file, { force: true }); } catch { /* written over below */ }
+    return null;
+  }
+
+  private writeRouting(agentId: string, f: string, rec: RoutingRecord): void {
+    const file = this.routingFile(agentId, f);
+    if (!file) return;
+    // A record that can't be written leaves routing as it was without one.
+    try { mkdirSync(dirname(file), { recursive: true }); this.atomicWriteJson(file, rec); } catch { /* no journal */ }
+  }
+
+  private dropRouting(agentId: string, f: string): void {
+    const file = this.routingFile(agentId, f);
+    if (file) try { rmSync(file, { force: true }); } catch { /* pruned on a later pass */ }
+  }
+
+  /** Records whose file is no longer in the outbox: archived before its
+   *  record went (a crash in between) or set aside. */
+  private pruneRouting(agentId: string, present: Set<string>): void {
+    const file = this.routingFile(agentId, 'x');
+    const dir = file ? dirname(file) : null;
+    if (!dir || !existsSync(dir)) return;
+    try {
+      for (const name of readdirSync(dir)) if (!present.has(name)) rmSync(join(dir, name), { force: true });
+    } catch { /* next pass */ }
+  }
+
   private archiveOutboxFile(fromPath: string, destDir: string, f: string): void {
     const dest = join(destDir, f);
     try {
@@ -3517,7 +3569,9 @@ export class HiveManager {
       if (!outbox || !existsSync(outbox)) continue;
       const badDir = home ? join(privateRoot(home), 'research-outbox', 'refused') : join(outbox, '.sent');
       if (home) mkdirSync(badDir, { recursive: true });
-      for (const f of readdirSync(outbox)) {
+      const names = readdirSync(outbox);
+      if (!research) this.pruneRouting(id, new Set(names));
+      for (const f of names) {
         if (!f.endsWith('.json')) continue;
         const full = join(outbox, f);
         // Research's file names are its own words: the shared log keeps a hash.
@@ -3569,6 +3623,7 @@ export class HiveManager {
           // to someone else's message (another member's inbox, Michael's sent
           // mail) is set aside, never sent again as new (Codex review, ship
           // 2026-10-18). It is also the file stamped in place below.
+          let fileStat: Stats | null = null;
           if (!research) {
             const st = lstatSync(full);
             if (!st.isFile() || st.nlink !== 1) {
@@ -3576,6 +3631,7 @@ export class HiveManager {
               this.archiveOutboxFile(full, badDir, `bad-${f}`);
               continue;
             }
+            fileStat = st;
           }
           // The app makes every id: one an agent wrote can repeat (a second
           // message with it overwrote the first in the inbox) or be missing
@@ -3586,6 +3642,20 @@ export class HiveManager {
           // could close the owner's next question or hide a message (Codex
           // review, ship 2026-10-18).
           msg.created_at = new Date().toISOString();
+          // A file this pass already chose an id for (a pass that died before
+          // archiving it) keeps that id and time; a new one is journaled before
+          // it is delivered.
+          const journal = fileStat ? this.readRouting(id, f, fileStat) : null;
+          if (journal) { msg.id = journal.id; msg.created_at = journal.created_at; }
+          const record = (delivered: boolean): void => {
+            if (fileStat) this.writeRouting(id, f, { ino: fileStat.ino, birth: fileStat.birthtimeMs, id: msg.id, created_at: msg.created_at, delivered });
+          };
+          if (!journal) record(false);
+          const archived = (dest: string): void => {
+            this.archiveOutboxFile(full, dest, f);
+            // Only once it has left the outbox: a rename that failed keeps it.
+            if (fileStat && !existsSync(full)) this.dropRouting(id, f);
+          };
           // The sent copy carries what was delivered: the app's id, sender and
           // time (and repaired text), written in place before the one rename
           // that archives it. Only a plain file of the agent's own is written
@@ -3599,17 +3669,21 @@ export class HiveManager {
           if (msg.to === 'scheduler' && schedule !== undefined && this.scheduleRequestHandler) {
             // A schedule request, not mail: main files it for the owner and the
             // scheduler answers the asking agent (and only that agent).
-            let reply: string;
-            // The message body is the agent's reason, shown on the owner's card.
-            try { reply = this.scheduleRequestHandler(id, schedule, typeof msg.body === 'string' ? msg.body : ''); } catch (e) {
-              reply = 'Schedule request not sent: the app hit an error. Try again later.';
-              console.error('[hive] schedule request', e);
+            // Filed before a pass died: never filed or answered twice.
+            if (!journal?.delivered) {
+              let reply: string;
+              // The message body is the agent's reason, shown on the owner's card.
+              try { reply = this.scheduleRequestHandler(id, schedule, typeof msg.body === 'string' ? msg.body : ''); } catch (e) {
+                reply = 'Schedule request not sent: the app hit an error. Try again later.';
+                console.error('[hive] schedule request', e);
+              }
+              this.appendLog({ kind: 'schedule-request', from: id, id: msg.id });
+              this.routeMessage(this.normalize({ to: id, act: 'inform', subject: 'Schedule request', body: reply }, 'scheduler'));
+              record(true);
             }
-            this.appendLog({ kind: 'schedule-request', from: id, id: msg.id });
-            this.routeMessage(this.normalize({ to: id, act: 'inform', subject: 'Schedule request', body: reply }, 'scheduler'));
             // Research's file is moved as it is, as at its gate below.
             if (!research) stampSent();
-            this.archiveOutboxFile(full, join(outbox, '.sent'), f);
+            archived(join(outbox, '.sent'));
             routed++;
             continue;
           }
@@ -3629,15 +3703,17 @@ export class HiveManager {
             // Research's archive is the app's own record: its file is moved as
             // it is, never written through (red team, third ship).
             if (!research) stampSent();
-            this.archiveOutboxFile(full, dest, f);
+            archived(dest);
             routed++;
             continue;
           }
-          this.routeMessage(msg);
-          // Stamped in place, then one rename archives it. A crash between
-          // the delivery and the rename delivers it again, under a new id.
+          // Delivered before a pass died: only archived now. A crash between
+          // the delivery and its record delivers it again under the same id,
+          // so the copy in the inbox replaces itself.
+          if (!journal?.delivered) { this.routeMessage(msg); record(true); }
+          // Stamped in place, then one rename archives it.
           stampSent();
-          this.archiveOutboxFile(full, join(outbox, '.sent'), f); // archive, don't reprocess
+          archived(join(outbox, '.sent')); // archive, don't reprocess
           routed++;
         } catch {
           // malformed file — quarantine so we don't spin on it

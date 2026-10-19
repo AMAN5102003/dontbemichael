@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [Unreleased]
+
+### Fixed
+
+- A message a team member sent is delivered once even if the app quits between delivering it and filing it away, and a schedule request is never filed twice.
+
 ## [0.2.3] (2026-10-18)
 
 ### Added

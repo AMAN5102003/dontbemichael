@@ -48,6 +48,8 @@ export const PRIVATE_ENTRIES = [
   'research-pending.json',
   'research-pending-lost.json',
   'research-mined',
+  // The outbox journal: ids the router chose, until each file is archived.
+  'outbox-routing',
   // Pulse's held list: subjects and openings of held messages (2026-10-16).
   'held.jsonl',
   // Pulse's questions and answers lists and their archive (eng D3: a reset
