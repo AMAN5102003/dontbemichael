@@ -40,6 +40,7 @@ test('a frame is its secret owner\'s; a missing, wrong, cross agent or retired s
   const server = new HookServer(hive, () => null, () => ({}));
   const pam = hive.mintHookToken('pam');
   const dwight = hive.mintHookToken('dwight');
+  hive.mintHookToken('god');
 
   const ok = { hook_event_name: 'Stop', agent_id: 'pam', hook_token: pam };
   assert.equal(server.authenticate(ok), true);
@@ -71,7 +72,7 @@ test('every refused frame and every gated step reaches Pulse with its gate; a qu
   for (const g of ['paused', 'connector', 'quickbooks', 'mail', 'sandbox', 'internet', 'office-files', 'folder']) assert.match(src, new RegExp(`this\\.emitRefused\\(agentId, event, p, '${g}'\\)`), g);
   assert.match(src, /permissionDecisionReason: ASK_TOOL_REFUSAL/);
   assert.match(src, /this\.emitRefused\(agentId, event, p\);\n\s+return \{\n\s+hookSpecificOutput: \{\n\s+hookEventName: 'PreToolUse',\n\s+permissionDecision: 'deny',\n\s+permissionDecisionReason: ASK_TOOL_REFUSAL/, 'the question tool passes no gate');
-  assert.match(src, /if \(reason !== 'old-secret'\) \{ try \{ this\.onRefused\?\.\(claimed \?\? undefined, 'impostor'\)/);
+  assert.match(src, /if \(reason !== 'old-secret' && [^\n]*\n[^\n]*\n\s+try \{ this\.onRefused\?\.\(who === 'unknown' \? undefined : who, 'impostor'\)/);
 });
 
 test('a frame with no secret or another member\'s is reported to Pulse; one from a leftover process is not', (t) => {
@@ -81,10 +82,50 @@ test('a frame with no secret or another member\'s is reported to Pulse; one from
   const seen = [];
   server.onRefused = (agentId, gate) => seen.push([agentId, gate]);
   const pam = hive.mintHookToken('pam');
+  hive.mintHookToken('god');
+  hive.mintHookToken('dwight');
   server.authenticate({ hook_event_name: 'Stop', agent_id: 'god' });                       // no secret
-  server.authenticate({ hook_event_name: 'Stop', agent_id: 'god', hook_token: pam });      // Pam's secret
+  server.authenticate({ hook_event_name: 'Stop', agent_id: 'dwight', hook_token: pam });   // Pam's secret
   server.authenticate({ hook_event_name: 'Status', agent_id: 'pam', hook_token: 'from-an-earlier-start' }); // a leftover process
-  assert.deepEqual(seen, [['god', 'impostor'], ['god', 'impostor']], 'a leftover process is refused but not counted');
+  assert.deepEqual(seen, [['god', 'impostor'], ['dwight', 'impostor']], 'a leftover process is refused but not counted');
+});
+
+test('a refused frame naming no member counts as unknown, and the counts stay bounded', async (t) => {
+  // Value: protects=a process without a secret can't grow the maps, the office log or Pulse's impostor tile with made up names; fails_when=a refusal is counted, logged or reported under whatever agent_id the frame claims, or Pulse hears every frame; why_new=TODOS "Bound the refused hook frame counters"; seam=none; no_claim=the socket itself (tested below)
+  const { home, hive } = office(t);
+  await hive.ensureAgent({ id: 'kelly', name: 'Kelly', provider: 'claude', cwd: home });
+  const server = new HookServer(hive, () => null, () => ({}));
+  const seen = [];
+  server.onRefused = (agentId, gate) => seen.push([agentId, gate]);
+  const logged = [];
+  const append = hive.appendLog.bind(hive);
+  hive.appendLog = (e) => { if (e.kind === 'hook-frame-rejected') logged.push(e.agentId); return append(e); };
+  hive.mintHookToken('pam');
+  let reads = 0;
+  const registry = hive.registry.bind(hive);
+  hive.registry = () => { reads++; return registry(); };
+
+  for (let i = 0; i < 1000; i++) server.authenticate({ hook_event_name: 'Stop', agent_id: `made-up-${i}` });
+  server.authenticate({ hook_event_name: 'Stop', agent_id: '__proto__' });
+  assert.deepEqual([...server.rejectedFrames()], [['unknown', 1001]], 'made up names are one "unknown" count');
+  assert.deepEqual(logged, ['unknown'], 'logged once');
+  assert.deepEqual(seen, [[undefined, 'impostor']], 'Pulse hears it once, under no member');
+  assert.ok(reads <= 2, `a flood is not a registry read per frame (${reads})`);
+
+  server.authenticate({ hook_event_name: 'Stop', agent_id: 'pam' });
+  server.authenticate({ hook_event_name: 'Stop', agent_id: 'pam' });
+  server.authenticate({ hook_event_name: 'Stop', agent_id: 'kelly' });
+  assert.equal(server.rejectedFrames().get('pam'), 2, 'a member started this run keeps its own count');
+  assert.equal(server.rejectedFrames().get('kelly'), 1, 'a member in the registry keeps its own count');
+  assert.deepEqual(seen.slice(1), [['pam', 'impostor'], ['kelly', 'impostor']], 'once per name in ten minutes');
+
+  const cap = HookServer.MAX_REFUSED_NAMES;
+  HookServer.MAX_REFUSED_NAMES = 3;
+  t.after(() => { HookServer.MAX_REFUSED_NAMES = cap; });
+  hive.mintHookToken('dwight');
+  server.authenticate({ hook_event_name: 'Stop', agent_id: 'dwight' });
+  assert.equal(server.rejectedFrames().has('dwight'), false, 'past the cap a member counts as unknown');
+  assert.equal(server.rejectedFrames().size, 3);
 });
 
 test('over the socket, a tool check without a valid secret is refused and nothing else reaches a consumer', { skip: process.platform === 'win32' ? 'unix socket paths' : false }, async (t) => {
