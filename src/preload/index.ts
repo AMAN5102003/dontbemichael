@@ -1324,7 +1324,7 @@ const api = {
   /** Current context size (tokens) of an agent's live session, read from the
    *  last assistant message of its transcript. Null until the agent's hooks
    *  have fired at least once (the transcript path is learned from them). */
-  agentContext: (agentId: string): Promise<number | null> =>
+  agentContext: (agentId: string): Promise<{ tokens: number; limit?: number } | null> =>
     ipcRenderer.invoke('hive:agentContext', agentId),
 
   // ─── Live telemetry (OTel collector — the usage-provider seam + spans) ──────
@@ -1382,12 +1382,14 @@ const api = {
   /** Atomically append one card against the latest main-process ledger. */
   hiveAddTask: (task: HiveTask): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:addTask', task),
-  /** Record Ask me answers on one card, merged against the card on disk.
-   *  `landed`: at least one answer was added to a question still open there. */
+  /** Record the owner's Ask me answer to question `index` on one card, merged
+   *  against the card on disk. `landed`: it was added to that question, still
+   *  open there. */
   hivePatchTask: (
     id: string,
-    patch: Partial<Omit<HiveTask, 'id'>>
-  ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch),
+    patch: Partial<Omit<HiveTask, 'id'>>,
+    index: number
+  ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch, index),
   /** The owner moves a card; Done is their decision to end it. Michael is told. */
   hiveMoveTask: (id: string, status: HiveTask['status'], reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:moveTask', id, status, reason),
@@ -1429,6 +1431,10 @@ const api = {
     ipcRenderer.invoke('missions:delete', id),
   setMissionEnabled: (id: string, on: boolean): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('missions:setEnabled', id, on),
+  /** Run one job now, as its clock would (docs/designs/schedule-run-now.md).
+   *  `error` is 'just ran' within a minute of its last run. */
+  runMissionNow: (id: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('missions:runNow', id),
   /** Schedule changes agents asked for, waiting for the owner in ASK ME. */
   listScheduleRequests: (): Promise<ScheduleRequest[]> => ipcRenderer.invoke('scheduleRequests:list'),
   decideScheduleRequest: (id: string, approve: boolean): Promise<{ ok: boolean; error?: string }> =>

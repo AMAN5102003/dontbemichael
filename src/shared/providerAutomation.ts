@@ -181,6 +181,21 @@ const COMPACT_VERBS: ReadonlySet<string> = new Set(
 );
 
 /**
+ * Every verb this harness can type into a provider's TUI, compaction and
+ * clearing alike.
+ *
+ * Derived from CONTEXT_COMMANDS for the same reason COMPACT_VERBS is: a
+ * provider added to that table is covered here without a second edit anyone
+ * could forget. The owner's composer matches against this, so a verb the app
+ * itself would send on the owner's behalf is never refused as a question.
+ */
+export const CONTEXT_COMMAND_VERBS: ReadonlySet<string> = new Set(
+  Object.values(CONTEXT_COMMANDS)
+    .flatMap((c) => [c.compact, c.clear])
+    .filter((c): c is string => typeof c === 'string' && c.length > 0)
+);
+
+/**
  * Is this queued text a compaction command?
  *
  * Matches the leading VERB only, so `/compact keep the auth decisions` counts

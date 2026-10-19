@@ -21,7 +21,7 @@
 import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, type SandboxNetwork } from '../shared/webAccess';
 import {
   addressedToResearch, ANSWER_UNCHECKED, ANSWER_UNCHECKED_SUBJECT, hasAttachments, looksLikeInjection, NOT_SENT_SUBJECT,
-  PRIVACY_CHECK_SENDER, REFUSAL_CHECK_FAILED, REFUSAL_FILES, REFUSAL_OFF, REFUSAL_TOO_LONG, RESEARCH_HOUSE_RULE, RESEARCH_ID, RESEARCH_REPLY_LABEL,
+  PRIVACY_CHECK_SENDER, REFUSAL_CHECK_FAILED, REFUSAL_FILES, REFUSAL_NOT_DELIVERED, REFUSAL_OFF, REFUSAL_TOO_LONG, RESEARCH_HOUSE_RULE, RESEARCH_ID, RESEARCH_REPLY_LABEL,
   RESEARCH_UNCHECKED_TOOL, NOT_SENT_SUBJECT_OUT, RESEARCH_ONLY_ASKERS, RESEARCH_NAME, RESEARCH_ROLE, isReservedName,
   SENT_AS_SUBJECT, sentAsBody, nameKey, researchText, cleanResearchName, RESEARCH_ONLY_SKILLS
 } from '../shared/research';
@@ -60,7 +60,7 @@ import {
   type AgentProvider
 } from '../shared/agentProvider';
 import { MCP_CATALOG } from '../shared/mcpCatalog';
-import { cardConversation, openAskIndexes } from '../shared/askMeRouting';
+import { answeredAtOf, cardConversation, openAskIndexes } from '../shared/askMeRouting';
 import { selectBroadcastTargets } from '../shared/broadcast';
 import { preferredAgentRole } from '../shared/agentRole';
 import { mergeTaskLedger } from '../shared/taskLedger';
@@ -1028,6 +1028,32 @@ export class HiveManager {
    *  user-selected hive path may legitimately contain spaces. */
   private nodeRunUnquoted(script: string, ...args: string[]): string {
     return [this.nodeLauncher() ?? 'node', script, ...args].join(' ');
+  }
+
+  /** The Codex hook command on Windows: the bare name of a `.cmd` written into
+   *  `runtimeBinDir()`, which every agent's PATH ends with
+   *  (pty.ts withHiveRuntimeFallback). The paths, quoted, live inside the
+   *  `.cmd`, so the command itself has no space and no quote.
+   *
+   *  Codex runs a hook as `cmd.exe /C` plus the command. With a space in the
+   *  hive path (the default ~/HarnessAgents under a Windows user name like
+   *  "Jane Smith"), the unquoted command splits at the space and every hook
+   *  fails. Quoting it does not help on every Codex: codex-cli 0.162.1 passes
+   *  the command as an escaped argument, so cmd.exe reads its inner quotes as
+   *  `\"` and fails the same way. A bare name runs under both shapes.
+   *  Null when the file cannot be written: the caller keeps the old command. */
+  private codexHookWindows(shim: string): string | null {
+    const dir = this.runtimeBinDir();
+    if (!dir) return null;
+    try {
+      mkdirSync(dir, { recursive: true });
+      this.writeIfChanged(join(dir, 'hive-codex-hook.cmd'),
+        `@echo off\r\nset ELECTRON_RUN_AS_NODE=1\r\n"${process.execPath}" "${shim}" %*\r\n`);
+      return 'hive-codex-hook';
+    } catch (e) {
+      console.error('[hive] codexHookWindows failed:', e);
+      return null;
+    }
   }
 
   /** One proxy sidecar per live proxy-tier agent, keyed by agentId. Spawned in
@@ -2376,6 +2402,12 @@ export class HiveManager {
   }
   /** App and owner messages for Research whose check is under way. */
   private researchQueued = 0;
+  /** Checked messages for Research whose delivery failed (a disk error), by
+   *  id: each routing pass tries them again with the verdict they already have. */
+  private readonly researchUndelivered = new Map<string, () => void>();
+  /** About a minute of tries at the router's 1.5 s pace, so a disk that
+   *  fills up or locks for a moment doesn't cost the owner a note. */
+  static readonly RESEARCH_DELIVERY_TRIES = 40;
   private stampKey: Buffer | null = null;
 
   /** Research while it is on: the reserved id, the owner's switch, a live entry. */
@@ -2550,7 +2582,7 @@ export class HiveManager {
     const what = from === 'human' ? 'A note from the owner'
       : from === 'system' ? 'A message from the app'
         : `${reg.agents[from]?.name?.trim() || from}'s message`;
-    const next = reason === REFUSAL_CHECK_FAILED
+    const next = reason === REFUSAL_CHECK_FAILED || reason === REFUSAL_NOT_DELIVERED
       ? 'This is an app problem. If it keeps happening, tell the owner.'
       : reason === REFUSAL_OFF
         ? `The owner turns ${n} on in Settings, Research & privacy.`
@@ -2781,26 +2813,63 @@ export class HiveManager {
         return;
       }
       this.researchQueued--;
-      if (!fromAgent) this.researchPending(msg, false);
-      try {
-        // The owner changed what stays private while it was checked: checked
-        // again under the new settings (Codex review, third ship).
-        if (this.policyOf(layer) !== policy) { this.queueForResearch(msg, upkeep); return; }
+      // Its pending row stays until it is delivered or refused. A delivery
+      // that fails (a disk error) is tried again with this verdict on the next
+      // routing passes, then told to Michael, so nothing is dropped unseen
+      // (TODOS.md, Codex review of the mit/named-links ship).
+      let deliveries = 0;
+      const deliverOrRefuse = (): 'done' | 'again' | 'recheck' => {
+        // The owner changed what stays private while it was checked, or
+        // since: checked again under the new settings (Codex review, third ship).
+        if (this.policyOf(layer) !== policy) return 'recheck';
         // Turned off while it waited for a check that could not run.
-        if (!this.researchOn() && this.checkMayRunLater(v)) return refuse(REFUSAL_OFF, 'research-off');
+        if (!this.researchOn() && this.checkMayRunLater(v)) { refuse(REFUSAL_OFF, 'research-off'); return 'done'; }
         if (v.decision === 'deny') {
           const why = heldWhy(v, REFUSAL_CHECK_FAILED, REFUSAL_TOO_LONG);
           if (why) held(why, v.error);
           else checked('stop', undefined, v.kinds);
-          return refuse(v.reason);
+          refuse(v.reason);
+          return 'done';
         }
         // Research may have been turned off while the check ran.
-        if (!this.researchOn()) return refuse(REFUSAL_OFF, 'research-off');
-        this.deliverToResearch(msg.from, msg, v.subject, v.body);
-        checked(v.decision, v, v.decision === 'clean' ? v.removed : undefined);
-        if (v.decision === 'clean' && fromAgent) this.tellSender(msg.from, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
-        this.commit('hive: trust layer delivered to research');
-      } catch (e) { console.error('[research] delivering a checked message', e); }
+        if (!this.researchOn()) { refuse(REFUSAL_OFF, 'research-off'); return 'done'; }
+        const routedBefore = this.lastRouted;
+        try { this.deliverToResearch(msg.from, msg, v.subject, v.body); } catch (e) {
+          console.error('[research] delivering a checked message', e);
+          // It reached Research's inbox and a step after the write failed
+          // (the floor's envelope): delivered, so never sent twice.
+          const landed = this.lastRouted !== routedBefore && !!this.lastRouted?.delivered.includes(RESEARCH_ID);
+          if (!landed) {
+            if (deliveries < HiveManager.RESEARCH_DELIVERY_TRIES) return 'again';
+            refuse(REFUSAL_NOT_DELIVERED, 'undelivered');
+            return 'done';
+          }
+        }
+        try {
+          checked(v.decision, v, v.decision === 'clean' ? v.removed : undefined);
+          if (v.decision === 'clean' && fromAgent) this.tellSender(msg.from, msg.id, msg.conversation, SENT_AS_SUBJECT, sentAsBody(v.subject, v.body, this.researchName()), true);
+          this.commit('hive: trust layer delivered to research');
+        } catch (e) { console.error('[research] after delivering a checked message', e); }
+        return 'done';
+      };
+      const settle = (): void => {
+        deliveries++;
+        // A refusal that could not be told keeps its row, so the next start
+        // tells Michael instead of nobody.
+        let outcome: 'done' | 'again' | 'recheck' | 'keep' = 'keep';
+        try { outcome = deliverOrRefuse(); } catch (e) { console.error('[research] settling a checked message', e); }
+        if (outcome === 'again') {
+          // Its row now says it passed its check, so a start after a close
+          // tells Michael it was not delivered, not that it was being checked.
+          if (deliveries === 1 && !fromAgent) this.researchPending(msg, true, true);
+          this.researchUndelivered.set(msg.id, settle);
+          return;
+        }
+        if (outcome === 'keep') return;
+        if (!fromAgent) this.researchPending(msg, false);
+        if (outcome === 'recheck') this.queueForResearch(msg, upkeep);
+      };
+      settle();
     }, () => {
       if (Date.now() - firstAt < HiveManager.TRUST_WAIT_MS && this.researchOn() && this.policyOf(layer) === policy) {
         this.appendLog({ kind: 'trust-wait', way: 'in', tries: tries + 1 });
@@ -2821,22 +2890,23 @@ export class HiveManager {
   }
 
   /** The owner's and the app's messages for Research whose check is under
-   *  way, by id: what they were and who sent them, nothing more. */
-  private researchPending(msg: HiveMessage, add: boolean): void {
+   *  way, or that passed it and wait to be delivered (`checked`), by id: what
+   *  they were and who sent them, nothing more. */
+  private researchPending(msg: HiveMessage, add: boolean, checked = false): void {
     // Anything left from before this start is told first, never this run's.
     this.tellLostResearchPending();
     const home = this.getHome();
     if (!home) return;
     const file = join(privateRoot(home), 'research-pending.json');
-    let rows: Array<{ id: string; from: string; subject: string }> = [];
+    let rows: Array<{ id: string; from: string; subject: string; checked?: boolean }> = [];
     try { const r = JSON.parse(readFileSync(file, 'utf8')); if (Array.isArray(r)) rows = r; } catch { /* none yet */ }
     rows = rows.filter((r) => r && r.id !== msg.id);
-    if (add) { rows.push({ id: msg.id, from: msg.from, subject: String(msg.subject ?? '').slice(0, 80) }); this.researchPendingMine.add(msg.id); }
+    if (add) { rows.push({ id: msg.id, from: msg.from, subject: String(msg.subject ?? '').slice(0, 80), ...(checked ? { checked: true } : {}) }); this.researchPendingMine.add(msg.id); }
     try { mkdirSync(privateRoot(home), { recursive: true }); this.atomicWriteJson(file, rows); } catch { /* best effort */ }
   }
 
-  /** At start: an owner or app message whose check never finished (the app
-   *  closed or crashed) is told to Michael (Codex review, D8.2). The rows are
+  /** At start: an owner or app message whose check or delivery never
+   *  finished (the app closed or crashed) is told to Michael (Codex review, D8.2). The rows are
    *  moved aside first, so this run's own checks start a fresh list, and each
    *  stays until Michael's inbox takes its note: tried again on every routing
    *  pass, and at the next start if the app closes first (Codex, second ship). */
@@ -2846,7 +2916,7 @@ export class HiveManager {
     if (!home) return;
     const file = join(privateRoot(home), 'research-pending.json');
     const lost = join(privateRoot(home), 'research-pending-lost.json');
-    let rows: Array<{ id: string; from: string; subject: string }> = [];
+    let rows: Array<{ id: string; from: string; subject: string; checked?: boolean }> = [];
     try { const r = JSON.parse(readFileSync(lost, 'utf8')); if (Array.isArray(r)) rows = r; } catch { /* none left over */ }
     if (!this.researchPendingMoved) {
       let earlier: typeof rows = [];
@@ -2869,7 +2939,7 @@ export class HiveManager {
       if (!r || (r.from !== 'human' && r.from !== 'system') || this.researchLostTold.has(r.id)) return false;
       const ok = this.deliver(this.normalize({
         to: godId, act: 'inform', subject: researchText(NOT_SENT_SUBJECT, this.researchName()),
-        body: `${r.from === 'human' ? 'A note from the owner' : 'A message from the app'} for ${this.researchName()} ("${String(r.subject ?? '').slice(0, 80)}") was not sent: the app closed while it was being checked. Send it again if it still matters.`
+        body: `${r.from === 'human' ? 'A note from the owner' : 'A message from the app'} for ${this.researchName()} ("${String(r.subject ?? '').slice(0, 80)}") was not sent: the app closed while it was being ${r.checked === true ? 'delivered' : 'checked'}. Send it again if it still matters.`
       }, PRIVACY_CHECK_SENDER), godId);
       if (ok) this.researchLostTold.add(r.id);
       return !ok;
@@ -3017,9 +3087,10 @@ export class HiveManager {
   }
 
   /** Asks waiting for Research: delivered and not yet read, plus those in a
-   *  check. Turning Research off sends these back (design review D7). */
+   *  check or waiting to be delivered again. Turning Research off sends these
+   *  back (design review D7). */
   researchWaiting(): number {
-    let n = this.researchQueued;
+    let n = this.researchQueued + this.researchUndelivered.size;
     for (const [k, c] of this.trustChecks) if (k.startsWith('in:') && !c.done) n++;
     // Only what the app delivered counts.
     n += this.listMessages(join(this.agentDir(RESEARCH_ID), 'inbox')).length;
@@ -3406,6 +3477,11 @@ export class HiveManager {
     if (!existsSync(agentsDir)) return 0;
     const researchOn = this.researchOn();
     try { this.tellLostResearchPending(); } catch { /* next start */ }
+    // Checked messages for Research whose delivery failed get another try.
+    for (const [id, retry] of [...this.researchUndelivered]) {
+      this.researchUndelivered.delete(id);
+      try { retry(); } catch { /* its pending row stays, so the next start tells Michael */ }
+    }
     try { this.sweepResearchInbox(researchOn); } catch { /* next tick */ }
     this.pruneTrustChecks();
     // Read once per tick, when the first message needs them, not once per file.
@@ -3593,9 +3669,10 @@ export class HiveManager {
     // What the app writes is what the guard knows: Done cards and where each
     // open card stands, so a restore never brings back a copy from before it.
     const guard = this.guardState();
+    const now = new Date().toISOString();
     for (const t of merged as HiveTask[]) {
       if (!t || typeof t.id !== 'string') continue;
-      if (t.status === 'done') { guard.done[t.id] = t as unknown as GuardCard; delete guard.placed[t.id]; }
+      if (t.status === 'done') { guard.done[t.id] = t as unknown as GuardCard; delete guard.placed[t.id]; (guard.doneAt ??= {})[t.id] ??= now; }
       else if (t.status && t.status !== 'triage') guard.placed[t.id] = { ...(t as unknown as GuardCard), status: t.status };
     }
     this.saveGuard();
@@ -3635,6 +3712,7 @@ export class HiveManager {
     // Forgotten as Done only once the move is on disk.
     if (patch.status && patch.status !== 'done' && tasks[index].status === 'done') {
       delete this.guardState().done[id];
+      delete this.guardState().doneAt?.[id];
       this.saveGuard();
     }
     return true;
@@ -4117,10 +4195,11 @@ export class HiveManager {
     try { this.tasksObserver?.(tasks); } catch (e) { console.error('[hive] tasks observer:', e); }
     // A card that has ended (Done, or closed by the owner) needs no routing,
     // unless the owner answered after it closed: an open question stays on Ask
-    // me on a Done card, and that answer is still Michael's to route. Only an
-    // owner's close is timed (closedAt; a card keeps no other update time), so
-    // a request on a card Michael or the app marked Done is taken as settled.
-    const closedAt = new Map(tasks.filter((t) => t?.status === 'done').map((t) => [t.id, (t as { closedAt?: unknown }).closedAt]));
+    // me on a Done card, and that answer is still Michael's to route. The time
+    // is the owner's close (closedAt), else when the app first saw the card
+    // Done, so a card Michael marked Done keeps an answer given after it.
+    const doneAt = this.guardState().doneAt ?? {};
+    const closedAt = new Map(tasks.filter((t) => t?.status === 'done').map((t) => [t.id, (t as { closedAt?: unknown }).closedAt ?? doneAt[t.id]]));
     this.ownerRequestsCache = openOwnerRequests(toMichael, fromMichael, aliases).filter((r) => {
       if (!closedAt.has(r.taskId)) return true;
       const at = closedAt.get(r.taskId);
@@ -4157,7 +4236,7 @@ export class HiveManager {
           const at = typeof raw.created_at === 'string' && raw.created_at ? raw.created_at : new Date(statSync(p).mtimeMs).toISOString();
           // Sent copies archived before the app stamped them have no id: the
           // file name stands in, so each still has its own one to answer.
-          m = { id: String(raw.id ?? '') || `sent-${f.slice(0, -'.json'.length)}`, from: String(raw.from ?? ''), act: String(raw.act ?? ''), conversation: raw.conversation, in_reply_to: raw.in_reply_to, subject: raw.subject, created_at: at, to: raw.to };
+          m = { id: String(raw.id ?? '') || `sent-${f.slice(0, -'.json'.length)}`, from: String(raw.from ?? ''), act: String(raw.act ?? ''), conversation: raw.conversation, in_reply_to: raw.in_reply_to, subject: raw.subject, created_at: at, to: raw.to, answeredAt: answeredAtOf(raw.body) };
           // The owner's conversation needs the words (michael-replies.md); other
           // mail keeps only its envelope in memory.
           const ownerSide = raw.from === 'human' || OWNER_ALIASES.has(String(raw.to ?? '').toLowerCase()) || !!ownerQuestionOf(raw.conversation);
@@ -4990,11 +5069,9 @@ export class HiveManager {
       if (shim) {
         const events = ['PreToolUse', 'PostToolUse', 'Stop', 'SubagentStop',
           'SessionStart', 'UserPromptSubmit', 'PreCompact', 'PostCompact'];
-        // Preserve the existing Windows .cmd shape: nested command quotes pass
-        // through a different shell stack there (#350). The reported Codex bug
-        // is POSIX, where ordinary shell quoting is both necessary and verified.
+        // On Windows a command with no space and no quote: see codexHookWindows.
         const command = process.platform === 'win32'
-          ? this.nodeRunUnquoted(shim)
+          ? this.codexHookWindows(shim) ?? this.nodeRunUnquoted(shim)
           : this.nodeRun(shim);
         config += '\n# --- munder-hive lifecycle hooks (auto-generated; do not edit) ---\n';
         for (const ev of events) {

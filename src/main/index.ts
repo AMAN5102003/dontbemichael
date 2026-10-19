@@ -1,7 +1,9 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor, powerSaveBlocker, screen, shell, Notification } from 'electron';
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
+import { cutText } from '../shared/cutText';
 import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
+import { readCodexContext } from './codexUsage';
 import { execFile, spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
@@ -46,12 +48,11 @@ import { ensureCheckedBackfill } from './checkedBackfill';
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
 import { normalizeTimes, timesDelayMs } from '../shared/scheduleTimes';
 import {
-  armPlan, catchUpFloor, firePayload, upsertMission, deleteMission, setMissionEnabled, pauseMissionsOf,
-  migrateMissions, clampIntervals, buildScheduleRequest, applyScheduleRequest, missionsFor, fileScheduleRequest, foldScheduleRequests,
-  requestSummary, whenWords, cleanFocus, scheduledJobsBlock,
-  type ScheduleRequest
+  armPlan, catchUpFloor, firePayload, upsertMission, deleteMission, setMissionEnabled, pauseMissionsOf, runNowCheck,
+  migrateMissions, clampIntervals, foldScheduleRequests, cleanFocus, scheduledJobsBlock
 } from '../shared/missions';
 import { MICHAEL_WORK_STYLE } from '../shared/michaelWorkStyle';
+import { makeScheduleRequests } from './scheduleRequests';
 import {
   getBranch, getStatus, getLog, getBranches, getAheadBehind, isRepo, getDiff, mainRepoRoot,
   addWorktree, removeWorktree, worktreeHasUnintegratedWork, worktreeIsGcSafe,
@@ -125,7 +126,7 @@ import { quickbooksAccessToSave } from '../shared/quickbooks';
 import { emailCalendarAllowed } from '../shared/mcpCatalog';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
-import { pastesDir, savePaste, sweepOldPastes } from './pastes';
+import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
 import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
 import { buildWorkerLaunch } from './workerLaunch';
 import { ControlRegistry } from './control';
@@ -1718,180 +1719,17 @@ function closeAgentByOwner(id: string): { ok: boolean; paused: number } {
   return { ok: res.ok, paused };
 }
 
-/**
- * An agent asked (from its outbox) about one of its schedules. Office
- * management is Michael's (owner, 2026-09-27): a team member's request goes to
- * him to approve or decline, and he passes it to the owner in ASK ME only when
- * the facts can't settle it, sources conflict, or it is sensitive. Michael's
- * own changes apply at once. The return text is the scheduler's reply to the
- * asking agent.
- */
-function receiveScheduleRequest(actor: string, payload: unknown, why = ''): string {
-  if (actor === RESEARCH_ID) return 'You have no schedules: you answer the questions teammates send you.';
-  const cfg = readConfig();
-  const godId = hiveGodId();
-  const op = payload && typeof payload === 'object' ? (payload as { op?: unknown }).op : undefined;
-  // Michael deciding a team member's request.
-  if (actor === godId && (op === 'approve' || op === 'decline' || op === 'ask-owner' || op === 'pending')) {
-    return michaelDecides(payload as { op: string; request?: unknown; note?: unknown });
-  }
-  // "list" is a question, not a change: answer it directly with the ids an
-  // update, pause, resume or delete request needs.
-  if (op === 'list') {
-    const mine = missionsFor(cfg.missions ?? [], actor, godId);
-    return mine.length === 0
-      ? 'You have no schedules.'
-      : ['Your schedules (id: job):', ...mine.map((m) => `${m.id}: ${m.label}, ${whenWords(m)}${m.enabled ? '' : ' (paused)'}`)].join('\n');
-  }
-  const built = buildScheduleRequest(actor, payload, cfg.missions ?? [], godId, Date.now(), `sr_${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`, why);
-  if (!built.ok) return `Schedule request not sent: ${built.reason}`;
-  // Michael's own schedules: he manages the office, so the change applies now.
-  if (actor === godId) {
-    let refused = '';
-    const res = applyMissions((list) => {
-      const applied = applyScheduleRequest(built.request, list, `m_${Date.now().toString(36)}`, Date.now());
-      if (!applied.ok) { refused = applied.error; return null; }
-      return applied.missions.map((m) => (m.id === applied.missionId ? { ...m, approvedBy: 'michael' as const } : m));
-    });
-    if (refused || !res.ok) return `Schedule not changed: ${refused || (!res.ok ? res.error : '')}.`;
-    return `Done: ${requestSummary(built.request, cfg.missions ?? [])}.`;
-  }
-  // A request about a job this agent already has waiting joins it as one
-  // (owner, 2026-09-27).
-  const before = cfg.scheduleRequests ?? [];
-  const filed = fileScheduleRequest(before, built.request, cfg.missions ?? []);
-  const joined = filed.length === before.length;
-  const request = filed.find((r) => r.id === built.request.id) ?? built.request;
-  writeConfig({ scheduleRequests: filed.map((r) => (r.id === request.id ? { ...r, sentToMichael: true, sentToMichaelAt: Date.now() } : r)) });
-  try { liveWebContents()?.send('scheduleRequests:updated'); } catch { /* window gone */ }
-  tellMichaelAboutRequest(request, cfg.missions ?? []);
-  return joined
-    ? 'This joins or replaces your earlier request about the same job, and Michael decides it as one. Nothing changes until he does; you will get a message either way.'
-    : 'Sent to Michael to decide. Nothing changes until he does; you will get a message either way.';
-}
-
-/** Michael hears about a team member's request, with how to decide it. */
-function tellMichaelAboutRequest(req: ScheduleRequest, missions: ScheduledMission[]): void {
-  if (!hive.enabled()) return;
-  let name = req.agentId;
-  try { name = hive.registry().agents[req.agentId]?.name?.trim() || name; } catch { /* keep the id */ }
-  hive.send({
-    to: hiveGodId(), act: 'request',
-    subject: `Schedule request from ${name}`,
-    body: [
-      `${name} asks to ${requestSummary(req, missions)}.${req.reason ? ` Why: ${req.reason}` : ''}`,
-      `Request id: ${req.id}. You decide it: send the scheduler {"op": "approve", "request": "${req.id}"} or {"op": "decline", "request": "${req.id}", "note": "why"}.`,
-      `Pass it to the owner only when the facts can't settle it, sources conflict, or it is sensitive: {"op": "ask-owner", "request": "${req.id}", "note": "what you can't settle"}.`
-    ].join('\n')
-  }, 'scheduler');
-}
-
-/** How long Michael has to decide a request before it goes to the owner. */
-const MICHAEL_DECIDES_WITHIN_MS = 12 * 60 * 60 * 1000;
-
-/**
- * Keep every waiting schedule request moving: one Michael hasn't heard about
- * (filed before he decided them) is offered to him once, and one he hasn't
- * decided within MICHAEL_DECIDES_WITHIN_MS goes to the owner in ASK ME, so no
- * request is stranded (pre-landing review, 2026-09-27). Runs at launch and
- * every half hour.
- */
-function sweepScheduleRequests(now = Date.now()): void {
-  const cfg = readConfig();
-  const before = cfg.scheduleRequests ?? [];
-  const pending = foldScheduleRequests(before, cfg.missions ?? []);
-  const fresh = pending.filter((r) => !r.escalated && !r.sentToMichael);
-  const overdue = pending.filter((r) => !r.escalated && r.sentToMichael && now - (r.sentToMichaelAt ?? r.createdAt) > MICHAEL_DECIDES_WITHIN_MS);
-  if (!fresh.length && !overdue.length) {
-    if (pending.length !== before.length) writeConfig({ scheduleRequests: pending });
-    return;
-  }
-  for (const r of fresh) tellMichaelAboutRequest(r, cfg.missions ?? []);
-  const note = `${michaelName()} did not decide this within 12 hours.`;
-  writeConfig({
-    scheduleRequests: pending.map((r) => {
-      if (fresh.includes(r)) return { ...r, sentToMichael: true, sentToMichaelAt: now };
-      if (overdue.includes(r)) return { ...r, escalated: true, escalation: note };
-      return r;
-    })
-  });
-  try { liveWebContents()?.send('scheduleRequests:updated'); } catch { /* window gone */ }
-  if (overdue.length) ownerToast(michaelName(), `${overdue.length === 1 ? 'A schedule change needs' : `${overdue.length} schedule changes need`} you in ASK ME.`);
-}
+/** Team members' schedule requests (scheduleRequests.ts): Michael decides
+ *  them, and the owner sees only what he passes on. */
+const scheduleRequests = makeScheduleRequests({
+  readConfig, writeConfig, applyMissions, michaelName, ownerToast,
+  godId: hiveGodId,
+  agentName: (id) => hive.registry().agents[id]?.name,
+  hive: { enabled: () => hive.enabled(), send: (msg, from) => { hive.send(msg, from); } },
+  updated: () => { liveWebContents()?.send('scheduleRequests:updated'); }
+});
+const { receiveScheduleRequest, decideScheduleRequest, sweepScheduleRequests } = scheduleRequests;
 let scheduleSweepTimer: NodeJS.Timeout | null = null;
-
-/** Michael's answer to a request: approve, decline, pass it to the owner, or
- *  list what is waiting. */
-function michaelDecides(p: { op: string; request?: unknown; note?: unknown }): string {
-  const cfg = readConfig();
-  const pending = cfg.scheduleRequests ?? [];
-  if (p.op === 'pending') {
-    const open = pending.filter((r) => !r.escalated);
-    return open.length
-      ? ['Schedule requests waiting for you (id: request):', ...open.map((r) => `${r.id}: ${requestSummary(r, cfg.missions ?? [])}`)].join('\n')
-      : 'No schedule requests are waiting for you.';
-  }
-  const id = typeof p.request === 'string' ? p.request : '';
-  const note = typeof p.note === 'string' ? p.note.replace(/\s+/g, ' ').trim().slice(0, 400) : '';
-  const req = pending.find((r) => r.id === id);
-  if (!req) return 'No waiting request has that id: it may have been decided, or joined with a newer one. Send {"op": "pending"} to see what is waiting.';
-  // Once it is with the owner it is theirs to decide.
-  if (req.escalated) return 'That request is with the owner in ASK ME now; you will hear when they decide.';
-  if (p.op === 'ask-owner') {
-    if (!note) return 'Add a "note" saying what you can\'t settle, for the owner\'s card.';
-    writeConfig({ scheduleRequests: pending.map((r) => (r.id === id ? { ...r, escalated: true, escalation: note } : r)) });
-    try { liveWebContents()?.send('scheduleRequests:updated'); } catch { /* window gone */ }
-    let name = 'A team member';
-    try { name = hive.registry().agents[req.agentId]?.name?.trim() || name; } catch { /* keep the fallback */ }
-    // Only Michael notifies the owner (docs/designs/michael-only-notifications.md).
-    ownerToast(michaelName(), `${name}'s schedule change needs you in ASK ME.`);
-    return 'Passed to the owner in ASK ME. You will hear when they decide.';
-  }
-  const res = decideScheduleRequest(id, p.op === 'approve', 'michael', note);
-  if (!res.ok) {
-    return res.error === 'stale'
-      ? 'That schedule changed since the request was made, so it can\'t be applied. Decline it and ask the team member to send a new one.'
-      : `Not applied: ${res.error}.`;
-  }
-  return p.op === 'approve' ? 'Approved and in place.' : 'Declined. Nothing changed.';
-}
-
-/** A request was approved or declined, by Michael or by the owner in ASK ME.
- *  Approval applies exactly that one change; a request whose schedule changed
- *  since it was asked is refused. The asking agent is told either way. */
-function decideScheduleRequest(id: string, approve: boolean, by: 'owner' | 'michael' = 'owner', note = ''): { ok: true } | { ok: false; error: string } {
-  const cfg = readConfig();
-  const req = (cfg.scheduleRequests ?? []).find((r) => r.id === id);
-  if (!req) return { ok: false, error: 'not found' };
-  // Name the schedule before the change: after an approved delete it's gone.
-  const described = requestSummary(req, cfg.missions ?? []);
-  if (approve) {
-    let refused = '';
-    // Apply against the list as it is when written (applyMissions reads it fresh).
-    const res = applyMissions((list) => {
-      const applied = applyScheduleRequest(req, list, `m_${Date.now().toString(36)}`, Date.now());
-      if (!applied.ok) { refused = applied.error; return null; }
-      return applied.missions.map((m) => (m.id === applied.missionId ? { ...m, approvedBy: by } : m));
-    });
-    if (refused) return { ok: false, error: refused };
-    if (!res.ok) return res;
-  }
-  writeConfig({ scheduleRequests: (readConfig().scheduleRequests ?? []).filter((r) => r.id !== id) });
-  try { liveWebContents()?.send('scheduleRequests:updated'); } catch { /* window gone */ }
-  if (hive.enabled()) {
-    const who = by === 'michael' ? michaelName() : 'The owner';
-    hive.send({
-      to: req.agentId, act: 'inform',
-      subject: approve ? 'Schedule change approved' : 'Schedule change declined',
-      body: `${who} ${approve ? 'approved' : 'declined'}: ${described}. ${approve ? 'It is in place now.' : 'Nothing changed.'}${note ? ` Note: ${note}` : ''}`
-    }, 'scheduler', 'schedule-decision');
-    // The owner decided one Michael passed on: he hears the outcome too.
-    if (by === 'owner' && req.escalated) {
-      hive.send({ to: hiveGodId(), act: 'inform', subject: `Owner ${approve ? 'approved' : 'declined'} a schedule change`, body: `${described}.` }, 'scheduler');
-    }
-  }
-  return { ok: true };
-}
 
 
 
@@ -3213,7 +3051,7 @@ function handleWebhookMessage(msg: WebhookInbound, endpoint: WebhookEndpointRef)
   // communication only mode takes its title from the message: a caller's title
   // could otherwise carry the instruction to Michael (ship review, 2026-10-14).
   const full = mode === 'communication-only' && isAutoAllowed(mode, kind) ? msg.message : (msg.title ?? msg.message);
-  const title = full.length > 80 ? `${full.slice(0, 79)}…` : full;
+  const title = cutText(full, 80);
   const peer = msg.from?.trim() || endpoint.name || endpoint.id;
   // Minted here, not derived from the task id, because a HELD message has no task
   // id yet and must still be pairable with the reply it eventually earns.
@@ -3970,7 +3808,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // this id, so when the install PTY exits teardownPty is a harmless no-op (the agent
   // isn't archived and no worktree is torn down) before the relaunch takes over.
   {
-    const bin = opts.command.trim().split(/\s+/)[0] || opts.command;
+    // Already the bare executable (callers split args off), and it may hold a
+    // space: `C:\Users\John Smith\...\claude.exe`. Probe what pty.spawn runs.
+    const bin = opts.command.trim();
     // Claude is set up where the owner can see it: the Ready step at the end of
     // setup, or the Get Michael ready card on Ask me (engineSetup.ts). Its
     // installer used to run here, in a terminal the owner never sees, behind a
@@ -4341,7 +4181,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
       const at = args.findIndex((a) => a === '--model' || a.startsWith('--model='));
       const requested = at < 0 ? undefined : args[at] === '--model' ? args[at + 1] : args[at].slice('--model='.length);
       if (requested && CLAUDE_MODEL_CLI_FLOOR[requested]) {
-        const bin = opts.command.trim().split(/\s+/)[0] || opts.command;
+        const bin = opts.command.trim();
         const pick = modelForCli(requested, await claudeCliVersion(ptyManager.commandPath(bin)));
         if (pick.downgraded) {
           if (args[at] === '--model') args[at + 1] = pick.model; else args[at] = `--model=${pick.model}`;
@@ -4578,7 +4418,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // Record the Claude Code version this agent starts on, only once its terminal
   // is really running: a failed spawn must not count as an agent to upgrade.
   if (res.ok && opts.hive?.id && claudeProvider) {
-    const binPath = ptyManager.commandPath(opts.command.trim().split(/\s+/)[0] || opts.command);
+    const binPath = ptyManager.commandPath(opts.command.trim());
     void claudeCliVersion(binPath).then((started) => {
       if (!binPath || !started || !ptyToAgent.has(opts.id)) return;
       ptyCli.set(opts.id, { bin: binPath, started });
@@ -4587,6 +4427,8 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   }
   if (res.ok) analytics.track('agent_spawned', { provider });
   else analytics.track('agent_spawn_failed', { provider, reason: spawnFailReason(res.error) });
+  // A team member whose terminal comes back mid-close is waited on again.
+  try { if (res.ok && opts.hive?.id) closingTime.revive(opts.hive.id); } catch (e) { console.error('[closing-time] revive:', e); }
   syncKeepAwake(); // arm the power-save blocker while ≥1 agent PTY is alive (#18)
   // Hand the resolved worktree path back to the renderer so it can persist it on
   // the agent (only set when isolation actually provisioned a worktree above).
@@ -4764,7 +4606,7 @@ ipcMain.handle('integrations:remove', (_evt, payload: unknown) => {
 // URLs are non-secret and ride HarnessConfig.providerBaseUrls (normal config save).
 ipcMain.handle('providerKey:set', (_evt, payload: unknown) => {
   const p = (payload ?? {}) as { backend?: unknown; key?: unknown };
-  if (typeof p.backend !== 'string' || !(p.backend in BACKEND_KEY_ENV)) return { ok: false, error: 'unknown backend' };
+  if (typeof p.backend !== 'string' || !ownValue(BACKEND_KEY_ENV, p.backend)) return { ok: false, error: 'unknown backend' };
   if (typeof p.key !== 'string' || !p.key) return { ok: false, error: 'key required' };
   // A key this computer cannot encrypt is never saved, so say so (and what to do
   // about it) before anything else touches it.
@@ -4781,7 +4623,7 @@ ipcMain.handle('providerKey:set', (_evt, payload: unknown) => {
 ipcMain.handle('providerKey:has', (_evt, backend: unknown) =>
   typeof backend === 'string' ? integrations.hasSecret(providerKeyRef(backend)) : false);
 ipcMain.handle('providerKey:clear', (_evt, backend: unknown) => {
-  if (typeof backend !== 'string' || !(backend in BACKEND_KEY_ENV)) return { ok: false, error: 'unknown backend' };
+  if (typeof backend !== 'string' || !ownValue(BACKEND_KEY_ENV, backend)) return { ok: false, error: 'unknown backend' };
   try {
     // deleteSecret never throws: false means the key may still be stored.
     if (!integrations.deleteSecret(providerKeyRef(backend))) return { ok: false, error: 'The saved key could not be removed. Try again; if it keeps failing, the saved secrets file needs repair.' };
@@ -5733,7 +5575,7 @@ function recordOwnerAnswerKeys(keys: string[]): void {
   writeConfig({ ownerAnswerKeys: [...new Set([...prior, ...keys])].slice(-OWNER_ANSWER_KEYS_MAX) });
 }
 
-ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
+ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown, index: unknown) => {
   if (typeof id !== 'string' || !id || !patch || typeof patch !== 'object' || Array.isArray(patch)) {
     return { ok: false, error: 'invalid task patch' };
   }
@@ -5749,12 +5591,13 @@ ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
   // list, and an entry already on disk may be one an agent wrote.
   const qa = (patch as { humanQA?: unknown }).humanQA;
   if (!Array.isArray(qa)) return { ok: false, landed: false, error: 'no Ask me answers in the patch' };
+  if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) return { ok: false, landed: false, error: 'no question picked for the answer' };
   const ledger = hive.tasks() as { tasks?: HiveTask[] };
   const onDisk = (Array.isArray(ledger?.tasks) ? ledger.tasks : []).find((t) => t?.id === id)?.humanQA ?? [];
   // The renderer's list is a few seconds old, so it only adds answers to
   // questions still open on disk: a newer ask, a changed question or a
   // withdrawal written since all stand (askMeRouting.ts mergeHumanQA).
-  const { humanQA, added } = mergeHumanQA(onDisk, qa);
+  const { humanQA, added } = mergeHumanQA(onDisk, qa, index);
   if (!added.length) return { ok: true, landed: false };
   const ok = hive.patchTask(id, { humanQA: humanQA as HiveTask['humanQA'] });
   const keys = answerKeysOf(id, added.map((i) => humanQA[i]));
@@ -5840,7 +5683,7 @@ hive.onOwnerReply((msg) => {
   if (inFront || !hive.ownerNotify(msg.in_reply_to, msg.id)) return;
   const first = (msg.body || msg.subject || '').replace(/\s+/g, ' ').trim();
   const text = msg.act === 'query' ? `Has a question about: ${first}` : first;
-  ownerToastOpening(text.length > 120 ? `${text.slice(0, 119)}…` : text, msg.in_reply_to);
+  ownerToastOpening(cutText(text, 120), msg.in_reply_to);
 });
 
 ipcMain.handle('owner:ask', (_evt, p: unknown) => {
@@ -6592,11 +6435,19 @@ ipcMain.handle('hive:agentUsage', (_evt, cwd: unknown) =>
 // spawn), so this works even when several agents share one cwd. Null until the
 // first hook fires; a known-but-empty transcript reads as 0 so a freshly
 // (re)started session zeroes the gauge instead of leaving a stale value up.
+// `limit` is the window size, sent only when the session names it (Codex).
 ipcMain.handle('hive:agentContext', (_evt, agentId: unknown) => {
   if (typeof agentId !== 'string') return null;
+  // A Codex agent writes rollouts, not Claude transcripts: read its session's
+  // rollout in its own CODEX_HOME, as the usage fallback does (telemetry.ts).
+  const codexHome = hive.codexHome(agentId);
+  if (codexHome) {
+    const sessionId = hive.lastSession(agentId);
+    return sessionId ? readCodexContext(codexHome, sessionId) : null;
+  }
   const tp = hookServer.transcriptPath(agentId);
   if (!tp) return null;
-  return readContextTokens(tp) ?? 0;
+  return { tokens: readContextTokens(tp) ?? 0 };
 });
 
 // A consolidated, NON-SENSITIVE per-agent directory for the voice read-layer
@@ -6785,6 +6636,26 @@ ipcMain.handle('missions:delete', (_evt, id: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => deleteMission(list, id)) : { ok: false, error: 'invalid id' });
 ipcMain.handle('missions:setEnabled', (_evt, id: unknown, on: unknown): MissionOpResult =>
   typeof id === 'string' ? applyMissions((list) => setMissionEnabled(list, id, on === true, Date.now())) : { ok: false, error: 'invalid id' });
+// Run one job now (docs/designs/schedule-run-now.md): the same send and stamp
+// as its clock (sendMission), read from the config as it is NOW. The timers
+// are re-armed after, because an interval job counts from its last run: left
+// armed, it would fire at the old time while its row says the new one.
+ipcMain.handle('missions:runNow', (_evt, id: unknown): MissionOpResult => {
+  if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
+  // Without an office the send is dropped, so the run must not be stamped.
+  if (!hive.enabled()) return { ok: false, error: 'office not open' };
+  try {
+    const check = runNowCheck(readConfig().missions ?? [], id, Date.now());
+    if (!check.ok) return check;
+    sendMission(check.mission);
+  } catch (e) {
+    console.error('[missions] run now failed', e);
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+  // The job is sent from here on; a failed re-arm is logged, not reported.
+  try { syncMissions(); } catch (e) { console.error('[missions] re-arm failed after run now', e); }
+  return { ok: true };
+});
 
 // ─── IPC: schedule requests (an agent asked, the owner decides in ASK ME) ────
 ipcMain.handle('scheduleRequests:list', () => {
@@ -7130,7 +7001,7 @@ ipcMain.handle('triggerHistory:decide', (_evt, arg: unknown) => {
 
   const taskId = `webhook-${randomBytes(8).toString('hex')}`;
   const tokenHash = heldTokenHashFor(id);
-  const title = entry.title ?? (entry.body.length > 80 ? `${entry.body.slice(0, 79)}…` : entry.body);
+  const title = entry.title ?? cutText(entry.body, 80);
   if (!dispatchWebhookWork({ taskId, title, message: entry.body, tokenHash, origin: entry.source })) {
     // The card is what the caller polls and what god works from. Leave the entry
     // pending so the operator can approve again once the hive is writable.
@@ -7922,7 +7793,8 @@ function bootstrapHiveServices(): void {
   }
   hive.ensureHive();
   try { sweepOrphanAgentMcp(); } catch (e) { console.error('[mail] orphan agent-mcp sweep failed', e); }
-  sweepOldPastes(pastesDir(app.getPath('userData')));
+  // A screenshot a queued message still points at stays, however long it waits.
+  sweepOldPastes(pastesDir(app.getPath('userData')), PASTE_KEEP_MS, Date.now(), JSON.stringify(roster.read()?.queues ?? {}));
   // Read the Claude account's connectors in the background (D11).
   void refreshClaudeConnectors('start');
   // Waiting schedule requests reach Michael, and ones he leaves undecided

@@ -1,5 +1,6 @@
 {
   "common": {
+    "orchestrator": "协调者",
     "on": "开",
     "off": "关",
     "cancel": "取消",
@@ -97,6 +98,10 @@
     "fileOpen": "打开",
     "fileReveal": "在访达中显示",
     "fileNotFound": "未找到",
+    "fileActionsLabel": "{{name}}的操作",
+    "fileCopyPath": "复制路径",
+    "filePathCopied": "已复制",
+    "fileCopyFailed": "无法复制路径。请重试。",
     "fileOpenLabel": "打开 {{name}}",
     "fileRevealLabel": "在访达中显示 {{name}}",
     "fileRevealWindows": "在文件夹中显示",
@@ -255,7 +260,8 @@
       "freshDesc": "当前办公室留在旧文件夹里，不再使用。随时可以切换回去。",
       "openTitle": "打开这个文件夹里的办公室",
       "openDesc": "这个文件夹里已经有一个办公室。应用会切换过去，当前办公室保持原位。",
-      "couldNotOpen": "无法打开那个办公室。"
+      "couldNotOpen": "无法打开那个办公室。",
+      "couldNotChange": "无法更改办公室文件夹。"
     },
     "resetConfirm": {
       "body": "这会永久抹除你的办公室：团队、所有人的记忆、你的设置、“记忆与知识”、保存的密钥和历史记录。团队的文件夹及其中的文件会保留，你的 Claude 登录也会保留。所有人停止工作，应用将重新打开设置。此操作无法撤销。"
@@ -385,7 +391,14 @@
       "orgKeyPlaceholder": "粘贴你的组织密钥",
       "orgConfigOnly": "目前仅限配置。组织消息服务尚不存在，所以这里的密钥不会启动任何传输，它会被保存、显示在触发器标签页中，然后等待。",
       "newSecret": "已生成新密钥，请立即复制。",
-      "secretFailed": "无法生成新密钥，请重试。"
+      "secretFailed": "无法生成新密钥，请重试。",
+      "noteSaved": "已保存",
+      "noteListening": "聆听中",
+      "noteNoTunnel": "已启动，但隧道不可用",
+      "noteStartFailed": "启动失败",
+      "noteStopped": "已停止",
+      "noteSaveFailed": "无法保存",
+      "noteDeleted": "已删除"
     },
     "voice": {
       "freeFlow": "自由输入",
@@ -784,7 +797,14 @@
       "model": "模型",
       "modelNote": "这里设置 {{godName}} 和整个团队使用的模型，之后可以在设置中更改。",
       "maxPlan": "<strong>需要 Claude Max 套餐</strong>，办公室才能全天运转。较小的套餐会在白天用完额度，办公室将暂停，直到额度重置。",
-      "seePlans": "查看 Claude 套餐"
+      "seePlans": "查看 Claude 套餐",
+      "badgeInstalled": "已安装",
+      "badgeInstallsOnFirstRun": "首次运行时安装",
+      "badgeNotInstalled": "未安装",
+      "engineMissing": "{{label}} 尚未安装在这台电脑上，应用也无法为它自动安装，所以 {{godName}} 无法启动。请先安装它，然后点击“重新检查”。或者选择 Claude Code，它会在首次运行时自动安装。",
+      "checkAgain": "重新检查",
+      "checking": "检查中…",
+      "installInstructions": "安装说明"
     },
     "permissions": {
       "autonomyHead": "智能体可以自行做到什么程度？",
@@ -1228,11 +1248,23 @@
     "keep": "保留",
     "addedBy": "由 {{name}} 添加",
     "runAria": "运行 {{job}}",
+    "runNow": "立即运行",
+    "runNowAria": "立即运行 {{job}}",
+    "runNowSending": "正在发送……",
+    "runNowSent": "已发送给 {{name}}。",
+    "runNowJustRan": "不到一分钟前刚运行过，请一分钟后再试。",
+    "runNowFailed": "没有运行成功，请重试。",
+    "runNowSaveFirst": "先保存更改，才能运行。",
     "closedGroup": "{{name}}（已关闭）",
     "closedNote": "{{name}} 已关闭，所以这些已暂停。",
     "relayHint": "{{godName}} 会把这项工作分给团队。",
     "approvedBy": "由 {{name}} 批准",
     "everyInterval": "每 {{interval}}",
+    "whenWeekends": "周末",
+    "whenAt": "{{days}} {{time}}",
+    "whenAnd": "{{list}}和{{last}}",
+    "whenSpan": "{{from}}至{{to}}",
+    "whenSep": "、",
     "focus": "重点",
     "focusPlaceholder": "每次运行关注什么，例如：逾期超过 30 天的发票",
     "focusConflict": "这可能有冲突：{{conflict}} 请修改，或仍然保存。",
@@ -1391,7 +1423,13 @@
     "ideTip": "打开 IDE：浏览并编辑 {{name}} 工作区中的文件，并将他们未提交的更改作为差异查看。",
     "openIdeAria": "打开 IDE",
     "openTerminalTip": "在 {{cwd}} 中打开你的系统终端应用，位于该智能体文件夹中的普通 shell，与该智能体自己的终端相互独立。",
-    "openTerminalAria": "在该智能体的文件夹中打开系统终端"
+    "openTerminalAria": "在该智能体的文件夹中打开系统终端",
+    "noNote": "没有备注"
+  },
+  "completionToast": {
+    "orchestrator": "协调者",
+    "completed": "{{name}} · 已完成",
+    "dismiss": "关闭"
   },
   "memoryPanel": {
     "notSetUp": "未设置",
@@ -1721,7 +1759,14 @@
     "copyPath": "复制路径",
     "saveTitle": "保存（Cmd/Ctrl+S）",
     "saved": "已保存",
-    "save": "保存"
+    "save": "保存",
+    "copyAbsolutePath": "复制绝对路径",
+    "openInIde": "在 IDE 中打开",
+    "saveFailed": "出错",
+    "loading": "加载中…",
+    "loadingEditor": "正在加载编辑器…",
+    "nothingOpen": "没有打开的文件",
+    "nothingOpenHint": "从文件树中选一个文件来编辑，或选一个改动过的文件查看差异。"
   },
   "gitPanes": {
     "jumpConfirm": "把仓库跳转到 {{sha}}（\"{{subject}}\"）？\n\n这会脱离 HEAD。若工作区不干净或有智能体正在运行，将自动阻止。",

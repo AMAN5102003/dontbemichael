@@ -193,20 +193,21 @@ export function AskMeTab() {
     setFailed(null);
     try {
       // 1) Document the answer ON the card, on this question only.
+      const answeredAt = new Date().toISOString();
       const next = tasks.map((t) => {
         if (t.id !== task.id) return t;
         const qa = (t.humanQA ?? []).map((e, i) =>
           i === index && e.q === open.q && !isAnswered(e) && !isWithdrawn(e)
             // Only this Reply's own pick and lines go with the answer, never ones
             // an agent left on the open ask.
-            ? { ...withoutDetail(e), a: text, answeredAt: new Date().toISOString(), ...detail }
+            ? { ...withoutDetail(e), a: text, answeredAt, ...detail }
             : e
         );
         return { ...t, humanQA: qa };
       });
       const updated = next.find((candidate) => candidate.id === task.id);
       const result = updated
-        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA })
+        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA }, index)
         : { ok: false, landed: false };
       if (!result.ok || result.landed === false) throw new Error('task changed before answer could be saved');
       updateNeedsYouTasks(() => next);
@@ -217,7 +218,7 @@ export function AskMeTab() {
       const agents = useStore.getState().agents;
       const raiser = raiserOf(open, task, new Set(agents.map((a) => a.id)));
       const raiserName = agents.find((a) => a.id === raiser)?.name ?? raiser;
-      for (const m of answerMessages({ raiser, raiserName, taskId: task.id, title: task.title, q: asked, a: text })) {
+      for (const m of answerMessages({ raiser, raiserName, taskId: task.id, title: task.title, q: asked, a: text, answeredAt })) {
         await window.cth.hiveSend({
           to: m.to, act: m.act, subject: m.subject, body: m.body,
           ...(m.conversation ? { conversation: m.conversation } : {}),

@@ -158,7 +158,8 @@ test('with Pete off, a fixed upkeep note is dropped quietly; the app stamps its 
   const index = read('src/main/index.ts');
   assert.match(index, /body: officeOpenBody\(\) \}, 'human', 'office-open'\);/);
   assert.match(index, /subject: words\.subject, body: words\.carryOn \}, 'system', 'carry-on'\);/);
-  assert.match(index, /\}, 'scheduler', 'schedule-decision'\);/);
+  // The schedule decision moved to scheduleRequests.ts when main took it out of index.ts.
+  assert.match(read('src/main/scheduleRequests.ts'), /\}, 'scheduler', 'schedule-decision'\);/);
   assert.match(index, /carryOn: CARRY_ON_NOTES\.limit\.body,/, 'the carry on words are the fixed notes');
   assert.match(read('src/main/hooks.ts'), /\.\.\.RESTARTED_NOTE \}, 'system', 'restarted'\);/);
   assert.doesNotMatch(read('src/main/checkedBackfill.ts'), /OFFICE_OPEN_SUBJECT/, 'the backfill never matches a note by its words');

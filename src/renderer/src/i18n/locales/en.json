@@ -1,5 +1,6 @@
 {
   "common": {
+    "orchestrator": "the orchestrator",
     "on": "On",
     "off": "Off",
     "cancel": "Cancel",
@@ -97,6 +98,10 @@
     "fileOpen": "Open",
     "fileReveal": "Show in Finder",
     "fileNotFound": "Not found",
+    "fileActionsLabel": "Actions for {{name}}",
+    "fileCopyPath": "Copy path",
+    "filePathCopied": "Copied",
+    "fileCopyFailed": "Could not copy the path. Try again.",
     "fileOpenLabel": "Open {{name}}",
     "fileRevealLabel": "Show {{name}} in Finder",
     "fileRevealWindows": "Show in folder",
@@ -255,7 +260,8 @@
       "freshDesc": "Your current office stays in the old folder, unused. You can switch back to it any time.",
       "openTitle": "Open the office in this folder",
       "openDesc": "This folder already has an office. The app switches to it, and your current office stays where it is.",
-      "couldNotOpen": "Couldn't open that office."
+      "couldNotOpen": "Couldn't open that office.",
+      "couldNotChange": "Could not change the home folder."
     },
     "resetConfirm": {
       "body": "This erases your office for good: the team, everyone's memory, your settings, Memory & Knowledge, saved keys and history. Your team's folders and the files in them stay, and so does your Claude sign in. Everyone stops working and the app opens setup again. This cannot be undone."
@@ -385,7 +391,14 @@
       "orgKeyPlaceholder": "Paste your organisation key",
       "orgConfigOnly": "Configuration only for now. The organisation messaging service does not exist yet, so a key here starts no transport. It is saved, shown in the Triggers tab, and waits.",
       "newSecret": "New secret made. Copy it now.",
-      "secretFailed": "Couldn't make a new secret. Try again."
+      "secretFailed": "Couldn't make a new secret. Try again.",
+      "noteSaved": "saved",
+      "noteListening": "listening",
+      "noteNoTunnel": "started, but tunnel unavailable",
+      "noteStartFailed": "failed to start",
+      "noteStopped": "stopped",
+      "noteSaveFailed": "could not save",
+      "noteDeleted": "deleted"
     },
     "voice": {
       "freeFlow": "Free Flow",
@@ -784,7 +797,14 @@
       "model": "Model",
       "modelNote": "This sets the model {{godName}} and your whole team use. You can change it later in Settings.",
       "maxPlan": "<strong>You'll need a Claude Max plan</strong> to keep your office running full time. Smaller plans reach their usage limit during the day, and the office pauses until the limit resets.",
-      "seePlans": "See Claude plans"
+      "seePlans": "See Claude plans",
+      "badgeInstalled": "INSTALLED",
+      "badgeInstallsOnFirstRun": "INSTALLS ON FIRST RUN",
+      "badgeNotInstalled": "NOT INSTALLED",
+      "engineMissing": "{{label}} is not installed on this computer and the app has no installer for it, so {{godName}} could not start. Install it first, then press \"check again\". Or pick Claude Code, which installs itself on first run.",
+      "checkAgain": "check again",
+      "checking": "checking...",
+      "installInstructions": "install instructions"
     },
     "permissions": {
       "autonomyHead": "How much can agents do on their own?",
@@ -1228,11 +1248,23 @@
     "keep": "keep",
     "addedBy": "added by {{name}}",
     "runAria": "Run {{job}}",
+    "runNow": "Run now",
+    "runNowAria": "Run {{job}} now",
+    "runNowSending": "Sending...",
+    "runNowSent": "Sent to {{name}}.",
+    "runNowJustRan": "It ran less than a minute ago. Try again in a minute.",
+    "runNowFailed": "Didn't run. Try again.",
+    "runNowSaveFirst": "Save your changes to run them.",
     "closedGroup": "{{name}} (closed)",
     "closedNote": "{{name}} is closed, so these are paused.",
     "relayHint": "{{godName}} hands this job to the team.",
     "approvedBy": "approved by {{name}}",
     "everyInterval": "every {{interval}}",
+    "whenWeekends": "weekends",
+    "whenAt": "{{days}} at {{time}}",
+    "whenAnd": "{{list}} and {{last}}",
+    "whenSpan": "{{from}} to {{to}}",
+    "whenSep": ", ",
     "focus": "Focus area",
     "focusPlaceholder": "What each run concentrates on, for example: invoices more than 30 days unpaid",
     "focusConflict": "This may clash: {{conflict}} Change it, or save anyway.",
@@ -1391,7 +1423,13 @@
     "ideTip": "Open the IDE: browse and edit files in {{name}}'s workspace, and see their uncommitted changes as a diff.",
     "openIdeAria": "Open the IDE",
     "openTerminalTip": "Open your system terminal app in {{cwd}}: a normal shell in this agent's folder, separate from the agent's own terminal.",
-    "openTerminalAria": "Open a system terminal in this agent's folder"
+    "openTerminalAria": "Open a system terminal in this agent's folder",
+    "noNote": "No note"
+  },
+  "completionToast": {
+    "orchestrator": "the orchestrator",
+    "completed": "{{name}} · completed",
+    "dismiss": "Dismiss"
   },
   "memoryPanel": {
     "notSetUp": "Not set up",
@@ -1721,7 +1759,14 @@
     "copyPath": "copy path",
     "saveTitle": "Save (Cmd/Ctrl+S)",
     "saved": "saved",
-    "save": "save"
+    "save": "save",
+    "copyAbsolutePath": "Copy absolute path",
+    "openInIde": "Open in the IDE",
+    "saveFailed": "err",
+    "loading": "loading…",
+    "loadingEditor": "loading editor…",
+    "nothingOpen": "nothing open",
+    "nothingOpenHint": "Pick a file from the tree to edit, or a changed file to diff."
   },
   "gitPanes": {
     "jumpConfirm": "Jump the repo to {{sha}} (\"{{subject}}\")?\n\nThis detaches HEAD. Blocked automatically if the tree is dirty or an agent is in the middle of a run.",

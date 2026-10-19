@@ -22,7 +22,7 @@ import { acquireTerminal, resetTerminal, isTerminalAutomationSafe, hasTerminalDr
 import { canDeliverToAgent, deliverWithAcknowledgement, checkPrecondition } from './queueDelivery';
 import { RunningToolCalls } from './runningToolCalls';
 import { OFFICE_CAST, DEFAULT_CHARACTER, HIREABLE_CAST, type OfficeCharacterName } from '@/scene/office/cast';
-import { teamMemberName, teamMemberRole, teamMemberGoal, teamAccent, teamMemberStart, rewrittenInstructions } from '../../../shared/teamPlan';
+import { teamMemberName, teamMemberRole, teamMemberGoal, teamAccent, teamMemberStart, rewrittenInstructions, didNotStartNote } from '../../../shared/teamPlan';
 import type { AgentDefinitionV2 } from '../../../shared/agentDefinition';
 import { FIRST_TASK_EDITED_MAX, withoutLegacyFirstTask } from '../../../shared/firstTask';
 import { firstTaskSection } from '../../../shared/workStyleText';
@@ -32,6 +32,7 @@ import { ENGINE_READY_EVENT } from '@/shell/useNeedsYou';
 import { seedStarterJobs } from '@/shell/seedStarterJobs';
 import { PromptSubmits, confirmSubmit } from '../../../shared/submitConfirm';
 import { isTerminalPrompt } from '../../../shared/hookEvents';
+import { cutText } from '@shared/cutText';
 
 const GOD_ID = 'god';
 /** Accent palette for MAIN-spawned (voice-hired) agents — picked deterministically
@@ -449,6 +450,11 @@ async function startBusinessTeam(config: HarnessConfig): Promise<void> {
     }
   }
   await window.cth.updateConfig({ businessTeamStarted: true, businessTeamRetry: failed }).catch(() => undefined);
+  // Who did not start goes to Michael, who tells the owner; it was only logged.
+  if (failed.length) {
+    const note = didNotStartNote(failed.map((id) => teamMemberName(defs.get(id)!)), !!retry);
+    await window.cth.hiveSend({ to: GOD_ID, act: 'inform', ...note }, 'system').catch(() => undefined);
+  }
   if (!retry) await startPickedResearch(config);
 }
 
@@ -810,9 +816,12 @@ export function useHive(config: HarnessConfig | null): void {
 
   // 2c) Context gauge backfill: poll each live agent's current context size
   //     (tokens) from its session transcript — only until the status line
-  //     (effect 2d) has delivered exact numbers for that agent.
+  //     (effect 2d) has delivered exact numbers for that agent. A session that
+  //     names its own window (a Codex rollout) has no status line, so it is
+  //     sized by that window and polled for as long as it runs.
   useEffect(() => {
     if (!config?.onboardingComplete) return;
+    const sizedByPoll = new Set<string>();
     const poll = async () => {
       const { agents, updateAgent } = useStore.getState();
       for (const a of agents) {
@@ -820,14 +829,21 @@ export function useHive(config: HarnessConfig | null): void {
         // The status line pushes exact numbers after every response (effect
         // 2d) — this transcript poll only backfills agents whose status line
         // hasn't fired yet (e.g. freshly restored, no response so far).
-        if (a.contextLimit !== undefined) continue;
+        if (a.contextLimit !== undefined && !sizedByPoll.has(a.id)) continue;
         try {
           const ctx = await window.cth.agentContext(a.id);
           if (ctx === null) continue;
+          const tokens = ctx.tokens;
+          if (ctx.limit) {
+            sizedByPoll.add(a.id);
+            const progress = Math.max(0, Math.min(8, Math.round((tokens / ctx.limit) * 8)));
+            updateAgent(a.id, { contextTokens: tokens, contextLimit: ctx.limit, progress });
+            continue;
+          }
           const hinted = /1m/i.test(a.model ?? '') ? 1_000_000 : 200_000;
-          const limit = Math.max(hinted, ctx > 200_000 ? 1_000_000 : 0);
-          const progress = Math.max(0, Math.min(8, Math.round((ctx / limit) * 8)));
-          updateAgent(a.id, { contextTokens: ctx, progress });
+          const limit = Math.max(hinted, tokens > 200_000 ? 1_000_000 : 0);
+          const progress = Math.max(0, Math.min(8, Math.round((tokens / limit) * 8)));
+          updateAgent(a.id, { contextTokens: tokens, progress });
         } catch { /* ignore — try again next tick */ }
       }
     };
@@ -1166,7 +1182,7 @@ export function useHive(config: HarnessConfig | null): void {
             : [];
         const id = `slack-${slack.thread_ts}-${m.id}`;
         if (existing.some((t) => t.id === id)) return; // already promoted — no dup
-        const title = m.text.length > 80 ? `${m.text.slice(0, 79)}…` : m.text;
+        const title = cutText(m.text, 80);
         const card: SlackTaskCard = {
           id,
           title,

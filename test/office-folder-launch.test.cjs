@@ -76,6 +76,20 @@ test('the missing screen only opens a folder that really holds an office', () =>
   assert.match(screen, /window\.cth\.startOverHere\(\)/);
 });
 
+test('a recent office is named by its own folder, on Windows too', () => {
+  // A Windows path holds no '/', so a '/'-only split named the row with the
+  // whole path. Run the helper as written in the screen.
+  const screen = read('src/renderer/src/components/OfficeFolderMissing.tsx');
+  const body = screen.match(/function folderName\(path: string\): string \{\s*(return [^\n]+)\s*\}/);
+  assert.ok(body, 'the folderName helper');
+  const folderName = new Function('path', body[1]);
+  assert.equal(folderName('C:\\Users\\Ana\\Documents\\My Office'), 'My Office');
+  assert.equal(folderName('D:\\Offices\\Acme\\'), 'Acme');
+  assert.equal(folderName('\\\\server\\share\\Office'), 'Office');
+  assert.equal(folderName('/Users/ana/Documents/My Office'), 'My Office');
+  assert.equal(folderName('/Users/ana/My Office/'), 'My Office');
+});
+
 test('Settings never offers to move an office on top of another one', () => {
   const settings = read('src/renderer/src/components/SettingsModal.tsx');
   assert.match(settings, /\(changeTargetHasOffice\s*\? \[\['fresh', t\('settings\.changeHome\.openTitle'\)/);
