@@ -11,11 +11,13 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSPr
 import { useTranslation } from 'react-i18next';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
 import { useStore, actionText, liveActivity, ACTION_CLOCKING_IN, ROSTER_BOOT_HOME, type Agent } from '@/store/store';
+import { useClockingIn } from '@/hooks/useClockingIn';
 import type { HarnessConfig } from '@/store/config';
 import { departments, type DepartmentName } from '@/design/tokens';
 import { useAppTheme } from '@/design/theme';
 import { DeptIcon, PersonAvatar } from '@/scene/office/props';
 import { PixelBadge, type StatusKind } from '@/components/PixelBadge';
+import { NotReportingTag, useSilentEpisode } from '@/components/SilentEngine';
 import { useHasTerminalDraft } from '@/components/terminalPool';
 import { useOfficeBreak } from '@/components/OfficeBreakNotice';
 import type { OfficeBreakView } from '@shared/officeBreak';
@@ -54,7 +56,7 @@ const ROLL_TOP = 14;
  *  crosses the spot where the chip was. */
 const ROLL_PAD = 24;
 
-type Board = { todo: number; doing: number; blocked: number; done: number };
+type Board = { todo: number; doing: number; waiting: number; blocked: number; done: number };
 
 /* ── Data ─────────────────────────────────────────────────────────────────── */
 
@@ -65,14 +67,14 @@ function useTaskSnapshot(godId: string): TaskSnapshot {
   // always match the pill and the board.
   const { tasks } = useNeedsYou();
   return useMemo(() => {
-    const board: Board = { todo: 0, doing: 0, blocked: 0, done: 0 };
+    const board: Board = { todo: 0, doing: 0, waiting: 0, blocked: 0, done: 0 };
     const doingBy: Record<string, number> = {};
     const forYouBy: Record<string, number> = {};
     let kept = 0;
     const done: Record<string, string | undefined> = {};
     for (const t of tasks) {
-      // Michael's board has four columns; a Waiting card is nobody's work right now.
-      if (t.status !== 'waiting') board[t.status]++;
+      // Michael's board has the Tasks view's five columns (design review 2026-10-18).
+      board[t.status]++;
       if (t.status === 'done') done[t.id] = t.assignee;
       if (t.status === 'doing' && t.assignee) doingBy[t.assignee] = (doingBy[t.assignee] ?? 0) + 1;
       if (t.assignee) { const asks = openQuestions(t).length; if (asks) forYouBy[t.assignee] = (forYouBy[t.assignee] ?? 0) + asks; }
@@ -677,6 +679,8 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
   const typing = useHasTerminalDraft(a.ptyId);
   const onBreak = useOfficeBreak();
   const status: StatusKind = typing ? 'typing' : breakStatus(a, onBreak);
+  // Its engine isn't reporting: the tag replaces the status (issue #326, SD14).
+  const silent = useSilentEpisode(a.id);
   const next = (() => {
     const now = Date.now();
     const times = missionsFor(missions, a.id, godId).filter((m) => m.enabled).map((m) => ({ at: nextRunAt(m, now), label: m.label })).filter((x): x is { at: number; label: string } => x.at !== null);
@@ -707,7 +711,9 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
           <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', letterSpacing: '-0.02em', color: a.status === 'idle' ? 'var(--cth-ink-3)' : 'var(--cth-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInlineEnd: 78 }}>{a.name}</b>
           <i style={{ fontStyle: 'normal', fontSize: 10, lineHeight: '13px', color: 'var(--cth-ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleOf(a)}</i>
         </span>
-        <PixelBadge status={status} style={{ position: 'absolute', insetInlineEnd: 0, top: 0, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+        {silent
+          ? <NotReportingTag style={{ position: 'absolute', insetInlineEnd: 0, top: 0 }} />
+          : <PixelBadge status={status} style={{ position: 'absolute', insetInlineEnd: 0, top: 0, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />}
       </div>
       <div style={{ marginTop: 5, marginBottom: 8, fontSize: 10.5, lineHeight: '14px', color: a.status === 'idle' ? 'var(--cth-ink-3)' : 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         title={caption}>{caption || t('studio.nothingNow')}</div>
@@ -824,6 +830,7 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
 }) {
   const { t } = useTranslation();
   const onBreak = useOfficeBreak();
+  const godSilent = useSilentEpisode(god.id);
   const ctx = god.contextTokens !== undefined && god.contextLimit ? Math.round((god.contextTokens / god.contextLimit) * 100) : null;
   const stat = (n: number, label: string, coral = false) => (
     <div style={{ padding: '6px 0 7px', textAlign: 'center' }}>
@@ -852,7 +859,9 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
             <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', color: 'var(--cth-ink)', paddingInlineEnd: 76 }}>{god.name}</b>
             <i style={{ fontStyle: 'normal', fontSize: 10, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>{t('studio.officeManager')}</i>
           </span>
-          <PixelBadge status={breakStatus(god, onBreak)} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+          {godSilent
+            ? <NotReportingTag style={{ position: 'absolute', insetInlineEnd: 11, top: 9 }} />
+            : <PixelBadge status={breakStatus(god, onBreak)} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />}
         </div>
         <div style={{ marginTop: 6, fontSize: 10.5, lineHeight: '14px', color: 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {god.action?.trim() ? sentence(actionText(god.action.trim(), t)) : t('studio.runningTheOffice')}
@@ -864,11 +873,12 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
         {stat(kept, t('studio.kept'))}
       </div>
       <button onClick={() => useStore.getState().setFloorView('tasks')} aria-label={t('floorView.tasks')} style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', width: '100%', padding: '6px 4px 7px', border: 'none', borderTop: '1px solid var(--cth-line)',
+        display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', width: '100%', padding: '6px 4px 7px', border: 'none', borderTop: '1px solid var(--cth-line)',
         background: 'transparent', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)'
       }}>
         {col(board.todo, t('studio.todo'), 'var(--cth-ink-4)')}
         {col(board.doing, t('studio.doingCol'), 'var(--cth-blue)')}
+        {col(board.waiting, t('kanban.colWaiting'), 'var(--cth-amber)')}
         {col(board.blocked, t('studio.blocked'), 'var(--cth-coral-base)')}
         {col(board.done, t('studio.done'), 'var(--cth-green)')}
       </button>
@@ -984,27 +994,6 @@ function useKickoff(pods: PodPlan<Agent>[], paused: boolean): Record<string, num
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, paused]);
   return kick;
-}
-
-/** Who is still clocking in: their action is the clocking in marker, for at
- *  most a minute each, so a quiet engine never leaves a desk dark. */
-function useClockingIn(agents: Agent[]): Set<string> {
-  const since = useRef(new Map<string, number>());
-  const [, tick] = useState(0);
-  const now = Date.now();
-  const out = new Set<string>();
-  for (const a of agents) {
-    if (a.action !== ACTION_CLOCKING_IN) { since.current.delete(a.id); continue; }
-    if (!since.current.has(a.id)) since.current.set(a.id, now);
-    if (now - (since.current.get(a.id) ?? now) < 60_000) out.add(a.id);
-  }
-  const waiting = out.size > 0;
-  useEffect(() => {
-    if (!waiting) return;
-    const id = window.setInterval(() => tick((n) => n + 1), 5000);
-    return () => window.clearInterval(id);
-  }, [waiting]);
-  return out;
 }
 
 /* ── Closing time and daylight (DESIGN.md 8.12) ───────────────────────────── */

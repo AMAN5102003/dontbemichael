@@ -22,6 +22,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const loadTs = require('./load-ts.cjs');
+const { windowsOnly } = require('./platform.cjs');
 
 const { HiveManager } = loadTs('src/main/hive.ts');
 
@@ -270,6 +271,65 @@ test('Codex hook commands survive a hive path containing spaces', { skip: !POSIX
   assert.equal(after.code, 0, `Codex hook failed from a space-containing hive path: ${after.stderr}`);
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.ok(received.length > 0, 'the quoted hook command never reached HIVE_SOCK');
+});
+
+/** Run `command` the way Codex runs a hook on Windows: ComSpec, `/C`, then the
+ *  command. `raw` is today's Codex (codex-rs command_runner.rs wraps it in one
+ *  pair of quotes, unescaped); otherwise it goes as an ordinary escaped
+ *  argument, as codex-cli 0.162.1 passes it. */
+function runLikeCodexOnWindows(command, env, raw) {
+  return new Promise((resolve) => {
+    const child = spawn(process.env.ComSpec || 'cmd.exe', ['/C', raw ? `"${command}"` : command], {
+      env, windowsVerbatimArguments: raw, stdio: ['pipe', 'pipe', 'pipe']
+    });
+    let stderr = '';
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.stdin.on('error', () => { /* the shim may exit before reading */ });
+    child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', session_id: 's1' }));
+    child.on('close', (code) => resolve({ code, stderr }));
+  });
+}
+
+test('Windows Codex hook commands survive a hive path containing spaces', { ...windowsOnly('cmd.exe runs Codex hooks there'), timeout: 20_000 }, async (t) => {
+  // The default office is ~/HarnessAgents, so a Windows user name with a space
+  // ("Jane Smith") puts one in every hook path.
+  const isolated = isolatedHomes(t);
+  const harness = `${isolated.harness} space`;
+  const hive = new HiveManager(() => harness);
+  hive.ensureHive();
+  const codexHome = hive.installCodexHooks(path.join(harness, 'hive', 'agents', 'a1'), 'a1');
+  const config = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
+  const commands = [...config.matchAll(/^command\s*=\s*(.+)$/gm)].map((m) => JSON.parse(m[1].trim()));
+
+  assert.equal(commands.length, 8, 'every Codex lifecycle hook must be generated');
+  for (const c of commands) assert.doesNotMatch(c, /[\s"]/, `no space or quote for cmd.exe to split or mangle: ${c}`);
+  const body = fs.readFileSync(path.join(hive.runtimeBinDir(), `${commands[0]}.cmd`), 'utf8');
+  assert.match(body, /ELECTRON_RUN_AS_NODE=1/, 'without this the binary opens a second app window');
+
+  // The agent's PATH ends with the runtime folder (pty.ts withHiveRuntimeFallback).
+  const pipe = `\\\\.\\pipe\\md-codex-space-${process.pid}-${Date.now()}`;
+  const received = [];
+  const server = net.createServer((conn) => {
+    let buf = '';
+    conn.on('error', () => { /* the shim may hang up first */ });
+    conn.on('data', (d) => { buf += d; });
+    conn.on('close', () => { if (buf) received.push(buf); });
+    conn.write(JSON.stringify({ ok: true }) + '\n', () => conn.end());
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(pipe, resolve);
+  });
+  t.after(() => server.close());
+  const env = { ...process.env, PATH: `${process.env.PATH};${hive.runtimeBinDir()}`, HIVE_SOCK: pipe, AGENT_ID: 'a1' };
+
+  for (const raw of [true, false]) {
+    const before = received.length;
+    const r = await runLikeCodexOnWindows(commands[0], env, raw);
+    assert.equal(r.code, 0, `${raw ? 'raw' : 'escaped'} Codex hook failed from a space-containing hive path: ${r.stderr}`);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.ok(received.length > before, `the ${raw ? 'raw' : 'escaped'} hook command never reached HIVE_SOCK`);
+  }
 });
 
 test('POSIX Gemini and Antigravity hooks survive a hive path containing spaces', { skip: !POSIX }, async (t) => {

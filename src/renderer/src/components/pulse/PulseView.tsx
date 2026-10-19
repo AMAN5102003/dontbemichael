@@ -6,7 +6,8 @@
  * behind an (i). Advice is amber, savings green, coral never: Ask me stays the
  * only thing that needs the owner.
  *
- *   Pulse ─ pulse:snapshot (on open, on period change, on pulse:updated)
+ *   Pulse ─ pulse:snapshot(period, compare) (on open, on a period or Compare
+ *           change, on pulse:updated, and at each local midnight)
  *         ─ Apply ─ pulse:apply ─► schedule (main) | model (this store) ─► "Applied." + Undo
  *         ─ Not now ─ pulse:dismiss
  */
@@ -14,22 +15,28 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useTranslation } from 'react-i18next';
 import type { PulseView as PulseData } from '@shared/pulseView';
 import type { Advice } from '@shared/teamAdvice';
-import { teamAtWork, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
-import { keptSafe, REFUSAL_GATES, type RefusalGate } from '@shared/pulseSafety';
-import { MIN_TURNS_FOR_RATE } from '@shared/teamLearning';
+import type { LearnedNote } from '@shared/teamLearning';
+import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
+import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
+import { heldCause, notesPreview, HELD_TO_MEMORY, type HeldRow } from '@shared/heldRecord';
+import { changesInContext, showAsMarks, withHidden, wordChanges, type ChangePart, type CheckedList, type CheckedRow } from '@shared/checkedRecord';
+import { OFFICE_OPEN_SUBJECT } from '@shared/officeOpen';
 import { useStore } from '@/store/store';
 import { useAppTheme } from '@/design/theme';
 import { family } from '@/scene/studio/theme';
 import { departmentOf, roleOf } from '@/scene/studio/layout';
 import { useMissions } from '../triggers/ScheduleList';
+import { Toggle } from '../triggers/ui';
 import { AgentAvatar } from '../AgentAvatar';
 import { InfoTip } from '../InfoTip';
+import { PixelButton } from '../PixelButton';
 import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
+import { godNameNow } from '@/i18n';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
 
 const LS_PERIOD = 'cth.pulsePeriod';
-const PERIODS: Period[] = ['this-week', 'last-week', '4-weeks'];
+const LS_COMPARE = 'cth.pulseCompare';
 const KIND_ICON: Record<WorkKind, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock' };
 
 /** The team average mark: a dashed line drawn as a gradient. */
@@ -64,11 +71,6 @@ function useLayout(ref: React.RefObject<HTMLElement | null>): Layout {
 const card: CSSProperties = { background: 'var(--cth-card)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-md)' };
 const label: CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)', display: 'flex', gap: 6, alignItems: 'center' };
 const mono: CSSProperties = { fontFamily: 'var(--cth-font-mono)' };
-const btn = (primary: boolean): CSSProperties => ({
-  height: 28, padding: '0 12px', borderRadius: 'var(--cth-r-md)', fontSize: 11, fontWeight: 600, fontFamily: 'var(--cth-font-ui)', cursor: 'pointer',
-  border: 'none', background: primary ? 'var(--cth-ink)' : 'var(--cth-card)', color: primary ? 'var(--cth-bg)' : 'var(--cth-ink)',
-  boxShadow: primary ? 'none' : 'inset 0 0 0 1px var(--cth-line-2)'
-});
 
 function Section({ title, tip, children }: { title: string; tip?: string; children: ReactNode }) {
   return (
@@ -120,18 +122,37 @@ export function PulseView() {
   const [period, setPeriod] = useState<Period>(() => {
     try { const v = window.localStorage.getItem(LS_PERIOD); return PERIODS.includes(v as Period) ? (v as Period) : 'this-week'; } catch { return 'this-week'; }
   });
+  // The owner's choice, kept even while a period cannot compare yet (design D4).
+  const [compare, setCompare] = useState<boolean>(() => { try { return window.localStorage.getItem(LS_COMPARE) === '1'; } catch { return false; } });
   const [data, setData] = useState<PulseData | null>(null);
   const [failed, setFailed] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
+  // The held tile's list (owner, 2026-10-16).
+  const [heldOpen, setHeldOpen] = useState(false);
+  // The new notes behind Learning's number (owner, 2026-10-18).
+  const [learnedOpen, setLearnedOpen] = useState(false);
+  // The questions and answers lists (owner, 2026-10-16).
+  const [checkedOpen, setCheckedOpen] = useState<'in' | 'out' | null>(null);
   const [applied, setApplied] = useState<Array<{ advice: Advice; appliedId: number; text: string }>>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>('');
 
   const load = useCallback(async () => {
-    try { setData(await window.cth.pulseSnapshot(period)); setFailed(false); } catch { setFailed(true); }
-  }, [period]);
+    try { setData(await window.cth.pulseSnapshot(period, compare)); setFailed(false); } catch { setFailed(true); }
+  }, [period, compare]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => window.cth.onPulseUpdated(() => { void load(); }), [load]);
+  // A new day, week or month starts at local midnight, and a quiet office sends
+  // no update then, so Pulse reloads itself rather than show yesterday as Today.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const arm = (): void => {
+      const next = new Date(); next.setHours(24, 0, 1, 0);
+      timer = setTimeout(() => { void load(); arm(); }, next.getTime() - Date.now());
+    };
+    arm();
+    return () => clearTimeout(timer);
+  }, [load]);
 
   const byId = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents]);
   const nameOf = useCallback((id: string) => byId.get(id)?.name ?? id, [byId]);
@@ -142,6 +163,7 @@ export function PulseView() {
     return [f.acc, f.m, f.d][nth % 3];
   }, [byId, dark]);
   const fmtShort = (day: string): string => new Date(`${day}T12:00:00`).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' });
+  const fmtSpan = (from: string, to: string): string => (from === to ? fmtDay(from) : t('pulse.daySpan', { from: fmtShort(from), to: fmtShort(to) }));
   const listNames = (names: string[]): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(names); } catch { return names.join(', '); } };
   const fmtDay = (day: string | number): string => new Date(typeof day === 'number' ? day : `${day}T12:00:00`).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
   const jobOf = (id?: string): string => missions.find((m) => m.id === id)?.label ?? '';
@@ -199,7 +221,7 @@ export function PulseView() {
       <div style={{ ...card, padding: 26, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
         <div style={{ fontSize: 15, fontWeight: 600 }}>{t('pulse.unavailable')}</div>
         <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.unavailableHint')}</div>
-        <button type="button" style={{ ...btn(false), marginTop: 6 }} onClick={() => { void load(); }}>{t('pulse.tryAgain')}</button>
+        <PixelButton variant="secondary" size="sm" style={{ marginTop: 6 }} onClick={() => { void load(); }}>{t('pulse.tryAgain')}</PixelButton>
       </div>
     );
   } else if (!view) {
@@ -215,27 +237,29 @@ export function PulseView() {
     // Only the gates this view can name: a count from another build is left out.
     const rules = (Object.entries(safe.rules) as Array<[RefusalGate, number]>).filter(([g, n]) => REFUSAL_GATES.includes(g) && n > 0);
     const rulesTotal = rules.reduce((n, [, x]) => n + x, 0);
-    const learn = view.learning ?? { weeks: [], notes: 0, procedures: 0, knows: {} };
+    // A snapshot from a main process older than this view (before a restart) has no period figures.
+    const learn = view.learning?.period ? view.learning : { period: { added: { you: 0, job: 0, michael: 0 }, asks: 0, turns: 0, per100: null }, previous: null, notes: 0, procedures: 0, knows: {} };
     // Learning, money and your time: one row of four tiles.
     const row4: CSSProperties = { display: 'grid', gridTemplateColumns: layout === 'wide' ? 'repeat(4, minmax(0, 1fr))' : layout === 'mid' ? 'repeat(2, minmax(0, 1fr))' : '1fr', gap: 12 };
     const tight: CSSProperties = { ...card, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 };
-    // Learning follows the period (owner, 2026-10-15): this week, last week or
-    // the last four, against the same span just before it.
-    const span = s.period === '4-weeks' ? 4 : 1;
-    const off = s.period === 'last-week' ? 1 : 0;
-    const wk = learn.weeks;
-    const sumWeeks = (ws: typeof wk) => ws.reduce((a, w) => ({ you: a.you + w.added.you, job: a.job + w.added.job, michael: a.michael + w.added.michael, asks: a.asks + w.asks, turns: a.turns + w.turns }), { you: 0, job: 0, michael: 0, asks: 0, turns: 0 });
-    const cur = sumWeeks(wk.slice(Math.max(0, wk.length - off - span), wk.length - off));
-    const prevWeeks = wk.slice(Math.max(0, wk.length - off - 2 * span), Math.max(0, wk.length - off - span));
-    const prev = sumWeeks(prevWeeks);
-    const rateOf = (x: { asks: number; turns: number }): number | null => (x.turns >= MIN_TURNS_FOR_RATE ? Math.round((x.asks / x.turns) * 1000) / 10 : null);
-    const rate = rateOf(cur);
-    const prevRate = prevWeeks.length === span ? rateOf(prev) : null;
-    const curAdded = cur.you + cur.job + cur.michael;
-    // Last 4 weeks: each tile shows its week by week trend (owner, 2026-10-15).
-    const wks = view.weeks ?? null;
-    const wkLabels = (wks?.from ?? []).map(fmtShort);
-    const lastFour = wk.slice(-4);
+    // Learning follows the period (owner, 2026-10-15).
+    const cur = learn.period;
+    const rate = cur.per100;
+    const curAdded = cur.added.you + cur.added.job + cur.added.michael;
+    // Compare (owner, 2026-10-16): with the switch on and the period ready, every
+    // tile shows two bars, the span before and this one (D6), named for the
+    // period (D5); spoken with their exact days. Null when off or not ready.
+    const pv = view.compare?.snapshot ?? null;
+    const pk = view.compare?.keptSafe ?? null;
+    const pl = pv ? learn.previous : null;
+    const pairLabels = [t(`pulse.compareBefore.${s.period}`), t(`pulse.periods.${s.period}`)];
+    const pairSpoken = pv ? [`${pairLabels[0]}, ${fmtSpan(pv.from, pv.to)}`, `${pairLabels[1]}, ${fmtSpan(s.from, s.to < dayKey(Date.now()) ? s.to : dayKey(Date.now()))}`] : pairLabels;
+    const pair = (before: number | null, now: number | null, aria: string, color = 'var(--cth-ink-2)', format?: (v: number) => string): ReactNode => (
+      <WeekBars before labels={pairLabels} spoken={pairSpoken} series={[{ values: [before, now], color }]} aria={aria} format={format} />
+    );
+    const toNetOf = (k: KeptSafe): number => k.toInternet.pass + k.toInternet.clean + k.toInternet.stop;
+    const rulesOf = (k: KeptSafe): number => (Object.entries(k.rules) as Array<[RefusalGate, number]>).filter(([g, n]) => REFUSAL_GATES.includes(g) && n > 0).reduce((n, [, x]) => n + x, 0);
+    const gaps = [...new Set([...(pv?.gapDays ?? []), ...s.gapDays])];
     // Team at work: everyone on the team now, Michael included, busiest first.
     const rows = s.members.filter((m) => byId.has(m.agentId))
       .map((m) => ({ ...m, busyMs: m.busyMs ?? 0, turns: m.turns ?? 0, dayBusy: m.dayBusy ?? [] }))
@@ -251,9 +275,9 @@ export function PulseView() {
     const savedShown = view.saved.state !== 'none';
     body = (
       <>
-        {s.gapDays.length > 0 && (
+        {gaps.length > 0 && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--cth-ink-2)', background: 'var(--cth-neutral-soft)', borderRadius: 'var(--cth-r-lg)', padding: '8px 11px' }}>
-            <Icon name="info" /> {t('pulse.gapNotice', { days: s.gapDays.map(fmtDay).join(', ') })}
+            <Icon name="info" /> {t('pulse.gapNotice', { days: gaps.map(fmtDay).join(', ') })}
           </div>
         )}
 
@@ -262,7 +286,7 @@ export function PulseView() {
             {applied.map((x) => (
               <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{t('pulse.applied')} {x.text}</div>
-                <div><button type="button" style={btn(false)} onClick={() => { void undo(x); }}>{t('pulse.undo')}</button></div>
+                <div><PixelButton variant="secondary" size="sm" onClick={() => { void undo(x); }}>{t('pulse.undo')}</PixelButton></div>
               </div>
             ))}
             {shownAdvice.slice(0, Math.max(0, 3 - applied.length)).map((a) => {
@@ -275,10 +299,10 @@ export function PulseView() {
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>{txt.evidence}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <button type="button" style={btn(true)} disabled={busy === a.id} onClick={() => { void apply(a); }}>
+                    <PixelButton size="sm" disabled={busy === a.id} onClick={() => { void apply(a); }}>
                       {a.change.kind === 'editor' ? t('pulse.openSchedules') : t('pulse.apply')}
-                    </button>
-                    <button type="button" style={btn(false)} onClick={() => { void notNow(a); }}>{t('pulse.notNow')}</button>
+                    </PixelButton>
+                    <PixelButton variant="secondary" size="sm" onClick={() => { void notNow(a); }}>{t('pulse.notNow')}</PixelButton>
                     {a.savesPerWeek !== null && a.savesPerWeek > 0 && (
                       <span style={{ marginInlineStart: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--cth-green-text)', background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-pill)', padding: '2px 8px' }}>
                         {t('pulse.savesAbout', { usd: money(a.savesPerWeek) })}
@@ -308,7 +332,7 @@ export function PulseView() {
                 <div aria-hidden style={{ width: 30, height: 30, borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card-2)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', display: 'grid', placeItems: 'center', color: 'var(--cth-ink-2)' }}><Icon name={KIND_ICON[o.kind]} size={1.125} /></div>
                 <div style={{ ...mono, fontSize: 28, fontWeight: 600, lineHeight: '30px' }}>{o.total.toLocaleString(i18n.language)}</div>
                 <div style={{ fontSize: 12, color: 'var(--cth-ink-2)' }}>{outcomeLabel(o)}</div>
-                {wks ? <WeekBars labels={wkLabels} series={[{ values: wks[o.kind === 'email' ? 'emails' : o.kind === 'sent' ? 'sent' : o.kind === 'task' ? 'tasks' : 'checks'], color: 'var(--cth-ink-2)' }]} aria={outcomeLabel(o)} />
+                {pv ? pair(pv.outcomes.find((x) => x.kind === o.kind)?.total ?? 0, o.total, outcomeLabel(o))
                   : o.kind === 'check'
                   ? <WhoBar by={[{ agentId: '__work', count: o.sub ?? 0 }, { agentId: '__none', count: o.total - (o.sub ?? 0) }]} colorOf={(id) => (id === '__work' ? 'var(--cth-ink-2)' : 'var(--cth-line-2)')} nameOf={(id) => t(id === '__work' ? 'pulse.foundWork' : 'pulse.nothingToDo')} aria={outcomeLabel(o)} />
                   : <WhoBar by={o.by} colorOf={colorOf} nameOf={nameOf} aria={outcomeAria(o)} />}
@@ -317,15 +341,19 @@ export function PulseView() {
           </div>
         </Section>
 
-        {/* Kept safe (owner, 2026-10-15): no header; each tile says what it guards. */}
+        {/* Kept safe (owner, 2026-10-15): no header; each tile names what it counts
+            in a few words, the same at zero, and its (i) says how (2026-10-18). */}
         <section aria-label={t('pulse.safe.title')}>
           <div style={grid(cols)}>
-            <StatTile icon="shield" value={toNet} trend={wks && <WeekBars labels={wkLabels} series={[{ values: wks.toInternet, color: 'var(--cth-ink-2)' }]} aria={t('pulse.safe.toInternet')} />} tip={t('pulse.safe.trustTip')} text={t(toNet > 0 && safe.toInternet.clean + safe.toInternet.stop === 0 ? 'pulse.safe.toInternetNone' : 'pulse.safe.toInternet')}
-              parts={[{ n: safe.toInternet.pass, name: t('pulse.safe.sentAsWritten'), color: 'var(--cth-ink-2)' }, { n: safe.toInternet.clean, name: t('pulse.safe.privateOut'), color: 'var(--cth-green)' }, { n: safe.toInternet.stop, name: t('pulse.safe.stopped'), color: 'var(--cth-amber)' }]} />
-            <StatTile icon="search" value={safe.webAnswers.clean} of={answers} trend={wks && <WeekBars labels={wkLabels} series={[{ values: wks.cleaned, color: 'var(--cth-green)' }]} aria={t('pulse.safe.answersCleaned')} />} tip={t('pulse.safe.trustTip')} text={t('pulse.safe.answersCleaned')}
-              parts={[{ n: safe.webAnswers.clean, name: t('pulse.safe.cleaned'), color: 'var(--cth-green)' }, { n: safe.webAnswers.pass, name: t('pulse.safe.nothingToRemove'), color: 'var(--cth-ink-4)' }, { n: safe.webAnswers.flagged, name: t('pulse.safe.flagged'), color: 'var(--cth-amber)' }]} />
-            <StatTile icon="pause" value={safe.held} trend={wks && <WeekBars labels={wkLabels} series={[{ values: wks.held, color: 'var(--cth-amber)' }]} aria={t('pulse.safe.held')} />} tip={t('pulse.safe.heldTip')} text={t(safe.held > 0 ? 'pulse.safe.held' : 'pulse.safe.heldNone')} amber={safe.held > 0} />
-            <StatTile icon="lock" value={rulesTotal} trend={wks && <WeekBars labels={wkLabels} series={[{ values: wks.rules, color: 'var(--cth-ink-3)' }]} aria={t('pulse.safe.rules')} />} tip={t('pulse.safe.rulesTip')} text={t(rulesTotal > 0 ? 'pulse.safe.rules' : 'pulse.safe.rulesNone')}
+            <StatTile icon="shield" value={toNet} trend={pk && pair(toNetOf(pk), toNet, t('pulse.safe.toInternet'))} tip={t('pulse.safe.toInternetTip')} text={t('pulse.safe.toInternet')}
+              parts={[{ n: safe.toInternet.pass, name: t('pulse.safe.sentAsWritten'), color: 'var(--cth-ink-2)' }, { n: safe.toInternet.clean, name: t('pulse.safe.privateOut'), color: 'var(--cth-green)' }, { n: safe.toInternet.stop, name: t('pulse.safe.stopped'), color: 'var(--cth-amber)' }]}
+              open={toNet > 0 ? { label: t('pulse.checked.q.open'), onClick: () => setCheckedOpen('in') } : undefined} />
+            <StatTile icon="search" value={safe.webAnswers.clean} of={answers} trend={pk && pair(pk.webAnswers.clean, safe.webAnswers.clean, t('pulse.safe.answersCleaned'), 'var(--cth-green)')} tip={t('pulse.safe.answersTip')} text={t('pulse.safe.answersCleaned')}
+              parts={[{ n: safe.webAnswers.clean, name: t('pulse.safe.cleaned'), color: 'var(--cth-green)' }, { n: safe.webAnswers.pass, name: t('pulse.safe.nothingToRemove'), color: 'var(--cth-ink-4)' }, { n: safe.webAnswers.flagged, name: t('pulse.safe.flagged'), color: 'var(--cth-amber)' }]}
+              open={answers > 0 ? { label: t('pulse.checked.a.open'), onClick: () => setCheckedOpen('out') } : undefined} />
+            <StatTile icon="pause" value={safe.held} trend={pk && pair(pk.held, safe.held, t('pulse.safe.held'), 'var(--cth-amber)')} tip={t('pulse.safe.heldTip')} text={t('pulse.safe.held')} amber={safe.held > 0}
+              open={safe.held > 0 ? { label: t('pulse.held.open'), onClick: () => setHeldOpen(true) } : undefined} />
+            <StatTile icon="lock" value={rulesTotal} trend={pk && pair(rulesOf(pk), rulesTotal, t('pulse.safe.rules'))} tip={t('pulse.safe.rulesTip')} text={t('pulse.safe.rules')}
               parts={[...rules].sort((a, b) => b[1] - a[1]).map(([g, n], i) => ({ n, name: t(`pulse.safe.gate.${g}`), color: ['var(--cth-ink-2)', 'var(--cth-ink-3)', 'var(--cth-ink-4)', 'var(--cth-line-2)'][Math.min(i, 3)] }))} />
           </div>
         </section>
@@ -336,21 +364,22 @@ export function PulseView() {
           <div style={tight}>
             <TileTitle icon="book" title={t('pulse.learning.learned')} sub={t(`pulse.learning.sub.${s.period}`)} tip={t('pulse.learning.tip')} />
             <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{curAdded.toLocaleString(i18n.language)}</div>
-            {wks && <WeekBars labels={wkLabels} series={[{ values: lastFour.map((w) => w.added.you), color: 'var(--cth-green)' }, { values: lastFour.map((w) => w.added.job), color: 'var(--cth-ink-4)' }, { values: lastFour.map((w) => w.added.michael), color: 'var(--cth-indigo)' }]} aria={t(`pulse.learning.sub.${s.period}`)} />}
-            {!wks && curAdded > 0 && <Stack parts={[{ n: cur.you, color: 'var(--cth-green)' }, { n: cur.job, color: 'var(--cth-ink-4)' }, { n: cur.michael, color: 'var(--cth-indigo)' }]} aria={`${t('pulse.learning.fromYou')} ${cur.you}, ${t('pulse.learning.onJob')} ${cur.job}, ${t('pulse.learning.fromMichael')} ${cur.michael}`} />}
-            {curAdded > 0 && <Legend items={[[t('pulse.learning.fromYou'), 'var(--cth-green)', cur.you], [t('pulse.learning.onJob'), 'var(--cth-ink-4)', cur.job], [t('pulse.learning.fromMichael'), 'var(--cth-indigo)', cur.michael]]} />}
+            {pl && <WeekBars before labels={pairLabels} spoken={pairSpoken} series={[{ values: [pl.added.you, cur.added.you], color: 'var(--cth-green)' }, { values: [pl.added.job, cur.added.job], color: 'var(--cth-ink-4)' }, { values: [pl.added.michael, cur.added.michael], color: 'var(--cth-indigo)' }]} aria={t(`pulse.learning.sub.${s.period}`)} />}
+            {!pl && curAdded > 0 && <Stack parts={[{ n: cur.added.you, color: 'var(--cth-green)' }, { n: cur.added.job, color: 'var(--cth-ink-4)' }, { n: cur.added.michael, color: 'var(--cth-indigo)' }]} aria={`${t('pulse.learning.fromYou')} ${cur.added.you}, ${t('pulse.learning.onJob')} ${cur.added.job}, ${t('pulse.learning.fromMichael')} ${cur.added.michael}`} />}
+            {curAdded > 0 && <Legend items={[[t('pulse.learning.fromYou'), 'var(--cth-green)', cur.added.you], [t('pulse.learning.onJob'), 'var(--cth-ink-4)', cur.added.job], [t('pulse.learning.fromMichael'), 'var(--cth-indigo)', cur.added.michael]]} />}
+            {curAdded > 0 && <button type="button" onClick={() => setLearnedOpen(true)} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--cth-indigo-text)' }}>{t('pulse.learning.open')}</button>}
             <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.inAll', { notes: learn.notes.toLocaleString(i18n.language), procedures: learn.procedures })}</div>
           </div>
           <div style={tight}>
             <TileTitle icon="help" title={t('pulse.learning.questions')} sub={t('pulse.learning.questionsSub')} />
             <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{rate !== null ? rate.toFixed(1) : '…'}</div>
             <div style={{ fontSize: 11, color: 'var(--cth-ink-2)', lineHeight: '15px' }}>
-              {rate === null ? t('pulse.learning.tooFewRate')
-                : prevRate === null ? t('pulse.learning.counts', { asks: cur.asks, turns: cur.turns.toLocaleString(i18n.language) })
-                : t(rate < prevRate ? 'pulse.learning.down' : rate > prevRate ? 'pulse.learning.up' : 'pulse.learning.same', { from: prevRate.toFixed(1), before: t(`pulse.learning.before.${s.period}`) })}
+              {rate === null ? t('pulse.learning.tooFewRate') : t('pulse.learning.counts', { asks: cur.asks, turns: cur.turns.toLocaleString(i18n.language) })}
             </div>
-            {rate !== null && prevRate !== null && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.counts', { asks: cur.asks, turns: cur.turns.toLocaleString(i18n.language) })}</div>}
-            {wks && <WeekLine labels={wkLabels} values={lastFour.map((w) => w.per100)} format={(v) => v.toFixed(1)} aria={t('pulse.learning.questionsSub')} />}
+            {/* A span under 20 requests draws no bar and reads "…" (eng O2). */}
+            {pl && (pl.per100 !== null || rate !== null) && pair(pl.per100, rate, t('pulse.learning.questionsSub'), 'var(--cth-ink-2)', (v) => v.toFixed(1))}
+            {/* The earlier bar's "…" says why (pulse compare v2). */}
+            {pl && pl.per100 === null && rate !== null && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.tooFewBefore', { before: pairLabels[0] })}</div>}
           </div>
           {/* One total (owner, 2026-10-15): who spent what is Team at work's job.
               Plan use sits at the foot of the same tile, as a bar, so the tile
@@ -368,7 +397,7 @@ export function PulseView() {
                   : t(view.billing === 'apiKey' ? 'pulse.spentApiKey' : 'pulse.plan.noPrice')}
               </div>
             </div>
-            {wks && <WeekBars labels={wkLabels} series={[{ values: wks.usd, color: 'var(--cth-ink-2)' }]} format={(v) => `$${Math.round(v)}`} aria={t('pulse.whereMoneyWent')} />}
+            {pv && pair(pv.totalUsd, s.totalUsd, t('pulse.whereMoneyWent'), 'var(--cth-ink-2)', (v) => `$${Math.round(v)}`)}
             {view.headroom && (
               <div role="img" aria-label={t('pulse.planAria', { pct: Math.round(view.headroom.usedPct) })} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -394,15 +423,14 @@ export function PulseView() {
                 <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.yourTime.asks}</div>
                 <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{s.yourTime.medianWaitMs !== null ? t('pulse.questionsAnswered', { time: duration(s.yourTime.medianWaitMs, t) }) : t('pulse.questions')}</div>
               </div>
-              {wks ? <WeekBars labels={wkLabels} series={[{ values: wks.asks, color: 'var(--cth-ink-2)' }]} aria={t('pulse.yourTime')} />
-                : prevWeeks.length === span && <div style={{ fontSize: 11, color: 'var(--cth-ink-2)', lineHeight: '15px' }}>{t('pulse.asksBefore', { n: prev.asks, before: t(`pulse.learning.before.${s.period}`) })}</div>}
+              {pv && pair(pv.yourTime.asks, s.yourTime.asks, t('pulse.yourTime'))}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0, paddingInlineStart: 14, boxShadow: 'inset 1px 0 0 var(--cth-line)', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={label}>{t('pulse.whileAway')}<InfoTip text={t('pulse.awayTip')} /></div>
                 <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.awayShare === null ? '0%' : pct(s.awayShare)}</div>
               </div>
-              {wks ? <WeekLine compact labels={wkLabels} values={wks.away} format={(v) => pct(v)} aria={t('pulse.whileAway')} />
+              {pv ? pair(pv.awayShare, s.awayShare, t('pulse.whileAway'), 'var(--cth-ink-2)', pct)
                 : <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.awayLine')}</div>}
             </div>
           </div>
@@ -462,6 +490,7 @@ export function PulseView() {
     );
   }
 
+  const notReady = view?.compareFrom ? t('pulse.compareNotReady', { period: t(`pulse.periods.${period}`), day: fmtDay(view.compareFrom) }) : t('pulse.tooFew');
   return (
     <div ref={host} role="region" aria-label={t('floorView.pulse')} style={{ flex: 1, overflow: 'auto', padding: '22px 28px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -475,25 +504,53 @@ export function PulseView() {
         >
           {PERIODS.map((p) => <option key={p} value={p}>{t(`pulse.periods.${p}`)}</option>)}
         </select>
+        {/* Compare (owner, 2026-10-16): the app's switch, reading "Compare" (D6, D7);
+            not ready, it keeps the owner's position, greyed, and says why (D4). */}
+        <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+          <Toggle
+            on={compare}
+            onClick={() => { const v = !compare; setCompare(v); try { window.localStorage.setItem(LS_COMPARE, v ? '1' : '0'); } catch { /* per-Mac nicety */ } }}
+            onLabel={t('pulse.compare')}
+            offLabel={t('pulse.compare')}
+            label={t(`pulse.compareWith.${period}`)}
+            unavailable={!!view?.available && !view.compareReady}
+            reason={notReady}
+          />
+          <InfoTip text={view?.available && !view.compareReady ? notReady : t('pulse.compareTip')} />
+        </span>
         <span style={{ flex: 1 }} />
         {view?.collectingSince && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.collectingSince', { day: fmtDay(view.collectingSince) })}</span>}
       </div>
       <div aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>{notice}</div>
       {body}
       {detail && view && <MemberDetail id={detail} data={view} name={nameOf(detail)} onClose={() => setDetail(null)} money={money} />}
+      {checkedOpen && view && (() => {
+        const k = view.keptSafe ?? keptSafe([]);
+        const counts = checkedOpen === 'in'
+          ? { total: k.toInternet.pass + k.toInternet.clean + k.toInternet.stop, changed: k.toInternet.clean, stopped: k.toInternet.stop, flagged: 0 }
+          : { total: k.webAnswers.pass + k.webAnswers.clean, changed: k.webAnswers.clean, stopped: 0, flagged: k.webAnswers.flagged };
+        return <CheckedDetail way={checkedOpen} from={view.snapshot.from} to={view.snapshot.to} period={t(`pulse.periods.${period}`)} research={nameOf('research')} counts={counts}
+          heldCount={checkedOpen === 'in' ? k.heldIn : k.heldOut} onClose={() => setCheckedOpen(null)} onOpenHeld={() => { setCheckedOpen(null); setHeldOpen(true); }} />;
+      })()}
+      {heldOpen && view && <HeldDetail from={view.snapshot.from} to={view.snapshot.to} count={(view.keptSafe ?? keptSafe([])).held} onClose={() => setHeldOpen(false)} />}
+      {learnedOpen && view && <LearnedDetail from={view.snapshot.from} to={view.snapshot.to} nameOf={nameOf} onClose={() => setLearnedOpen(false)} />}
     </div>
   );
 }
 
-/** A Kept safe tile: an icon, a number, what it counts, and its parts (proposal 3). */
-function StatTile({ icon, value, of, text, parts, amber, tip, trend }: { icon: IconName; value: number; of?: number; text: string; parts?: Array<{ n: number; name: string; color: string }>; amber?: boolean; tip?: string; trend?: ReactNode }) {
+/** A Kept safe tile: an icon, a number, what it counts, and its parts
+ *  (proposal 3). The parts show only once one is above zero: a legend of
+ *  zeros says nothing the number does not (owner, 2026-10-18). */
+function StatTile({ icon, value, of, text, parts, amber, tip, trend, open }: { icon: IconName; value: number; of?: number; text: string; parts?: Array<{ n: number; name: string; color: string }>; amber?: boolean; tip?: string; trend?: ReactNode; open?: { label: string; onClick: () => void } }) {
   const { t, i18n } = useTranslation();
-  const shown = (parts ?? []).filter((p) => p.n > 0 || (parts ?? []).length <= 3);
+  const all = parts ?? [];
+  const shown = all.some((p) => p.n > 0) ? all.filter((p) => p.n > 0 || all.length <= 3) : [];
   return (
     <div style={{ ...(amber ? { background: 'var(--cth-amber-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-amber) 40%, transparent)' } : card), padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div aria-hidden style={{ width: 30, height: 30, borderRadius: 'var(--cth-r-md)', background: amber ? 'var(--cth-card)' : 'var(--cth-card-2)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', display: 'grid', placeItems: 'center', color: amber ? 'var(--cth-amber-text)' : 'var(--cth-ink-2)' }}><Icon name={icon} size={1.125} /></div>
       <div style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 28, fontWeight: 600, lineHeight: '30px' }}>{value.toLocaleString(i18n.language)}{of !== undefined && <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 400, color: 'var(--cth-ink-3)', marginInlineStart: 6 }}>{t('pulse.safe.of', { n: of })}</span>}</div>
       <div style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px' }}>{text}{tip && <> <InfoTip text={tip} /></>}</div>
+      {open && <button type="button" onClick={open.onClick} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: amber ? 'var(--cth-amber-text)' : 'var(--cth-indigo-text)' }}>{open.label}</button>}
       {trend ? trend : <>
         {shown.length > 0 && shown.some((p) => p.n > 0) && <Stack parts={shown} aria={shown.map((p) => `${p.name} ${p.n}`).join(', ')} />}
         {shown.length > 0 && <Legend items={shown.map((p) => [p.name, p.color, p.n])} />}
@@ -535,50 +592,323 @@ function TileTitle({ icon, title, sub, tip }: { icon: IconName; title: string; s
   );
 }
 
-/** Four weeks as small bars, stacked when there is more than one series, the
- *  total above each and the week below (owner, 2026-10-15). */
-function WeekBars({ labels, series, aria, format = (v) => String(v) }: { labels: string[]; series: Array<{ values: number[]; color: string }>; aria: string; format?: (v: number) => string }) {
-  const totals = labels.map((_, i) => series.reduce((s, x) => s + (x.values[i] ?? 0), 0));
-  const max = Math.max(1, ...totals);
+/** Small bars, stacked when there is more than one series, the total above
+ *  each and its name below (owner, 2026-10-15). With `before`, the first bar is
+ *  the span before Compare sets against this one (owner, 2026-10-16): muted,
+ *  with a 1 px ink-3 outline so its edge reaches 3 to 1 (design D8). A missing
+ *  value draws no bar and reads "…" (eng O2). `spoken` names each bar for
+ *  screen readers, with its exact days. */
+function WeekBars({ labels, series, aria, format = (v) => String(v), before = false, spoken }: { labels: string[]; series: Array<{ values: Array<number | null>; color: string }>; aria: string; format?: (v: number) => string; before?: boolean; spoken?: string[] }) {
+  const totals = labels.map((_, i) => (series.some((x) => x.values[i] !== null && x.values[i] !== undefined) ? series.reduce((sum, x) => sum + (x.values[i] ?? 0), 0) : null));
+  const max = Math.max(1, ...totals.filter((v): v is number => v !== null));
+  const said = spoken ?? labels;
   return (
-    <div role="img" aria-label={`${aria}: ${labels.map((l, i) => `${l} ${format(totals[i])}`).join(', ')}`} style={{ display: 'grid', gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))`, gap: 6, alignItems: 'end' }}>
-      {labels.map((l, i) => (
-        <div key={l} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: 'var(--cth-ink-2)' }}>{format(totals[i])}</span>
-          <div style={{ width: '70%', maxWidth: 28, height: Math.max(2, (totals[i] / max) * 34), display: 'flex', flexDirection: 'column-reverse', borderRadius: 3, overflow: 'hidden', background: 'var(--cth-neutral-soft)' }}>
-            {series.map((x, k) => <i key={k} style={{ display: 'block', flex: x.values[i] ?? 0, background: x.color }} />)}
+    <div role="img" aria-label={`${aria}: ${said.map((l, i) => `${l} ${totals[i] === null ? '…' : format(totals[i]!)}`).join(', ')}`} style={{ display: 'grid', gridTemplateColumns: `repeat(${labels.length}, minmax(0, 1fr))`, gap: 6, alignItems: 'end' }}>
+      {labels.map((l, i) => {
+        const earlier = before && i === 0;
+        const total = totals[i];
+        return (
+          <div key={`${l}-${i}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+            <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: earlier ? 'var(--cth-ink-3)' : 'var(--cth-ink-2)' }}>{total === null ? '…' : format(total)}</span>
+            {total !== null && (
+              <div style={{ width: '70%', maxWidth: 28, height: Math.max(2, (total / max) * 34), display: 'flex', flexDirection: 'column-reverse', borderRadius: 3, overflow: 'hidden', background: 'var(--cth-neutral-soft)', ...(earlier ? { outline: '1px solid var(--cth-ink-3)', outlineOffset: -1 } : {}) }}>
+                {series.map((x, k) => <i key={k} style={{ display: 'block', flex: x.values[i] ?? 0, background: earlier && x.color === 'var(--cth-ink-2)' ? 'var(--cth-ink-4)' : x.color, opacity: earlier && x.color !== 'var(--cth-ink-2)' ? 0.45 : 1 }} />)}
+              </div>
+            )}
+            <span style={{ fontSize: 10, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>{l}</span>
           </div>
-          <span style={{ fontSize: 10, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>{l}</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-/** Four weeks of a rate as a small line; a week with no rate is a gap. */
-/** compact: a narrow tile, where text in the scaled chart would fall under the
- *  10 px floor (DESIGN.md 4.2), so the line shows alone and its spoken label
- *  carries the weeks and values (ship review, 2026-10-16). */
-function WeekLine({ labels, values, aria, format, compact = false }: { labels: string[]; values: Array<number | null>; aria: string; format: (v: number) => string; compact?: boolean }) {
-  const W = 200, H = 52;
-  const vals = values.filter((v): v is number => v !== null);
-  const hi = Math.max(0.0001, ...vals) * 1.2;
-  const x = (i: number): number => 14 + (i * (W - 28)) / Math.max(1, labels.length - 1);
-  const y = (v: number): number => H - 14 - (v / hi) * (H - 28);
-  const pts = values.map((v, i) => (v === null ? null : `${x(i).toFixed(0)},${y(v).toFixed(0)}`)).filter(Boolean).join(' ');
+/** The frame Pulse's lists share (eng Section 2, design DD5, DD15): the held
+ *  list's dialog, reading, and a read that failed with Try again. */
+function useListRows<T>(load: () => Promise<T>, deps: unknown[]): { data: T | null; failed: boolean; retry: () => void } {
+  const [data, setData] = useState<T | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setData(null); setFailed(false);
+    load().then((r) => { if (live) setData(r); }, () => { if (live) setFailed(true); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, tick]);
+  return { data, failed, retry: () => setTick((n) => n + 1) };
+}
+
+function ListFrame({ icon, title, count, failed, reading, onRetry, onClose, children }: { icon: IconName; title: string; count?: ReactNode; failed: boolean; reading: boolean; onRetry: () => void; onClose: () => void; children?: ReactNode }) {
+  const { t } = useTranslation();
+  const ref = useRef<HTMLDivElement | null>(null);
+  useDialog(ref, onClose);
+  const backdrop = useBackdropClose(onClose);
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${aria}: ${labels.map((l, i) => `${l} ${values[i] === null ? '…' : format(values[i]!)}`).join(', ')}`} style={{ maxWidth: 260 }}>
-      {vals.length > 1 && <polyline points={pts} fill="none" stroke="var(--cth-ink-2)" strokeWidth={1.75} />}
-      {values.map((v, i) => (
-        <g key={i}>
-          {v !== null && <>
-            <circle cx={x(i)} cy={y(v)} r={3} fill="var(--cth-card)" stroke="var(--cth-ink)" strokeWidth={1.75} />
-            {!compact && <text x={x(i)} y={y(v) - 7} textAnchor="middle" fontFamily="var(--cth-font-mono)" fontSize={9.5} fill="var(--cth-ink-2)">{format(v)}</text>}
-          </>}
-          {!compact && <text x={x(i)} y={H - 1} textAnchor="middle" fontSize={8.5} fill="var(--cth-ink-3)">{labels[i]}</text>}
-        </g>
-      ))}
-    </svg>
+    <div {...backdrop} style={{ position: 'fixed', inset: 0, background: 'var(--cth-backdrop)', zIndex: 300, display: 'grid', placeItems: 'start center', paddingTop: 80 }}>
+      <div ref={ref} role="dialog" aria-modal aria-label={title} style={{ width: 600, maxWidth: 'calc(100% - 32px)', maxHeight: 'calc(100vh - 140px)', overflow: 'auto', ...card, borderRadius: 'var(--cth-r-2xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-lg)', padding: '18px 20px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <Icon name={icon} />
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{title}</div>
+          <button type="button" aria-label={t('common.close')} onClick={onClose} style={{ marginInlineStart: 'auto', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--cth-ink-3)' }}><Icon name="x" /></button>
+        </div>
+        {failed ? (
+          <div role="alert" style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
+            {t('pulse.list.failed')}{' '}
+            <button type="button" onClick={onRetry} style={{ border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--cth-indigo-text)' }}>{t('pulse.list.retry')}</button>
+          </div>
+        ) : reading ? <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.reading')}</div> : <>{count}{children}</>}
+      </div>
+    </div>
+  );
+}
+
+const rowBox: CSSProperties = { background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 };
+const whenOf = (lang: string) => (at: number): string => new Date(at).toLocaleString(lang, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+const spanMs = (from: string, to: string): [number, number] => [new Date(`${from}T00:00:00`).getTime(), new Date(`${to}T23:59:59.999`).getTime()];
+
+/** What the held tile counted, one row per held message: when, which way,
+ *  who to whom, its subject and opening, why the check could not run, and who
+ *  was told (owner, 2026-10-16). Read from the owner's private record. */
+function HeldDetail({ from, to, count, onClose }: { from: string; to: string; count: number; onClose: () => void }) {
+  const { t, i18n } = useTranslation();
+  const [fromMs, toMs] = spanMs(from, to);
+  const { data: rows, failed, retry } = useListRows<HeldRow[]>(() => window.cth.pulseHeld(fromMs, toMs).then((r) => (Array.isArray(r) ? r : [])), [from, to]);
+  const when = whenOf(i18n.language);
+  // Each row in the owner's words (owner, 2026-10-16: the first list "made no
+  // sense"): what was held, why in one sentence, and what happens next. The
+  // check's own report sits behind an (i).
+  const say = (r: HeldRow): { head: string; what: string; why: string; next: string } => {
+    const research = r.way === 'in' ? r.toName ?? r.to : r.fromName ?? r.from;
+    const from = r.fromName ?? r.from;
+    const to = r.toName ?? r.to;
+    const notes = r.to === HELD_TO_MEMORY;
+    const officeOpen = r.way === 'in' && r.from === 'human' && r.subject === OFFICE_OPEN_SUBJECT;
+    const kind = notes ? 'notes' : officeOpen ? 'officeOpen' : r.way === 'out' ? (r.told === 'recipient' ? 'answerToMichael' : 'answer')
+      : r.from === 'human' ? 'you' : r.from === 'system' ? 'app' : r.told === 'sender' ? 'michael' : 'member';
+    const head = t(`pulse.held.head.${kind}`, { research, from, to });
+    // Notes show the notes themselves (an older row kept the index page, which
+    // reads as no notes); the app's own reminder has nothing to read.
+    const what = notes ? notesPreview(r.opening) || t('pulse.held.notesEmpty', { research })
+      : officeOpen ? '' : [r.subject ? `“${r.subject}”` : '', r.opening].filter(Boolean).join(' ');
+    return { head, what, why: t(`pulse.held.why.${heldCause(r)}`), next: t(`pulse.held.next.${kind}`, { research, from, to }) };
+  };
+  const earlier = rows ? Math.max(0, count - rows.length) : 0;
+  return (
+    <ListFrame icon="pause" title={t('pulse.held.title')} failed={failed} reading={!rows} onRetry={retry} onClose={onClose}>
+      <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {(rows ?? []).map((r, i) => {
+          const x = say(r);
+          return (
+            <div key={`${r.at}-${i}`} role="listitem" style={{ ...rowBox, gap: 4 }}>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>{x.head}</span>
+                <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+              </div>
+              {x.what && <div dir="auto" style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{x.what}</div>}
+              <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>
+                {x.why}{r.error && <> <InfoTip text={t('pulse.held.why.detail', { error: r.error })} /></>}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{x.next}</div>
+            </div>
+          );
+        })}
+        {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.earlier', { count: earlier })}</div>}
+      </div>
+    </ListFrame>
+  );
+}
+
+/** The new notes Learning counted (owner, 2026-10-18), grouped as its legend,
+ *  newest first: the note, then who and which day. A note deleted since says so.
+ *  Read on open, by the same rule as the number. */
+function LearnedDetail({ from, to, nameOf, onClose }: { from: string; to: string; nameOf: (id: string) => string; onClose: () => void }) {
+  const { t, i18n } = useTranslation();
+  const { data: rows, failed, retry } = useListRows<LearnedNote[]>(() => window.cth.pulseLearned(from, to).then((r) => (Array.isArray(r) ? r : [])), [from, to]);
+  const groups: Array<[LearnedNote['from'], string, string]> = [['you', t('pulse.learning.fromYou'), 'var(--cth-green)'], ['job', t('pulse.learning.onJob'), 'var(--cth-ink-4)'], ['michael', t('pulse.learning.fromMichael'), 'var(--cth-indigo)']];
+  const day = (d: string): string => new Date(`${d}T12:00:00`).toLocaleDateString(i18n.language, { weekday: 'short', day: 'numeric', month: 'short' });
+  return (
+    <ListFrame icon="book" title={t('pulse.learning.learned')} failed={failed} reading={!rows} onRetry={retry} onClose={onClose}>
+      {rows && rows.length === 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.learning.none')}</div>}
+      {groups.map(([key, label, color]) => {
+        const mine = (rows ?? []).filter((r) => r.from === key);
+        if (!mine.length) return null;
+        return (
+          <section key={key} aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+              <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />{label}<span style={{ ...mono, fontWeight: 400, color: 'var(--cth-ink-3)' }}>{mine.length}</span>
+            </div>
+            <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {mine.map((r) => (
+                <div key={`${r.agentId}-${r.id}-${r.at ?? r.day}`} role="listitem" style={{ ...rowBox, gap: 3 }}>
+                  {r.text !== null
+                    ? <div dir="auto" style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink)', overflowWrap: 'anywhere' }}>{r.text}</div>
+                    : <div style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' }}>{t('pulse.learning.removed')}</div>}
+                  <div style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-3)' }}>{t('pulse.learning.who', { name: nameOf(r.agentId), day: day(r.day) })}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })}
+    </ListFrame>
+  );
+}
+
+/** The marks for one changed text (design DD1, DD6, DD7, DD13): struck words
+ *  grey with a line through, the other side's words on soft green, hidden
+ *  characters as a counted marker; screen readers hear which is which. */
+function Marked({ parts, context }: { parts: ChangePart[]; context?: boolean }) {
+  const { t } = useTranslation();
+  const list: Array<ChangePart | null> = context ? changesInContext(parts) : parts;
+  const show = (text: string) => withHidden(text).map((x, k) => (typeof x === 'string' ? x
+    : <span key={k} style={{ fontSize: 11, color: 'var(--cth-ink-3)', background: 'var(--cth-neutral-soft)', borderRadius: 3, padding: '0 3px' }}>{t('pulse.checked.hidden', { count: x.hidden })}</span>));
+  return (
+    <>
+      {list.map((p, k) => p === null ? <span key={k} aria-hidden>{'…'}</span>
+        : p.op === 'same' ? <span key={k}>{show(p.text)}</span>
+        : p.op === 'del' ? <del key={k} style={{ background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-3)', textDecorationThickness: 1, borderRadius: 3, padding: '0 2px' }}><span style={srOnly}>{t('pulse.checked.srOut')} </span>{show(p.text)}</del>
+        : <ins key={k} style={{ background: 'var(--cth-green-soft)', color: 'var(--cth-green-text)', textDecoration: 'none', borderRadius: 3, padding: '0 2px' }}><span style={srOnly}>{t('pulse.checked.srIn')} </span>{show(p.text)}</ins>)}
+    </>
+  );
+}
+const srOnly: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
+const textStyle: CSSProperties = { fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '18px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
+const capStyle: CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)' };
+const chip = (amber: boolean): CSSProperties => ({ fontSize: 11, fontWeight: 600, borderRadius: 'var(--cth-r-pill)', padding: '2px 8px', background: amber ? 'var(--cth-amber-soft)' : 'var(--cth-green-soft)', color: amber ? 'var(--cth-amber-text)' : 'var(--cth-green-text)' });
+const linkBtn: CSSProperties = { alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--cth-ink-2)' };
+const joinText = (x: CheckedRow['wrote']): string => [x.subject ? `“${x.subject}”` : '', x.body].filter(Boolean).join(' ');
+
+/** The questions sent to the internet (way in) or Research's answers (way
+ *  out), each as the check left it (owner, 2026-10-16; eng D1 to D5; design
+ *  DD1 to DD15): changed, stopped and flagged first, the rest folded. */
+function CheckedDetail({ way, from, to, period, research, counts, heldCount, onClose, onOpenHeld }: {
+  way: 'in' | 'out'; from: string; to: string; period: string; research: string;
+  counts: { total: number; changed: number; stopped: number; flagged: number }; heldCount: number;
+  onClose: () => void; onOpenHeld: () => void;
+}) {
+  const { t, i18n } = useTranslation();
+  const [fromMs, toMs] = spanMs(from, to);
+  const { data, failed, retry } = useListRows<CheckedList>(() => window.cth.pulseChecked(fromMs, toMs, way).then((r) => (r && Array.isArray(r.rows) ? r : { rows: [], since: null })), [from, to, way]);
+  const [foldOpen, setFoldOpen] = useState(false);
+  const [whole, setWhole] = useState<Set<number>>(new Set());
+  const when = whenOf(i18n.language);
+  const rows = data?.rows ?? [];
+  // Each changed row's word comparison, once per list read, not on every
+  // redraw (ship review 2026-10-17).
+  const diffs = useMemo(() => new Map((data?.rows ?? []).filter((r) => r.sent).map((r) => [r, wordChanges(joinText(r.wrote), joinText(r.sent!))] as const)), [data]);
+  const asWritten = (r: CheckedRow): boolean => r.outcome === 'pass' && !r.flagged;
+  const top = rows.filter((r) => !asWritten(r));
+  const rest = rows.filter(asWritten);
+  const kindName = (id: string): string => t(`research.class.${id}.name`, { defaultValue: id });
+  const head = (r: CheckedRow): string => {
+    if (way === 'in') {
+      const research = r.toName ?? r.to;
+      const who = r.from === 'human' ? t('pulse.checked.q.who.you') : r.from === 'system' ? t('pulse.checked.q.who.app')
+        : r.from === 'god' ? t('pulse.checked.q.who.michael') : t('pulse.checked.q.who.member', { from: r.fromName ?? r.from });
+      // A question shown as two texts was mostly rewritten (checked lists v2).
+      const rewritten = r.outcome === 'clean' && !!r.sent && !showAsMarks(diffs.get(r) ?? null);
+      return t(`pulse.checked.q.head.${rewritten ? 'rewritten' : r.outcome}`, { who, research });
+    }
+    const research = r.fromName ?? r.from;
+    const toName = ['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to;
+    const k = r.outcome === 'clean' ? (r.flagged ? 'cleanFlagged' : 'clean') : r.flagged ? 'flagged' : 'pass';
+    return t(`pulse.checked.a.head.${k}`, { research, to: toName });
+  };
+  const next = (r: CheckedRow): string => {
+    if (way === 'in') {
+      const from = r.fromName ?? r.from;
+      const k = r.from === 'human' || r.from === 'system' ? 'owner' : r.from === 'god' ? 'michael' : 'member';
+      return t(`pulse.checked.q.next.${r.outcome}.${k}`, { from, research: r.toName ?? r.to });
+    }
+    const toName = ['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to;
+    return [r.outcome === 'clean' ? t('pulse.checked.a.next.clean', { to: toName }) : t('pulse.checked.a.next.pass', { to: toName }), r.flagged ? t('pulse.checked.a.next.flagged') : ''].filter(Boolean).join(' ');
+  };
+  const body = (r: CheckedRow, k: number): ReactNode => {
+    if (!r.sent) return <div dir="auto" style={textStyle}>{joinText(r.wrote)}</div>;
+    const parts = diffs.get(r) ?? null;
+    if (!showAsMarks(parts)) {
+      // Mostly rewritten, or too long to compare: the two texts (DD1).
+      const sender = way === 'in' ? (r.fromName ?? (r.from === 'human' ? t('pulse.checked.q.who.you') : t('pulse.checked.q.who.app'))) : (r.fromName ?? r.from);
+      const getter = way === 'in' ? (r.toName ?? r.to) : (['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to);
+      return <>
+        <div style={capStyle}>{t('pulse.checked.wrote', { name: sender })}</div>
+        <div dir="auto" style={textStyle}>{joinText(r.wrote)}</div>
+        <div style={capStyle}>{way === 'in' ? t('pulse.checked.got', { name: getter }) : t('pulse.checked.read', { name: getter })}</div>
+        <div dir="auto" style={textStyle}>{joinText(r.sent)}</div>
+      </>;
+    }
+    // A long text shows its changes with some text around them, whole on a click (DD6).
+    const long = joinText(r.wrote).length > 600;
+    const open = !long || whole.has(k);
+    return <>
+      {long && !open && <div style={capStyle}>{t('pulse.checked.removed')}</div>}
+      <div dir="auto" style={textStyle}><Marked parts={parts} context={!open} /></div>
+      {long && <button type="button" aria-expanded={open} onClick={() => setWhole((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; })} style={linkBtn}>
+        {open ? t('pulse.checked.showLess') : t(way === 'in' ? 'pulse.checked.showWholeQuestion' : 'pulse.checked.showWholeAnswer', { n: joinText(r.wrote).length.toLocaleString(i18n.language) })}
+      </button>}
+    </>;
+  };
+  // Rows the count has but the list doesn't: before words were kept (DD4), or a write that failed.
+  const earlier = data ? Math.max(0, counts.total - rows.length) : 0;
+  const beforeKept = data !== null && (data.since === null || data.since > fromMs);
+  // Which of those had a change or a stop, so the owner knows the one the
+  // count names is among them (owner, 2026-10-16: "it says 1 was changed but
+  // i cant see which message").
+  const earlierChanged = Math.max(0, counts.changed - rows.filter((r) => r.outcome === 'clean').length);
+  const earlierOther = way === 'in' ? Math.max(0, counts.stopped - rows.filter((r) => r.outcome === 'stop').length) : Math.max(0, counts.flagged - rows.filter((r) => r.flagged).length);
+  const before = (): string => {
+    // Nothing kept yet: from now on, never a date that reads like today's are kept.
+    const first = data?.since == null ? t('pulse.checked.firstOpenNow', { count: earlier }) : t('pulse.checked.firstOpen', { date: when(data.since), count: earlier });
+    const among = earlierChanged + earlierOther > 0 ? t(way === 'in' ? 'pulse.checked.q.among' : 'pulse.checked.a.among', { changed: earlierChanged, other: earlierOther }) : '';
+    return [first, among].filter(Boolean).join(' ');
+  };
+  const count = way === 'in'
+    ? t('pulse.checked.q.count', { period, count: counts.total, changed: counts.changed, stopped: counts.stopped, asWritten: Math.max(0, counts.total - counts.changed - counts.stopped) })
+    : t('pulse.checked.a.count', { period, count: counts.total, cleaned: counts.changed, flagged: counts.flagged });
+  return (
+    <ListFrame icon={way === 'in' ? 'shield' : 'search'} title={way === 'in' ? t('pulse.checked.q.title') : t('pulse.checked.a.title', { research })} failed={failed} reading={!data} onRetry={retry} onClose={onClose}
+      count={<div style={{ fontSize: 12, color: 'var(--cth-ink-2)', marginTop: -4 }}>{count} <InfoTip text={way === 'in' ? t('pulse.checked.q.marks', { research }) : t('pulse.checked.a.marks')} /></div>}>
+      <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {top.map((r, k) => (
+          <div key={`${r.at}-${k}`} role="listitem" style={rowBox}>
+            <div style={{ display: 'flex', gap: '2px 10px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>{head(r)}</span>
+              <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+            </div>
+            {body(r, k)}
+            {r.cut && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.checked.cut')}</div>}
+            {r.found && r.outcome === 'clean' && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.checked.found')}</div>}
+            {(r.kinds?.length || r.flagged) && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', fontSize: 11, color: 'var(--cth-ink-3)' }}>
+              {r.kinds?.length ? <>{r.outcome === 'stop' ? t('pulse.checked.needed') : t('pulse.checked.takenOut')} {r.kinds.map((id) => <span key={id} style={chip(r.outcome === 'stop')}>{kindName(id)}</span>)}</> : null}
+              {r.flagged && <span style={chip(true)}>{t('pulse.safe.flagged')}</span>}
+            </div>}
+            <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{next(r)}</div>
+          </div>
+        ))}
+        {rest.length > 0 && <>
+          <button type="button" aria-expanded={foldOpen} onClick={() => setFoldOpen((o) => !o)} style={{ ...linkBtn, fontWeight: 400 }}>
+            {foldOpen ? '▾ ' : '▸ '}<b>{way === 'in' ? t('pulse.checked.q.fold', { count: rest.length }) : t('pulse.checked.a.fold', { count: rest.length })}</b>
+          </button>
+          {foldOpen && rest.map((r, k) => (
+            <div key={`p-${r.at}-${k}`} role="listitem" style={{ fontSize: 12, color: 'var(--cth-ink-2)', padding: '7px 2px', boxShadow: 'inset 0 -1px 0 var(--cth-line)', display: 'flex', gap: 10 }}>
+              <span dir="auto" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                <b>{way === 'in' ? (r.from === 'human' ? t('pulse.checked.q.who.you') : r.from === 'system' ? t('pulse.checked.q.who.app') : r.fromName ?? r.from) : (['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to)}:</b>{' '}
+                {r.wrote.subject || r.wrote.body.split('\n')[0]}
+              </span>
+              <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+            </div>
+          ))}
+        </>}
+        {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
+          {beforeKept ? before() : t('pulse.checked.earlier', { count: earlier })}
+        </div>}
+        {heldCount > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
+          {t('pulse.checked.held', { count: heldCount })}{' '}
+          <button type="button" onClick={onOpenHeld} style={{ ...linkBtn, color: 'var(--cth-indigo-text)' }}>{t('pulse.checked.seeHeld')}</button>
+        </div>}
+      </div>
+    </ListFrame>
   );
 }
 

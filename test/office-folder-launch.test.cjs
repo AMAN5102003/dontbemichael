@@ -76,6 +76,20 @@ test('the missing screen only opens a folder that really holds an office', () =>
   assert.match(screen, /window\.cth\.startOverHere\(\)/);
 });
 
+test('a recent office is named by its own folder, on Windows too', () => {
+  // A Windows path holds no '/', so a '/'-only split named the row with the
+  // whole path. Run the helper as written in the screen.
+  const screen = read('src/renderer/src/components/OfficeFolderMissing.tsx');
+  const body = screen.match(/function folderName\(path: string\): string \{\s*(return [^\n]+)\s*\}/);
+  assert.ok(body, 'the folderName helper');
+  const folderName = new Function('path', body[1]);
+  assert.equal(folderName('C:\\Users\\Ana\\Documents\\My Office'), 'My Office');
+  assert.equal(folderName('D:\\Offices\\Acme\\'), 'Acme');
+  assert.equal(folderName('\\\\server\\share\\Office'), 'Office');
+  assert.equal(folderName('/Users/ana/Documents/My Office'), 'My Office');
+  assert.equal(folderName('/Users/ana/My Office/'), 'My Office');
+});
+
 test('Settings never offers to move an office on top of another one', () => {
   const settings = read('src/renderer/src/components/SettingsModal.tsx');
   assert.match(settings, /\(changeTargetHasOffice\s*\? \[\['fresh', t\('settings\.changeHome\.openTitle'\)/);
@@ -142,8 +156,8 @@ test('a move copies only what is there', (t) => {
   assert.equal(fs.existsSync(path.join(newHome, 'private')), false);
 });
 
-test('a move carries Research\'s stamp key, threads and raw originals', (t) => {
-  // Value: protects=asks waiting for Research are not swept as forged after a move, answers find their threads, and raw originals stay private; fails_when=copyOfficeData leaves them behind; why_new=api review pass 3; seam=none
+test('a move carries Research\'s stamp key, threads and raw originals, and Pulse\'s held list', (t) => {
+  // Value: protects=asks waiting for Research are not swept as forged after a move, answers find their threads, raw originals stay private, and the held list keeps its history (2026-10-16); fails_when=copyOfficeData leaves them behind; why_new=api review pass 3, held list review O2; seam=none
   const oldHome = tmp(t);
   const newHome = path.join(tmp(t), 'moved');
   const priv = path.join(oldHome, 'private');
@@ -151,9 +165,10 @@ test('a move carries Research\'s stamp key, threads and raw originals', (t) => {
   fs.writeFileSync(path.join(priv, 'research-stamp.key'), 'ab'.repeat(32));
   fs.writeFileSync(path.join(priv, 'research-threads.json'), '[]');
   fs.writeFileSync(path.join(priv, 'research-outbox', 'sent', 'r1.json'), '{}');
+  fs.writeFileSync(path.join(priv, 'held.jsonl'), '{}\n');
   fs.mkdirSync(newHome, { recursive: true });
   copyOfficeData(oldHome, newHome);
-  for (const f of ['research-stamp.key', 'research-threads.json', path.join('research-outbox', 'sent', 'r1.json')]) {
+  for (const f of ['research-stamp.key', 'research-threads.json', path.join('research-outbox', 'sent', 'r1.json'), 'held.jsonl']) {
     assert.ok(fs.existsSync(path.join(newHome, 'private', f)), f);
   }
 });

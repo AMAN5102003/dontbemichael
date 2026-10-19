@@ -39,11 +39,10 @@ own memory, working on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.2.2: Pulse, and Ask me cards you answer with a click.**
-> Pulse shows what the office got done, what it costs (on a Claude plan, your plan's real price
-> split by each member's share of the work), what the team learned and what was kept safe, with
-> ways to save you apply with one click. Michael's choices show as rows to pick, and you can delete
-> a team member for good. In 0.2.1, Reset & start over started truly fresh.
+> **New in 0.2.3: the office clocks in, and Waiting cards come back.**
+> A card shows your team arriving as the office opens. A card waiting on a customer or supplier
+> gets a check back time, Michael follows up, and after two follow ups with no reply he asks you.
+> Pulse lists what the team learned, and you can run a scheduled job now. In 0.2.2, Pulse arrived.
 
 ## Contents
 
@@ -255,7 +254,7 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 
 **Your business, known to everyone**
 - **Company profile.** Your business name, owner, address, hours, time zone, currency and more, given to every team member. Change it in Settings.
-- **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and on a Mac, scans or photos. Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy.
+- **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and scans or photos (on a Mac or a Windows PC). Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy.
 
 **Private folders**
 - Michael works in your business folder, and each team member works in its own folder inside it.

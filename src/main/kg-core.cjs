@@ -78,11 +78,49 @@ function detectModality(filePath) {
   return 'text'; // unknown → best-effort treat as text
 }
 
-/** Lowercase alphanumeric tokens, stop-words and 1-char tokens dropped. */
+// Letters and digits of any script, with their combining marks (Hindi vowel
+// signs, Arabic vowel marks), so words in Arabic, Hindi, Cyrillic or accented
+// Latin are searchable, not only a to z.
+const WORD_RE = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu;
+// Chinese and Japanese are written without spaces between words, so a run of
+// these characters is indexed as each character and each overlapping pair.
+const CJK_RUN_RE = /([\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}]+)/u;
+const NON_ASCII_RE = /[^\x00-\x7f]/;
+
+/** Lowercase word tokens in any script, stop-words and 1-char tokens dropped;
+ *  Chinese and Japanese runs become single characters and character pairs. */
 function tokenize(s) {
-  const m = String(s || '').toLowerCase().match(/[a-z0-9]+/g);
-  if (!m) return [];
-  return m.filter((t) => t.length > 1 && !STOPWORDS.has(t));
+  const text = String(s || '').toLowerCase();
+  // Every chunk is tokenized on every search, so ASCII text and ASCII words
+  // skip the Unicode work.
+  if (!NON_ASCII_RE.test(text)) {
+    const m = text.match(/[a-z0-9]+/g);
+    return m ? m.filter((t) => t.length > 1 && !STOPWORDS.has(t)) : [];
+  }
+  // Split on ASCII separators first (cheap); only a piece holding other
+  // characters goes through the Unicode word match.
+  const pieces = text.match(/[a-z0-9\u0080-\uffff]+/g);
+  if (!pieces) return [];
+  const out = [];
+  for (const piece of pieces) {
+    if (!NON_ASCII_RE.test(piece)) {
+      if (piece.length > 1 && !STOPWORDS.has(piece)) out.push(piece);
+      continue;
+    }
+    for (const word of piece.match(WORD_RE) || []) {
+      for (const part of word.normalize('NFC').split(CJK_RUN_RE)) {
+        const chars = Array.from(part);
+        if (!chars.length) continue;
+        if (CJK_RUN_RE.test(part)) {
+          out.push(...chars);
+          for (let i = 0; i + 1 < chars.length; i++) out.push(chars[i] + chars[i + 1]);
+        } else if (chars.length > 1 && !STOPWORDS.has(part)) {
+          out.push(part);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** First markdown heading or first non-empty line, trimmed and length-capped. */

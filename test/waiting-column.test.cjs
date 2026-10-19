@@ -62,7 +62,7 @@ test('the hourly standup sends a card held on someone to Waiting, and an office 
   assert.doesNotMatch(OPS_STANDUP_FOCUS, /move it to doing with who it waits on/);
   assert.match(OPS_STANDUP_FOCUS, /move it to waiting naming who in waitingOn, or to done\./);
   assert.match(OPS_STANDUP_FOCUS, /A doing card held on someone outside the office or a teammate goes to waiting, naming who in waitingOn;/);
-  assert.match(OPS_STANDUP_FOCUS, /a waiting card returns to doing when they answer; else chase them\./, 'Waiting cards are reviewed, and chasing never moves one back to doing');
+  assert.match(OPS_STANDUP_FOCUS, /a waiting card returns to doing when they answer; else work the gone quiet list\./, 'Waiting cards are reviewed on their check back time (waiting-follow-ups.test.cjs), and a follow up never moves one back to doing');
   const { FOCUS_MAX } = loadTs('src/shared/missions.ts');
   assert.ok(OPS_STANDUP_FOCUS.length <= FOCUS_MAX, `the focus fits the ${FOCUS_MAX} character limit the schedule editor keeps`);
   assert.ok(OPS_STANDUP_BUILT_IN_FOCUSES.some((f) => /Move every doing card that waits on someone/.test(f)), 'an office on the 2026-10-09 dev text gets the current one');
@@ -80,9 +80,10 @@ test('the hourly standup sends a card held on someone to Waiting, and an office 
   assert.ok(!OPS_STANDUP_BUILT_IN_FOCUSES.includes(OPS_STANDUP_FOCUS), 'the current focus is never migrated away');
 });
 
-test('a waiting card is nobody\'s work right now: not Doing on the floor, not busy on the roster', () => {
+test('a waiting card is nobody\'s work right now: not Doing on the floor, not busy on the roster, but counted in its own column on Michael\'s wall', () => {
   const stage = read('src/renderer/src/scene/studio/StudioStage.tsx');
-  assert.match(stage, /if \(t\.status !== 'waiting'\) board\[t\.status\]\+\+;/);
+  assert.match(stage, /const board: Board = \{ todo: 0, doing: 0, waiting: 0, blocked: 0, done: 0 \};/);
+  assert.match(stage, /\n\s+board\[t\.status\]\+\+;/, 'Waiting counted too (owner, 2026-10-18)');
   assert.match(stage, /if \(t\.status === 'doing' && t\.assignee\) doingBy/);
   assert.match(read('src/main/hive.ts'), /t\?\.assignee === id && t\.status === 'doing'\)\?\.title/);
 });
@@ -131,5 +132,5 @@ test('the renderer can patch a card only with Ask me answers; a move goes throug
     }
   }
   collectCallers(path.resolve(__dirname, '..', 'src', 'renderer'));
-  for (const c of callers) assert.match(c, /hivePatchTask\([^,]+, \{ humanQA: [^}]+\}\)/, c);
+  for (const c of callers) assert.match(c, /hivePatchTask\([^,]+, \{ humanQA: [^}]+\}, index\)/, c);
 });

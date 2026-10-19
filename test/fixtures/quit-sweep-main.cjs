@@ -30,6 +30,7 @@ const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { descendantsFromSnapshot } = require('./process-tree.cjs');
 
 const pidFile = process.argv.find((a) => a.startsWith('--pid-file='))?.slice('--pid-file='.length);
 
@@ -41,27 +42,17 @@ function bail(code, message) {
   app.exit(code);
 }
 
-/** All live descendants of `root`, walked from one Win32_Process snapshot. */
+/** All live descendants of `root`, walked from one Win32_Process snapshot.
+ *  Each row carries its creation time, so a process that only names a reused
+ *  id as its parent is not taken for a child (see process-tree.cjs). */
 function descendantsOf(root) {
   const raw = execFileSync('powershell.exe', [
     '-NoProfile', '-Command',
-    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress'
+    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,' +
+      '@{n=\'Created\';e={if ($_.CreationDate) { ([DateTimeOffset]$_.CreationDate).ToUnixTimeMilliseconds() } else { 0 }}} ' +
+      '| ConvertTo-Json -Compress'
   ], { encoding: 'utf8', timeout: 30_000, windowsHide: true });
-  const byParent = new Map();
-  for (const row of JSON.parse(raw)) {
-    const list = byParent.get(row.ParentProcessId) ?? [];
-    list.push(row.ProcessId);
-    byParent.set(row.ParentProcessId, list);
-  }
-  const out = [];
-  const stack = [root];
-  while (stack.length) {
-    for (const child of byParent.get(stack.pop()) ?? []) {
-      out.push(child);
-      stack.push(child);
-    }
-  }
-  return out;
+  return descendantsFromSnapshot(JSON.parse(raw), root);
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

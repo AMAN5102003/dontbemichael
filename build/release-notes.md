@@ -1,4 +1,5 @@
-- **Pulse** shows work done and what it costs.
-- **Ask me** choices answer with a click.
-- **Delete** a team member for good.
-- **Stuck members** restart and carry on.
+- **Clocking in** shows your team arriving.
+- **Waiting cards** come back on their date.
+- **Pulse** lists what the team learned.
+- **Run a job now** from its schedule.
+- **Members' notes** stay their own.

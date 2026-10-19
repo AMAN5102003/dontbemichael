@@ -43,7 +43,8 @@ function floor(opts = {}) {
     () => live,
     () => ({ send: (channel, ev) => { if (channel === 'app:closingTime') events.push(ev); } }),
     () => { concluded++; },
-    control
+    control,
+    opts.silent ? (id) => opts.silent.has(id) : undefined
   );
   const route = (from, subject, targets = ['god']) => ct.onRouted({ from, subject, to: targets[0] }, targets);
   // Closing time arms a 6-minute timer; cancel it so the test process ends.
@@ -140,7 +141,7 @@ test('COMPLETE closes the app after the grace, not before', (t) => {
 test('every update names who confirmed, who is still working, and Michael', (t) => {
   const f = floor({ t, workers: ['pam', 'dwight', 'jim'] });
   f.ct.start();
-  assert.deepEqual(last(f.events), { phase: 'started', acked: 0, total: 3, confirmed: [], waiting: ['pam', 'dwight', 'jim'], excused: [], godId: 'god', godLive: true, relaunch: false });
+  assert.deepEqual(last(f.events), { phase: 'started', acked: 0, total: 3, confirmed: [], waiting: ['pam', 'dwight', 'jim'], excused: [], notReporting: [], godId: 'god', godLive: true, relaunch: false });
   f.route('dwight', 'CLOSING-TIME-ACK');
   assert.deepEqual(last(f.events).confirmed, ['dwight']);
   assert.deepEqual(last(f.events).waiting, ['pam', 'jim']);
@@ -566,4 +567,153 @@ test('a reopen asked for mid-close counts, but a refused re-press never turns it
   g.setLive(['god', 'pam']);
   g.ct.refresh();
   assert.equal(last(g.events).relaunch, false, 'the refused press changed nothing');
+});
+
+test('a member reporting again whose brief fails is briefed on a later update; one revived while not reporting is briefed once', (t) => {
+  // Value: protects=the brief reaches a member back mid close exactly once (owner, 2026-10-18 ship review D4); fails_when=a failed send drops it, a failed note to Michael repeats the brief, or revive and the reporting again step both brief it; why_new=ship review cycle 2; seam=failSend and the notReporting callback
+  const silent = new Set(['dwight']);
+  const f = floor({ t, silent });
+  f.ct.start();
+  const briefs = () => f.sent.filter((m) => m.to === 'dwight' && m.subject === 'Closing time').length;
+  const waitNotes = () => f.sent.filter((m) => m.to === 'god' && /after all/.test(m.body)).length;
+  f.ct.refresh(); // Michael is told it isn't reporting
+  const before = briefs();
+  f.failSend((m) => m.to === 'dwight');
+  silent.delete('dwight');
+  f.ct.refresh();
+  assert.deepEqual([briefs() - before, waitNotes()], [0, 0], 'nothing went out');
+  f.failSend((m) => m.to === 'god' && /after all/.test(m.body));
+  f.ct.refresh();
+  assert.equal(briefs() - before, 1, 'briefed on the next update');
+  f.failSend(null);
+  f.ct.refresh();
+  assert.equal(briefs() - before, 1, 'a failed note to Michael never repeats the brief');
+
+  const gSilent = new Set(['dwight']);
+  const g = floor({ t, silent: gSilent });
+  g.ct.start();
+  const gBriefs = () => g.sent.filter((m) => m.to === 'dwight' && m.subject === 'Closing time').length;
+  const start = gBriefs();
+  g.ct.refresh();
+  g.ct.revive('dwight');
+  assert.equal(gBriefs() - start, 1, 'revived while still not reporting: one brief');
+  // Then it reports again: revive's brief was held for Michael, so one more.
+  gSilent.delete('dwight');
+  g.ct.refresh();
+  assert.equal(gBriefs() - start, 2);
+  // Comes back reporting and is revived the same moment: one brief, not two.
+  gSilent.add('dwight'); g.ct.refresh();
+  gSilent.delete('dwight');
+  g.ct.revive('dwight');
+  assert.equal(gBriefs() - start, 3, 'one brief for one comeback');
+  g.ct.refresh();
+  assert.equal(gBriefs() - start, 3);
+});
+
+test('a team member that is not reporting is shown apart, not waited on, and Michael hears once', (t) => {
+  // Value: protects=closing time finishes when a member's engine isn't reporting (its mail is held, so it can never hear closing time); fails_when=it stays in waiting, COMPLETE is refused over it, Michael is not told or is told twice, or a member that reports again is not waited on; why_new=owner report 2026-10-17 (closing time stuck at 0 of 10); seam=the notReporting callback (main passes mailFor hold)
+  const silent = new Set(['dwight']);
+  const f = floor({ t, silent });
+  f.ct.start();
+  let ev = last(f.events);
+  assert.deepEqual(ev.waiting, ['pam']);
+  assert.deepEqual(ev.notReporting, ['dwight']);
+  const told = () => f.sent.filter((m) => m.to === 'god' && /isn't reporting to the app/.test(m.subject));
+  assert.equal(told().length, 1, 'with the brief, not on the first row update');
+  f.ct.refresh();
+  f.ct.refresh();
+  assert.equal(told().length, 1, 'Michael hears once');
+  assert.match(told()[0].body, /Do not wait for it; send CLOSING-TIME-COMPLETE once everyone else has acknowledged\./);
+  assert.doesNotMatch(told()[0].body, /[–—]| - /, 'no dashes in what Michael reads');
+  // Reporting again before closing ends: waited on again, so its ACK still counts.
+  const steered = f.steers.filter((s) => s.id === 'dwight').length;
+  const unsteered = f.removed.filter((s) => s.id === 'dwight').length;
+  silent.delete('dwight');
+  f.ct.refresh();
+  assert.deepEqual(last(f.events).waiting, ['pam', 'dwight']);
+  // It never got the brief (held for Michael): sent again, and Michael waits for it after all.
+  assert.equal(f.sent.filter((m) => m.to === 'dwight' && m.subject === 'Closing time').length, 1, 'the brief again');
+  const back = () => f.sent.filter((m) => m.to === 'god' && m.subject === 'Closing time: wait for Dwight after all');
+  assert.equal(back().length, 1);
+  assert.match(back()[0].body, /wait for their CLOSING-TIME-ACK after all/);
+  assert.doesNotMatch(back()[0].body, /[–—]| - /);
+  assert.equal(f.steers.filter((s) => s.id === 'dwight').length, steered + 1, 'steered again');
+  assert.equal(f.removed.filter((s) => s.id === 'dwight').length, unsteered + 1);
+  f.ct.refresh();
+  assert.equal(back().length, 1, 'once');
+  silent.add('dwight');
+  f.ct.refresh();
+  assert.equal(told().length, 2, 'silent again: Michael hears again');
+  f.ct.refresh();
+  f.route('pam', 'CLOSING-TIME-ACK');
+  f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);
+  assert.equal(last(f.events).phase, 'complete', 'COMPLETE is accepted with only a not reporting member left');
+  assert.equal(f.sent.filter((m) => /still waiting on the team/.test(m.subject)).length, 0);
+});
+
+test('the closing bar lists members that are not reporting, and its count opens the list', () => {
+  // Value: protects=the owner sees who isn't reporting during closing time instead of "still working"; fails_when=the rows or the count pill drop them, or a language misses the words; why_new=owner report 2026-10-17; seam=source pins (no DOM harness)
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  assert.match(bar, /\{c && !done && \(waiting > 0 \|\| silent > 0\) && \(/);
+  assert.match(bar, /: t\('closingBar\.notReporting', \{ count: silent \}\)/);
+  assert.match(bar, /\{notReporting\.map\(\(id\) => \([\s\S]{0,200}t\('closingTime\.notReporting'\)/);
+  const main = read('src/main/index.ts');
+  assert.match(main, /\(agentId\) => mailFor\(silentWatch\?\.episode\(agentId\)\) === 'hold'\n\);/);
+  assert.match(main, /try \{ closingTimeRef\?\.refresh\(\); \}/);
+  for (const loc of ['en', 'zh-CN', 'ar']) {
+    const l = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
+    for (const v of [l.closingTime.notReporting, l.closingBar.notReporting]) {
+      assert.equal(typeof v, 'string', loc);
+      assert.doesNotMatch(v, /[–—]| - /, loc);
+    }
+  }
+});
+
+test('a team member whose terminal comes back mid-close is waited on again, and Michael is told (TODOS: an agent respawned mid-close)', (t) => {
+  const f = floor({ t });
+  f.ct.start();
+  f.route('pam', 'CLOSING-TIME-ACK');
+  // Dwight's terminal ends: Michael is told not to wait.
+  f.setLive(['god', 'pam']);
+  f.ct.refresh('dwight');
+  assert.deepEqual(last(f.events).waiting, []);
+  // It comes back: the row returns, the new session gets the closing note and
+  // the steer, and Michael is told to wait after all.
+  f.steers.length = 0;
+  f.setLive(['god', 'pam', 'dwight']);
+  f.ct.revive('dwight');
+  assert.deepEqual(last(f.events).waiting, ['dwight']);
+  assert.ok(f.sent.some((m) => m.to === 'dwight' && m.subject === 'Closing time' && /CLOSING-TIME-ACK/.test(m.body)));
+  assert.deepEqual(f.steers.map((s) => s.id), ['dwight']);
+  const back = f.sent.filter((m) => m.to === 'god' && m.subject === 'Closing time: Dwight is back');
+  assert.equal(back.length, 1);
+  assert.match(back[0].body, /wait for their CLOSING-TIME-ACK after all/);
+  // Michael's early COMPLETE is refused until Dwight confirms.
+  f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);
+  assert.notEqual(last(f.events).phase, 'complete');
+  // If it ends again, Michael hears that again too.
+  f.setLive(['god', 'pam']);
+  f.ct.refresh('dwight');
+  assert.equal(f.sent.filter((m) => /Dwight's terminal ended/.test(m.subject)).length, 2);
+  f.setLive(['god', 'pam', 'dwight']);
+  f.ct.revive('dwight');
+  f.route('dwight', 'CLOSING-TIME-ACK');
+  f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);
+  assert.equal(last(f.events).phase, 'complete');
+});
+
+test('revive leaves alone anyone closing time is not waiting on', (t) => {
+  const f = floor({ t });
+  f.ct.revive('pam');
+  assert.deepEqual([f.sent.length, f.events.length], [0, 0], 'not running');
+  f.ct.start();
+  f.route('pam', 'CLOSING-TIME-ACK');
+  f.ct.revive('pam');
+  assert.deepEqual(f.ct.excuse('dwight'), { ok: true });
+  f.ct.revive('dwight');
+  f.ct.revive('ghost');
+  assert.equal(f.sent.filter((m) => m.subject === 'Closing time').length, 0, 'confirmed, closed without, or never on the list');
 });

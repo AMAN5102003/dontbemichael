@@ -29,10 +29,19 @@ import { canDeleteTeamMember, deleteTeamMember } from '@/shell/deleteTeamMember'
 import { releaseBindingsOf } from '@/shell/releaseBindings';
 import { disposeTerminal } from './terminalPool';
 import { deleteConfirmText } from './triggers/ScheduleList';
+import { WideButton } from '@/shell/PanelChrome';
+import { PersonAvatar } from '@/scene/office/props';
+import { roleOf } from '@/scene/studio/layout';
+import { answerLeave, setLeaveGuard } from '@/store/leaveGuard';
 
 export interface EditAgentModalProps {
   agent: Agent;
   onClose: () => void;
+  /** False from the fullscreen view: no panel to lay over, so no wide mode
+   *  and no panel changes to hold. */
+  docked?: boolean;
+  /** Open with the engine unfolded (Change engine on a not reporting card). */
+  engineOpen?: boolean;
 }
 
 /**
@@ -42,9 +51,11 @@ export interface EditAgentModalProps {
  * into a second Michael, and the color drew almost nowhere (owner,
  * 2026-10-02). Save patches the durable roster via updateAgent; engine changes
  * apply on the next restart. Under the engine, a Danger zone deletes the team
- * member for good (owner, 2026-10-14).
+ * member for good (owner, 2026-10-14). Opened wide (wide panel WD1 to WD4) it
+ * lays over the wide panel in two columns, and leaving with unsaved changes,
+ * by any way out, asks first.
  */
-export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
+export function EditAgentModal({ agent, onClose, docked = true, engineOpen: openEngine = false }: EditAgentModalProps) {
   const { t } = useTranslation();
   const researchName = useResearchName();
   const updateAgent = useStore((s) => s.updateAgent);
@@ -54,6 +65,14 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [config, setConfig] = useState<HarnessConfig | null>(null);
+  // Opened over a panel in the right column it can go wide; opened from the
+  // fullscreen view there is no panel, so it keeps today's box.
+  const [inColumn] = useState(() => docked && !!panelBehind());
+  const panelWide = useStore((s) => s.panelWide);
+  const wide = inColumn && panelWide;
+  // "Discard changes?": 'close' from this dialog's own ways out, 'leave' when
+  // a change of panel waits on the answer (leaveGuard.ts).
+  const [asking, setAsking] = useState<'close' | 'leave' | null>(null);
 
   const [name, setName] = useState(agent.name);
   const isResearch = agent.id === RESEARCH_ID;
@@ -67,7 +86,7 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
     && AGENT_PROVIDER_PRESETS.filter((p) => BUILD_ENGINES.includes(p.id) && isClaudeProvider(p.id)).length <= 1;
   const [model, setModel] = useState<string | undefined>(agent.model);
   // Folded by default: the engine rarely changes after hiring.
-  const [engineOpen, setEngineOpen] = useState(false);
+  const [engineOpen, setEngineOpen] = useState(openEngine);
   // The stored role is one string ("Finance: Keeps track of..."), shown here as
   // two fields and joined back on save (agentRole.ts).
   const [role, setRole] = useState(() => splitAgentRole(agent.description).role);
@@ -194,6 +213,9 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
     if (trimmedDescription !== agent.description) {
       void window.cth.hivePatchAgentRole(agent.id, trimmedDescription).catch(() => undefined);
     }
+    // A new engine for a member that isn't reporting starts it on that engine
+    // now (issue #326, Change engine); main ignores members with no episode.
+    if (command !== agent.command) void window.cth.silentRestart?.([agent.id]);
     onClose();
   };
 
@@ -216,206 +238,312 @@ export function EditAgentModal({ agent, onClose }: EditAgentModalProps) {
     onClose();
   };
 
+  const saved = splitAgentRole(agent.description);
+  const dirty = name !== agent.name || role !== saved.role || roleDescription !== saved.roleDescription
+    || goal.trim() !== plainOfGoal.trim() || provider !== inferAgentProvider(agent.command, agent.provider) || model !== agent.model;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  // A change of panel that would take this one away waits while there are
+  // unsaved changes (the Needs you pill or strip, another person, a menu item).
+  useEffect(() => {
+    if (!inColumn) return;
+    return setLeaveGuard({
+      holds: (next) => dirtyRef.current && (next.rightColumn !== 'person' || next.selectedId !== agent.id),
+      ask: () => setAsking('leave')
+    });
+  }, [inColumn, agent.id]);
+  const requestClose = (): void => { if (dirtyRef.current) setAsking('close'); else onClose(); };
+  const keepEditing = (): void => { if (asking === 'leave') answerLeave(false); setAsking(null); };
+  const discard = (): void => { const leaving = asking === 'leave'; setAsking(null); onClose(); if (leaving) answerLeave(true); };
+
   const who = name.trim() || agent.name;
   // What the folded Engine line shows: the provider, and the model when it has one.
   const providerLabel = AGENT_PROVIDER_PRESETS.find((p) => p.id === provider)?.label ?? provider;
   const modelLabel = preset.supportsModel && model ? (modelsForProvider(provider).find((m) => m.id === model)?.label ?? model) : '';
-  return (
-    // One column (D3): name, job, work style, then the engine folded away, so
-    // what they handle and the work style get the room (owner, 2026-10-02).
-    // Field labels only; explanations sit behind info icons.
-    <Dialog
-      title={t('editAgent.title')}
-      onClose={onClose}
-      busy={saving || writing || deleting}
-      width={640}
-      fill
-      align="end"
-      over={panelBehind}
-      zIndex={500}
-      footer={(
-        <>
-          <PixelButton variant="ghost" size="md" onClick={onClose}>{t('editAgent.cancel')}</PixelButton>
-          <div style={{ flex: 1 }} />
-          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={saving || writing || deleting}>{writing ? t('editAgent.writing') : t('editAgent.save')}</PixelButton>
-        </>
+  const busy = saving || writing || deleting;
+  const readText: CSSProperties = wide ? { fontSize: 14, lineHeight: '22px' } : {};
+
+  const nameRow = (
+    // The owner names the Research member (owner, ship 2 D17); whatever its
+    // name, the app knows it as Research, the one on the internet.
+    <Row label={t('editAgent.name')} info={isResearch ? t('editAgent.researchName', { name: researchName }) : undefined}>
+      <input
+        value={name}
+        onChange={(e) => { setName(e.target.value); setNameError(undefined); }}
+        placeholder={t('editAgent.namePlaceholder')}
+        aria-invalid={nameError ? true : undefined}
+        className="cth-input"
+        dir="auto"
+        style={nameError ? { ...inputStyle, boxShadow: 'inset 0 0 0 1.5px var(--cth-coral)' } : inputStyle}
+        autoFocus
+      />
+      {nameError && (
+        <span role="alert" style={{ ...helperStyle, color: 'var(--cth-coral-text)' }}>{nameError}</span>
       )}
+    </Row>
+  );
+  const roleRow = (
+    <Row label={t('editAgent.role')}>
+      <input
+        value={role}
+        onChange={(e) => setRole(e.target.value)}
+        placeholder={t('editAgent.rolePlaceholder')}
+        className="cth-input"
+        dir="auto"
+        style={inputStyle}
+      />
+    </Row>
+  );
+  const handlesRow = (
+    <Row
+      label={t('editAgent.handles', { name: who })}
+      info={t('editAgent.handlesInfo', { manager: godName, name: who })}
     >
-      {/* The whole window's height (owner, 2026-10-02): the work style box
-          takes whatever the other fields leave, and the body scrolls only on
-          a window too short for its minimum. No `minHeight: 0` on this column,
-          the briefing fields or the work style row: each must keep its content's
-          height, or the work style box (min 320) spills out of its row and the
-          scheduled jobs under it draw on top of it (owner, 2026-10-10). */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
-        <Fields id="name">
-          {/* The owner names the Research member (owner, ship 2 D17); whatever its
-              name, the app knows it as Research, the one on the internet. */}
-          <Row label={t('editAgent.name')} info={isResearch ? t('editAgent.researchName', { name: researchName }) : undefined}>
-            <input
-              value={name}
-              onChange={(e) => { setName(e.target.value); setNameError(undefined); }}
-              placeholder={t('editAgent.namePlaceholder')}
-              aria-invalid={nameError ? true : undefined}
-              className="cth-input"
-              style={nameError ? { ...inputStyle, boxShadow: 'inset 0 0 0 1.5px var(--cth-coral)' } : inputStyle}
-              autoFocus
-            />
-            {nameError && (
-              <span role="alert" style={{ ...helperStyle, color: 'var(--cth-coral-text)' }}>{nameError}</span>
-            )}
-          </Row>
-        </Fields>
-
-        <Fields id="briefing" grow>
-          <Row label={t('editAgent.role')}>
-            <input
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              placeholder={t('editAgent.rolePlaceholder')}
-              className="cth-input"
-              style={inputStyle}
-            />
-          </Row>
-
-          <Row
-            label={t('editAgent.handles', { name: who })}
-            info={t('editAgent.handlesInfo', { manager: godName, name: who })}
+      <textarea
+        value={roleDescription}
+        onChange={(e) => setRoleDescription(e.target.value)}
+        placeholder={t('editAgent.handlesPlaceholder')}
+        rows={5}
+        className="cth-input"
+        dir="auto"
+        style={{ ...inputStyle, ...readText, fontFamily: 'var(--cth-font-ui)', resize: 'vertical', minHeight: wide ? 180 : 110 }}
+      />
+    </Row>
+  );
+  const workStyleRow = (
+    <Row
+      grow
+      label={t('editAgent.workStyle')}
+      info={t('editAgent.workStyleInfo', { name: who })}
+    >
+      <textarea
+        value={goal}
+        onChange={(e) => { describeSeq.current++; setDescribing(false); setGoal(e.target.value); if (e.target.value.trim()) setGoalError(false); }}
+        aria-invalid={goalError || undefined}
+        placeholder={t('editAgent.workStylePlaceholder', { name: who })}
+        rows={4}
+        className="cth-input"
+        dir="auto"
+        style={{ ...inputStyle, ...readText, fontFamily: 'var(--cth-font-ui)', resize: 'none', minHeight: 320, flex: 1 }}
+      />
+    </Row>
+  );
+  const schedules = <ScheduledJobsList agentId={agent.id} compact />;
+  const workStyleNotes = (
+    <>
+      {goalError && (
+        <span role="alert" style={{ ...helperStyle, color: 'var(--cth-coral-text)' }}>
+          {t('editAgent.errWorkStyle', { name: agent.name })}
+        </span>
+      )}
+      {describing && <span aria-live="polite" style={helperStyle}>{t('editAgent.describing')}</span>}
+      {writeError && (
+        <span role="alert" style={{ ...helperStyle, color: 'var(--cth-coral-text)' }}>
+          {t('editAgent.errWrite')}
+        </span>
+      )}
+    </>
+  );
+  const engine = (
+    <>
+      {/* The engine rarely changes: one folded line naming it, closed by default. */}
+      <button
+        type="button"
+        aria-expanded={engineOpen}
+        aria-controls={engineOpen ? 'edit-agent-engine' : undefined}
+        onClick={() => setEngineOpen((v) => !v)}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', border: 'none', background: 'transparent',
+          cursor: 'pointer', fontFamily: 'var(--cth-font-ui)', textAlign: 'start'
+        }}
+      >
+        <Disclosure open={engineOpen} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{t('editAgent.engine')}</span>
+        {!engineOpen && (
+          <span style={{ fontSize: 12, color: 'var(--cth-ink-3)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {modelLabel ? `${providerLabel}, ${modelLabel}` : providerLabel}
+          </span>
+        )}
+      </button>
+      {engineOpen && (
+      <Fields id="engine">
+        {/* Research's walls are Claude Code's, so its engine is locked
+            (ship review D6.2). */}
+        <Row label={t('editAgent.provider')} info={isResearch ? t('editAgent.researchEngine', { name: researchName }) : undefined}>
+          {/* A list, not a grid of buttons. Only the engines this build
+              offers (BUILD_ENGINES, like setup), plus the agent's own if it
+              runs on another, so a list never hides what it is on. */}
+          {researchLocked ? (
+            // Nothing to choose: the engine as plain text, with its reason
+            // behind the info icon.
+            <input readOnly value={providerLabel} aria-label={t('editAgent.provider')} style={lockedValueStyle} />
+          ) : (
+          <select
+            value={provider}
+            onChange={(e) => pickProvider(e.target.value as AgentProvider)}
+            aria-label={t('editAgent.provider')}
+            className="cth-input"
+            style={inputStyle}
           >
-            <textarea
-              value={roleDescription}
-              onChange={(e) => setRoleDescription(e.target.value)}
-              placeholder={t('editAgent.handlesPlaceholder')}
-              rows={5}
-              className="cth-input"
-              style={{ ...inputStyle, fontFamily: 'var(--cth-font-ui)', resize: 'vertical', minHeight: 110 }}
-            />
-          </Row>
+            {AGENT_PROVIDER_PRESETS
+              .filter((p) => (BUILD_ENGINES.includes(p.id) && (!isResearch || isClaudeProvider(p.id))) || p.id === provider)
+              .map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+          )}
+        </Row>
 
-          <Row
-            grow
-            label={t('editAgent.workStyle')}
-            info={t('editAgent.workStyleInfo', { name: who })}
-          >
-            <textarea
-              value={goal}
-              onChange={(e) => { describeSeq.current++; setDescribing(false); setGoal(e.target.value); if (e.target.value.trim()) setGoalError(false); }}
-              aria-invalid={goalError || undefined}
-              placeholder={t('editAgent.workStylePlaceholder', { name: who })}
-              rows={4}
-              className="cth-input"
-              style={{ ...inputStyle, fontFamily: 'var(--cth-font-ui)', resize: 'none', minHeight: 320, flex: 1 }}
-            />
-          </Row>
-          <ScheduledJobsList agentId={agent.id} compact />
-          {goalError && (
-            <span role="alert" style={{ ...helperStyle, color: 'var(--cth-coral-text)' }}>
-              {t('editAgent.errWorkStyle', { name: agent.name })}
-            </span>
-          )}
-          {describing && <span aria-live="polite" style={helperStyle}>{t('editAgent.describing')}</span>}
-          {writeError && (
-            <span role="alert" style={{ ...helperStyle, color: 'var(--cth-coral-text)' }}>
-              {t('editAgent.errWrite')}
-            </span>
-          )}
-        </Fields>
-
-        {/* The engine rarely changes: one folded line naming it, closed by default. */}
-        <button
-          type="button"
-          aria-expanded={engineOpen}
-          aria-controls={engineOpen ? 'edit-agent-engine' : undefined}
-          onClick={() => setEngineOpen((v) => !v)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', border: 'none', background: 'transparent',
-            cursor: 'pointer', fontFamily: 'var(--cth-font-ui)', textAlign: 'start'
-          }}
-        >
-          <Disclosure open={engineOpen} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{t('editAgent.engine')}</span>
-          {!engineOpen && (
-            <span style={{ fontSize: 12, color: 'var(--cth-ink-3)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {modelLabel ? `${providerLabel}, ${modelLabel}` : providerLabel}
-            </span>
-          )}
-        </button>
-        {engineOpen && (
-        <Fields id="engine">
-          {/* Research's walls are Claude Code's, so its engine is locked
-              (ship review D6.2). */}
-          <Row label={t('editAgent.provider')} info={isResearch ? t('editAgent.researchEngine', { name: researchName }) : undefined}>
-            {/* A list, not a grid of buttons. Only the engines this build
-                offers (BUILD_ENGINES, like setup), plus the agent's own if it
-                runs on another, so a list never hides what it is on. */}
-            {researchLocked ? (
-              // Nothing to choose: the engine as plain text, with its reason
-              // behind the info icon.
-              <input readOnly value={providerLabel} aria-label={t('editAgent.provider')} style={lockedValueStyle} />
-            ) : (
+        {preset.supportsModel && (
+          <Row label={t('editAgent.model')}>
             <select
-              value={provider}
-              onChange={(e) => pickProvider(e.target.value as AgentProvider)}
-              aria-label={t('editAgent.provider')}
+              value={model ?? ''}
+              onChange={(e) => setModel(e.target.value || undefined)}
               className="cth-input"
               style={inputStyle}
             >
-              {AGENT_PROVIDER_PRESETS
-                .filter((p) => (BUILD_ENGINES.includes(p.id) && (!isResearch || isClaudeProvider(p.id))) || p.id === provider)
-                .map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              {/* Always list the current model: a <select> whose value
+                  matches no option shows its first row while the saved
+                  model stays the other one. */}
+              {(() => {
+                const known = modelsForProvider(provider);
+                return model && !known.some((m) => m.id === model)
+                  ? [...known, { id: model, label: t('editAgent.modelCurrent', { model }) }]
+                  : known;
+              })().map((m) => <option key={m.id ?? m.label} value={m.id ?? ''}>{m.label}</option>)}
             </select>
-            )}
           </Row>
-
-          {preset.supportsModel && (
-            <Row label={t('editAgent.model')}>
-              <select
-                value={model ?? ''}
-                onChange={(e) => setModel(e.target.value || undefined)}
-                className="cth-input"
-                style={inputStyle}
-              >
-                {/* Always list the current model: a <select> whose value
-                    matches no option shows its first row while the saved
-                    model stays the other one. */}
-                {(() => {
-                  const known = modelsForProvider(provider);
-                  return model && !known.some((m) => m.id === model)
-                    ? [...known, { id: model, label: t('editAgent.modelCurrent', { model }) }]
-                    : known;
-                })().map((m) => <option key={m.id ?? m.label} value={m.id ?? ''}>{m.label}</option>)}
-              </select>
-            </Row>
-          )}
-
-          <span style={helperStyle}>
-            {t('editAgent.engineNote')}
-          </span>
-        </Fields>
         )}
 
-        {/* Danger zone, under the engine (owner, 2026-10-14): delete for good. */}
-        {canDeleteTeamMember(agent) && (
-          <div
-            id="edit-agent-danger"
-            data-fields="danger"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 'var(--cth-r-xl)',
-              // The Settings Danger zone's ring (DESIGN.md 6.3).
-              boxShadow: 'inset 0 0 0 1.5px color-mix(in srgb, var(--cth-coral-base) 55%, transparent)', background: 'var(--cth-coral-soft)'
-            }}
-          >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-coral-text)' }}>{t('editAgent.danger')}</span>
-              <InfoTip text={t('editAgent.deleteInfo', { name: agent.name })} label={t('editAgent.danger')} />
-            </span>
-            <PixelButton variant="destructive" size="md" onClick={() => { void remove(); }} disabled={deleting || saving || writing}>
-              {deleting ? t('editAgent.deleting') : t('editAgent.delete', { name: agent.name })}
-            </PixelButton>
+        <span style={helperStyle}>
+          {t('editAgent.engineNote')}
+        </span>
+      </Fields>
+      )}
+    </>
+  );
+  const danger = canDeleteTeamMember(agent) && (
+    // Danger zone, under the engine (owner, 2026-10-14): delete for good.
+    <div
+      id="edit-agent-danger"
+      data-fields="danger"
+      style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 'var(--cth-r-xl)',
+        // The Settings Danger zone's ring (DESIGN.md 6.3).
+        boxShadow: 'inset 0 0 0 1.5px color-mix(in srgb, var(--cth-coral-base) 55%, transparent)', background: 'var(--cth-coral-soft)'
+      }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-coral-text)' }}>{t('editAgent.danger')}</span>
+        <InfoTip text={t('editAgent.deleteInfo', { name: agent.name })} label={t('editAgent.danger')} />
+      </span>
+      <PixelButton variant="destructive" size="md" onClick={() => { void remove(); }} disabled={busy}>
+        {deleting ? t('editAgent.deleting') : t('editAgent.delete', { name: agent.name })}
+      </PixelButton>
+    </div>
+  );
+
+  return (
+    <>
+    <Dialog
+      // Wide, the title says who (WD3): their avatar, "Edit {name}", the role.
+      title={wide ? (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+          <PersonAvatar who={agent} size={28} />
+          <span style={{ fontSize: 15, letterSpacing: '-0.02em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('editAgent.titleWide', { name: agent.name })}</span>
+          <span style={{ fontSize: 12, fontWeight: 400, letterSpacing: 0, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleOf(agent)}</span>
+        </span>
+      ) : t('editAgent.title')}
+      label={wide ? t('editAgent.titleWide', { name: agent.name }) : undefined}
+      onClose={requestClose}
+      busy={busy}
+      width={640}
+      fill
+      align="end"
+      over={docked ? panelBehind : undefined}
+      zIndex={500}
+      // Wide, the office is already dimmed under the top bar, and a click on
+      // the margins does nothing (WD4, WD8).
+      below={wide}
+      dim={!wide}
+      actions={inColumn ? <WideButton disabled={busy} size={30} /> : undefined}
+      footer={(
+        <>
+          <PixelButton variant="ghost" size="md" onClick={requestClose}>{t('editAgent.cancel')}</PixelButton>
+          <div style={{ flex: 1 }} />
+          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={busy}>{writing ? t('editAgent.writing') : t('editAgent.save')}</PixelButton>
+        </>
+      )}
+    >
+      {wide ? (
+        // Two columns (WD2): the short fields at 300 to 360 px, the work
+        // style beside them at most 720 px across; the pair centers. In
+        // Arabic the grid mirrors with the page.
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 32, flex: 1, minHeight: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+            <Fields id="name">{nameRow}</Fields>
+            <Fields id="briefing">
+              {roleRow}
+              {handlesRow}
+              {schedules}
+            </Fields>
+            {engine}
+            <div style={{ flex: 1 }} />
+            {danger}
           </div>
-        )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
+            {workStyleRow}
+            {workStyleNotes}
+          </div>
+        </div>
+      ) : (
+      // One column (D3): name, job, work style, then the engine folded away, so
+      // what they handle and the work style get the room (owner, 2026-10-02).
+      // Field labels only; explanations sit behind info icons.
+      //
+      // The whole window's height (owner, 2026-10-02): the work style box
+      // takes whatever the other fields leave, and the body scrolls only on
+      // a window too short for its minimum. No `minHeight: 0` on this column,
+      // the briefing fields or the work style row: each must keep its content's
+      // height, or the work style box (min 320) spills out of its row and the
+      // scheduled jobs under it draw on top of it (owner, 2026-10-10).
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
+        <Fields id="name">{nameRow}</Fields>
+
+        <Fields id="briefing" grow>
+          {roleRow}
+          {handlesRow}
+          {workStyleRow}
+          {schedules}
+          {workStyleNotes}
+        </Fields>
+
+        {engine}
+
+        {danger}
       </div>
+      )}
     </Dialog>
+    {asking && (
+      // WD4: leaving with unsaved changes asks; Keep editing is the default.
+      <Dialog
+        title={t('editAgent.discardTitle', { name: agent.name })}
+        onClose={keepEditing}
+        width={380}
+        zIndex={600}
+        // Wide, the Needs you pill stays bright above it, as it does above
+        // the wide panel (WD8).
+        below={wide}
+        footer={(
+          <>
+            <PixelButton variant="ghost" size="md" onClick={discard}>{t('editAgent.discard')}</PixelButton>
+            <PixelButton variant="primary" size="md" onClick={keepEditing} autoFocus>{t('editAgent.keepEditing')}</PixelButton>
+          </>
+        )}
+        bodyStyle={{ display: 'none' }}
+      >
+        {null}
+      </Dialog>
+    )}
+    </>
   );
 }
 

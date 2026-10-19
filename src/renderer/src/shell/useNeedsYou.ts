@@ -7,6 +7,7 @@ import type { EngineSetupStatus } from '@shared/engineSetup';
 import { stopNeedsOwner, type OfficeBreakView } from '@shared/officeBreak';
 import { openQuestion, openQuestions, parseTasks, waitsOnHuman, type HiveTask } from '../components/hiveTasks';
 import { openReportIndexes } from '@shared/askMeRouting';
+import { silentCards, type SilentEpisode } from '@shared/silentEngine';
 
 const POLL_MS = 5000;
 
@@ -36,6 +37,9 @@ export interface NeedsYouFeed {
   engineSetup: EngineSetupStatus | null;
   /** The office stop or break, if any (office-stopped-account.md). */
   stop: OfficeBreakView | null;
+  /** Members whose engine isn't reporting to the app (issue #326); each card
+   *  (one per engine version, and Michael's) is one in `count`. */
+  silent: SilentEpisode[];
   /** Open asks, passed-on schedule requests, job description offers, emails to
    *  approve, one for an engine Michael cannot start on, and one for a stop
    *  only the owner can fix (out of credit, sign in). */
@@ -46,7 +50,7 @@ export interface NeedsYouFeed {
   researchNotice: boolean;
 }
 
-let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, count: 0, reports: 0, researchNotice: false };
+let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], count: 0, reports: 0, researchNotice: false };
 // The offers need the team and the packs, which this module does not import;
 // the app hands it the reader at start (App.tsx).
 let offersSource: (() => Promise<WorkStyleOffer[]>) | null = null;
@@ -93,7 +97,7 @@ let taskReads = 0;
 let requestReads = 0;
 let ownerReads = 0;
 
-function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'researchNotice'>>): void {
+function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice'>>): void {
   // A poll that brings nothing new changes nothing, so nobody re-renders.
   const changed = (Object.keys(next) as Array<keyof typeof next>).some((k) => JSON.stringify(next[k]) !== JSON.stringify(feed[k]));
   if (!changed) return;
@@ -109,6 +113,9 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
   if (setupCardShown(merged)) feed = { ...feed, count: feed.count + 1 };
   // One more for a stop only the owner can fix (office-stopped-account.md, design D2).
   if (stopNeedsOwner(merged.stop)) feed = { ...feed, count: feed.count + 1 };
+  // One per not reporting card (DESIGN.md §7.6b, SD1).
+  const silent = silentCards(merged.silent).length;
+  if (silent) feed = { ...feed, count: feed.count + silent };
   for (const l of [...listeners]) l();
   // Ready after Michael could not start: hand the terminals that could not
   // start to useHive, which restarts exactly those (agents at work keep going).
@@ -177,6 +184,7 @@ export function setupCardShown(f: Pick<NeedsYouFeed, 'engineSetup' | 'stop'>): b
 }
 
 let offStop: (() => void) | null = null;
+let offSilent: (() => void) | null = null;
 function readStop(): void {
   void window.cth.officeBreakView?.()
     .then((v) => publish({ stop: v ?? null }))
@@ -196,6 +204,8 @@ export function subscribeNeedsYou(listener: () => void): () => void {
     offEngine = window.cth.onEngineSetupChanged?.(() => readEngine()) ?? null;
     readStop();
     offStop = window.cth.onOfficeBreak?.((v) => publish({ stop: v ?? null })) ?? null;
+    void window.cth.silentList?.().then((list) => publish({ silent: Array.isArray(list) ? list : [] })).catch(() => { /* keep the last value */ });
+    offSilent = window.cth.onSilentChanged?.((list) => publish({ silent: list })) ?? null;
   }
   return () => {
     listeners.delete(listener);
@@ -210,6 +220,8 @@ export function subscribeNeedsYou(listener: () => void): () => void {
       offEngine = null;
       offStop?.();
       offStop = null;
+      offSilent?.();
+      offSilent = null;
     }
   };
 }

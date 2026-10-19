@@ -43,7 +43,7 @@ test('Michael is never told he can start one, even with an old config that allow
   assert.doesNotMatch(p, /SPAWNING A WORKER/);
   const protocol = fs.readFileSync(path.join(home, 'hive', 'PROTOCOL.md'), 'utf8');
   assert.doesNotMatch(protocol, /Spawning a worker|spawn-requests/);
-  assert.match(protocol, /## Semantic memory/, 'the rest of the protocol is intact');
+  assert.match(protocol, /## Private memory/, 'the rest of the protocol is intact');
 });
 
 test('instead, a job no one fits goes to the ASK ME board with suggestions', async (t) => {
