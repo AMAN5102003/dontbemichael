@@ -154,18 +154,6 @@
 **Priority:** P2
 **Depends on:** None
 
-### An owner's answer is never lost between the card and Michael
-
-**What:** Record the answer on the card and queue Michael's routing request in one main side step, or keep unsent routing requests and retry them in the same launch.
-
-**Why:** If the card patch lands but the message to Michael fails, the ask leaves Ask me and Michael never hears until a restart (the catch up runs once per launch).
-
-**Context:** From the second Codex adversarial review, 2026-10-16. The pattern predates this branch: `AskMeTab.tsx` sendAnswer patches then sends; `index.ts` catchUpOwnerAnswers is gated by ownerCatchUpDone.
-
-**Effort:** M (human) / S (CC)
-**Priority:** P2
-**Depends on:** None
-
 ### Pulse reads a card's whole history, not the period's slice
 
 **What:** Keep card lifecycle state (reopened, held time) per card as events arrive, instead of rebuilding it from the period's events only.
