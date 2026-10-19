@@ -4,8 +4,8 @@
  * bold first sentence, then the context; the headline is that bold lead, or
  * else the first sentence, as plain text.
  */
-/** Sentence boundary that does not cut off after common abbreviations (Mr., e.g., No. 42). */
-const SENTENCE_LEAD = /^[\s\S]*?(?:(?<!\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|inc|ltd|co|corp|approx|dept|est|u\.s|u\.k|e\.g|i\.e)|\bno(?=\.\s*\d))[.?!](?=\s|$)|\n|$)/i;
+/** Sentence boundary that does not cut off after common abbreviations (Mr., e.g., No. 42, 9 a.m., etc.). */
+const SENTENCE_LEAD = /^[\s\S]*?(?:(?<!\b(?:mr|mrs|ms|dr|prof|sr|jr|st|vs|inc|ltd|co|corp|approx|dept|est|etc|u\.s|u\.k|e\.g|i\.e|a\.m|p\.m)|\bno(?=\.\s*\d))[.?!](?=\s|$)|\n|$)/i;
 
 export function askHeadline(q: string): string {
   const text = q.trim();

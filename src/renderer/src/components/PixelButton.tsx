@@ -16,6 +16,8 @@ export interface PixelButtonProps {
   ariaLabel?: string;
   /** HTML button type. Defaults to 'button' so the button does not inadvertently submit forms. */
   type?: 'button' | 'submit' | 'reset';
+  /** Takes the focus when its dialog opens (useDialog looks for [autofocus]). */
+  autoFocus?: boolean;
 }
 
 // Design system v2 (branding/DESIGN.md 7.7): 28 in cards, 32 in bars, 36 in dialogs.
@@ -32,7 +34,8 @@ export function PixelButton({
   style,
   title,
   ariaLabel,
-  type = 'button'
+  type = 'button',
+  autoFocus
 }: PixelButtonProps) {
   const [pressed, setPressed] = useState(false);
   const [hover, setHover] = useState(false);
@@ -59,6 +62,7 @@ export function PixelButton({
   return (
     <button
       type={type}
+      autoFocus={autoFocus}
       title={title}
       aria-label={ariaLabel}
       onClick={disabled ? undefined : onClick}

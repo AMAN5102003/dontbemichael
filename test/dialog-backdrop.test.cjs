@@ -21,7 +21,7 @@ test('the backdrop closes only when the press and the click are both on it', () 
   // Every v2 dialog frame closes through it (shell/Dialog.tsx).
   const frame = read('src/renderer/src/shell/Dialog.tsx');
   assert.match(frame, /const backdrop = useBackdropClose\(close\);/);
-  assert.match(frame, /<div \{\.\.\.backdrop\} style=\{\{\n      position: 'fixed', inset: 0,/);
+  assert.match(frame, /<div \{\.\.\.\(below \? \{\} : backdrop\)\} style=\{\{\n      position: 'fixed', inset: below \? '56px 0 0 0' : 0,/, 'only a wide panel\'s dialog (below) ignores margin clicks (wide panel WD4)');
   for (const f of ['AddAgentModal', 'EditAgentModal']) {
     const src = read(`src/renderer/src/components/${f}.tsx`);
     assert.ok(/<Dialog\b/.test(src) || /const backdrop = useBackdropClose\((?:onClose|close)\);/.test(src), f);
