@@ -4,7 +4,7 @@ import { constants, existsSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { imageMimeForExtension } from '../shared/imageTypes';
-import { OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, kindOf, type AskFileVerdict } from '../shared/askFiles';
+import { NAME_ENDINGS, OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, isNameSpan, kindOf, type AskFileVerdict } from '../shared/askFiles';
 import { isSameOrInside } from './pathInside';
 import { RESEARCH_ID } from '../shared/research';
 
@@ -490,6 +490,25 @@ export type AskFileRead =
  * are read: text up to 2 MB, images up to 10 MB, through the root-confined
  * readers. Anything outside the folders reads as not found, like the chip.
  */
+/**
+ * A file named without its ending, such as `First contact follow up draft
+ * 2026-10-19` for the `.md` in the Sales folder (owner, 2026-10-19): each
+ * ending in NAME_ENDINGS is tried in turn, through the same folder check as
+ * any named file, and the first that exists wins. Null when none does, so the
+ * name stays plain text.
+ */
+export async function askFileByName(
+  name: string,
+  roots: readonly AskFileRoot[]
+): Promise<{ verdict: AskFileVerdict; path: string; tab: boolean } | null> {
+  if (!isNameSpan(name)) return null;
+  for (const ext of NAME_ENDINGS) {
+    const v = await askFileVerdict(`${name.trim()}.${ext}`, roots);
+    if (v.verdict !== 'missing') return { verdict: v.verdict, path: v.path, tab: v.tab };
+  }
+  return null;
+}
+
 export async function readAskFile(pathText: string, roots: readonly string[] | readonly AskFileRoot[]): Promise<AskFileRead> {
   const v = await askFileVerdict(pathText, roots);
   if (v.verdict === 'missing' || !v.tab || !v.real) return { ok: false, error: 'not found' };

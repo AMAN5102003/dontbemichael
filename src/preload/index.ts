@@ -879,6 +879,10 @@ const api = {
    *  (docs/designs/ask-me-open-file.md). */
   askFiles: (paths: string[], who: { raisedBy?: string; assignee?: string }): Promise<Array<{ verdict: 'open' | 'reveal' | 'missing'; tab: boolean; path: string }>> =>
     ipcRenderer.invoke('fs:askFiles', paths, who),
+  /** Files a question names without their ending: the ones found in the
+   *  office's folders, by name, each with its full path (owner, 2026-10-19). */
+  askFileNames: (names: string[], who: { raisedBy?: string; assignee?: string }): Promise<Record<string, { verdict: 'open' | 'reveal' | 'missing'; tab: boolean; path: string }>> =>
+    ipcRenderer.invoke('fs:askFileNames', names, who),
   /** Read a named file for its office tab (docs/designs/open-file-tab.md). Main
    *  checks the folders again; `place` is 'office' or a team member's id. */
   readAskFile: (p: string, who: { raisedBy?: string; assignee?: string }): Promise<

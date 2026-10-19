@@ -14,6 +14,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 
 ### Fixed
 
+- **A file an Ask me question names opens from its chip even without its ending.** A question that named a draft by its title, such as `First contact follow up draft 2026-10-19`, showed the name as plain text. The app now finds the file in the office's folders and shows the Open chip in its place. (Agent behavior: Michael names each file in an ask by its full path with its file ending, as he already did in your conversation and in reports.)
 - A message a team member sent is delivered once even if the app quits between delivering it and filing it away, and a schedule request is never filed twice.
 
 ## [0.2.3] (2026-10-18)

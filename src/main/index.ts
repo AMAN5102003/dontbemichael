@@ -2,6 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, net, powerMonitor
 import { ownerLedger } from '../shared/taskLedger';
 import { ownValue } from '../shared/ownValue';
 import { cutText } from '../shared/cutText';
+import { MAX_NAMES } from '../shared/askFiles';
 import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
 import { readCodexContext } from './codexUsage';
 import { execFile, spawn } from 'node:child_process';
@@ -35,7 +36,7 @@ import {
   modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
 } from './config';
 import { terminalLaunches } from './terminalAtFolder';
-import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
+import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileByName, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
 import { answerMessages, cardConversation, mergeHumanQA, MICHAEL_ID, raiserOf } from '../shared/askMeRouting';
 import { FIRST_TASK_EDITED_MAX, firstTaskCard, firstTaskCardFromText } from '../shared/firstTask';
 import { answerKey, catchUpRequests, OwnerAnswerRetry, ownerWorkOrder } from '../shared/ownerRequests';
@@ -4936,6 +4937,21 @@ ipcMain.handle('fs:askFiles', async (_evt, paths: unknown, who: unknown) => {
   return Promise.all(paths.slice(0, 20).map((p) => (askFilePathOk(p)
     ? askFileVerdict(p, roots).then((r) => ({ verdict: r.verdict, tab: r.tab, path: r.path }))
     : { verdict: 'missing' as const, tab: false, path: String(p) })));
+});
+
+/** Files a question names without their ending (owner, 2026-10-19): each name
+ *  found in the office's folders, with what it can do; a name with no file is
+ *  left out, so it stays plain text. */
+ipcMain.handle('fs:askFileNames', async (_evt, names: unknown, who: unknown) => {
+  if (!Array.isArray(names)) return {};
+  const roots = await resolveAskFileRoots(askFileRoots(who));
+  const out: Record<string, { verdict: 'open' | 'reveal' | 'missing'; tab: boolean; path: string }> = {};
+  for (const n of names.slice(0, MAX_NAMES)) {
+    if (!askFilePathOk(n) || n in out) continue;
+    const found = await askFileByName(n, roots);
+    if (found) out[n] = found;
+  }
+  return out;
 });
 
 /** Where a file sits, in office terms, for the file tab's folder line
