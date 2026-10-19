@@ -2573,7 +2573,16 @@
       "runMore": "{{name}}'s \"{{job}}\" found work on {{didWork}} of {{runs}} runs so far.",
       "kept": "{{kept}} of {{decisions}} pieces of {{name}}'s work kept as is so far.",
       "keptFew": "Only {{kept}} of {{decisions}} pieces of {{name}}'s work kept as is so far.",
-      "reopened": "You reopened {{reopens}} of {{name}}'s cards so far."
+      "reopened": "You reopened {{reopens}} of {{name}}'s cards so far.",
+      "pill": "Early look",
+      "dayOf": "Day {{n}} of 14",
+      "ofRuns": "of {{n}} runs",
+      "of": "of {{n}}",
+      "capNothing": "found nothing to do so far",
+      "capWork": "found work so far",
+      "capKept": "kept as is so far",
+      "capReopened": "cards you reopened so far",
+      "more": "More patterns show here as your team works."
     },
     "nothingToChange": "Nothing to change this week.",
     "savedByChanges": "Saved by your changes",

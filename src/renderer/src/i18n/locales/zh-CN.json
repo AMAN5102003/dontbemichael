@@ -2573,7 +2573,16 @@
       "runMore": "{{name}} 的“{{job}}”目前 {{runs}} 次运行中有 {{didWork}} 次找到了工作。",
       "kept": "{{name}} 的工作目前 {{decisions}} 件中有 {{kept}} 件原样保留。",
       "keptFew": "{{name}} 的工作目前 {{decisions}} 件中只有 {{kept}} 件原样保留。",
-      "reopened": "你目前重新打开了 {{name}} 的 {{reopens}} 张卡片。"
+      "reopened": "你目前重新打开了 {{name}} 的 {{reopens}} 张卡片。",
+      "pill": "初步观察",
+      "dayOf": "第 {{n}} 天，共 14 天",
+      "ofRuns": "共 {{n}} 次运行",
+      "of": "共 {{n}} 件",
+      "capNothing": "目前没有可做的事",
+      "capWork": "目前找到了工作",
+      "capKept": "目前原样保留",
+      "capReopened": "目前你重新打开的卡片",
+      "more": "随着团队工作，这里会出现更多规律。"
     },
     "nothingToChange": "本周没有需要更改的。",
     "savedByChanges": "你的更改节省了",

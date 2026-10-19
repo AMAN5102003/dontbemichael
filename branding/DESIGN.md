@@ -1270,10 +1270,17 @@ half written message survives the switch.
   days, then mono dollars in `green` text; before any change it is not there. With nothing to
   recommend, no card: one short `t-meta` `ink-3` line under the header, "Nothing to change
   this week", or before two full weeks of work "Advice from Thu, Oct 29" (owner, 2026-10-19).
-  Above that line, before two full weeks, what the advice rules see so far (owner,
-  2026-10-19): a bold 12 px `ink` line "What Pulse sees so far, not advice yet." and up to
-  three plain facts in 12 px `ink-2` ("Toby's "Benefits inbox check" found nothing to do on
-  6 of 8 runs so far"), with no buttons; a model fact names no model.
+  Before two full weeks, when the advice rules already see something (owner, 2026-10-19,
+  design A, mockup `pulse-early-patterns-20261019/early-patterns-variants.html`), insight
+  cards take that line's place: one `card` whose header is lit with an `indigo-soft`
+  gradient, holding an `indigo-soft` "Early look" pill with the sparkle icon, the bold 14 px
+  "What Pulse sees so far, not advice yet." and, at the end, the countdown ("Day 5 of 14", a
+  120 px `indigo` bar, "Advice from Thu, Oct 29"). Below, up to three `card-2` cells in the
+  recommendations grid: avatar, name and job (or role), the count in mono 26 px with "of 76
+  runs" in `t-meta`, an 8 px bar of the two sides (`ink-4` found nothing, `green` found work
+  or kept), and what it means ("found nothing to do so far"). A free cell reads "More patterns
+  show here as your team works." in a dashed frame. No buttons; a model fact names no model;
+  each cell is spoken as its full sentence.
   The header's (i) then gives the start date and why, in business words (never "records"): a
   few unusually busy or quiet days alone could lead to the wrong advice.
 - **What got done**: four tiles (emails organized, emails sent for you, tasks finished,

@@ -256,9 +256,13 @@ test('before advice, Pulse shows what the rules see so far under a bold line, as
   // Value: protects=the owner's bold "not advice yet" ask, eng D1 and D2 on screen; fails_when=the bold line goes, an early line gets Apply or a model name, or an older main without early crashes the view; why_new=new UI; seam=none; no_claim=layout (live look)
   assert.equal(en.pulse.early.title, 'What Pulse sees so far, not advice yet.');
   assert.match(view, /const early = view\.early \?\? \[\];/, 'an older main sends no early lines');
-  assert.match(view, /\{noAdvice && early\.length > 0 && \([\s\S]{0,200}fontWeight: 700[\s\S]{0,120}t\('pulse\.early\.title'\)/);
-  const block = view.slice(view.indexOf("t('pulse.early.title')"), view.indexOf("t('pulse.adviceFrom'"));
-  assert.doesNotMatch(block, /PixelButton|pulse\.apply|pulse\.notNow|savesAbout/, 'facts only, nothing to apply');
+  assert.match(view, /\{noAdvice && early\.length > 0 \? \(/, 'insight cards replace the bare line (design A, owner 2026-10-19)');
+  assert.match(view, /<Icon name="sparkle" size=\{0\.75\} \/>\{t\('pulse\.early\.pill'\)\}[\s\S]{0,120}fontWeight: 700[^}]*\}\}>\{t\('pulse\.early\.title'\)\}/, 'the Early look pill and the bold line');
+  assert.match(view, /t\('pulse\.early\.dayOf', \{ n: learnDay \}\)/, 'the countdown to advice');
+  const block = view.slice(view.indexOf('Before advice: what the advice rules see so far'), view.indexOf("noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)'"));
+  const cardFn = view.slice(view.indexOf('function EarlyCard('), view.indexOf('/** A Kept safe tile'));
+  for (const part of [block, cardFn]) assert.doesNotMatch(part, /PixelButton|pulse\.apply|pulse\.notNow|savesAbout|<button/, 'facts only, nothing to apply');
+  assert.match(cardFn, /role="group" aria-label=\{text\}/, 'each card is spoken as its full sentence');
   const facts = Object.values(en.pulse.early).join(' ');
   assert.doesNotMatch(facts, /\{\{model\}\}|model/i, 'a model fact names no model');
   for (const loc of ['ar', 'zh-CN']) {

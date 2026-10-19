@@ -306,6 +306,8 @@ export function PulseView() {
     const noAdvice = shownAdvice.length === 0 && applied.length === 0;
     // A main process older than this view sends no early lines.
     const early = view.early ?? [];
+    // Which of the 14 days before advice this is, counted from the first live day.
+    const learnDay = view.liveSince ? Math.min(14, Math.max(1, Math.round((new Date(`${dayKey(Date.now())}T12:00:00`).getTime() - new Date(`${view.liveSince}T12:00:00`).getTime()) / 86_400_000) + 1)) : 1;
     // What shows and what folds (owner, 2026-10-19; pulse-smart-view.md, eng D2):
     // one grid in today's order, then a chip for each quiet tile.
     const tilesNow = pulseTiles({ snapshot: s, keptSafe: safe, learning: cur }, pv && pk ? { snapshot: pv, keptSafe: pk, learning: pl } : null, opened);
@@ -462,15 +464,36 @@ export function PulseView() {
 
         {/* Before any advice: one short line, the why behind the (i) (1D). */}
         <Section title={t('pulse.recommendations')} tip={noAdvice && view.adviceFrom ? t('pulse.adviceStarts', { day: fmtDay(view.adviceFrom), since: fmtDay(view.liveSince ?? Date.now()) }) : t('pulse.recommendationsTip')}>
-          {/* Before advice: what the advice rules see so far, as plain facts under
-              a bold line saying so, never anything to apply (owner, 2026-10-19). */}
-          {noAdvice && early.length > 0 && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--cth-ink)', lineHeight: '17px' }}>{t('pulse.early.title')}</div>
-              {early.map((a) => <div key={a.id} style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px' }}>{earlyText(a)}</div>)}
+          {/* Before advice: what the advice rules see so far (owner, 2026-10-19),
+              as insight cards under a lit header (design A): the Early look pill,
+              the bold line and the countdown to advice; one card per pattern,
+              never anything to apply. */}
+          {noAdvice && early.length > 0 ? (
+            <div style={{ ...card, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 16px', background: 'linear-gradient(90deg, var(--cth-indigo-soft), transparent 70%)' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 22, padding: '0 9px', borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-indigo-soft)', color: 'var(--cth-indigo-text)', fontSize: 11, fontWeight: 700 }}>
+                  <Icon name="sparkle" size={0.75} />{t('pulse.early.pill')}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cth-ink)' }}>{t('pulse.early.title')}</span>
+                <span style={{ flex: 1 }} />
+                {view.adviceFrom && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>
+                    {t('pulse.early.dayOf', { n: learnDay })}
+                    <span role="img" aria-label={t('pulse.early.dayOf', { n: learnDay })} style={{ width: 120, height: 6, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)', overflow: 'hidden' }}>
+                      <i style={{ display: 'block', height: '100%', width: `${(learnDay / 14) * 100}%`, background: 'var(--cth-indigo)', borderRadius: 'var(--cth-r-pill)' }} />
+                    </span>
+                    {t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) })}
+                  </span>
+                )}
+              </div>
+              <div style={{ ...grid(sugCols), padding: '4px 16px 16px' }}>
+                {early.map((a) => <EarlyCard key={a.id} a={a} name={nameOf(a.agentId)} sub={a.missionId ? jobOf(a.missionId) : (byId.get(a.agentId) ? roleOf(byId.get(a.agentId)!) : '')} text={earlyText(a)} />)}
+                {early.length < sugCols && (
+                  <div style={{ border: '1px dashed var(--cth-line-2)', borderRadius: 'var(--cth-r-lg)', display: 'grid', placeItems: 'center', textAlign: 'center', padding: 14, fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' }}>{t('pulse.early.more')}</div>
+                )}
+              </div>
             </div>
-          )}
-          {noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
+          ) : noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
           {(!noAdvice || savedShown) && <div style={grid(sugCols)}>
             {applied.map((x) => (
               <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -629,6 +652,43 @@ export function PulseView() {
       })()}
       {heldOpen && view && <HeldDetail from={view.snapshot.from} to={view.snapshot.to} count={(view.keptSafe ?? keptSafe([])).held} onClose={() => setHeldOpen(false)} />}
       {learnedOpen && view && <LearnedDetail from={view.snapshot.from} to={view.snapshot.to} nameOf={nameOf} onClose={() => setLearnedOpen(false)} />}
+    </div>
+  );
+}
+
+/** One early pattern (design A, owner 2026-10-19): who and which job, the
+ *  count large with what it is of, a bar of the two sides, and what it means.
+ *  The full sentence is its spoken label; nothing here applies a change. */
+function EarlyCard({ a, name, sub, text }: { a: Advice; name: string; sub: string; text: string }) {
+  const { t, i18n } = useTranslation();
+  const e = a.evidence;
+  const n = (v: number | undefined): string => (v ?? 0).toLocaleString(i18n.language);
+  const shown = a.kind === 'run-less'
+    ? { big: e.nothing, of: t('pulse.early.ofRuns', { n: n(e.runs) }), cap: t('pulse.early.capNothing'), split: [e.nothing ?? 0, (e.runs ?? 0) - (e.nothing ?? 0)] as const, first: 'var(--cth-ink-4)', second: 'var(--cth-green)' }
+    : a.kind === 'run-more'
+    ? { big: e.didWork, of: t('pulse.early.ofRuns', { n: n(e.runs) }), cap: t('pulse.early.capWork'), split: [e.didWork ?? 0, (e.runs ?? 0) - (e.didWork ?? 0)] as const, first: 'var(--cth-green)', second: 'var(--cth-ink-4)' }
+    : a.kind === 'stronger-model' && (e.reopens ?? 0) >= 2
+    ? { big: e.reopens, of: '', cap: t('pulse.early.capReopened'), split: null, first: '', second: '' }
+    : { big: e.kept ?? 0, of: t('pulse.early.of', { n: n(e.decisions) }), cap: t('pulse.early.capKept'), split: [e.kept ?? 0, (e.decisions ?? 0) - (e.kept ?? 0)] as const, first: 'var(--cth-green)', second: 'var(--cth-ink-4)' };
+  return (
+    <div role="group" aria-label={text} style={{ background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+      <div aria-hidden style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0 }}>
+        <AgentAvatar id={a.agentId} name={name} size={28} />
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{name}</div>
+          {sub && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sub}</div>}
+        </div>
+      </div>
+      <div aria-hidden style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 26, fontWeight: 600, lineHeight: '28px' }}>
+        {n(shown.big)}{shown.of && <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 400, color: 'var(--cth-ink-3)', marginInlineStart: 6 }}>{shown.of}</span>}
+      </div>
+      {shown.split && (
+        <div aria-hidden style={{ display: 'flex', height: 8, gap: 2, borderRadius: 'var(--cth-r-pill)', overflow: 'hidden', background: 'var(--cth-neutral-soft)' }}>
+          {shown.split[0] > 0 && <i style={{ display: 'block', flex: shown.split[0], background: shown.first }} />}
+          {shown.split[1] > 0 && <i style={{ display: 'block', flex: shown.split[1], background: shown.second }} />}
+        </div>
+      )}
+      <div aria-hidden style={{ fontSize: 12, color: 'var(--cth-ink-2)' }}>{shown.cap}</div>
     </div>
   );
 }
