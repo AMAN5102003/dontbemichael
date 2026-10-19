@@ -267,9 +267,12 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
 
   useEffect(() => {
     setNamed({});
-    if (!names.length) return;
+    // A dev window whose main process predates the lookup has no askFileNames:
+    // the names then stay plain text instead of taking the screen down.
+    const lookup = window.cth.askFileNames as typeof window.cth.askFileNames | undefined;
+    if (!names.length || !lookup) return;
     let alive = true;
-    void window.cth.askFileNames(names, { raisedBy, assignee })
+    void lookup(names, { raisedBy, assignee })
       .then((v) => { if (alive) setNamed(v); })
       .catch(() => undefined);
     return () => { alive = false; };

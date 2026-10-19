@@ -215,7 +215,8 @@ test('a file named without its ending opens from its chip when the office holds 
 test('FileText looks names up and Michael names files by full path with their ending', () => {
   // Value: protects=the wiring of the name lookup into every place questions show, and the owner-approved rule change (D1, 2026-10-19); fails_when=FileText stops looking names up or rendering the swapped text, or the rule drops back to "file names"; why_new=new behavior; seam=none; no_claim=Michael following the rule (prompt, not evaluated)
   const chip = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/FileChip.tsx'), 'utf8');
-  assert.match(chip, /void window\.cth\.askFileNames\(names, \{ raisedBy, assignee \}\)/);
+  assert.match(chip, /const lookup = window\.cth\.askFileNames as typeof window\.cth\.askFileNames \| undefined;\n    if \(!names\.length \|\| !lookup\) return;/, 'a window without the lookup keeps the names as text, never crashes');
+  assert.match(chip, /void lookup\(names, \{ raisedBy, assignee \}\)/);
   assert.match(chip, /<MarkdownPreview source=\{shown\}/);
   const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
   assert.match(main, /ipcMain\.handle\('fs:askFileNames'[\s\S]{0,400}askFileByName\(n, roots\)/);
