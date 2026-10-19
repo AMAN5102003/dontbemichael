@@ -101,6 +101,32 @@ test('duplicate adds are skipped and counted, by normalized text and within one 
   assert.equal(out.entries[1].text, 'Weekly payroll runs Friday');
 });
 
+test('an add matches the index as it stands: a delete, a merge or an update frees the text up', () => {
+  const text = 'Rent is due on the 1st';
+  const gone = mi.applyOps([e('m1', 'fact', text, 'owner')], [
+    { op: 'delete', id: 'm1', reason: 'wrong kind' },
+    { op: 'add', kind: 'preference', text, source: 'owner' }
+  ], '2026-10-18');
+  assert.deepEqual(gone.entries.map((x) => [x.id, x.kind, x.text]), [['m2', 'preference', text]], 'the deleted entry and its add-back is one entry, not none');
+  assert.deepEqual(gone.stats, { added: 1, updated: 0, deleted: 1, procedures: 0, repeats: 0, dupes: 0 });
+
+  const merged = mi.applyOps([e('m1', 'fact', 'Rent is due on the 1st', 'owner'), e('m2', 'fact', 'Rent is due on the 1st.', 'owner')], [
+    { op: 'delete', id: 'm1', reason: 'merged' },
+    { op: 'delete', id: 'm2', reason: 'merged' },
+    { op: 'add', kind: 'fact', text: 'Rent is due on the 1st', source: 'owner' }
+  ], '2026-10-18');
+  assert.deepEqual(merged.entries.map((x) => x.text), ['Rent is due on the 1st'], 'merging two near duplicates keeps the one line');
+  assert.deepEqual(merged.stats, { added: 1, updated: 0, deleted: 2, procedures: 0, repeats: 0, dupes: 0 });
+
+  const moved = mi.applyOps([e('m1', 'fact', text, 'owner')], [
+    { op: 'update', id: 'm1', text: 'Rent is due on the 5th' },
+    { op: 'add', kind: 'fact', text, source: 'owner' }
+  ], '2026-10-18');
+  assert.deepEqual(moved.entries.map((x) => x.text), ['Rent is due on the 5th', text], 'the old text is no longer in the index, so it can be re-added');
+  assert.equal(moved.stats.added, 1);
+  assert.equal(moved.stats.dupes, 0);
+});
+
 function office(t) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-memtidy-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));

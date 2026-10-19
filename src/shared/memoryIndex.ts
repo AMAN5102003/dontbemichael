@@ -209,23 +209,23 @@ export interface TidyOutcome {
 }
 
 /** Apply checked ops to the entries. Deterministic; the model never writes the file.
- *  An add whose text matches an existing entry (or an earlier add in the same
- *  batch), ignoring case and extra whitespace, is skipped and counted as a dupe. */
+ *  An add whose text matches an entry already in the index at that point in the
+ *  batch (including earlier adds), ignoring case and extra whitespace, is
+ *  skipped and counted as a dupe. Checked against the index as it stands, so a
+ *  delete or an update that moves text away leaves room for that text again. */
 export function applyOps(entries: MemoryEntry[], ops: MemoryOp[], today: string): TidyOutcome {
   let next = entries.map((e) => ({ ...e }));
   const archived: TidyOutcome['archived'] = [];
   const procedures: TidyOutcome['procedures'] = [];
   const stats = { added: 0, updated: 0, deleted: 0, procedures: 0, repeats: 0, dupes: 0 };
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-  const seen = new Set(next.map((e) => norm(e.text)));
   let n = next.reduce((max, e) => Math.max(max, Number(e.id.slice(1)) || 0), 0);
   const newId = () => `m${++n}`;
 
   for (const op of ops) {
     if (op.op === 'add') {
       const key = norm(op.text);
-      if (seen.has(key)) { stats.dupes++; continue; }
-      seen.add(key);
+      if (next.some((x) => norm(x.text) === key)) { stats.dupes++; continue; }
       next.push({ id: newId(), kind: op.kind, text: op.text, source: op.source, date: today, ...(op.expires ? { expires: op.expires } : {}) });
       stats.added++;
     } else if (op.op === 'update') {
