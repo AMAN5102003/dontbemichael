@@ -23,7 +23,7 @@
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join, basename, dirname, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
-import { getText } from './fetchText';
+import { getBuffer, getText } from './fetchText';
 
 export interface LocalSkill {
   id: string;
@@ -476,7 +476,7 @@ export async function installSkill(
       if (target !== dest && !target.startsWith(dest + sep)) {
         throw new Error(`refusing to write outside the skill folder: ${f.path}`);
       }
-      const body = await getText(f.url);
+      const body = await getBuffer(f.url);
       mkdirSync(dirname(target), { recursive: true });
       writeFileSync(target, body);
       written.push(target);

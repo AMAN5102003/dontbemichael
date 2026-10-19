@@ -7,6 +7,7 @@
  * only the rendering.
  */
 import { isImagePath } from '@shared/imageTypes';
+import { isFileSpan } from '@shared/askFiles';
 
 /** Resolve `href` against the directory of `baseRel` ('' when unknown).
  *
@@ -79,3 +80,121 @@ export function resolveLocalImageRel(baseRel: string | undefined, src: string | 
   const rel = resolveRel(rooted ? undefined : baseRel, clean);
   return rel || null;
 }
+
+// ─── Named links (docs/designs/named-links.md) ──────────────────────────────
+// Owner, 2026-10-11: a card showing a raw record URL is ugly; show a name such
+// as HubSpot that takes you there. Display only: the agent's text is unchanged.
+
+/** Web apps an owner opens from a card, by domain. A function picks the name
+ *  from the path where one domain serves several products. Product names, so
+ *  never translated. */
+const KNOWN_APPS: ReadonlyArray<readonly [string, string | ((path: string) => string)]> = [
+  ['hubspot.com', 'HubSpot'],
+  ['intuit.com', 'QuickBooks'],
+  ['mail.google.com', 'Gmail'],
+  ['docs.google.com', (p) => (/^\/spreadsheets\//.test(p) ? 'Google Sheets' : /^\/presentation\//.test(p) ? 'Google Slides' : 'Google Docs')],
+  ['drive.google.com', 'Google Drive'],
+  ['calendar.google.com', 'Google Calendar'],
+  ['outlook.office.com', 'Outlook'],
+  ['outlook.live.com', 'Outlook'],
+  ['slack.com', 'Slack'],
+  ['notion.so', 'Notion'],
+  ['stripe.com', 'Stripe'],
+  ['github.com', 'GitHub'],
+  ['linear.app', 'Linear'],
+  ['atlassian.net', (p) => (/^\/wiki(\/|$)/.test(p) ? 'Confluence' : 'Jira')],
+  ['sentry.io', 'Sentry'],
+  ['xero.com', 'Xero']
+];
+
+/** Every name a label might borrow, with the domains that name really lives on. */
+const APP_DOMAINS: ReadonlyMap<string, string[]> = (() => {
+  const m = new Map<string, string[]>();
+  const add = (name: string, d: string) => m.set(name.toLowerCase(), [...(m.get(name.toLowerCase()) ?? []), d]);
+  for (const [d, n] of KNOWN_APPS) {
+    if (typeof n === 'string') add(n, d);
+    else for (const name of d === 'docs.google.com' ? ['Google Docs', 'Google Sheets', 'Google Slides'] : ['Jira', 'Confluence']) add(name, d);
+  }
+  return m;
+})();
+
+/** The host itself, or any host under it, on a dot boundary: `app.hubspot.com`
+ *  is on hubspot.com, `app.hubspot.com.evil.io` and `evilhubspot.com` are not. */
+const onDomain = (host: string, domain: string): boolean => host === domain || host.endsWith(`.${domain}`);
+
+const stripWww = (host: string): string => host.replace(/^www\./, '');
+
+/** A web or email URL, parsed. `hostname` is what the browser will really reach:
+ *  lowercase, punycode for a look-alike letter, no `user:pw@`. */
+function webUrl(href: string): URL | null {
+  let u: URL;
+  try { u = new URL(href); } catch { return null; }
+  return /^(https?|mailto):$/.test(u.protocol) ? u : null;
+}
+
+/** The email address a `mailto:` URL writes to, without its query. */
+function mailAddress(u: URL): string | null {
+  try { return decodeURIComponent(u.pathname) || null; } catch { return null; }
+}
+
+/** True when the link's text is its own address: a pasted URL (`https://…`,
+ *  `<https://…>`), a `www.` autolink (remark-gfm adds `http://` to the href),
+ *  or an email autolink (it adds `mailto:`). */
+export function isBareLink(text: string, href: string): boolean {
+  const t = text.trim();
+  if (!t || !href) return false;
+  return t === href || `http://${t}` === href || `mailto:${t}` === href;
+}
+
+/** The name a bare link shows: a known app's name, else the site's host
+ *  without `www.`, or the address for email. Null when the URL does not parse
+ *  or is not a web or email link, so the caller keeps the raw text. */
+export function linkName(href: string): string | null {
+  const u = webUrl(href);
+  if (!u) return null;
+  if (u.protocol === 'mailto:') return mailAddress(u);
+  const host = u.hostname;
+  if (!host) return null;
+  for (const [d, name] of KNOWN_APPS) {
+    if (onDomain(host, d)) return typeof name === 'string' ? name : name(u.pathname);
+  }
+  return stripWww(host);
+}
+
+/** A label that is itself a web address (`app.hubspot.com`, `https://x.io/a`),
+ *  as a lowercase host; null for anything else, and for a file name such as
+ *  `report.md`, which looks like a host but names a file. */
+function labelHost(label: string): string | null {
+  const t = label.trim();
+  if (!t || /\s/.test(t) || isFileSpan(t)) return null;
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(t) ? t : `http://${t}`;
+  const u = webUrl(withScheme);
+  if (!u || !/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/.test(u.hostname)) return null;
+  return u.hostname;
+}
+
+/**
+ * Where a link really goes, when its words say otherwise (D4): the words name
+ * a known app the link is not on, or are a web address on another host. Returns
+ * the real site (the host without `www.`, or the email address) for the card to
+ * show after the link; null when the words agree or name nothing to check.
+ */
+export function labelMismatch(label: string, href: string): string | null {
+  const u = webUrl(href);
+  if (!u) return null;
+  const mail = u.protocol === 'mailto:';
+  const address = mail ? mailAddress(u) : null;
+  const host = mail ? (address?.split('@')[1] ?? '').toLowerCase() : u.hostname;
+  if (!host) return null;
+  const real = mail ? address : stripWww(host);
+  const words = label.toLowerCase();
+  for (const [name, domains] of APP_DOMAINS) {
+    // Names are letters and spaces only, so they go into the pattern as is.
+    const named = new RegExp(`(^|[^a-z0-9])${name}($|[^a-z0-9])`).test(words);
+    if (named && !domains.some((d) => onDomain(host, d))) return real;
+  }
+  const said = labelHost(label);
+  if (said && !onDomain(host, stripWww(said))) return real;
+  return null;
+}
+

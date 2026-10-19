@@ -1,6 +1,7 @@
 import * as pty from 'node-pty';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 import { resolveCommand, userShellPath } from './shellEnv';
 import { expandTilde } from './fs';
 import { projectDir } from './transcript';
@@ -45,6 +46,9 @@ export interface HiddenClaudeOptions {
   /** Setting sources to load (--setting-sources), e.g. "user" so a project's
    *  settings and hooks in the folder can't change a check. */
   settingSources?: string;
+  /** Settings passed with --settings (a JSON string), laid over the sources
+   *  above, e.g. {"disableAllHooks": true} so no hook runs in the session. */
+  settingsJson?: string;
   /** Directories added via --add-dir (for context gathering). */
   addDirs?: string[];
   /** Hard cap ms before forcing prompt send regardless of boot activity. Default 7000. */
@@ -71,7 +75,14 @@ export interface HiddenClaudeOptions {
   onScreenText?: (text: string) => void;
   /** Stops the call: the session is killed and the result is 'cancelled'. */
   signal?: AbortSignal;
+  /** Remove this session's transcript once it ends: it holds text that must
+   *  not stay where agents can read (Research's, red team third ship). */
+  dropTranscript?: boolean;
 }
+
+/** How long after a session ends its transcript is removed again, for a
+ *  last write as the process exits. */
+const DROP_AGAIN_MS = 3_000;
 
 /** How Claude signs in for these checks, set once by the app (index.ts):
  *  the owner's API key when they chose one in Get Michael ready, else nothing. */
@@ -88,6 +99,9 @@ const ROWS = 50;
 
 /** How often a no tools call looks for its answer in its own transcript. */
 const ANSWER_POLL_MS = 250;
+
+/** How often Enter is pressed again while the prompt sits untaken. */
+const ENTER_AGAIN_MS = 1_500;
 
 export interface HiddenClaudeResult {
   ok: boolean;
@@ -124,6 +138,7 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       ...(opts.noTools ? ['--tools', '', '--strict-mcp-config'] : ['--strict-mcp-config', '--disallowedTools', ...disallowed]),
     ];
     if (opts.settingSources) args.push('--setting-sources', opts.settingSources);
+    if (opts.settingsJson) args.push('--settings', opts.settingsJson);
     for (const d of addDirs) { args.push('--add-dir', d); }
 
     const bootCapMs = opts.bootCapMs ?? 7000;
@@ -200,13 +215,23 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       if (answerPoll) { clearInterval(answerPoll); answerPoll = null; }
-      if (promptTimer) { clearTimeout(promptTimer); promptTimer = null; }
+      if (promptTimer) { clearInterval(promptTimer); promptTimer = null; }
       if (screenTimer) { clearInterval(screenTimer); screenTimer = null; }
       opts.signal?.removeEventListener('abort', onAbort);
       screen?.dispose();
       clearTimeout(bootMaxTimer);
       clearTimeout(globalTimer);
       kill();
+      if (opts.dropTranscript) {
+        const drop = () => {
+          const dir = projectDir(opts.cwd);
+          for (const p of [transcriptFile(dir, sessionId), join(dir, sessionId)]) {
+            try { rmSync(p, { recursive: true, force: true }); } catch { /* next time */ }
+          }
+        };
+        drop();
+        setTimeout(drop, DROP_AGAIN_MS).unref?.();
+      }
       resolve(r);
     };
 
@@ -230,11 +255,23 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       ptyProc.write(`\x1b[200~${prompt}\x1b[201~`);
       setTimeout(() => { if (!settled) ptyProc.write('\r'); }, 140);
       // Claude writes the prompt to the session's transcript as soon as it
-      // takes it. None at all means a sign-in or trust screen is waiting, so
-      // the caller's fallback answers now instead of after the timeout.
-      promptTimer = setTimeout(() => {
-        if (!existsSync(transcriptFile(projectDir(opts.cwd), sessionId))) finish({ ok: false, error: 'hidden session never took the prompt (signed out, or a screen is waiting)' });
-      }, promptTakenMs);
+      // takes it. An Enter that lands while Claude is still starting is
+      // swallowed and the prompt waits unsent in its input box: at app launch,
+      // with every agent starting at once, that denied the trust layer's checks
+      // after 23 s (seen live, 2026-10-15). So Enter is pressed again until the
+      // transcript shows the prompt was taken; on an empty input it does
+      // nothing. None at all by promptTakenMs means a sign-in or trust screen
+      // is waiting, so the caller's fallback answers now, not at the timeout.
+      const sentAt = Date.now();
+      promptTimer = setInterval(() => {
+        if (settled) return;
+        if (existsSync(transcriptFile(projectDir(opts.cwd), sessionId))) {
+          if (promptTimer) { clearInterval(promptTimer); promptTimer = null; }
+          return;
+        }
+        if (Date.now() - sentAt >= promptTakenMs) { finish({ ok: false, error: 'hidden session never took the prompt (signed out, or a screen is waiting)' }); return; }
+        ptyProc.write('\r');
+      }, ENTER_AGAIN_MS);
       // With no tools the first answer is the last one, so it is taken the
       // moment it lands in this session's transcript instead of after the
       // screen has been quiet for idleMs (which added 3.5s to every call).

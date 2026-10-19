@@ -17,6 +17,7 @@
  */
 
 import { swapName } from './hireTemplates';
+import { ownValue } from './ownValue';
 
 export interface WorkStyleContext {
   /** The team member's name. */
@@ -181,7 +182,7 @@ export function plainFallback(instructions: string, label?: string): string {
     if (/^the owner set this work style/i.test(line)) continue;
     const h = line.match(/^#{1,6}\s*(.+?)\s*$/);
     if (h) {
-      const label = HEADING_LABEL[h[1].toLowerCase()] ?? `${h[1].replace(/[:.]+$/, '')}:`;
+      const label = ownValue(HEADING_LABEL, h[1].toLowerCase()) ?? `${h[1].replace(/[:.]+$/, '')}:`;
       if (out.length && out[out.length - 1] !== '') out.push('');
       out.push(label);
       continue;

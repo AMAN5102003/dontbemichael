@@ -13,12 +13,15 @@
  * is wiring and pixels.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { describeUpdate, manualDownloadUrl, manualInstallSteps, pendingVersion, reduceStatus, type UpdateStatus } from '@shared/updateState';
+import { useTranslation } from 'react-i18next';
+import { describeUpdate, manualDownloadUrl, pendingVersion, reduceStatus, type UpdateStatus } from '@shared/updateState';
 import { PixelButton } from './PixelButton';
+import { badgeWords, installSteps } from './updateWords';
 
 declare const __APP_VERSION__: string;
 
 export function UpdateBadge() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [hover, setHover] = useState(false);
@@ -50,6 +53,7 @@ export function UpdateBadge() {
   }, [checkedOk]);
 
   const view = describeUpdate(status, __APP_VERSION__);
+  const words = badgeWords(status, __APP_VERSION__, t);
 
   const onClick = useCallback(async () => {
     if (view.action === 'none' || busy) return;
@@ -91,7 +95,7 @@ export function UpdateBadge() {
         : 'transparent';
 
   const pending = pendingVersion(status, __APP_VERSION__);
-  const steps = manualInstallSteps(window.cth.platform ?? 'darwin');
+  const steps = installSteps(window.cth.platform ?? 'darwin', t);
   const INK = 'var(--cth-ink-900)';
 
   return (
@@ -104,8 +108,8 @@ export function UpdateBadge() {
       className="cth-titlebar-nodrag"
       onClick={() => { void onClick(); }}
       disabled={!interactive}
-      title={view.title}
-      aria-label={view.label ? `${view.title}` : `Version ${__APP_VERSION__}: check for updates`}
+      title={words.title}
+      aria-label={words.label ? words.title : t('updateBadge.idleAria', { v: __APP_VERSION__ })}
       aria-busy={view.busy || busy}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -124,10 +128,10 @@ export function UpdateBadge() {
       }}
     >
       <span>v{__APP_VERSION__}</span>
-      {view.label && (
+      {words.label && (
         <>
           <span aria-hidden style={{ color: 'var(--cth-ink-500)' }}>·</span>
-          <span style={{ fontWeight: view.tone === 'idle' ? 400 : 600 }}>{view.label}</span>
+          <span style={{ fontWeight: view.tone === 'idle' ? 400 : 600 }}>{words.label}</span>
         </>
       )}
     </button>
@@ -146,15 +150,15 @@ export function UpdateBadge() {
         }}
       >
         <div style={{ fontFamily: 'var(--cth-font-mono, monospace)', fontWeight: 700, fontSize: 12.5 }}>
-          Click to download v{pending}
+          {t('updateBadge.hoverTitle', { version: pending })}
         </div>
         <div style={{ marginTop: 4, color: 'var(--cth-ink-700)' }}>
-          Download the latest version and replace the app you have. Prefer the app to update itself? Settings &rarr; Updates.
+          {t('updateBadge.hoverBody')}
         </div>
         <div style={{
           marginTop: 8, fontFamily: 'var(--cth-font-mono, monospace)', fontSize: 9,
           letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--cth-ink-500)'
-        }}>On {steps.os}</div>
+        }}>{t('updateBadge.onOs', { os: steps.os })}</div>
         <ol style={{ margin: '4px 0 0', paddingLeft: 18, color: 'var(--cth-ink-700)' }}>
           {steps.steps.map((t) => <li key={t}>{t}</li>)}
         </ol>
@@ -165,7 +169,7 @@ export function UpdateBadge() {
     {started && (
       <div
         role="dialog"
-        aria-label="Install the update"
+        aria-label={t('updateBadge.installAria')}
         className="cth-titlebar-nodrag"
         style={{
           position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 400,
@@ -176,17 +180,16 @@ export function UpdateBadge() {
         }}
       >
         <div style={{ fontFamily: 'var(--cth-font-mono, monospace)', fontWeight: 700, fontSize: 13 }}>
-          v{started} is downloading in your browser.
+          {t('updateBadge.downloadingInBrowser', { version: started })}
         </div>
         <div style={{ marginTop: 6, color: 'var(--cth-ink-700)' }}>
-          When it lands, quit this app and install the new version over the current one. Open it and
-          pick the same project. Your agents, memory and settings stay where they are.
+          {t('updateBadge.whenItLands')}
         </div>
         <ol style={{ margin: '8px 0 0', paddingLeft: 18, color: 'var(--cth-ink-700)' }}>
           {steps.steps.map((t) => <li key={t}>{t}</li>)}
         </ol>
         <div style={{ display: 'flex', gap: 8, marginTop: 10, justifyContent: 'flex-end' }}>
-          <PixelButton variant="ghost" size="sm" onClick={() => setStarted(null)}>got it</PixelButton>
+          <PixelButton variant="ghost" size="sm" onClick={() => setStarted(null)}>{t('updateBadge.gotIt')}</PixelButton>
         </div>
       </div>
     )}
@@ -212,10 +215,10 @@ export function UpdateBadge() {
             width: 18, height: 18, borderRadius: 999,
             background: 'var(--cth-mint-light, #d0f0e0)', color: 'var(--cth-ink-900)', fontSize: 12
           }}>&#10003;</span>
-          You are on the latest version.
+          {t('updateBadge.latestFlash')}
         </div>
         <div style={{ marginTop: 4, color: 'var(--cth-ink-700)' }}>
-          v{__APP_VERSION__} is the newest release. Checked just now.
+          {t('updateBadge.latestFlashDetail', { v: __APP_VERSION__ })}
         </div>
       </div>
     )}

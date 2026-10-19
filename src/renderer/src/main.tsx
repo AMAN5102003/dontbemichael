@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 // The brand kit's Struck M (branding/logo/mark), for the window icon and the
 // loading screen. It replaced the old Michael portrait (owner, 2026-09-25).
 import brandMark from '@brandkit/logo/mark/struck-m-light.svg?url';
@@ -27,6 +28,8 @@ if (!root) throw new Error('No root element');
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>
 );

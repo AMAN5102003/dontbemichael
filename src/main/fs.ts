@@ -1,11 +1,12 @@
 import { readdir, lstat, open, realpath, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
-import { imageMimeForPath } from '../shared/imageTypes';
+import { imageMimeForExtension } from '../shared/imageTypes';
 import { OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, kindOf, type AskFileVerdict } from '../shared/askFiles';
 import { isSameOrInside } from './pathInside';
+import { RESEARCH_ID } from '../shared/research';
 
 /**
  * Lexical containment — pure string math, no filesystem access.
@@ -268,7 +269,7 @@ export async function readFileBinary(root: string, rel: string, maxBytes = MAX_B
     return {
       ok: true,
       bytes,
-      mime: imageMimeForPath(abs) ?? 'application/octet-stream',
+      mime: imageMimeForExtension(extensionOf(abs)) ?? 'application/octet-stream',
       path: abs,
       size: s.size
     };
@@ -384,7 +385,8 @@ export interface AskFileAgent {
  * (docs/designs/ask-me-open-file.md): the office folder, then the folder of the
  * team member who raised the question, the card's assignee, and every other
  * team member. Michael and his assistant are not team members here, the same
- * rule as the folder access layout, so their folders never widen Open. Ids
+ * rule as the folder access layout, so their folders never widen Open; nor
+ * does Research's desk, which holds raw web pages (red team, third ship). Ids
  * the registry does not know are dropped; each folder appears once.
  */
 export function askFileRootsFor(
@@ -395,7 +397,7 @@ export function askFileRootsFor(
   const w = (who ?? {}) as { raisedBy?: unknown; assignee?: unknown };
   const member = (id: unknown): id is string => {
     const a = typeof id === 'string' ? agents[id] : undefined;
-    return !!a && !a.isGod && !a.isAssistant;
+    return !!a && !a.isGod && !a.isAssistant && id !== RESEARCH_ID;
   };
   const first = [w.raisedBy, w.assignee].filter(member);
   const ids = [...first, ...Object.keys(agents).filter((id) => member(id) && !first.includes(id))];
@@ -505,21 +507,10 @@ export async function readAskFile(pathText: string, roots: readonly string[] | r
   return { ok: true, path: r.path, root, real: v.real, kind: tabKind, text: r.content, size: r.size };
 }
 
-/** macOS package endings: directories Finder treats as an app or a document. */
-const PACKAGE_EXTENSIONS = new Set([
-  'app', 'appex', 'bundle', 'framework', 'plugin', 'prefpane', 'kext', 'xpc', 'saver', 'qlgenerator', 'mdimporter',
-  'pkg', 'mpkg', 'workflow', 'action', 'service', 'scptd', 'pages', 'numbers', 'key', 'rtfd', 'photoslibrary',
-  'logicx', 'band', 'playground', 'xcodeproj', 'xcworkspace', 'xcarchive', 'dsym',
-]);
-
-/**
- * Whether revealing a directory may open it as a folder. On macOS an app, and
- * many documents, are directories whose names carry a package ending
- * (`Tool.app`, `Report.pages`); `shell.openPath` launches those, so they are
- * shown in their parent instead (eng review R4). Any other folder opens, dots
- * in its name included (`Sales`, `acme.com`, `Q3.2026`).
- */
-export function opensAsFolder(path: string): boolean {
-  return !PACKAGE_EXTENSIONS.has(extensionOf(path));
+/** A folder macOS treats as an app or a package, by its ending or by an app's
+ *  insides: opening one launches it, so it is shown instead (owner, D12). */
+const PACKAGE_DIR_RE = /\.(app|appex|bundle|framework|plugin|prefpane|kext|xpc|saver|qlgenerator|mdimporter|pkg|mpkg|workflow|action|service|scptd|pages|numbers|key|rtfd|photoslibrary|logicx|band|playground|xcodeproj|xcworkspace|xcarchive|dsym)$/i;
+export function isPackageDir(dir: string): boolean {
+  if (PACKAGE_DIR_RE.test(dir.replace(/[\\/]+$/, ''))) return true;
+  return ['Contents/Info.plist', 'Contents/MacOS'].some((f) => existsSync(join(dir, f)));
 }
-

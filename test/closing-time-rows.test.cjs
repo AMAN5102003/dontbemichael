@@ -39,12 +39,12 @@ test('after a tool call ends, the row drops its detail and counts from when it e
   // Value: protects=the owner never reads a finished tool call as still running, and its minutes start when it ended; fails_when=describeRow keeps a stale detail or the clock keeps counting from the tool's start; why_new=only the PostToolUse patch itself was source-checked; seam=none
   const during = { status: 'working', action: 'using Bash', actionDetail: 'Run the full test suite', actionAt: NOW - 9 * 60_000 };
   assert.equal(row(during).line, '“Run the full test suite” · 9 min');
-  // What useHive's PostToolUse patch leaves (pinned in closing-time-dialog.test.cjs).
-  const after = { ...during, status: 'working', actionDetail: undefined, actionAt: NOW - 2 * 60_000 };
+  // What useHive's PostToolUse patches leave (pinned in closing-time-dialog.test.cjs).
+  const after = { ...during, status: 'working', action: 'thinking', actionDetail: undefined, actionAt: NOW - 2 * 60_000 };
   const r = row(after);
   assert.equal(r.state, 'stillWorking');
-  assert.doesNotMatch(r.line, /Run the full test suite/, 'the finished call is gone');
-  assert.match(r.line, / · 2 min$/, 'minutes since it ended, not since it started');
+  assert.doesNotMatch(r.line, /Run the full test suite|Bash/, 'the finished call is gone, its tool too');
+  assert.equal(r.line, 'thinking · 2 min', 'minutes since it ended, not since it started');
   assert.doesNotMatch(row({ ...after, actionAt: NOW - 30_000 }).line, /min/, 'under a minute: no minutes yet');
 });
 

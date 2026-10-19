@@ -40,7 +40,9 @@ import {
 } from '@/store/config';
 import { BUILD_ENGINES, canReceiveInbox } from '@shared/agentProvider';
 import { isComposingKey } from '@shared/imeGuard';
+import { fmtTokens } from '@shared/tokenFormat';
 import { useRtl } from '@/i18n/useDirection';
+import { SilentPanelLine } from './SilentEngine';
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
  *  when the god agent is selected: terminal + queue, the floor roster (with
@@ -217,10 +219,11 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
 
       {/* Tabs (DESIGN.md 7.11): Profile, Access, Work, Office schedule, History
           (only once a webhook exists), Memory, Advanced. */}
+      <SilentPanelLine agentId={agent.id} name={agent.name} />
       <PanelTabs tabs={visibleTabs.map((tabDef) => ({ key: tabDef.key, label: t(tabDef.labelKey) }))} current={tab} onChange={setTab} />
 
-      {/* Body */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* Body (data-panel-body: see AgentDetailPanel). */}
+      <div data-panel-body data-tab={tab} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {tab === 'terminal' && (
           isFullscreenedHere ? (
             <Centered>{t('commandCenter.terminalFullscreen')}</Centered>
@@ -309,7 +312,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
   const { t } = useTranslation();
   const rtl = useRtl();
   const agents = useStore((s) => s.agents);
-  const godName = agents.find((a) => a.isGod)?.name ?? 'the orchestrator';
+  const godName = agents.find((a) => a.isGod)?.name ?? t('common.orchestrator');
   const select = useStore((s) => s.select);
   const updateAgent = useStore((s) => s.updateAgent);
   const toolCounts = useStore((s) => s.toolCounts);
@@ -421,7 +424,10 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
         rows = oldEntry.term.rows;
       } catch { /* host not sized yet */ }
 
-      const killed = await window.cth.killPty(a.ptyId);
+      // A restart: an isolated member's worktree stays, and it starts again in it
+      // (ship review 2026-10-17).
+      const cwd = a.worktreePath && (await window.cth.gitIsRepo(a.worktreePath)) ? a.worktreePath : a.cwd;
+      const killed = await window.cth.killPty(a.ptyId, { restart: true });
       // A pty that is ALREADY gone is the state this kill was trying to reach, so
       // it is not a failure. This is the single most common way to arrive at
       // "Restart & Continue": the session died on its own — a crash, or Ctrl-C
@@ -451,7 +457,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
       const hive = {
         id: a.id,
         name: a.name,
-        cwd: a.cwd,
+        cwd,
         provider,
         isGod: a.isGod,
         isAssistant: a.isAssistant,
@@ -459,7 +465,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
       };
       const res = await window.cth.spawnPty({
         id: a.ptyId,
-        cwd: a.cwd,
+        cwd,
         command: exe,
         args,
         provider,
@@ -1225,14 +1231,6 @@ function Sparkline({ series }: { series: number[] }) {
       {text}
     </span>
   );
-}
-
-/** Compact token count: 1K / 10K / 100K / 1M / 100M / 1B (trailing .0 trimmed). */
-function fmtTokens(n: number): string {
-  if (n >= 1e9) return `${+(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${+(n / 1e3).toFixed(1)}K`;
-  return String(Math.round(n));
 }
 
 /** Per-agent token-limit control (top-right of each agent card). Shows the

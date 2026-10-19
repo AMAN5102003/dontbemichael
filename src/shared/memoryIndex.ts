@@ -205,6 +205,9 @@ export interface TidyOutcome {
   archived: Array<{ entry: MemoryEntry; reason: string }>;
   /** Procedure files to write: `memory/procedures/<slug>.md`. */
   procedures: Array<{ slug: string; name: string; content: string }>;
+  /** Entries that are new to the index, not edits of one already there, for
+   *  Pulse's Learning count (owner, 2026-10-18: an edit is not a new note). */
+  added: Array<{ id: string; source: MemorySource }>;
   stats: { added: number; updated: number; deleted: number; procedures: number; repeats: number; dupes: number };
 }
 
@@ -217,6 +220,7 @@ export function applyOps(entries: MemoryEntry[], ops: MemoryOp[], today: string)
   let next = entries.map((e) => ({ ...e }));
   const archived: TidyOutcome['archived'] = [];
   const procedures: TidyOutcome['procedures'] = [];
+  const added: TidyOutcome['added'] = [];
   const stats = { added: 0, updated: 0, deleted: 0, procedures: 0, repeats: 0, dupes: 0 };
   const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
   let n = next.reduce((max, e) => Math.max(max, Number(e.id.slice(1)) || 0), 0);
@@ -226,7 +230,9 @@ export function applyOps(entries: MemoryEntry[], ops: MemoryOp[], today: string)
     if (op.op === 'add') {
       const key = norm(op.text);
       if (next.some((x) => norm(x.text) === key)) { stats.dupes++; continue; }
-      next.push({ id: newId(), kind: op.kind, text: op.text, source: op.source, date: today, ...(op.expires ? { expires: op.expires } : {}) });
+      const id = newId();
+      next.push({ id, kind: op.kind, text: op.text, source: op.source, date: today, ...(op.expires ? { expires: op.expires } : {}) });
+      added.push({ id, source: op.source });
       stats.added++;
     } else if (op.op === 'update') {
       const i = next.findIndex((e) => e.id === op.id);
@@ -257,11 +263,19 @@ export function applyOps(entries: MemoryEntry[], ops: MemoryOp[], today: string)
       const pointer = `${op.name.slice(0, Math.max(1, MAX_ENTRY_CHARS - path.length - 11))}: steps in ${path}`;
       const i = next.findIndex((e) => e.kind === 'procedure' && e.text.includes(path));
       if (i >= 0) next[i] = { ...next[i], text: pointer, date: today };
-      else next.push({ id: newId(), kind: 'procedure', text: pointer, source: op.source, date: today });
+      else {
+        const id = newId();
+        next.push({ id, kind: 'procedure', text: pointer, source: op.source, date: today });
+        added.push({ id, source: op.source });
+      }
       stats.procedures++;
     }
   }
-  return { entries: next, archived, procedures, stats };
+  // An id added and then deleted in the same pass never reaches the file; an
+  // id deleted and given out again counts once, as its last add.
+  const kept = new Set(next.map((e) => e.id));
+  const once = new Map(added.filter((a) => kept.has(a.id)).map((a) => [a.id, a] as const));
+  return { entries: next, archived, procedures, added: [...once.values()], stats };
 }
 
 /** Archive lines for replaced or deleted entries. */

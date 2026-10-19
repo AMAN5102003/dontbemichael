@@ -21,6 +21,19 @@ test('the headline is Michael\'s bold lead, else the first sentence, as plain te
   assert.equal(askHeadline('Sign in again\nwith the app password'), 'Sign in again');
 });
 
+test('the headline does not truncate at common abbreviations', () => {
+  assert.equal(askHeadline('Mr. Davis sent an invoice for $500. Should we pay it?'), 'Mr. Davis sent an invoice for $500.');
+  assert.equal(askHeadline('Dr. Watson requested an update on the case. What should I reply?'), 'Dr. Watson requested an update on the case.');
+  assert.equal(askHeadline('Invoice No. 42 is ready for review. Can you check it?'), 'Invoice No. 42 is ready for review.');
+  assert.equal(askHeadline('The answer was no. What should we do next?'), 'The answer was no.');
+  assert.equal(askHeadline('Acme Inc. sent their proposal. Should we review it?'), 'Acme Inc. sent their proposal.');
+  assert.equal(askHeadline('e.g. please check whether the payment cleared. It is pending.'), 'e.g. please check whether the payment cleared.');
+  assert.equal(askHeadline('U.S. tax forms are ready. Should I file them?'), 'U.S. tax forms are ready.');
+  assert.equal(askHeadline('Bring cups, plates, etc. before Friday. Can you order them?'), 'Bring cups, plates, etc. before Friday.');
+  assert.equal(askHeadline('The delivery arrives at 9 a.m. tomorrow. Should I confirm it?'), 'The delivery arrives at 9 a.m. tomorrow.');
+  assert.equal(askHeadline('Close the register at 6 p.m. tonight. Who has the keys?'), 'Close the register at 6 p.m. tonight.');
+});
+
 test('the headline keeps underscores in file names and addresses, and drops them as emphasis', () => {
   assert.equal(askHeadline('Should I send `monthly_report.pdf` to Kelly? It is ready.'), 'Should I send monthly_report.pdf to Kelly?');
   assert.equal(askHeadline('Can I email first_last@acme.com the quote?'), 'Can I email first_last@acme.com the quote?');
@@ -196,6 +209,26 @@ test('askTitle never throws on agent-written data, stays fast, and keeps readabl
   assert.equal(askTitle('Pay the invoice (3 Sep.)'), 'Pay the invoice');
   const tab = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(tab, /const who = nameFor\(typeof t\.assignee === 'string' \? t\.assignee : undefined\);/);
+});
+
+test('See full context shows only when the card holds more than the question, and Michael keeps the background (owner, 2026-10-12)', () => {
+  // Value: protects=the link never opens a repeat of the question, and blocked cards carry their background; fails_when=the footer shows unconditionally or the triage rule keeps the description on waiting cards only; why_new=the link and rule had no test; seam=none; no_claim=whether Michael writes a good background (no eval)
+  const tab = read('src/renderer/src/components/AskMeTab.tsx');
+  assert.match(tab, /const moreContext = \(typeof t\.description === 'string' && t\.description\.trim\(\) !== ''\)\n\s+\|\| \(typeof t\.result === 'string' && t\.result\.trim\(\) !== ''\)\n\s+\|\| \(t\.humanQA\?\.length \?\? 0\) > 1;/);
+  assert.match(tab, /\{moreContext && \(\n\s+<div style=\{\{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10/, 'the footer and its link need something more to show');
+  const hive = read('src/main/hive.ts');
+  assert.match(hive, /make a card for it, keeping what they were doing and why in its "description" \(the owner reads it under See full context\): "blocked"/, 'triage keeps the background on blocked cards too');
+  assert.doesNotMatch(hive, /the team member as assignee and what they were doing kept in its description/, 'no longer waiting cards only');
+  assert.equal((hive.match(/so the owner can read it under See full context/g) ?? []).length, 3, 'ask rule, standing rule and the HIVE doc ask a background for asks Michael writes');
+});
+
+test('Task detail lists questions newest first, each with when it was asked (owner, 2026-10-12)', () => {
+  // Value: protects=the open question is first on Task detail and each question says when it was asked; fails_when=the reverse, the ledger index key or the askedAgo span is dropped; why_new=no test covers the Q and A list order; seam=none; no_claim=pixel layout (source assertion, no render harness)
+  const kanban = read('src/renderer/src/components/TasksKanban.tsx');
+  assert.match(kanban, /task\.humanQA!\.map\(\(e, i\) => \[e, i\] as const\)\.reverse\(\)\.map\(\(\[e, i\]\) => \{/, 'newest first');
+  assert.match(kanban, /<div key=\{i\} style=\{\{\n\s+padding: '10px 12px'/, 'the key stays the ledger index');
+  assert.match(kanban, /const ago = askedAgo\(typeof e\.askedAt === 'string' \? e\.askedAt : undefined, Date\.now\(\), i18n\.language, t\('askMe\.justNow'\)\);/);
+  assert.match(kanban, /\{t\('kanban\.question'\)\}<\/span>\n\s+\{ago && <span style=\{\{ fontSize: 11, color: 'var\(--cth-ink-3\)' \}\}>\{ago\}<\/span>\}/, 'the time beside Question, as on Ask me');
 });
 
 test('a reply that does not save says so and keeps the draft', () => {

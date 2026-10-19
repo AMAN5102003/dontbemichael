@@ -46,7 +46,7 @@ test('Agents & Models hides the API keys panel while no offered engine reads it'
 
 test('Agents & Models and Autonomy & Budgets are one Agents tab (owner, 2026-10-01)', () => {
   const modal = fs.readFileSync(path.resolve(__dirname, '..', 'src/renderer/src/components/SettingsModal.tsx'), 'utf8');
-  assert.match(modal, /const NAV_SECTIONS: Section\[\] = \['General', 'Company profile', 'Prerequisites', 'Agents', 'Skills', 'Connections', 'Voice', 'Memory & Knowledge'\];/);
+  assert.match(modal, /const NAV_SECTIONS: Section\[\] = \['General', 'Company profile', 'Prerequisites', 'Agents', 'Skills', 'Connections', 'Research & privacy', 'Voice', 'Memory & Knowledge'\];/);
   assert.doesNotMatch(modal, /'Autonomy & Budgets'|'Agents & Models'/);
   // One tab, in this order: the model, autonomy, the circuit breaker, then max turns.
   const tab = modal.slice(modal.indexOf("{activeSection === 'Agents' && ("), modal.indexOf("{/* MEMORY & KNOWLEDGE */}"));

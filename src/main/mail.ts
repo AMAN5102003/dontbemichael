@@ -332,7 +332,13 @@ export interface ComposeInput {
   thread?: ThreadHeaders;
 }
 
-interface OpenBox { client: ImapLike; timer?: ReturnType<typeof setTimeout> }
+interface OpenBox {
+  client: ImapLike;
+  /** Shared by every caller until this mailbox's login finishes. */
+  ready?: Promise<ImapLike>;
+  cancelled?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+}
 
 export class MailService {
   private readonly boxes = new Map<string, OpenBox>();
@@ -433,6 +439,7 @@ export class MailService {
 
   private async imap(id: string): Promise<ImapLike> {
     const open = this.boxes.get(id);
+    if (open?.ready) return open.ready;
     if (open && open.client.usable !== false) { this.touch(id, open); return open.client; }
     if (open) this.drop(id);
     const rec = this.record(id);
@@ -444,18 +451,32 @@ export class MailService {
     };
     client.on?.('error', disconnected);
     client.on?.('close', disconnected);
-    try {
-      await withTimeout(client.connect(), CALL_TIMEOUT_MS, 'Connecting to the mailbox');
-    } catch (e) {
-      // A failed login leaves a half-open socket: close it, or every failed
-      // attempt leaks a connection.
-      try { client.close?.(); } catch { /* already gone */ }
-      throw e;
-    }
     const box: OpenBox = { client };
+    const requireCurrent = (): void => {
+      if (this.boxes.get(id) !== box) throw new MailError('refused', 'The mailbox connection was closed. Try again.');
+    };
+    // Own the pending socket before yielding, so concurrent calls wait for it
+    // and close/closeAll can cancel it just like an established connection.
     this.boxes.set(id, box);
-    this.touch(id, box);
-    return client;
+    box.ready = withTimeout(Promise.resolve().then(() => {
+      requireCurrent();
+      return client.connect();
+    }), CALL_TIMEOUT_MS, 'Connecting to the mailbox').then(() => {
+      requireCurrent(); // A late login must never resurrect a closed socket.
+      box.ready = undefined;
+      this.touch(id, box);
+      return client;
+    }).catch((e: unknown) => {
+      if (this.boxes.get(id) === box) {
+        this.boxes.delete(id);
+        // A failed login leaves a half-open socket. A box already removed by
+        // close or a disconnect event has had its socket closed there.
+        try { client.close?.(); } catch { /* already gone */ }
+      }
+      if (box.cancelled) throw new MailError('refused', 'The mailbox connection was closed. Try again.');
+      throw e;
+    });
+    return box.ready;
   }
 
   private touch(id: string, box: OpenBox): void {
@@ -464,24 +485,31 @@ export class MailService {
     (box.timer as { unref?: () => void }).unref?.();
   }
 
-  private drop(id: string): void {
+  private drop(id: string, expected?: ImapLike): void {
     const box = this.boxes.get(id);
-    if (!box) return;
+    if (!box || (expected && box.client !== expected)) return;
     this.boxes.delete(id);
     if (box.timer) clearTimeout(box.timer);
-    box.client.logout().catch(() => box.client.close?.());
+    if (box.ready && box.client.close) {
+      try { box.client.close(); } catch { /* already gone */ }
+    } else box.client.logout().catch(() => box.client.close?.());
   }
 
   /** Close every connection (app quit, reset, mailbox removed). */
-  closeAll(): void { for (const id of [...this.boxes.keys()]) this.drop(id); }
-  close(id: string): void { this.drop(id); }
+  closeAll(): void { for (const id of [...this.boxes.keys()]) this.close(id); }
+  close(id: string): void {
+    const box = this.boxes.get(id);
+    if (box?.ready) box.cancelled = true;
+    this.drop(id);
+  }
 
   /** Run `fn` with the folder locked; one reconnect after a dropped socket
    *  (sleep and wake), then a classified error. */
   private async inFolder<T>(id: string, folder: (c: ImapLike) => Promise<string>, fn: (c: ImapLike, path: string) => Promise<T>, what: string): Promise<T> {
     for (let attempt = 0; attempt < 2; attempt++) {
+      let client: ImapLike | undefined;
       try {
-        const client = await this.imap(id);
+        client = await this.imap(id);
         const path = await folder(client);
         const lock = await withTimeout(client.getMailboxLock(path), CALL_TIMEOUT_MS, what);
         try {
@@ -491,8 +519,10 @@ export class MailService {
         } finally { lock.release(); }
       } catch (e) {
         const err = classifyMailError(e);
-        if (err.kind === 'network' && attempt === 0) { this.drop(id); continue; }
-        if (err.kind === 'network' || err.kind === 'timeout') this.drop(id);
+        // Acquisition failures clean up their own pending socket in imap.
+        // An older operation must not drop a replacement another caller owns.
+        if (err.kind === 'network' && attempt === 0) { if (client) this.drop(id, client); continue; }
+        if ((err.kind === 'network' || err.kind === 'timeout') && client) this.drop(id, client);
         this.note(id, err);
         throw err;
       }

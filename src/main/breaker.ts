@@ -419,3 +419,57 @@ export class CircuitBreaker {
     return { tripping: false, reason: '' };
   }
 }
+
+// ── what the beat sends ──────────────────────────────────────────────────────
+
+/** One hive message the beat sends for a breaker decision, from 'breaker'. */
+export interface BreakerMessage {
+  to: string;
+  act: 'request' | 'inform';
+  subject: string;
+  body: string;
+}
+
+/** A trip reason in plain words, for Michael. The raw reasons are written for
+ *  the dashboard ("looping: 8× identical tool call (Bash)"); Michael gets what
+ *  happened. An unknown reason passes through unchanged. */
+export function plainBreakerReason(reason: string): string {
+  let m: RegExpMatchArray | null;
+  if ((m = reason.match(/^looping: (\d+)× identical tool call \((.*)\)$/))) return `it ran the same ${m[2]} step ${m[1]} times in a row`;
+  if ((m = reason.match(/^error storm: (\d+) /))) return `it hit ${m[1]} errors in a row talking to the model`;
+  if (reason.startsWith('token limit:')) return 'it went over its own token allowance';
+  if (reason.startsWith('cost cap:')) return 'the office went over its spending cap, and it spent the most';
+  if (reason.startsWith('token cap:')) return 'the office went over its token budget, and it used the most';
+  if (reason.startsWith('token velocity')) return 'it was using tokens unusually fast';
+  if (reason.startsWith('no-progress:')) return 'it kept working without moving its task forward';
+  return reason;
+}
+
+/**
+ * What one breaker decision sends. A steer and a constrain each tell the member
+ * itself, as before. A constrain also tells Michael: the member was asked to
+ * send him a plan, but a member that is truly stuck may never do it, and the
+ * next step (split the task, hand it to someone else, ask the owner) is his to
+ * choose. A steer does not tell him: it comes first, often clears on the next
+ * healthy beat, and already asks the member to report; a constrain means it
+ * tripped again after that. Decisions only carry an action when the level goes
+ * UP, so a member that stays held back sends nothing more. Michael is never told
+ * about himself, and a stop is the beat's own (it ends the member and Michael
+ * tells the owner).
+ */
+export function breakerMessages(d: BreakerDecision, name: string, godId: string): BreakerMessage[] {
+  const id = d.state.agentId;
+  const reason = d.state.reason;
+  if (d.action === 'steer') {
+    return [{ to: id, act: 'request', subject: 'Circuit breaker: steer',
+      body: `The app noticed a problem with this task (${reason}). If you are repeating yourself or stuck, stop, and send Michael a short summary of what you tried and what you need.` }];
+  }
+  if (d.action !== 'constrain') return [];
+  const out: BreakerMessage[] = [{ to: id, act: 'request', subject: 'Circuit breaker: constrain',
+    body: `The app paused this task (${reason}). Before running more tools, send Michael a short plan of your next step and wait for his go ahead.` }];
+  if (id !== godId) {
+    out.push({ to: godId, act: 'inform', subject: `${name} is held back and needs your call`,
+      body: `The app held ${name} (${id}) back because ${plainBreakerReason(reason)}. ${name} was asked to send you a plan and wait for your go ahead, but may be too stuck to do it. Choose the next step: split the task, hand it to another team member, or ask the owner.` });
+  }
+  return out;
+}

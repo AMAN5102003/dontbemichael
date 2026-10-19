@@ -1,3 +1,5 @@
+import type { ResearchConfig } from '../shared/research';
+import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import type { MailboxRecord, AgentCapabilities } from '../shared/mailboxes';
 import type { CompanyProfile } from '../shared/companyProfile';
 import type { ScheduledMission, ScheduleRequest } from '../shared/missions';
@@ -37,17 +39,27 @@ export type { ScheduledMission } from '../shared/missions';
  *  section 6): what Michael concentrates on in each standup run. */
 export const OPS_STANDUP_FOCUS =
   'First close your open requests from the owner: route each answer and reply done to it. ' +
+  'Fix each blocked card with nothing asked: ask its question on Ask me, ' +
+  'move it to waiting naming who in waitingOn, or to done. ' +
+  'Check the floor in fleet.json: who does what, whether each member still runs, ' +
+  'whether in-flight cards are on track, and whether any card has nobody on it. ' +
+  'A doing card held on someone outside the office or a teammate goes to waiting, naming who in waitingOn; ' +
+  'a waiting card returns to doing when they answer; else work the gone quiet list. ' +
+  'Re-engage anyone stalled; keep the board right.';
+
+/** Standup focus texts the app shipped before. An office still carrying one
+ *  word for word gets the current one at launch; the owner's own text stays. */
+export const OPS_STANDUP_BUILT_IN_FOCUSES: readonly string[] = [
+  // 2026-10-10 to 2026-10-17: "else chase them", with no check back time,
+  // so a Waiting card whose customer never answered could wait forever.
+  'First close your open requests from the owner: route each answer and reply done to it. ' +
   'Then fix each blocked card with nothing asked: ask its question on Ask me, ' +
   'move it to waiting naming who in waitingOn, or to done. ' +
   'Check the floor in fleet.json: who is doing what, whether each member still runs, ' +
   'whether in-flight cards are on track, and whether any card has nobody on it. ' +
   'A doing card held on someone outside the office or a teammate goes to waiting, naming who in waitingOn; ' +
   'a waiting card returns to doing when they answer; else chase them. ' +
-  'Re-engage anyone stalled and keep the board right.';
-
-/** Standup focus texts the app shipped before. An office still carrying one
- *  word for word gets the current one at launch; the owner's own text stays. */
-export const OPS_STANDUP_BUILT_IN_FOCUSES: readonly string[] = [
+  'Re-engage anyone stalled and keep the board right.',
   // 2026-10-09 dev builds only: Waiting without the step that brings a card
   // back to doing, so an office that ran one still gets the current text.
   'First close your open requests from the owner: route each answer and reply done to it. ' +
@@ -228,6 +240,11 @@ export interface HarnessConfig {
   businessTeam?: Array<{ agentId: string; folder: string }>;
   /** Set once the onboarding team has been started, so it is started once. */
   businessTeamStarted?: boolean;
+  /** Research, the one team member on the internet (shared/research.ts). */
+  research?: ResearchConfig;
+  /** The owner's data classes that differ from the seeded defaults
+   *  (shared/dataClasses.ts): what the team may send to Research. */
+  dataClasses?: Partial<Record<DataClassId, DataClassSetting>>;
   /** Team members that failed their first start, tried again (and only they)
    *  on each later launch until they start. */
   businessTeamRetry?: string[];
@@ -273,6 +290,9 @@ export interface HarnessConfig {
    *  secret store under `apikey:anthropic` and handed to each Claude agent as
    *  ANTHROPIC_API_KEY at start. */
   claudeAuth?: 'account' | 'apiKey';
+  /** What the owner pays for their Claude plan a month, in USD (Settings > Agents).
+   *  Unset: the detected plan's list price. Pulse splits it by share of the work. */
+  planPriceMonthly?: number;
   /** The model GOD runs on. Unset falls back to the provider preset's
    *  `recommendedOrchestratorModel`, then MODEL_GOD. Default 'claude-opus-5-5'. */
   godModel?: string;

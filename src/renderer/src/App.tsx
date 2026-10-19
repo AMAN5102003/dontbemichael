@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useStore, selectedAgent, ROSTER_BOOT_HOME, ACTION_CLOCKING_IN } from '@/store/store';
 import { rosterNeedsReload } from '@/store/rosterSource';
 import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
@@ -6,15 +6,18 @@ import type { HarnessConfig } from '@/store/config';
 import { DEFAULT_ORG_TRIGGER } from '@shared/triggers';
 import { StudioStage } from '@/scene/studio/StudioStage';
 import { TasksKanban } from '@/components/TasksKanban';
+import { PulseView } from '@/components/pulse/PulseView';
 import { FileTabView } from '@/components/FileTabView';
 import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
 import { useHive } from '@/hooks/useHive';
 import { useGodNameSync } from '@/i18n/useGodNameSync';
 import { useDirectionSync } from '@/i18n/useDirection';
+import { useCopyLinkLabelSync } from '@/i18n/useCopyLinkLabelSync';
 import { useArabicTerminalSync } from '@/terminal/useArabicTerminalSync';
 import { AgentDetailPanel } from '@/components/AgentDetailPanel';
 import { AddAgentModal } from '@/components/AddAgentModal';
 import { MichaelBooting } from '@/components/MichaelBooting';
+import { TeamClockingIn } from '@/components/TeamClockingIn';
 import { OnboardingWizard } from '@/components/OnboardingWizard';
 import { OfficeFolderMissing } from '@/components/OfficeFolderMissing';
 import { ClosingTimeBar, type ClosingTimeState } from '@/components/ClosingTimeBar';
@@ -41,6 +44,10 @@ import { columnAfterGoneHome } from '@/shell/closingFloor';
 import { watchReturningBindings } from '@/shell/releaseBindings';
 import { NEEDS_YOU_PILL_ID, columnEscAction, columnLocked, focusNeedsYouPill } from '@/shell/rightColumn';
 import { BottomBar } from '@/shell/BottomBar';
+import { DOCK_CENTER_ID, panelCentered } from '@/shell/wideCenter';
+import { useDockCentered } from '@/hooks/useCenter';
+import { PANEL_MOVE_EVENT, PANEL_MOVE_MS } from '@/shell/Dialog';
+import { afterLeave } from '@/store/leaveGuard';
 
 // Injected at build time from package.json (see electron.vite.config.ts).
 declare const __APP_VERSION__: string;
@@ -50,6 +57,8 @@ export function App() {
   useGodNameSync();
   // Mirror the document only for a user who has picked an RTL app language.
   useDirectionSync();
+  // Give main the right-click "Copy link address" label in the app language.
+  useCopyLinkLabelSync();
   // Let terminals that are ALREADY open follow a language switch too.
   useArabicTerminalSync();
   const agent = useStore(selectedAgent);
@@ -63,6 +72,7 @@ export function App() {
   const { t } = useTranslation();
   const rightColumn = useStore(s => s.rightColumn);
   const sidebarWidth = useStore(s => s.sidebarWidth);
+  const panelWide = useStore(s => s.panelWide);
   const setSidebarWidth = useStore(s => s.setSidebarWidth);
   const ideOpen = useStore(s => s.ideOpen);
   const setIdeOpen = useStore(s => s.setIdeOpen);
@@ -316,6 +326,8 @@ export function App() {
   const feed = useNeedsYou();
   // New default job descriptions are offered on Needs you (workStyleUpdates.ts).
   useEffect(() => { setWorkStyleOffersSource(readWorkStyleOffers); }, []);
+  // A click on the not reporting desktop notice shows Needs you (issue #326, SD10).
+  useEffect(() => window.cth.onSilentOpen?.(() => useStore.getState().openNeedsYou()), []);
   const locked = columnLocked(feed.status, feed.count);
   // The open person goes home: their panel closes and the closing bar takes
   // the focus (4A).
@@ -324,21 +336,73 @@ export function App() {
     const st = useStore.getState();
     const next = columnAfterGoneHome(st.rightColumn, st.selectedId, goneHome, locked);
     if (!next) return;
-    st.setRightColumn(next);
-    document.querySelector<HTMLElement>('[data-closing-bar]')?.focus({ preventScroll: true });
+    st.setRightColumn(next, { claim: false });
+    afterLeave(() => document.querySelector<HTMLElement>('[data-closing-bar]')?.focus({ preventScroll: true }));
   }, [goneHome, locked]);
   const columnOpen = rightColumn !== 'closed';
   // Tasks and Who talks to whom take the whole window (owner, 2026-10-03). The
   // column stays mounted there, only hidden, so a person's terminal and a half
   // written reply survive the switch; opening it goes back to the office.
   // A file tab keeps it beside the file, so an Ask me card stays answerable
-  // while its file is read (docs/designs/open-file-tab.md, F1).
-  const columnShown = columnOpen && (floorView === 'office' || floorView === 'file');
+  // while its file is read (docs/designs/open-file-tab.md, F1). Pulse takes the
+  // whole window like Tasks, without the bottom bar either (owner, 2026-10-15).
+  // A file tab has no bottom bar either, so the file reads to the bottom edge
+  // (owner, 2026-10-16).
+  const columnView = floorView === 'office' || floorView === 'file';
+  const columnShown = columnOpen && columnView;
+  const barHidden = floorView === 'pulse' || floorView === 'file';
   const columnRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const lastColumnMode = useRef<'board' | 'person'>('board');
+  // The wide panel (wide panel WD1, WD6): a person's or Michael's panel, when
+  // the owner chose wide, moves to the center of the window, 10% in from each
+  // side. Same element restyled, so a terminal or a half written reply
+  // survives; its slot in the row stays, so the office never reflows (eng 2).
+  // The wide 1:1 takes the center from it when the owner opened it last (8A).
+  const dockWide = useDockCentered();
+  const wide = panelCentered({ panelWide, panelOpen: columnShown && rightColumn === 'person' && !!agent, dockCentered: dockWide });
+  // While wide the office and the bottom bar are out of reach (WD13). The
+  // wide 1:1 leaves the right column live beside it (owner, 2026-10-17).
+  useEffect(() => { stageRef.current?.toggleAttribute('inert', wide || dockWide); }, [wide, dockWide]);
+  // The move (WD9): the column takes its new place at once and a transform
+  // carries it there from the old one over 320 ms. Boxes are read without
+  // transforms (offset*), kept current as the column is dragged or the window
+  // resizes, so a resize never animates. Reduced motion switches at once.
+  const columnBox = useRef<{ l: number; t: number; w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = columnRef.current;
+    if (!el) return;
+    const keep = (): void => { columnBox.current = { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight }; };
+    keep();
+    const ro = new ResizeObserver(keep);
+    ro.observe(el);
+    window.addEventListener('resize', keep);
+    return () => { ro.disconnect(); window.removeEventListener('resize', keep); columnBox.current = null; };
+  }, [columnOpen]);
+  useLayoutEffect(() => {
+    const el = columnRef.current;
+    const from = columnBox.current;
+    // Closing slides the column out instead (D9).
+    if (!el || !columnOpen) return;
+    const to = { l: el.offsetLeft, t: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight };
+    columnBox.current = to;
+    if (!from || !from.w || !to.w || !to.h || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    if (from.l === to.l && from.t === to.t && from.w === to.w && from.h === to.h) return;
+    el.style.transition = 'none';
+    el.style.transformOrigin = '0 0';
+    el.style.transform = `translate(${from.l - to.l}px, ${from.t - to.t}px) scale(${from.w / to.w}, ${from.h / to.h})`;
+    void el.offsetWidth;
+    el.style.transition = `transform ${PANEL_MOVE_MS}ms var(--cth-ease)`;
+    el.style.transform = '';
+    window.dispatchEvent(new CustomEvent(PANEL_MOVE_EVENT, { detail: { ms: PANEL_MOVE_MS } }));
+    const done = (): void => { el.style.transition = ''; el.style.transformOrigin = ''; };
+    // A little past the move, so the cleanup never cuts its last frame.
+    const timer = setTimeout(done, PANEL_MOVE_MS + 40);
+    return () => { clearTimeout(timer); done(); };
+  }, [wide]);
   // An ask arriving, or waiting at launch, opens the board. Focus stays put.
   useEffect(() => {
-    if (locked && useStore.getState().rightColumn === 'closed') useStore.getState().setRightColumn('board');
+    if (locked && useStore.getState().rightColumn === 'closed') useStore.getState().setRightColumn('board', { claim: false });
   }, [locked, rightColumn]);
   // D4: after the last answer the board shows All clear and closes on the next
   // click outside it (not the pill, which toggles it, nor the splitter).
@@ -412,7 +476,8 @@ export function App() {
       defaultPrevented: e.defaultPrevented || !!target.closest('.xterm'),
       inColumn: e.currentTarget.contains(target),
       fieldHasText: !!field?.value.trim(),
-      locked
+      locked,
+      wide
     });
     if (action === 'none') return;
     e.preventDefault();
@@ -421,6 +486,8 @@ export function App() {
       e.currentTarget.querySelector<HTMLElement>('[data-needs-you-heading]')?.focus();
       return;
     }
+    // Back to the side first; focus stays where it is (WD13).
+    if (action === 'collapse') { useStore.getState().setPanelWide(false); return; }
     useStore.getState().setRightColumn('closed');
     focusNeedsYouPill();
   };
@@ -447,11 +514,13 @@ export function App() {
       <TopBar onOpenSettings={() => { setSettingsSection(undefined); setSettingsOpen(true); }} />
 
       <div style={{ flex: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
-        <div style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', background: 'var(--cth-bg)' }}>
+        <div ref={stageRef} style={{ flex: 1, minHeight: 0, minWidth: 0, position: 'relative', background: 'var(--cth-bg)' }}>
           <StudioStage config={config} bleed={columnShown ? sidebarWidth + 10 : 0} />
           {/* Over the office only, never over Tasks or the graph (DESIGN.md 7.6). */}
           {floorView === 'office' && <RestoreTeamBanner config={config} />}
           {agentCount === 0 && godStatus === 'booting' && <MichaelBooting />}
+          {/* The office opening runs on every view; its card shows on the floor (7.24). */}
+          <TeamClockingIn show={floorView === 'office'} />
           {agentCount === 0 && godStatus !== 'booting' && (
             <div style={{
               position: 'absolute', inset: 0,
@@ -474,19 +543,21 @@ export function App() {
               position: 'absolute', inset: 0, zIndex: 50,
               display: 'flex', flexDirection: 'column',
               // Room for the floating bottom bar, so it never covers the last cards.
-              paddingBottom: 96,
+              paddingBottom: barHidden ? 0 : 96,
               background: 'var(--cth-bg)'
             }}>
               {floorView === 'tasks' && <TasksKanban />}
+              {floorView === 'pulse' && <PulseView />}
               {floorView === 'file' && <FileTabView />}
               {floorView === 'graph' && (
                 <MemoryGraphPanel godId={godId} onJumpToMemory={(id) => useStore.getState().openAgentMemory(id)} />
               )}
             </div>
           )}
-          {/* The bottom bar stays mounted behind the closing bar, so a Cancel
-              finds Talk to Michael with its attached files still there. */}
-          <div style={{ display: closingOpen ? 'none' : 'contents' }}>
+          {/* The bottom bar stays mounted behind the closing bar, on Pulse and
+              on a file tab, so a Cancel or a tab switch finds Talk to Michael
+              with its attached files still there. */}
+          <div style={{ display: closingOpen || barHidden ? 'none' : 'contents' }}>
             <BottomBar />
           </div>
           {closingOpen && (
@@ -524,15 +595,19 @@ export function App() {
           <div
             ref={columnRef}
             data-right-column
+            data-wide-panel={wide || undefined}
             onKeyDown={onColumnKey}
             aria-hidden={columnOpen ? undefined : true}
             className={columnOpen ? 'cth-col-in' : 'cth-col-out'}
             style={{
-              width: sidebarWidth, flexShrink: 0, minHeight: 0, zIndex: 60,
-              display: floorView === 'office' || floorView === 'file' ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
-              ...(columnOpen
-                ? { position: 'relative', margin: '4px 6px 0 0' }
-                : { position: 'absolute', top: 4, bottom: 0, insetInlineEnd: 6 })
+              width: wide ? 'auto' : sidebarWidth, flexShrink: 0, minHeight: 0, zIndex: wide ? 200 : 60,
+              display: columnView ? 'flex' : 'none', flexDirection: 'column', overflow: 'hidden',
+              ...(wide
+                // 10% of the window in from each side, under the top bar (WD2).
+                ? { position: 'absolute', top: 12, bottom: 12, left: '10%', right: '10%', margin: 0 }
+                : columnOpen
+                  ? { position: 'relative', margin: '4px 6px 0 0' }
+                  : { position: 'absolute', top: 4, bottom: 0, insetInlineEnd: 6 })
             }}
           >
             {columnMode === 'board' || !agent ? (
@@ -547,6 +622,23 @@ export function App() {
             )}
           </div>
         )}
+        {/* While wide: the office dims under the top bar, so the coral pill
+            stays bright, and a click on it does nothing (WD4, WD8); the
+            column's slot stays, so the office keeps its size (eng 2). */}
+        {(wide || dockWide) && <div aria-hidden className="cth-wide-scrim" style={{ position: 'absolute', inset: 0, zIndex: 190, background: 'var(--cth-backdrop)',
+          // The wide 1:1 dims the office only; the column (and its splitter) stay bright.
+          ...(dockWide && columnShown ? { insetInlineEnd: sidebarWidth + 16 } : {}) }} />}
+        {/* The wide 1:1 is drawn here, outside the stage that goes inert
+            (eng review R1, D14): the wide panel's frame, or with the right
+            column open the office's width beside it, never over Needs you
+            (owner, 2026-10-17). Empty and hidden otherwise; BottomBar portals
+            into it. */}
+        <div id={DOCK_CENTER_ID} style={{
+          position: 'absolute', top: 12, bottom: 12, zIndex: 200,
+          ...(columnShown ? { insetInlineStart: 24, insetInlineEnd: sidebarWidth + 28 } : { insetInlineStart: '10%', insetInlineEnd: '10%' }),
+          display: dockWide ? 'flex' : 'none', flexDirection: 'column', pointerEvents: 'none'
+        }} />
+        {wide && <div aria-hidden style={{ width: sidebarWidth + 6, flexShrink: 0 }} />}
       </div>
 
       {addAgentOpen && (

@@ -1,4 +1,5 @@
-- **Michael alone** keeps the task board.
-- **Done is final**: only you reopen a card.
-- **A parked step wakes** at its time.
-- **One numbered ask** per activity.
+- **Clocking in** shows your team arriving.
+- **Waiting cards** come back on their date.
+- **Pulse** lists what the team learned.
+- **Run a job now** from its schedule.
+- **Members' notes** stay their own.

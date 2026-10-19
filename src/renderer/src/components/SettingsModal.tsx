@@ -1,7 +1,10 @@
+import { ResearchPrivacySettings } from './ResearchPrivacySettings';
+import { cleanDataClassOverrides } from '../../../shared/dataClasses';
 import { MailboxesSettings } from './MailboxesSettings';
 import { ClaudeConnectorsSettings } from './ClaudeConnectorsSettings';
 import { useState, useEffect, useRef, type CSSProperties } from 'react';
 import { useDialog } from '@/shell/useDialog';
+import { useBackdropClose } from '@/hooks/useBackdropClose';
 import { useTranslation } from 'react-i18next';
 import { agentModels, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
@@ -147,7 +150,9 @@ Check status (GET <tunnel>/<webhookId>):
 
 The mode decides which of the two answers you get:
   allow all           routes straight through -> 200
-  communication only  chatter routes; a directive gets 202 awaiting approval
+  communication only  a short plain status question routes; anything else gets
+                      202 awaiting approval. "kind": "directive" holds a message;
+                      "communication" is checked like no kind at all.
   strict              everything gets 202 awaiting approval
 
 A 202 means the message is parked in Trigger History until you approve it; the
@@ -181,8 +186,8 @@ const sectionRule = { height: 1, background: 'var(--cth-line)' } as const;
 
 // Agents & Models and Autonomy & Budgets are one Agents tab (owner, 2026-10-01):
 // the model agents run on, how much they do alone and the limits that stop them.
-export type Section = 'General' | 'Company profile' | 'Prerequisites' | 'Agents' | 'Skills' | 'Connections' | 'Voice' | 'Memory & Knowledge';
-const NAV_SECTIONS: Section[] = ['General', 'Company profile', 'Prerequisites', 'Agents', 'Skills', 'Connections', 'Voice', 'Memory & Knowledge'];
+export type Section = 'General' | 'Company profile' | 'Prerequisites' | 'Agents' | 'Skills' | 'Connections' | 'Research & privacy' | 'Voice' | 'Memory & Knowledge';
+const NAV_SECTIONS: Section[] = ['General', 'Company profile', 'Prerequisites', 'Agents', 'Skills', 'Connections', 'Research & privacy', 'Voice', 'Memory & Knowledge'];
 /** The tabs shown: the Voice tab is hidden while voice is off (SHOW_VOICE). */
 const VISIBLE_SECTIONS: Section[] = NAV_SECTIONS.filter((s) => s !== 'Voice' || SHOW_VOICE);
 /** i18n key for each nav section's label — the Section values themselves stay
@@ -194,6 +199,7 @@ const NAV_SECTION_KEYS: Record<Section, string> = {
   'Agents': 'settings.nav.agents',
   'Skills': 'settings.nav.skills',
   'Connections': 'settings.nav.connections',
+  'Research & privacy': 'settings.nav.research',
   'Voice': 'settings.nav.voice',
   'Memory & Knowledge': 'settings.nav.memoryKnowledge'
 };
@@ -205,7 +211,10 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   // once requestClose exists, so unsaved changes still ask first.
   const closeFnRef = useRef<() => void>(() => onClose());
   useDialog(dialogRef, () => closeFnRef.current());
-  const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? 'the orchestrator';
+  // The backdrop closes through the same guard, and only on a real click on
+  // it: a click outside used to drop staged changes without asking.
+  const backdrop = useBackdropClose(() => closeFnRef.current());
+  const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? t('common.orchestrator');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>(initialSection ?? 'General');
@@ -325,6 +334,15 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     stage({ defaultModel: id } as Partial<HarnessConfig>);
   };
   const [maxTurnsVal, setMaxTurnsVal] = useState<string>(cfgX.maxTurns != null ? String(cfgX.maxTurns) : '');
+  // The Claude plan's price a month, for Pulse's split by share of the work.
+  // Blank uses the plan found in the owner's Claude account.
+  const [planPriceVal, setPlanPriceVal] = useState<string>(cfgX.planPriceMonthly != null ? String(cfgX.planPriceMonthly) : '');
+  const [detectedPlan, setDetectedPlan] = useState<{ label: string | null; listMonthly: number | null } | null>(null);
+  useEffect(() => { void window.cth.claudePlan().then(setDetectedPlan).catch(() => setDetectedPlan(null)); }, []);
+  const planPricePatch = (): Partial<HarnessConfig> => {
+    const n = planPriceVal.trim() === '' ? undefined : Number(planPriceVal);
+    return { planPriceMonthly: Number.isFinite(n as number) && (n as number) > 0 ? Math.round((n as number) * 100) / 100 : undefined } as Partial<HarnessConfig>;
+  };
   const maxTurnsPatch = (): Partial<HarnessConfig> => {
     const n = maxTurnsVal.trim() === '' ? undefined : Number(maxTurnsVal);
     return { maxTurns: Number.isFinite(n as number) && (n as number) > 0 ? Math.round(n as number) : undefined } as Partial<HarnessConfig>;
@@ -392,6 +410,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     try {
       const patch: Partial<HarnessConfig> = {
         ...maxTurnsPatch(),
+        ...planPricePatch(),
         ...budgetPatch(),
         ...pending
       };
@@ -654,7 +673,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setSlackBusy(true); setSlackNote('');
     try {
       await window.cth.slackSetConfig(slackPatch(slackEnabled));
-      setSlackNote('saved');
+      setSlackNote(t('settings.connections.noteSaved'));
     } catch (e) {
       setSlackNote(e instanceof Error ? e.message : String(e));
     } finally { setSlackBusy(false); }
@@ -671,9 +690,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         setRunning(true);
         // Keep the last URL if this start returned none (tunnel hiccup) - don't blank it.
         if (res.url) setTunnelUrl(res.url);
-        setSlackNote(res.url ? 'listening' : (res.error ?? 'started, but tunnel unavailable'));
+        setSlackNote(res.url ? t('settings.connections.noteListening') : (res.error ?? t('settings.connections.noteNoTunnel')));
       } else {
-        setSlackNote(res.error ?? 'failed to start');
+        setSlackNote(res.error ?? t('settings.connections.noteStartFailed'));
       }
     } catch (e) {
       setSlackNote(e instanceof Error ? e.message : String(e));
@@ -685,7 +704,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     // Keep the last Request URL visible (greyed) after Stop.
     // Mirror startSlack: main persists slackEnabled:false, this keeps the pill
     // honest without waiting for a Settings reopen.
-    try { await window.cth.slackStop(); setRunning(false); setSlackEnabled(false); setSlackNote('stopped'); }
+    try { await window.cth.slackStop(); setRunning(false); setSlackEnabled(false); setSlackNote(t('settings.connections.noteStopped')); }
     catch (e) { setSlackNote(e instanceof Error ? e.message : String(e)); }
     finally { setSlackBusy(false); }
   };
@@ -700,8 +719,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setWebhookBusy(true); setWebhookNote('');
     try {
       const res = await triggersApi().saveWebhooks(list);
-      if (res && res.ok === false) { setWebhookNote(res.error ?? 'could not save'); return; }
-      setWebhookNote('saved');
+      if (res && res.ok === false) { setWebhookNote(res.error ?? t('settings.connections.noteSaveFailed')); return; }
+      setWebhookNote(t('settings.connections.noteSaved'));
       setTimeout(() => setWebhookNote(''), 1500);
     } catch (e) {
       setWebhookNote(e instanceof Error ? e.message : String(e));
@@ -759,7 +778,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setWebhookBusy(true); setWebhookNote('');
     try {
       await triggersApi().deleteWebhook(id);
-      setWebhookNote('deleted');
+      setWebhookNote(t('settings.connections.noteDeleted'));
       setTimeout(() => setWebhookNote(''), 1500);
     } catch (e) {
       setWebhookNote(e instanceof Error ? e.message : String(e));
@@ -790,8 +809,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setOrgBusy(true); setOrgNote('');
     try {
       const res = await triggersApi().setOrgTrigger(next);
-      if (res && res.ok === false) { setOrgNote(res.error ?? 'could not save'); return; }
-      setOrgNote('saved');
+      if (res && res.ok === false) { setOrgNote(res.error ?? t('settings.connections.noteSaveFailed')); return; }
+      setOrgNote(t('settings.connections.noteSaved'));
       setTimeout(() => setOrgNote(''), 1500);
     } catch (e) {
       setOrgNote(e instanceof Error ? e.message : String(e));
@@ -873,7 +892,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     if (snap) clearLocalState();
     try {
       const res = await window.cth.changeHome(changeHome, changeMode);
-      if (!res.ok) { if (snap) restoreLocalState(snap); setChangeErr(res.error ?? 'Could not change the home folder.'); setChangeBusy(false); }
+      if (!res.ok) { if (snap) restoreLocalState(snap); setChangeErr(res.error ?? t('settings.changeHome.couldNotChange')); setChangeBusy(false); }
       // ok === true never returns (the process relaunches).
     } catch (e) {
       if (snap) restoreLocalState(snap);
@@ -890,7 +909,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
   return (
     <div
-      onClick={busy ? undefined : onClose}
+      {...backdrop}
       style={{
         position: 'fixed', inset: 0,
         background: 'color-mix(in srgb, var(--cth-bg) 60%, transparent)',
@@ -906,7 +925,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         aria-modal="true"
         aria-label={modalTitle}
         tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
         style={{
           width: 880, maxWidth: '92vw', maxHeight: '88vh',
           display: 'flex', flexDirection: 'column', overflow: 'hidden', outline: 'none',
@@ -1001,7 +1019,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   <Icon name="bell" />
                 </div>
                 <div style={{ flex: 1, fontSize: 15, lineHeight: '22px', color: 'var(--cth-ink-700)' }}>
-                  {t('settings.resetConfirm.body', { godName })}
+                  {t('settings.resetConfirm.body')}
                 </div>
               </div>
 
@@ -1028,6 +1046,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   padding: 10,
                   background: 'var(--cth-card-2)'
                 }}>
+                  {/* Research & privacy is in every office (owner, ship 2 D16). */}
                   {VISIBLE_SECTIONS.map((section) => {
                     const active = activeSection === section;
                     return (
@@ -1106,7 +1125,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           </div>
                         )}
                         {changeErr && !changeHome && (
-                          <div style={{ fontSize: 12, lineHeight: '18px', color: '#6E1423', marginTop: 6 }}>{changeErr}</div>
+                          <div style={{ fontSize: 12, lineHeight: '18px', color: 'var(--cth-coral-text)', marginTop: 6 }}>{changeErr}</div>
                         )}
                       </div>
 
@@ -1340,6 +1359,31 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           </div>
                         </div>
                       </div>
+
+                      {/* The Claude plan's price (owner, 2026-10-15): Pulse splits it
+                          across the team by share of the work. Not on an API key. */}
+                      {cfgX.claudeAuth !== 'apiKey' && (
+                        <>
+                          <div style={{ height: 1, background: 'var(--cth-line)' }} />
+                          <div>
+                            <div style={{ ...sectionHead, display: 'flex', gap: 6, alignItems: 'center' }}>
+                              {t('settings.agentsModels.planPrice')}<InfoTip text={t('settings.agentsModels.planPriceTip')} />
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 13, color: 'var(--cth-ink-900)' }}>{detectedPlan?.label ?? t('settings.agentsModels.planUnknown')}</span>
+                              <span style={{ fontSize: 13, color: 'var(--cth-ink-500)' }}>$</span>
+                              <input
+                                type="number" min="0" step="1" value={planPriceVal}
+                                aria-label={t('settings.agentsModels.planPriceAria')}
+                                onChange={(e) => setPlanPriceVal(e.target.value)}
+                                placeholder={detectedPlan?.listMonthly != null ? String(detectedPlan.listMonthly) : ''}
+                                className="cth-input" style={{ ...slackInputStyle, width: 100 }}
+                              />
+                              <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{t('settings.agentsModels.aMonth')}</span>
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       <div style={{ height: 1, background: 'var(--cth-line)' }} />
 
@@ -1626,6 +1670,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                     </>
                   )}
 
+                  {/* Research & privacy (docs/designs/research-agent-privacy.md, D3):
+                      the one member on the internet, then what may be sent to it. */}
+                  {activeSection === 'Research & privacy' && (
+                    <ResearchPrivacySettings
+                      config={config}
+                      classes={pending.dataClasses ?? config.dataClasses}
+                      onClassesChange={(next) => stage({ dataClasses: cleanDataClassOverrides(next) ?? {} } as Partial<HarnessConfig>)}
+                    />
+                  )}
+
                   {activeSection === 'Connections' && (
                     <>
                       {/* Claude connectors first (docs/designs/claude-connectors.md,
@@ -1882,7 +1936,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         )}
 
                         {/* Public surface warning. Loud, not buried. */}
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: '#6E1423' }}>
+                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-coral-text)' }}>
                           {t('settings.connections.webhookWarning')}
                         </span>
 
@@ -2318,7 +2372,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           {t('settings.general.dangerZone')}
                         </div>
                         <p style={{ margin: 0, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink)' }}>
-                          {t('settings.general.dangerDesc', { godName })}
+                          {t('settings.general.dangerDesc')}
                         </p>
                         <div style={{ marginTop: 6 }}>
                           <button type="button" onClick={() => setConfirming(true)} style={{

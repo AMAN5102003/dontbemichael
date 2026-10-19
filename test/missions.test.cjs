@@ -157,6 +157,85 @@ test('pauseMissionsOf pauses only that agent\'s enabled schedules', () => {
   assert.deepEqual(r.missions.map((m) => m.enabled), [false, false, true]);
 });
 
+/* ──────── a slot from before a schedule's times were set never runs ──────── */
+
+// Tuesday 13 October 2026. Each job below is set after its slot has passed.
+const weekdaysAt = (h, min = 0) => ({ days: [1, 2, 3, 4, 5], minute: h * 60 + min });
+const TUE = (h, min = 0) => at(2026, 10, 13, h, min);
+
+test('a new job waits for its next slot instead of running one that passed before it was added', () => {
+  const now = TUE(18, 2);
+  const added = M.upsertMission([], mk({ id: 'n', weekly: weekdaysAt(17) }), now)[0];
+  assert.equal(added.scheduledSince, now);
+  assert.equal(M.armPlan(added, now, ctx).firstDelayMs, at(2026, 10, 14, 17, 0) - now, 'tomorrow 17:00');
+});
+
+test('a new job with several "when" lines waits too', () => {
+  const now = TUE(18, 2);
+  const times = [{ kind: 'at', days: [1, 2, 3, 4, 5], minute: 17 * 60 }, { kind: 'at', days: [0, 6], minute: 14 * 60 }];
+  const added = M.upsertMission([], mk({ id: 'n', times }), now)[0];
+  assert.equal(M.armPlan(added, now, ctx).firstDelayMs, at(2026, 10, 14, 17, 0) - now);
+});
+
+test('moving a job that ran today to a slot that has passed does not run it twice', () => {
+  const ran = mk({ id: 'a', weekly: weekdaysAt(9), lastFiredAt: TUE(9), scheduledSince: TUE(8) - 24 * HOUR });
+  const now = TUE(10);
+  const moved = M.upsertMission([ran], { ...ran, weekly: weekdaysAt(9, 30) }, now)[0];
+  assert.equal(moved.scheduledSince, now);
+  assert.equal(M.armPlan(moved, now, ctx).firstDelayMs, at(2026, 10, 14, 9, 30) - now);
+});
+
+test('turning a job back on does not run the slot that passed while it was off', () => {
+  const paused = mk({ id: 'a', enabled: false, weekly: weekdaysAt(9), lastFiredAt: TUE(9) - 24 * HOUR });
+  const now = TUE(14, 30);
+  const resumed = M.setMissionEnabled([paused], 'a', true, now)[0];
+  assert.equal(M.armPlan(resumed, now, ctx).firstDelayMs, at(2026, 10, 14, 9, 0) - now);
+  const viaEdit = M.upsertMission([paused], { ...paused, enabled: true }, now)[0];
+  assert.equal(M.armPlan(viaEdit, now, ctx).firstDelayMs, at(2026, 10, 14, 9, 0) - now);
+});
+
+test('an approved add or resume from an agent waits for the next slot too', () => {
+  const now = TUE(18, 2);
+  const add = M.buildScheduleRequest('pam', { op: 'add', label: 'Chase invoices', when: { days: ['mon', 'tue', 'wed', 'thu', 'fri'], at: '17:00' }, focus: 'Unpaid ones' }, [], 'god', 0, 'r', 'why').request;
+  const added = M.applyScheduleRequest(add, [], 'new1', now).missions[0];
+  assert.equal(M.armPlan(added, now, ctx).firstDelayMs, at(2026, 10, 14, 17, 0) - now);
+  const paused = [mk({ enabled: false, weekly: weekdaysAt(9) })];
+  const resume = M.buildScheduleRequest('pam', { op: 'resume', id: 'm1' }, paused, 'god', 0, 'r', 'why').request;
+  const resumed = M.applyScheduleRequest(resume, paused, 'x', TUE(14, 30)).missions[0];
+  assert.equal(M.armPlan(resumed, TUE(14, 30), ctx).firstDelayMs, at(2026, 10, 14, 9, 0) - TUE(14, 30));
+});
+
+test('a rename or focus edit keeps when the times were set, and a client cannot move it', () => {
+  const since = TUE(8) - 24 * HOUR;
+  const job = mk({ id: 'a', weekly: weekdaysAt(9), scheduledSince: since });
+  const renamed = M.upsertMission([job], { ...job, label: 'Renamed', focus: 'New focus' }, TUE(9, 30))[0];
+  assert.equal(renamed.scheduledSince, since);
+  const forged = M.upsertMission([job], { ...job, scheduledSince: 0 }, TUE(9, 30))[0];
+  assert.equal(forged.scheduledSince, since, 'the stored value wins over what the renderer sends');
+  const reordered = M.upsertMission([job], { ...job, weekly: { days: [5, 4, 3, 2, 1], minute: 540 } }, TUE(9, 30))[0];
+  assert.equal(reordered.scheduledSince, since, 'the same days in another order are the same times');
+});
+
+test('an approved change of times from an agent counts as new times', () => {
+  const since = TUE(8) - 24 * HOUR;
+  const list = [mk({ weekly: weekdaysAt(9), scheduledSince: since })];
+  const req = (p) => M.buildScheduleRequest('pam', p, list, 'god', 0, 'r', 'why').request;
+  const now = TUE(10);
+  const retimed = M.applyScheduleRequest(req({ op: 'update', id: 'm1', when: { days: ['tue'], at: '09:30' } }), list, 'x', now).missions[0];
+  assert.equal(retimed.scheduledSince, now);
+  assert.equal(M.armPlan(retimed, now, ctx).firstDelayMs, at(2026, 10, 20, 9, 30) - now, 'next Tuesday 09:30');
+  const refocused = M.applyScheduleRequest(req({ op: 'update', id: 'm1', focus: 'Only the big ones' }), list, 'x', now).missions[0];
+  assert.equal(refocused.scheduledSince, since, 'a focus change keeps its times');
+});
+
+test('a slot missed while the app was closed still runs once', () => {
+  // Set yesterday, app closed through today's 09:00, opened at 09:30.
+  const job = mk({ id: 'a', weekly: weekdaysAt(9), scheduledSince: TUE(8) - 24 * HOUR, lastFiredAt: TUE(9) - 24 * HOUR });
+  assert.equal(M.armPlan(job, TUE(9, 30), ctx).firstDelayMs, 0);
+  assert.equal(M.catchUpFloor(job), TUE(9) - 24 * HOUR, 'the later of the last run and when the times were set');
+  assert.equal(M.catchUpFloor(mk()), 0, 'a row from before this existed keeps the old rule');
+});
+
 /* ─────────────────── agent schedule requests (R3, R6) ─────────────────── */
 
 test('parseWhen reads intervals and day lists', () => {
