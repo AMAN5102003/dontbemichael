@@ -1109,6 +1109,19 @@ Step 0: 4/10. Focus: all 7 passes (owner, D1).
 
 - D8 (2A): the period picker offers This week, Last week and Last 4 weeks; weeks start
   Monday, local time; remembered on this computer. Suggestions always use the last 14 days.
+  Owner, 2026-10-16: the picker offers Today, This week and This month (a calendar month), and
+  a Compare switch sets each against the span before, up to the same day (all of yesterday;
+  last week to the same weekday; last month to the same date, capped). Both spans come from the
+  same snapshot code. Compare waits until the span before starts on or after the first live
+  recorded day. Last week and Last 4 weeks are gone. Reviews: the eng and design review report
+  for this change (2026-10-16). Owner, 2026-10-16: the held tile opens a list of what was held,
+  read from a private record the hive writes at each hold; the count comes from the hive's
+  trust-held line, the same event (docs/designs/research-agent-privacy.md). Owner, 2026-10-16: the
+  questions and web answers tiles open lists of each check, both texts kept whole up to 4,000
+  characters in private/checked.jsonl, shown 62 days and then moved to private/checked-archive
+  (never deleted but by a reset); the counts come from the hive's trust-checked line, one per
+  message, and the trust layer's own lines stop counting from v 3 (eng and design reviews,
+  2026-10-16).
 - D9 (2B): with no suggestion, one calm line "Nothing to change this week." with an (i);
   before 14 days of records, "Suggestions start on <date>." Saved by your changes stays.
 

@@ -351,8 +351,8 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
           <button
             className="cth-settings-btn"
             onClick={() => window.dispatchEvent(new CustomEvent('cth:open-settings'))}
-            title="Settings"
-            aria-label="Settings"
+            title={t('shell.settings')}
+            aria-label={t('shell.settings')}
             style={iconBtn(false)}
           >
             <svg
@@ -549,7 +549,7 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
             <>
               <Header agent={agent} onEdit={() => setEditAgentOpen(true)} />
               {editAgentOpen && (
-                <EditAgentModal agent={agent} onClose={() => setEditAgentOpen(false)} />
+                <EditAgentModal agent={agent} onClose={() => setEditAgentOpen(false)} docked={false} />
               )}
 
               {/* #7C — pause / halt / steer. These only existed in the docked
@@ -802,7 +802,7 @@ function SidebarRow({
               <span style={{
                 fontSize: Math.max(11, scale.note), lineHeight: 1.35,
                 color: 'var(--cth-ink-4)'
-              }}>No note</span>
+              }}>{t('fullscreenTerminal.noNote')}</span>
             )}
           </div>
         </div>

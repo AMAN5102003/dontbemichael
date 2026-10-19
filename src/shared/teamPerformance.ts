@@ -58,7 +58,13 @@ export interface AskFact { raisedBy: string; askedAt: number; answeredAt?: numbe
 /** The owner's plan reading (officeBreak), the most constrained window. */
 export interface PlanReading { usedPct: number; resetsAt: number; windowMs: number; at: number }
 
-export type Period = 'this-week' | 'last-week' | '4-weeks';
+/** The periods Pulse offers (owner, 2026-10-16): one list for the select and main. */
+export const PERIODS = ['today', 'this-week', 'this-month'] as const;
+export type Period = typeof PERIODS[number];
+export const isPeriod = (v: unknown): v is Period => (PERIODS as readonly unknown[]).includes(v);
+
+/** Local day keys and the first and last moment of a span of whole days. */
+export interface DayRange { from: string; to: string; fromMs: number; toMs: number }
 
 /** Local day key for a time. */
 export function dayKey(t: number): string {
@@ -66,23 +72,53 @@ export function dayKey(t: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** The first and last local day of a period; weeks start on Monday (D8). */
-export function periodRange(period: Period, now: number): { from: string; to: string; fromMs: number; toMs: number } {
-  const d = new Date(now);
-  d.setHours(0, 0, 0, 0);
-  const monday = new Date(d);
-  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  let start = monday;
-  let end = new Date(monday);
-  end.setDate(monday.getDate() + 6);
-  if (period === 'last-week') {
-    start = new Date(monday); start.setDate(monday.getDate() - 7);
-    end = new Date(monday); end.setDate(monday.getDate() - 1);
-  } else if (period === '4-weeks') {
-    start = new Date(monday); start.setDate(monday.getDate() - 21);
-  }
+/** Whole local days from `start` to `end`, both midnight dates. */
+function span(start: Date, end: Date): DayRange {
   const endMs = new Date(end); endMs.setHours(23, 59, 59, 999);
   return { from: dayKey(start.getTime()), to: dayKey(end.getTime()), fromMs: start.getTime(), toMs: endMs.getTime() };
+}
+
+/** The first and last local day of a period; weeks start on Monday (D8), a
+ *  month is the calendar month. Built on dates, never millisecond sums, so a
+ *  DST change never loses or doubles a day. */
+export function periodRange(period: Period, now: number): DayRange {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  if (period === 'today') return span(d, d);
+  if (period === 'this-month') return span(new Date(d.getFullYear(), d.getMonth(), 1), new Date(d.getFullYear(), d.getMonth() + 1, 0));
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  return span(monday, sunday);
+}
+
+/** The span Compare sets against the period (owner, 2026-10-16): up to the same
+ *  day. Today against all of yesterday; this week against last week's Monday to
+ *  the same weekday; this month against last month's 1st to the same date,
+ *  capped at that month's last day. */
+export function previousRange(period: Period, now: number): DayRange {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  if (period === 'today') { const y = new Date(d); y.setDate(d.getDate() - 1); return span(y, y); }
+  if (period === 'this-month') {
+    const start = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const last = new Date(d.getFullYear(), d.getMonth(), 0).getDate();
+    return span(start, new Date(start.getFullYear(), start.getMonth(), Math.min(d.getDate(), last)));
+  }
+  const back = new Date(d); back.setDate(d.getDate() - 7);
+  const monday = new Date(back); monday.setDate(back.getDate() - ((back.getDay() + 6) % 7));
+  return span(monday, back);
+}
+
+/** The first day a period can compare: its span before starts on or after the
+ *  first live recorded day (owner, 2026-10-16, D8), the day recommendations use. */
+export function compareFrom(period: Period, liveSince: string): string {
+  const t = new Date(`${liveSince}T12:00:00`);
+  for (let i = 0; i < 100; i++) {
+    if (previousRange(period, t.getTime()).from >= liveSince) return dayKey(t.getTime());
+    t.setDate(t.getDate() + 1);
+  }
+  return dayKey(t.getTime());
 }
 
 function median(xs: number[]): number | null {
@@ -207,6 +243,10 @@ export function keptAsIs(agentId: string, decisions: MailDecision[], cards: Card
 export function pulseSnapshot(input: {
   period: Period;
   now: number;
+  /** The days to measure; the period's own range when left out. Compare runs
+   *  this for the span before too, so its bars and the tile numbers come from
+   *  one function (owner, 2026-10-16, D9). */
+  range?: DayRange;
   days: MemberDay[];
   cards: CardFact[];
   decisions: MailDecision[];
@@ -218,7 +258,7 @@ export function pulseSnapshot(input: {
   /** Michael's id and what he did in the period (counted by the processor). */
   michael?: { agentId: string; routed: number; cardsOpened: number };
 }): PulseSnapshot {
-  const { from, to, fromMs, toMs } = periodRange(input.period, input.now);
+  const { from, to, fromMs, toMs } = input.range ?? periodRange(input.period, input.now);
   const inRange = (t: number | undefined): boolean => t !== undefined && t >= fromMs && t <= toMs;
   const days = input.days.filter((d) => d.day >= from && d.day <= to);
   const ids = [...new Set([...input.members, ...days.map((d) => d.agentId)])];

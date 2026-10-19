@@ -21,7 +21,8 @@ import type Database from 'better-sqlite3';
 import { CostFold } from '../shared/costFold';
 import { dayKey, type MemberDay, type CardFact, type MailDecision, type MailDecisionKind } from '../shared/teamPerformance';
 import type { TelemetryStore, TelemetryRow } from './telemetryStore';
-import { trustKeys, refusalKey, REFUSAL_GATES, type RefusalGate } from '../shared/pulseSafety';
+import type { AddedNote } from '../shared/teamLearning';
+import { trustKeys, checkedKeys, refusalKey, REFUSAL_GATES, type RefusalGate } from '../shared/pulseSafety';
 
 export const RUN_IDLE_END_MS = 2 * 60_000;
 export const RUN_CAP_MS = 60 * 60_000;
@@ -221,6 +222,12 @@ export class TelemetryProcessor {
       case 'trust':
         for (const k of trustKeys(r.attrs ?? {})) this.safety(db, office, day, k);
         return;
+      case 'trust-checked':
+        for (const k of checkedKeys(r.attrs ?? {})) this.safety(db, office, day, k);
+        return;
+      case 'trust-held':
+        if (r.attrs?.way === 'in' || r.attrs?.way === 'out') this.safety(db, office, day, `${r.attrs.way}-held`);
+        return;
       case 'refused': {
         const gate = String(r.attrs?.gate ?? '') as RefusalGate;
         if (REFUSAL_GATES.includes(gate)) this.safety(db, office, day, refusalKey(gate));
@@ -319,6 +326,21 @@ export class TelemetryProcessor {
     });
   }
 
+  /** Notes new to members' memory since a time (Learning, owner 2026-10-18). */
+  notesAdded(office: string, since: number): AddedNote[] {
+    return this.rows(office, ['note-added'], since)
+      .filter((r) => r.agentId && typeof r.attrs?.id === 'string')
+      .map((r) => ({ agentId: r.agentId!, id: String(r.attrs!.id), source: String(r.attrs?.source ?? 'task'), at: r.ts }));
+  }
+
+  /** When the office's first `note-added` record was made; null before any. */
+  firstNoteAdded(office: string): number | null {
+    const db = this.db();
+    if (!db) return null;
+    const r = db.prepare("SELECT MIN(ts) AS t FROM telemetry_events WHERE office = ? AND kind = 'note-added'").get(office) as { t: number | null } | undefined;
+    return r?.t ?? null;
+  }
+
   /** Cards finished or reopened since a time, with time held Blocked or Waiting. */
   cards(office: string, since: number): CardFact[] {
     const by = new Map<string, CardFact & { heldFrom: number | null }>();
@@ -342,10 +364,11 @@ export class TelemetryProcessor {
     return this.rows(office, ['mail-decision'], since).filter((r) => r.agentId).map((r) => ({ agentId: r.agentId!, decision: String(r.attrs?.decision) as MailDecisionKind, at: r.ts }));
   }
 
-  /** Requests Michael routed and cards he opened, since a time. */
-  michaelCounts(office: string, godId: string, since: number): { routed: number; cardsOpened: number } {
-    const routed = this.rows(office, ['message'], since).filter((r) => r.agentId === godId && r.attrs?.act === 'request').length;
-    const cardsOpened = this.rows(office, ['card-status'], since).filter((r) => r.attrs?.from === null).length;
+  /** Requests Michael routed and cards he opened between two times, so a past
+   *  span never counts later work (owner, 2026-10-16, D11). */
+  michaelCounts(office: string, godId: string, since: number, until = Infinity): { routed: number; cardsOpened: number } {
+    const routed = this.rows(office, ['message'], since).filter((r) => r.ts <= until && r.agentId === godId && r.attrs?.act === 'request').length;
+    const cardsOpened = this.rows(office, ['card-status'], since).filter((r) => r.ts <= until && r.attrs?.from === null).length;
     return { routed, cardsOpened };
   }
 

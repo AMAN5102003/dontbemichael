@@ -13,7 +13,7 @@ import { useBackdropClose } from '@/hooks/useBackdropClose';
 
 export { openQuestion, openQuestions, waitsOnHuman, parseTasks, type HiveTask, type HumanQA } from './hiveTasks';
 import { refreshNeedsYou, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
-import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches } from './hiveTasks';
+import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches, byNext, nextGroup, type NextGroup } from './hiveTasks';
 import { FileText, useAskFileChecks } from './FileChip';
 import { blockedWithNothingAsked, michaelCardState, type WorkHours } from '@shared/ownerRequests';
 import { askAsText, isAnswered, isWithdrawn, readAskShape } from '@shared/askMeRouting';
@@ -122,6 +122,10 @@ export function TasksKanban() {
       : undefined;
 
   const [showAllDone, setShowAllDone] = useState(false);
+  // A render a minute, so the time groups move with the clock (Today becomes
+  // Overdue, Tomorrow becomes Today); `now` above is read on each render.
+  const [, setTick] = useState(0);
+  useEffect(() => { const tick = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(tick); }, []);
   // Search and one team member (issue 158). While either is set every match
   // shows, Done included, and the counts are of the matches.
   const [query, setQuery] = useState('');
@@ -200,8 +204,9 @@ export function TasksKanban() {
         {COLUMNS.map((col) => {
           const all = shown.filter((x) => x.status === col.key);
           // Done reads newest first, folded or not (it is kept in creation order).
-          // A filter shows every match, so an old Done card can be found.
-          const cards = col.key === 'done' ? (showAllDone || filtering ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : all;
+          // A filter shows every match, so an old Done card can be found. Every
+          // open column reads earliest Next first (owner, 2026-10-17).
+          const cards = col.key === 'done' ? (showAllDone || filtering ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : byNext(all);
           return (
             <div key={col.key} style={{
               flex: '1 1 0', minWidth: 200, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
@@ -216,7 +221,14 @@ export function TasksKanban() {
                 {all.length === 0 && (
                   <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>{t('kanban.empty')}</div>
                 )}
-                {cards.map((x) => (
+                {(() => { const dated = cards.some((c) => nextGroup(c.nextAt, now) !== 'none'); return cards.map((x, i) => {
+                  // Open lanes are cut into time groups, each with its heading
+                  // (owner, 2026-10-17); Done is not.
+                  // A lane with no dated card shows no headings: a lone "No date" says nothing.
+                  const group = col.key === 'done' || !dated ? null : nextGroup(x.nextAt, now);
+                  const heading = group && (i === 0 || group !== nextGroup(cards[i - 1].nextAt, now))
+                    ? <GroupHeading key={`g-${group}`} group={group} first={i === 0} /> : null;
+                  return [heading, (
                   <TaskCard
                     key={x.id}
                     task={x}
@@ -229,7 +241,8 @@ export function TasksKanban() {
                     onOpen={() => openTaskDetail(x.id)}
                     onDismiss={() => dismissTask(x.id)}
                   />
-                ))}
+                  )];
+                }); })()}
                 {col.key === 'done' && !filtering && all.length > DONE_SHOWN && (
                   <button onClick={() => setShowAllDone((v) => !v)} style={{
                     alignSelf: 'flex-start', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
@@ -242,6 +255,18 @@ export function TasksKanban() {
         })}
       </div>
     </div>
+  );
+}
+
+/** A time group's heading in an open lane: 11.5 px 600 `ink-3`, Overdue in
+ *  `coral-text` (DESIGN.md 7.20). */
+function GroupHeading({ group, first }: { group: NextGroup; first: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div role="heading" aria-level={3} data-next-group={group} style={{
+      margin: first ? '2px 2px -4px' : '6px 2px -4px', fontSize: 11.5, fontWeight: 600,
+      color: group === 'overdue' ? 'var(--cth-coral-text)' : 'var(--cth-ink-3)'
+    }}>{t(`kanban.group.${group}`)}</div>
   );
 }
 
