@@ -18,8 +18,7 @@ const {
   WORKER_WAKE_NUDGE,
   WORKER_WAKE_IDLE_MS,
   WORKER_WAKE_BOOT_GRACE_MS,
-  WORKER_WAKE_COOLDOWN_MS,
-  WORKER_WAKE_PROMPT_HOLD_MS
+  WORKER_WAKE_COOLDOWN_MS
 } = loadTs('src/main/workerWake.ts');
 
 /** A permissive fact; tests override the fields they care about. */
@@ -152,18 +151,6 @@ test("the hook server tells the watchdog which frames are a subagent's", () => {
   assert.deepEqual(seen, [true, false]);
   const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
   assert.match(main, /\(agentId, event, message, toolName, subagent\) => \{[\s\S]{0,600}workerWake\.noteHook\(agentId, event, message, Date\.now\(\), subagent\);/);
-});
-
-test('a prompt hold ends on its own after a long ceiling', () => {
-  // Value: protects=a member whose prompt was escaped with no event after it is nudged again; fails_when=the hold never ends; why_new=ship review 2026-10-16; seam=none
-  const w = new WorkerWakeWatchdog();
-  w.noteSpawn('pty-alice', 0);
-  const held = 100_000;
-  w.noteHook('alice', 'Notification', 'Needs your permission to use Bash.', held);
-  const before = held + WORKER_WAKE_PROMPT_HOLD_MS - 1;
-  assert.deepEqual(w.decide([fact({ lastOutputAt: before - WORKER_WAKE_IDLE_MS - 1 })], before), []);
-  const after = held + WORKER_WAKE_PROMPT_HOLD_MS;
-  assert.deepEqual(w.decide([fact({ lastOutputAt: after - WORKER_WAKE_IDLE_MS - 1 })], after), ['alice']);
 });
 
 test('an idle-waiting notification does NOT count as a HITL hold', () => {

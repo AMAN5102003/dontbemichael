@@ -24,8 +24,7 @@
  *  - a permission/HITL notification blocks nudges until the agent moves on
  *    (its next tool call, reply, prompt or session, never a subagent's), so an
  *    open prompt is never typed into: the nudge's Enter answered it "Yes" once
- *    a timed block ran out (owner, 2026-10-15). A long ceiling frees a member
- *    whose prompt was escaped with no event after it,
+ *    a timed block ran out (owner, 2026-10-15),
  *  - a per-worker cooldown (NUDGE_COOLDOWN_MS) so the watchdog and the renderer
  *    nudge don't stack on top of each other.
  *
@@ -45,10 +44,6 @@ export const WORKER_WAKE_IDLE_MS = 12_000;
 export const WORKER_WAKE_BOOT_GRACE_MS = 35_000;
 /** Minimum gap between two watchdog nudges of the same worker. */
 export const WORKER_WAKE_COOLDOWN_MS = 60_000;
-/** A prompt hold ends on its own after this long. A prompt escaped with no
- *  event after it would otherwise keep the member from ever being nudged; the
- *  stuck restart clears a real prompt within minutes, so this is a last resort. */
-export const WORKER_WAKE_PROMPT_HOLD_MS = 2 * 60 * 60_000;
 /** Hook events that mean the agent moved past a prompt: a new session ends a
  *  dismissed one; an idle notice does not, since Claude Code can send one while
  *  a permission prompt is still open (the same rule as safeClearer.ts). Only the
@@ -149,9 +144,8 @@ export class WorkerWakeWatchdog {
       if (now - f.lastOutputAt < WORKER_WAKE_IDLE_MS) continue; // mid-turn
       const spawned = this.spawnedAt.get(f.ptyId) ?? 0;
       if (spawned > 0 && now - spawned < WORKER_WAKE_BOOT_GRACE_MS) continue;
-      // Waiting at a prompt: never typed into until the long ceiling.
-      const heldAt = this.lastHumanNeedsAt.get(f.agentId) ?? 0;
-      if (heldAt > (this.lastMovedOnAt.get(f.agentId) ?? 0) && now - heldAt < WORKER_WAKE_PROMPT_HOLD_MS) continue;
+      // Waiting at a prompt: never typed into, however long it waits.
+      if ((this.lastHumanNeedsAt.get(f.agentId) ?? 0) > (this.lastMovedOnAt.get(f.agentId) ?? 0)) continue;
       const announced = this.announcedInboxIds.get(f.agentId);
       if (announced && !Array.from(inboxIds).some((id) => !announced.has(id))) continue;
       const lastNudge = this.lastNudgeAt.get(f.agentId) ?? 0;
