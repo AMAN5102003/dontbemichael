@@ -38,7 +38,8 @@ export function localCurrency(): string | undefined {
   const BY_REGION: Record<string, string> = {
     US: 'USD', CA: 'CAD', GB: 'GBP', AU: 'AUD', NZ: 'NZD', IN: 'INR', JP: 'JPY', CN: 'CNY', HK: 'HKD',
     SG: 'SGD', AE: 'AED', SA: 'SAR', EG: 'EGP', MX: 'MXN', BR: 'BRL', ZA: 'ZAR', CH: 'CHF', SE: 'SEK',
-    NO: 'NOK', DK: 'DKK', PL: 'PLN', KR: 'KRW', TW: 'TWD', IL: 'ILS', TR: 'TRY', PH: 'PHP', ID: 'IDR'
+    NO: 'NOK', DK: 'DKK', PL: 'PLN', KR: 'KRW', TW: 'TWD', IL: 'ILS', TR: 'TRY', PH: 'PHP', ID: 'IDR',
+    AZ: 'AZN', IR: 'IRR', PK: 'PKR', BD: 'BDT', UA: 'UAH', MY: 'MYR', TH: 'THB', VN: 'VND'
   };
   try {
     const region = new Intl.Locale(navigator.language).maximize().region;
@@ -96,7 +97,7 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
           <Head>{t('companyProfile.addressHead')}</Head>
           <Field label={t('companyProfile.street')} required>
             <input value={text(value.address?.street)} onChange={(e) => setAddress({ street: orUndefined(e.target.value) })}
-              aria-required aria-invalid={miss('street')} className="cth-input" style={fieldStyle} />
+              placeholder={t('companyProfile.streetPlaceholder')} aria-required aria-invalid={miss('street')} className="cth-input" style={fieldStyle} />
           </Field>
           <div style={grid2}>
             <Field label={t('companyProfile.city')} required>

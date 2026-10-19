@@ -29,8 +29,9 @@ import { STOP_REASONS, type OfficeBreakView, type OfficeStopReason } from '../sh
 export const RESET_GRACE_MS = 60_000;
 /** How often to check again when the reset time is unknown. */
 export const RETRY_MS = 15 * 60_000;
-/** A check that hears nothing (no turn finished, no limit hit) ends the break:
- *  there is no sign the limit is still on. */
+/** A check that hears nothing (no turn finished, no limit hit) ends a plan
+ *  limit break: there is no sign the limit is still on. A credit or sign in
+ *  stop waits again instead, since silence says nothing about the account. */
 export const CHECK_TIMEOUT_MS = 10 * 60_000;
 
 export interface OfficeBreakState {
@@ -219,14 +220,22 @@ export class OfficeBreak {
   }
 
   /** The timer ran out. Waiting moves to checking ('check'); a check that
-   *  heard nothing ends the break ('over', with the ended state). A wait for
-   *  the owner only never moves on its own. */
-  tick(): { step: 'check' } | { step: 'over'; ended: OfficeBreakState } | null {
+   *  heard nothing ends a plan limit break ('over', with the ended state) and
+   *  puts a credit or sign in stop back to waiting ('wait'). A wait for the
+   *  owner only never moves on its own. */
+  tick(): { step: 'check' } | { step: 'wait' } | { step: 'over'; ended: OfficeBreakState } | null {
     const s = this.state;
     if (!s || (s.phase === 'waiting' && s.manual) || this.now() < s.due) return null;
     if (s.phase === 'waiting') {
       this.set({ ...s, phase: 'checking', due: this.now() + CHECK_TIMEOUT_MS });
       return { step: 'check' };
+    }
+    // No credit or a sign in that stopped working ends only on a finished turn.
+    // After a restart, or with no session alive to take the check, silence
+    // would hand the team work the account still cannot run.
+    if (s.reason !== 'limit') {
+      this.set({ ...s, phase: 'waiting', due: this.now() + RETRY_MS });
+      return { step: 'wait' };
     }
     this.set(null);
     return { step: 'over', ended: s };

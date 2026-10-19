@@ -41,12 +41,20 @@ export const PRIVATE_ENTRIES = [
   'owner',
   'card-guard.json',
   'house-rules-seen.json',
+  'ask-list-since.json',
   'research-stamp.key',
   'research-threads.json',
   'research-outbox',
   'research-pending.json',
   'research-pending-lost.json',
-  'research-mined'
+  'research-mined',
+  // Pulse's held list: subjects and openings of held messages (2026-10-16).
+  'held.jsonl',
+  // Pulse's questions and answers lists and their archive (eng D3: a reset
+  // erases both; nothing else deletes the archive).
+  'checked.jsonl',
+  'checked-archive',
+  'checked-backfill.json'
 ] as const;
 
 /** The privacy and standing approval checks' own empty folders (index.ts). */

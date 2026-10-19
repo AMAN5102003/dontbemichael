@@ -6,6 +6,7 @@ const loadTs = require('./load-ts.cjs');
 
 const {
   clearCommandForProvider,
+  CONTEXT_COMMAND_VERBS,
   compactionCommandForProvider,
   contextCommandsForProvider,
   isCompactionCommand,
@@ -138,4 +139,45 @@ test('continuous TUI repainting cannot block terminal readiness', () => {
   assert.equal(terminalReadyToReceive(true, 499, 'codex'), false);
   assert.equal(terminalReadyToReceive(true, 500, 'codex'), true);
   assert.equal(terminalReadyToReceive(undefined, 500, 'codex'), true);
+});
+
+// — the owner may type any verb the app itself types (michael-replies.md R7) —
+
+const fs = require('node:fs');
+const path = require('node:path');
+const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+
+const { ownerComposeTarget } = loadTs('src/shared/ownerRequests.ts');
+const { COMMAND_GROUPS } = loadTs('src/shared/claudeCommands.ts');
+const { CODEX_COMMAND_GROUPS } = loadTs('src/shared/codexCommands.ts');
+const { GROK_COMMAND_GROUPS } = loadTs('src/shared/grokCommands.ts');
+
+/** The slash verbs the command references carry, as ownerSend.ts reads them. */
+function catalogVerbs() {
+  return [...COMMAND_GROUPS, ...CODEX_COMMAND_GROUPS, ...GROK_COMMAND_GROUPS]
+    .flatMap((g) => g.items)
+    .filter((c) => c.kind === 'slash')
+    .map((c) => c.cmd.split(/\s+/)[0].toLowerCase());
+}
+
+test('every verb the app types is one the owner may type too', () => {
+  // The three command references cover claude, codex and grok. gemini and qwen
+  // compact with /compress, which none of them carries, so on those engines the
+  // owner's own /compress was filed as a question and handed back as a work
+  // order instead of reaching Michael's terminal.
+  const ownerSet = new Set([...catalogVerbs(), ...CONTEXT_COMMAND_VERBS]);
+  for (const { id } of AGENT_PROVIDER_PRESETS) {
+    for (const verb of [compactionCommandForProvider(id, ''), clearCommandForProvider(id)]) {
+      if (!verb) continue; // nothing typeable for this provider
+      assert.equal(ownerComposeTarget(verb, ownerSet), 'terminal', `${id}: ${verb}`);
+    }
+  }
+  assert.equal(CONTEXT_COMMAND_VERBS.has('/compress'), true, 'gemini and qwen compact verb');
+});
+
+test('the owner composer derives its commands from the provider table', () => {
+  // Wiring, not just the helper: hand-listing the catalogs is what left
+  // /compress out, so a provider added to CONTEXT_COMMANDS must be covered
+  // without a second edit here.
+  assert.match(read('src/renderer/src/shell/ownerSend.ts'), /CONTEXT_COMMAND_VERBS/);
 });

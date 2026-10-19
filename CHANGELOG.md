@@ -6,6 +6,111 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.2.3] (2026-10-18)
+
+### Added
+
+- **Needs you says when a team member stops reporting to the app.** While a member works, its AI engine sends the app small reports; without them the app can't check the member's folders and tool limits. When a member never checks in after starting, or goes quiet in the middle of work, a card on Needs you names it (one card per engine and reason, Michael's first), with Restart. Michael restarts a member that never checked in once on his own. If a restart doesn't help, or the engine version is known never to report (Gemini CLI 0.60 and later), the card offers Change engine or Keep working unchecked. Where nothing else guards the member's files (every engine on Windows, Gemini everywhere, and Research), its terminal is stopped until you restart it; Research is never kept unchecked. Its new mail goes to Michael meanwhile. One long tool call, such as a build, is not silence. Cards survive a relaunch and a break, and go when the member reports again or leaves. A desktop notice comes once per card, only with notifications on. (Agent behavior: Michael hears when a member isn't reporting and again when it is, gets that member's mail, is told to give it no new cards, and is asked to send held work again; the app restarts a silent member once in Michael's name.) Thanks to @SuriyaPrakash1928 for the first watchdog (#345) and @iNoumanMalik for the report (#326).
+- **A person's panel and Edit agent open wide.** A button in the panel header moves it to the center of the window, 80% wide, with text kept to a comfortable line length; the office dims behind it and the Needs you pill stays live. Edit agent wide shows who you are editing and splits into two columns. Leaving Edit with unsaved changes, by any way out, asks first: Discard or Keep editing.
+- **Pulse: Today, This week and This month, with Compare.** Pulse's period picker offers Today, This week and This month, and Compare puts the span before beside each tile, up to the same day.
+- **Pulse lists what the privacy check did.** The held tile opens a list of each message held because the check could not run: when, who to whom, what it was about, why, and who was told. See each question and See each answer list every question sent to Research and every web answer, as written and as it went out, with what was taken out marked word by word; changed and stopped ones come first. The questions and answers lists keep 62 days and then move to an archive the app never deletes, and the held list keeps 400 days (a reset erases them; a home move takes them along). Checks from before the lists kept words are put together once from the office's files.
+- **Right-click a link to copy its address** (contributed in #372).
+- **Run a job now from its schedule row** (contributed in #468).
+- **File chips have actions,** including Copy path (contributed in #296).
+- **A Codex member's context gauge** reads its own session, sized by the window it names (contributed in #415).
+- **Connected apps that rate limit are waited out** instead of hammered: a short wait is held, a long one is answered with when to try again (contributed in #399).
+- **The office opens with a Clocking in card.** When the app starts, a card over Michael's desk shows how many of the team are in, who is still coming, and turns to Everyone's in, or names who hasn't clocked in after a minute. The clock pill says Opening meanwhile. A Restore team opens it again.
+- **Waiting cards come back.** A card waiting on someone outside the office gets a check back time: the date they named, or the team member's judgement, else three business days. When it comes, Michael is told once, has its person follow up and sets a new time, and keeps a gone quiet list. After two follow ups with no reply he asks you on Ask me whether to keep waiting. (Agent behavior: team members name a check back time; Michael gets a Follow up due note and a gone quiet list; any reset of a card's check back time after he was told counts as a follow up.)
+- **Pulse: see what the team learned.** The Learning card's See the notes lists the notes behind its number for the period, grouped by where they came from; a note deleted since says so. A note now counts when it is added, from the app's own record, so an edit or a repeat is no longer a new note.
+- **Reply under Michael's question or latest answer** in the wide Talk to Michael.
+
+### Changed
+
+- **Each team member's memory is its own.** No team member, Michael included, opens another member's notes, inbox or hive folder, or the office's change history; they ask the member instead. The app walls those folders off for every Claude member's shell and file tools, members hired later included. The one store everyone searches is company knowledge. Research's notes are no longer copied for the team. (Agent behavior: Michael and every member are told to ask a teammate instead of reading its notes; work folders and handed off files stay readable.)
+- **A message to or from Research waits while the privacy check can't run.** When the check's session is not ready (often while the whole team starts), the message waits and is tried again for up to 30 minutes instead of being held at once; nothing goes out unchecked meanwhile. A check that got no answer quickly is tried once more after 15 seconds. The check keeps the names of the office's own AI team as written. Michael hears when Research's answer is held, as he does for a held question. (Agent behavior: Michael gets a note for a held answer.)
+- **Background checks run on Michael's configured engine** instead of always on Claude (contributed in #354). (Agent behavior: the app's own hidden checks use Michael's engine; the privacy check stays on Claude.)
+- **A file tab hides the Talk to Michael bar**, as Pulse does.
+- Michael hears which team members did not start (contributed in #393), and when finishing a card by voice withdrew its questions (contributed in #392). (Agent behavior: two new notes to Michael.)
+- Closing time waits again for a team member whose terminal comes back (contributed in #394). (Agent behavior: Michael is told to wait for it after all.)
+- An Ask me answer lands only on the question being answered, each catch up request is matched to its own answer, and an answer stays on a card Michael marked Done (contributed in #396, #397, #398).
+- A checked message for Pete is never dropped when delivery fails; it is tried for about a minute, and a restart says so (contributed in #440).
+- The file editor follows the app's dark theme (contributed in #410).
+- More of the app is translated: the file editor and IDE, the completion toast and focus view, the notes beside Slack, webhooks and the organisation key, Michael's fallback name, when a schedule runs, and engine status labels (contributed in #403, #404, #405, #406, #412, #431).
+- **The app's own notes to Research are not questions.** Office open, the restarted note, the carry on note and schedule decisions reach Pete without the paid privacy check when they are word for word the app's own (a schedule decision with someone's note is still checked), and are never listed or counted. While Pete is off or isn't reporting they are dropped quietly. (Agent behavior: Michael is no longer asked to resend these to Pete.)
+- **Closing time doesn't wait for a member that isn't reporting.** It shows apart, and Michael is told not to wait for it. If it reports again before closing ends, it gets the closing steps again and Michael is told to wait for it after all. (Agent behavior: Michael gets an isn't reporting note and a wait after all note.)
+- **The app makes every message's id and time.** An id a team member wrote can no longer overwrite another message, and a time it typed can't close your next question early or hide a message. A file in a member's outbox that is a link to someone else's message is set aside, never sent again as new.
+- **Each open column on the task board reads earliest next step first**, cut into time groups (Overdue, Today, Tomorrow, This week and on), and the groups move with the clock. A date shows its year when it isn't this year.
+- Saving an AI provider key on a computer that can't keep it safe says so first, like connected apps and mailboxes (contributed in #384).
+- An office stop for credit or sign in ends only once a turn has finished (contributed in #383).
+- The router reads the team list once per pass (contributed in #385).
+- Brave Search in the connector catalog uses Brave's own server (contributed in #365).
+- Setup gives Qwen an install command, and Grok, Kimi and Antigravity a docs link (contributed in #377).
+- The Business name label matches the other form labels (contributed in #341).
+
+### Security
+
+- Pulse's lists read the office's files without following a link or waiting on a pipe a team member left in its own folder, and the memory wall checks the real path of the office folder too.
+- Usage counts only for the team member whose token sent it (contributed in #364).
+- A planted link in Research's folders is replaced on newer Node too (contributed in #441).
+- Engine key backends are read by their own keys only (contributed in #439).
+- A permission stance written as flag=value keeps auto mode off it (contributed in #453).
+- Hook frames that aren't JSON objects no longer hang the socket (contributed in #465).
+
+### Fixed
+
+- More on a long reply from Michael opens only that reply, and the view stays where you clicked.
+- A memory note is never added or counted twice when the tidy pass is interrupted after saving.
+- A screenshot a queued message still points at is kept (contributed in #400).
+- A CSV whose last record is an empty quoted value keeps it (contributed in #420).
+- Mailbox connections waiting at the same time share one, and a replacement is kept (contributed in #424).
+- A token count that isn't a number reads 0, not NaN (contributed in #427).
+- A connected app's answer cut partway reaches the agent as a failed transfer (contributed in #433).
+- Card headlines keep times and "etc." whole (contributed in #435).
+- Company knowledge search finds words in any script (contributed in #445).
+- An SVG with a # in its name or folder shows (contributed in #446).
+- The owner may type every slash command the app itself types, for every engine (contributed in #449).
+- On Windows: the Cursor installer runs through PowerShell, Codex hooks run when the hive path has a space, and a recent office shows its folder name (contributed in #454, #470, #462).
+- A CLI installed under a folder with a space is not reported missing (contributed in #457).
+- A long toast or title never ends in a broken emoji (contributed in #475).
+- Gemini members start without a workspace trust prompt (contributed in #342).
+- Quoted text that starts with a slash links only the file name in it (contributed in #378).
+- A new hire's folder name never ends in a dot or a space (contributed in #381).
+- Updates between prerelease versions with hyphens sort in the right order (contributed in #359).
+- The docs say Node.js 20 or newer (contributed in #360).
+
+## [0.2.2] (2026-10-16)
+
+### Added
+
+- **Pulse: what the office got done and what it costs.** A new Pulse tab beside Tasks shows ways to save first (run a check less often when it mostly finds nothing; try a lighter or stronger model when the work shows it), each with the numbers behind it, applied only when you click Apply and undone with Undo. Below: what got done and who did it; Kept safe, what the trust layer kept off the internet, the web answers it cleaned of instructions to AI agents, anything held because it could not be checked, and the steps your settings stopped; Learning, what the team learned in the period and whether it asks you less than before; your plan use and your time; and Team at work, how busy each member is next to the others and what their work costs. Pulse fills in the eight weeks before it started from the office log, members' sessions and the cost ledger, so it never starts at zero. On a Claude plan, every cost is your plan's real price for the period (found in your Claude account, or the price you set in Settings > Agents) split by each member's share of the work, with what the same work would cost per use behind the (i). Savings are measured from the office's own records after a week. The numbers come from a new store only the app writes, in its own data folder, which no team member can reach.
+
+- **Ask me cards you can answer with a click.** When Michael offers choices, they show as rows to pick, with his recommendation tagged; when he asks several things, each question gets its own line, and a question can carry its own small choices. Nothing is sent until you press Reply, which says what it will send ("Reply with option 1", "Reply to 2 of 5"), and a box for your own answer or a note stays on every card. Michael gets your answer in words ("Picked: …", "1: … Not answered: 3"), never a bare number. Asks written the old way look as they did. (Agent behavior: Michael writes choices and questions as fields, and a to-do gets "Done, I did it" as its first option.)
+
+- **Delete a team member for good.** Edit agent has a Danger zone under the engine with a Delete button. After one confirm, the team member stops, their schedules pause, work bound to them goes back to the teammates it was taken from, and they leave the floor with no way back. Michael's roster skips them from then on. Their open questions leave Ask me (kept on the card, marked withdrawn because they were deleted), and Michael gets one note listing their open cards to give to someone else or close. Requests they filed that Michael had not worked yet are set aside, so you are never asked something on behalf of someone you deleted. Michael, his assistant and Research have no Delete (Research is turned off in Settings). Before this, no hire could leave the team: the old close button was hidden on 2026-09-24. (Agent behavior: who Michael can route to, and a new note to Michael when you delete someone.)
+
+### Changed
+
+- **Every office on the floor says what it does.** A small plate in front of the chairs names the department (Finance, Sales, HR, IT and so on), so you can tell who does what without knowing the show. The People department is now called HR.
+- **Glass monitors.** The desk monitors, Michael's too, are clear glass panes instead of thick black screens: plain glass when idle, tinted with scrolling lines while someone works.
+- **A team member stuck on a prompt is restarted, not handed to you.** When a member's session stops on a question only a person could answer, the app restarts them once and tells them to carry on with their work, and Michael checks that they picked it back up; he no longer asks you to open a 1:1 chat. If the restart does not take, or the prompt comes back within half an hour, Michael moves their work to a teammate and tells you plainly that they are stuck, once. (Agent behavior: a new note to the member, and what Michael is told and asks.)
+- **You never have to answer every question on a card.** Reply settles the ask with whatever you answered; the questions you left blank go through Michael to the team member who raised them, who works out what they can and comes back only for what they still need. Before, Michael asked you again at once. (Agent behavior: Michael and every team member.)
+
+### Security
+
+- **Hook events carry a secret for each start (issue #61).** Every team member's events (a turn starting, a tool used, a turn finished, its cost) now carry a secret the app gives it when it starts, and the app takes the sender from that secret. An event with no secret, someone else's, or one from an earlier start reaches nothing, and a tool check from it is refused. Behavior change for agents: none in what they do; an engine bridge that drops the secret loses its hook features until fixed. Known limit: the secret is in each member's environment, which another program running as you can read, so a member that deliberately looks there could act as a teammate on this channel; moving it out of the environment is next. Thanks to @codedbygo, who built the same design independently in #327.
+
+### Fixed
+
+- **Ask me cards with choices now show as rows to pick.** Some of Michael's instructions still told him to write choices as a numbered list, so new asks kept arriving as plain text with one reply box. Those instructions now all point to options and separate questions, and when a new ask still comes in as a list, Michael is reminded to rewrite it. Asks written before you update keep their look.
+- **Pete no longer stops on a permission prompt for his own work.** Since Research stopped loading your Claude settings (for privacy), Claude Code ran him in normal permission mode, so every shell command waited for an approval nobody could give. His tools are now allowed in his own settings; his walls are unchanged.
+- **Pete's privacy check answers at launch.** When the office opened with a dozen team members starting at once, the check's question could sit unsent in its window, so messages to Pete waited and then came back refused. The app now presses Enter again until the question is taken.
+- **The app never answers a permission prompt for an agent.** The inbox nudge typed into an open prompt after five minutes, and its Enter approved it. It now waits until the agent moves on, however long that takes.
+- **Yesterday means yesterday** in the Messages tab, also on the nights the clocks change (contributed in #331).
+- Release notes in the update toast and What's new show &, <, > and quotes as written instead of codes like `&amp;` (contributed in #333).
+- A damaged saved notice about a paused Send only mailbox no longer keeps Michael from hearing about it (contributed in #336).
+- The close buttons on Needs you and dialogs show feedback when you point at them (contributed in #322).
+- Setup's Street address shows an example like the other fields (contributed in #334), and setup suggests your local currency for eight more regions (contributed in #339).
+
 ## [0.2.1] (2026-10-14)
 
 ### Added

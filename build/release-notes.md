@@ -1,4 +1,5 @@
-- **Pete joins** the office's idle chatter.
-- **Reset & start over** starts truly fresh.
-- **Webhooks** hold all but a plain status question.
-- **Michael hears** what the privacy check stops.
+- **Clocking in** shows your team arriving.
+- **Waiting cards** come back on their date.
+- **Pulse** lists what the team learned.
+- **Run a job now** from its schedule.
+- **Members' notes** stay their own.

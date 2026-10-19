@@ -155,8 +155,9 @@ test('the open card, Task detail and Michael\'s replies show chips in place of p
   const tab = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(tab, /<FileText source=\{open\.q\} who=\{\{ raisedBy: open\.raisedBy, assignee:/, 'the open card');
   const kanban = read('src/renderer/src/components/TasksKanban.tsx');
-  assert.match(kanban, /<FileText source=\{e\.q\} who=\{\{ raisedBy: e\.raisedBy, assignee: qaAssignee \}\} checks=\{qaFiles\[e\.raisedBy \?\? ''\] \?\? \{\}\} \/>/, 'Task detail, one check per card');
-  assert.match(kanban, /const qaFiles = useAskFileChecks\(task\.humanQA, qaAssignee\);/);
+  assert.match(kanban, /<FileText source=\{qaShown\?\.\[i\]\?\.q \?\? e\.q\} who=\{\{ raisedBy: e\.raisedBy, assignee: qaAssignee \}\} checks=\{qaFiles\[e\.raisedBy \?\? ''\] \?\? \{\}\} \/>/, 'Task detail, one check per card');
+  // The check runs over the text the card shows, options and parts included (ask-me-options.md).
+  assert.match(kanban, /const qaShown = useMemo\(\(\) => task\.humanQA\?\.map\(\(e\) => \(\{ \.\.\.e, q: askAsText\(e\.q, readAskShape\(e\)\) \}\)\), \[task\.humanQA\]\);\s*const qaFiles = useAskFileChecks\(qaShown, qaAssignee\);/);
   const dock = read('src/renderer/src/shell/MichaelDock.tsx');
   assert.match(dock, /<FileText source=\{boldFirst\(text\)\} who=\{\{ raisedBy: 'god' \}\} \/>/, 'replies, notes included');
   assert.equal(fs.existsSync(path.resolve(__dirname, '..', 'src/renderer/src/components/AskFileRows.tsx')), false, 'no rows left');

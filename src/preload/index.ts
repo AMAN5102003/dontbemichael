@@ -1,3 +1,8 @@
+import type { Period } from '../shared/teamPerformance';
+import type { HeldRow } from '../shared/heldRecord';
+import type { LearnedNote } from '../shared/teamLearning';
+import type { CheckedList } from '../shared/checkedRecord';
+import type { PulseView } from '../shared/pulseView';
 import type { ResearchConfig } from '../shared/research';
 import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
@@ -16,6 +21,7 @@ export type { IntegrationRecord, IntegrationTemplate } from '../shared/integrati
 import type { UpdateStatus } from '../shared/updateState';
 import type { CliUpdateStatus } from '../shared/cliUpdate';
 import type { OfficeBreakView } from '../shared/officeBreak';
+import type { SilentEpisode } from '../shared/silentEngine';
 export type { UpdateStatus } from '../shared/updateState';
 import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
@@ -723,8 +729,10 @@ const api = {
   /** A terminal still drawn past its box after a fit: sizes only, to the office log. */
   logTerminalOverflow: (info: Record<string, number | string>): void =>
     ipcRenderer.send('terminal:overflow', info),
-  killPty: (id: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('pty:kill', id),
+  /** `restart`: the same member starts again at once, so its isolated
+   *  worktree stays (ship review 2026-10-17: a restart deleted it). */
+  killPty: (id: string, opts?: { restart?: boolean }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('pty:kill', id, opts),
   listPtys: (): Promise<Array<{
     id: string;
     cwd: string;
@@ -771,6 +779,9 @@ const api = {
   // ─── Clipboard ─────────────────────────────────────────────────────────────
   copyToClipboard: (text: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('app:copyToClipboard', text),
+  /** The right-click "Copy link address" label, in the app language. */
+  setCopyLinkLabel: (label: string): void =>
+    ipcRenderer.send('app:setCopyLinkLabel', label),
   /** Read the system clipboard as plain text ('' when empty/unreadable). */
   readClipboard: (): Promise<string> =>
     ipcRenderer.invoke('app:readClipboard'),
@@ -1005,6 +1016,34 @@ const api = {
     const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
     ipcRenderer.on('connectors:restartNeeded', listener);
     return () => ipcRenderer.removeListener('connectors:restartNeeded', listener);
+  },
+  /** Members whose engine isn't reporting to the app (issue #326). */
+  silentList: (): Promise<SilentEpisode[]> => ipcRenderer.invoke('silent:list'),
+  onSilentChanged: (cb: (episodes: SilentEpisode[]) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, episodes: SilentEpisode[]) => cb(Array.isArray(episodes) ? episodes : []);
+    ipcRenderer.on('silent:changed', listener);
+    return () => ipcRenderer.removeListener('silent:changed', listener);
+  },
+  silentRestart: (agentIds: string[]): Promise<void> => ipcRenderer.invoke('silent:restart', agentIds),
+  silentKeep: (agentIds: string[]): Promise<void> => ipcRenderer.invoke('silent:keep', agentIds),
+  silentCheckAgain: (agentId: string): Promise<void> => ipcRenderer.invoke('silent:checkAgain', agentId),
+  /** The not reporting watch (or the owner on its card) asks for a restart. */
+  onAgentRestartSilent: (cb: (p: { agentId: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
+    ipcRenderer.on('agent:restartSilent', listener);
+    return () => ipcRenderer.removeListener('agent:restartSilent', listener);
+  },
+  /** A click on the not reporting desktop notice: show Needs you. */
+  onSilentOpen: (cb: () => void): (() => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('silent:open', listener);
+    return () => ipcRenderer.removeListener('silent:open', listener);
+  },
+  /** A member stopped on a prompt: restart it now (hooks.ts stuckOnPrompt). */
+  onAgentRestartStuck: (cb: (p: { agentId: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
+    ipcRenderer.on('agent:restartStuck', listener);
+    return () => ipcRenderer.removeListener('agent:restartStuck', listener);
   },
   /** Agents that may use QuickBooks, Read only, before the owner chooses (Oscar). */
   quickbooksRoleDefaults: (): Promise<string[]> => ipcRenderer.invoke('quickbooks:roleDefaults'),
@@ -1285,7 +1324,7 @@ const api = {
   /** Current context size (tokens) of an agent's live session, read from the
    *  last assistant message of its transcript. Null until the agent's hooks
    *  have fired at least once (the transcript path is learned from them). */
-  agentContext: (agentId: string): Promise<number | null> =>
+  agentContext: (agentId: string): Promise<{ tokens: number; limit?: number } | null> =>
     ipcRenderer.invoke('hive:agentContext', agentId),
 
   // ─── Live telemetry (OTel collector — the usage-provider seam + spans) ──────
@@ -1343,18 +1382,45 @@ const api = {
   /** Atomically append one card against the latest main-process ledger. */
   hiveAddTask: (task: HiveTask): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:addTask', task),
-  /** Record Ask me answers on one card, merged against the card on disk.
-   *  `landed`: at least one answer was added to a question still open there. */
+  /** Record the owner's Ask me answer to question `index` on one card, merged
+   *  against the card on disk. `landed`: it was added to that question, still
+   *  open there. */
   hivePatchTask: (
     id: string,
-    patch: Partial<Omit<HiveTask, 'id'>>
-  ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch),
+    patch: Partial<Omit<HiveTask, 'id'>>,
+    index: number
+  ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch, index),
   /** The owner moves a card; Done is their decision to end it. Michael is told. */
   hiveMoveTask: (id: string, status: HiveTask['status'], reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:moveTask', id, status, reason),
   /** The owner ends a card: Done, marked "Closed by owner", never deleted. */
   hiveCloseTask: (id: string, reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:closeTask', id, reason),
+
+  // ─── Pulse (docs/designs/team-performance.md) ─────────────────────────────
+  /** What the Pulse view shows for a period. */
+  pulseSnapshot: (period: Period, compare: boolean): Promise<PulseView> => ipcRenderer.invoke('pulse:snapshot', period, compare),
+  pulseHeld: (fromMs: number, toMs: number): Promise<HeldRow[]> => ipcRenderer.invoke('pulse:held', fromMs, toMs),
+  /** The new notes behind Learning's number, for two local days (YYYY-MM-DD). */
+  pulseLearned: (from: string, to: string): Promise<LearnedNote[]> => ipcRenderer.invoke('pulse:learned', from, to),
+  pulseChecked: (fromMs: number, toMs: number, way: 'in' | 'out'): Promise<CheckedList> => ipcRenderer.invoke('pulse:checked', fromMs, toMs, way),
+  /** The Claude plan found in the owner's Claude account, and its list price a month. */
+  claudePlan: (): Promise<{ label: string | null; listMonthly: number | null }> => ipcRenderer.invoke('claude:plan'),
+  /** The owner's Apply on a way to save. A model change comes back for the store to make. */
+  pulseApply: (id: string, expected: unknown): Promise<{ ok: true; kind: 'schedule'; appliedId: number } | { ok: true; kind: 'model'; agentId: string; to: string; from: string | null } | { ok: false; error: 'stale' | 'unavailable' | 'failed' }> =>
+    ipcRenderer.invoke('pulse:apply', id, expected),
+  /** After the store set a model from a suggestion: record it for savings and Undo. */
+  pulseModelApplied: (id: string, agentId: string, from: string | null, to: string): Promise<number> =>
+    ipcRenderer.invoke('pulse:modelApplied', id, agentId, from, to),
+  pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
+    ipcRenderer.invoke('pulse:undo', appliedId),
+  pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  /** Fires when new telemetry was folded, so an open Pulse view refreshes. */
+  onPulseUpdated: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('pulse:updated', listener);
+    return () => ipcRenderer.removeListener('pulse:updated', listener);
+  },
 
   // ─── Scheduled missions (recurring auto-dispatch) ──────────────────────────
   listMissions: (): Promise<ScheduledMission[]> => ipcRenderer.invoke('missions:list'),
@@ -1365,6 +1431,10 @@ const api = {
     ipcRenderer.invoke('missions:delete', id),
   setMissionEnabled: (id: string, on: boolean): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('missions:setEnabled', id, on),
+  /** Run one job now, as its clock would (docs/designs/schedule-run-now.md).
+   *  `error` is 'just ran' within a minute of its last run. */
+  runMissionNow: (id: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('missions:runNow', id),
   /** Schedule changes agents asked for, waiting for the owner in ASK ME. */
   listScheduleRequests: (): Promise<ScheduleRequest[]> => ipcRenderer.invoke('scheduleRequests:list'),
   decideScheduleRequest: (id: string, approve: boolean): Promise<{ ok: boolean; error?: string }> =>
@@ -1413,6 +1483,9 @@ const api = {
   /** The owner is closing this agent: pause its schedules and mark it closed. */
   closeAgentByOwner: (id: string): Promise<{ ok: boolean; paused: number }> =>
     ipcRenderer.invoke('agent:closedByOwner', id),
+  /** The owner deleted this team member for good: withdraw their open asks and tell Michael. */
+  memberDeleted: (id: string): Promise<{ withdrawn: number; cards: number }> =>
+    ipcRenderer.invoke('agent:deleted', id),
   /** Fires when the scheduler stamps a mission's lastFiredAt (a beat/dispatch),
    *  so the SCHEDULES panel can refresh "last fired" without a reload. */
   onMissionsUpdated: (cb: () => void): (() => void) => {

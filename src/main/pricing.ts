@@ -62,6 +62,16 @@ export function priceFor(model: string | undefined | null): ModelPrice {
   return DEFAULT_PRICE;
 }
 
+/** A model's output price per million tokens, only when the table really lists
+ *  its family; undefined otherwise (priceFor would fall back to Sonnet). Pulse
+ *  shows a projected saving only when both models have one. */
+export function knownPrice(model: string | undefined | null): number | undefined {
+  const m = normalizeModel(model).toLowerCase();
+  if (!m) return undefined;
+  if (m.includes('opus') || m.includes('haiku') || m.includes('sonnet') || m.startsWith('gpt-') || m.includes('codex')) return priceFor(m).outputPerM;
+  return undefined;
+}
+
 /** Token split used by the cost estimator (matches `AgentUsage` token fields). */
 export interface TokenSplit {
   inputTokens: number;

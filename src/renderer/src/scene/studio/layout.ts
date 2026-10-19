@@ -45,12 +45,13 @@ export function departmentOf(a: Seatable): DepartmentName {
 }
 
 /** A short job title for a card or a panel header: the hired job card's role,
- *  else the character's usual job, else the first phrase of the role line. */
+ *  else the character's usual job, else the first phrase of the role line (a
+ *  "Title: what they do" line gives its title). */
 export function roleOf(a: Seatable): string {
   const card = a.sourceCard?.split('/').pop();
   const fromCard = card ? ROLES[card]?.role : undefined;
   const usual = !a.sourceCard ? (ROLES[a.id]?.role ?? (a.character ? ROLES[a.character]?.role : undefined)) : undefined;
-  const line = (a.description ?? '').split(/[.\n]/)[0].trim();
+  const line = (a.description ?? '').split(/[.:\n]/)[0].trim();
   return fromCard ?? usual ?? (line.length <= 28 ? line : `${line.slice(0, 26)}...`);
 }
 
@@ -173,8 +174,10 @@ export function postGx(i: number, n: number): number {
 }
 
 export const HUB: Pt = [0, 0];
-/** Stage px of Michael's hub card, under his glass pod. */
-export const HUB_CARD = { left: 447, top: 494, w: 196 };
+/** Stage px of Michael's hub card, under his glass pod. 212 px wide so its
+ *  five board counts' labels never touch ("Blocked" is 38.5 px at 10 px;
+ *  design review 2026-10-18, 3A). */
+export const HUB_CARD = { left: 447, top: 494, w: 212 };
 /** Where an escalation leaves the stage, toward the Needs you board. */
 export const EXIT: Pt = [1056, 196];
 /** The top of Michael's pod, where his tokens start. */
