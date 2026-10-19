@@ -54,3 +54,19 @@ test('the registry refuses a name another agent already has', async (t) => {
   assert.deepEqual(hive.renameAgent('oscar', 'Angela'), { ok: true, name: 'Angela' });
   assert.deepEqual(hive.renameAgent('oscar', 'Angela'), { ok: true, name: 'Angela' }, 'its own name is fine');
 });
+
+test('the registry refuses a name that only looks different from a teammate\'s', async (t) => {
+  // Value: protects=no agent is renamed to a lookalike of a teammate's name, so messages by name and the roster stay unambiguous; fails_when=renameAgent compares names by lower case alone again; why_new=the existing test only renames to an exact copy (" pam "), which a lower case compare also refuses; seam=none
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-rename-look-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  await hive.ensureAgent({ id: 'oscar', name: 'Oscar', provider: 'claude', cwd: home });
+  for (const look of ['Pаm', 'Pam.', 'P a m', 'Pám']) {
+    const r = hive.renameAgent('oscar', look);
+    assert.equal(r.ok, false, JSON.stringify(look));
+    assert.match(r.error, /^Another team member is already called /);
+  }
+  assert.equal(hive.registry().agents.oscar.name, 'Oscar');
+  assert.equal(hive.renameAgent('oscar', 'Pamela').ok, true, 'a different name is still fine');
+});

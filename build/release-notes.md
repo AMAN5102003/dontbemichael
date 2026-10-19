@@ -1,4 +1,5 @@
-- **Microsoft 365 on your own domain:** a clear message.
-- **Large Office files** are refused, not unpacked.
-- **No repeat emails** after a restart.
-- **Web links** open in your browser.
+- **Clocking in** shows your team arriving.
+- **Waiting cards** come back on their date.
+- **Pulse** lists what the team learned.
+- **Run a job now** from its schedule.
+- **Members' notes** stay their own.

@@ -297,3 +297,19 @@ test('a secretless endpoint is never served', async () => {
   });
   assert.equal(res.status, 401);
 });
+
+test('the webhook server answers this computer only, and the security policy names it (issue 102)', async (t) => {
+  // Value: protects=an enabled webhook is not reachable from the local network; fails_when=listen drops the loopback host or SECURITY.md stops naming the listeners; why_new=issue 102; seam=none
+  const { server } = makeServer();
+  await server.listen(); // the bind alone: start() would open a real tunnel
+  t.after(() => server.server?.close());
+  assert.equal(server.server.address().address, '127.0.0.1');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
+  assert.match(read('src/main/slack.ts'), /server\.listen\(this\.port, '127\.0\.0\.1', \(\) => \{/);
+  const policy = read('SECURITY.md');
+  for (const listener of ['hook server', 'integration broker', 'telemetry receiver', 'webhook server']) {
+    assert.match(policy, new RegExp(`\\*\\*The ${listener}\\*\\*`), `SECURITY.md names the ${listener}`);
+  }
+});

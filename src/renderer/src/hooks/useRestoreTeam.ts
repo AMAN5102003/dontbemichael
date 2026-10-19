@@ -2,6 +2,8 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { useStore, type Agent, ACTION_CLOCKING_IN } from '@/store/store';
 import { buildSpawnCommand, inferAgentProvider, tokenizeCommand, type HarnessConfig } from '@/store/config';
 import { roleForHiveSpawn } from '@shared/agentRole';
+import { RESEARCH_ID } from '@shared/research';
+import { RESEARCH_CHARACTER } from '@/scene/office/cast';
 
 /** "Restore team" — respawn every worker from the previous session.
  *
@@ -46,6 +48,8 @@ function subscribe(listener: () => void): () => void {
 const getRestoring = (): boolean => restoring;
 const getNote = (): string | null => note;
 const getAutoRestoring = (): boolean => autoRestoring;
+/** A Restore team run is in flight, so the office opening waits for it. */
+export const restoreInFlight = (): boolean => restoring;
 
 export interface RestoreTeamState {
   restoring: boolean;
@@ -73,6 +77,8 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
     if (restoring) return;
     restoring = true;
     note = null;
+    // The team coming back is an opening: the card and the pill say so.
+    useStore.getState().reopenOffice();
     emit();
     const restorableAgents = useStore.getState().restorableAgents;
     // Tally every agent's outcome so the run ALWAYS leaves a visible trace — the
@@ -156,6 +162,10 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
                 ptyId,
                 archived: false,
                 status: 'idle',
+                // Research wears Pete, its own face, also in an office that
+                // saved it in Ryan's (owner, third ship D4), and the name the
+                // app gave it, also in one that saved it as Research.
+                ...(a.id === RESEARCH_ID ? { character: RESEARCH_CHARACTER, ...(res.name ? { name: res.name } : {}) } : {}),
                 // Surface the worktree fallback on the floor card; otherwise normal.
                 action: worktreeGone ? 'worktree gone, using base repo' : ACTION_CLOCKING_IN,
                 // The worktree is no longer on disk — drop it so this agent is treated

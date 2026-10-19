@@ -1,3 +1,4 @@
+import { RESEARCH_ID } from '@shared/research';
 /**
  * The Office view: the studio (branding/DESIGN.md 8), the v2 replacement for the
  * pixel floor. The SVG art is drawn on a fixed 1060 x 816 stage and scaled to
@@ -6,20 +7,25 @@
  * type floor. Everything shown comes from real state: agent status and action,
  * the task ledger, the mailboxes in config, live hive messages.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
-import { useStore, actionText, liveActivity, ACTION_CLOCKING_IN, type Agent } from '@/store/store';
+import { useStore, actionText, liveActivity, ACTION_CLOCKING_IN, ROSTER_BOOT_HOME, type Agent } from '@/store/store';
+import { useClockingIn } from '@/hooks/useClockingIn';
 import type { HarnessConfig } from '@/store/config';
 import { departments, type DepartmentName } from '@/design/tokens';
 import { useAppTheme } from '@/design/theme';
 import { DeptIcon, PersonAvatar } from '@/scene/office/props';
 import { PixelBadge, type StatusKind } from '@/components/PixelBadge';
+import { NotReportingTag, useSilentEpisode } from '@/components/SilentEngine';
 import { useHasTerminalDraft } from '@/components/terminalPool';
+import { useOfficeBreak } from '@/components/OfficeBreakNotice';
+import type { OfficeBreakView } from '@shared/officeBreak';
 import { useMissions } from '@/components/triggers/ScheduleList';
 import { openQuestions, parseTasks } from '@/components/TasksKanban';
 import { missionsFor, nextRunAt } from '@shared/missions';
 import { createBanter, createIdleLines } from '@/scene/office/cafeteriaLines';
+import { browserStorage, markWelcomed, welcomeArmed } from '@/scene/office/peteWelcome';
 import { getNeedsYouFeed, newestAskFor, useNeedsYou, useNeedsYouCount } from '@/shell/useNeedsYou';
 import { chatCandidates, stillIn } from '@/shell/closingFloor';
 
@@ -29,6 +35,7 @@ import { P, STAGE_H, STAGE_W, type Pt } from './iso';
 import { family, sceneTokens, type Family } from './theme';
 import { HUB, HUB_CARD, POST_GY, cardRect, departmentOf, planStudio, postGx, roleOf, type PodPlan } from './layout';
 import { FLIGHT_MS, bendFor, useStudioLife } from './life';
+import { SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { DECOR, Decor, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
 
 
@@ -49,7 +56,7 @@ const ROLL_TOP = 14;
  *  crosses the spot where the chip was. */
 const ROLL_PAD = 24;
 
-type Board = { todo: number; doing: number; blocked: number; done: number };
+type Board = { todo: number; doing: number; waiting: number; blocked: number; done: number };
 
 /* ── Data ─────────────────────────────────────────────────────────────────── */
 
@@ -60,14 +67,14 @@ function useTaskSnapshot(godId: string): TaskSnapshot {
   // always match the pill and the board.
   const { tasks } = useNeedsYou();
   return useMemo(() => {
-    const board: Board = { todo: 0, doing: 0, blocked: 0, done: 0 };
+    const board: Board = { todo: 0, doing: 0, waiting: 0, blocked: 0, done: 0 };
     const doingBy: Record<string, number> = {};
     const forYouBy: Record<string, number> = {};
     let kept = 0;
     const done: Record<string, string | undefined> = {};
     for (const t of tasks) {
-      // Michael's board has four columns; a Waiting card is nobody's work right now.
-      if (t.status !== 'waiting') board[t.status]++;
+      // Michael's board has the Tasks view's five columns (design review 2026-10-18).
+      board[t.status]++;
       if (t.status === 'done') done[t.id] = t.assignee;
       if (t.status === 'doing' && t.assignee) doingBy[t.assignee] = (doingBy[t.assignee] ?? 0) + 1;
       if (t.assignee) { const asks = openQuestions(t).length; if (asks) forYouBy[t.assignee] = (forYouBy[t.assignee] ?? 0) + asks; }
@@ -133,7 +140,7 @@ function deskState(a: Agent): DeskState {
  * light and tint reach under the panel; the scene still fits the space left
  * of it.
  */
-export function StudioStage({ config: initialConfig, bleed = 0, quietCards = false }: {
+export const StudioStage = memo(function StudioStage({ config: initialConfig, bleed = 0, quietCards = false }: {
   config: HarnessConfig; bleed?: number;
   /** Demo mode (tools/studio-lab; owner, 2026-10-01): every pod shows its chip,
    *  even while people work; a card pops up only on hover, or for a few
@@ -240,8 +247,9 @@ export function StudioStage({ config: initialConfig, bleed = 0, quietCards = fal
     return m;
   }, [plan]);
 
-  // Mailbox posts: every connected mailbox, and who watches it.
-  const mailboxes = config.mailboxes ?? [];
+  // Mailbox posts: every connected mailbox, and who watches it. None while
+  // SHOW_MAILBOXES is off, which also drops their tags and wires.
+  const mailboxes = SHOW_MAILBOXES ? config.mailboxes ?? [] : [];
   const ownerOf = (mailboxId: string): Agent | undefined => {
     const entry = Object.entries(config.agentCapabilities ?? {})
       .find(([, c]) => c.email?.enabled && c.email.mailboxes?.[0] === mailboxId);
@@ -443,6 +451,7 @@ export function StudioStage({ config: initialConfig, bleed = 0, quietCards = fal
                   // A person who has gone home at closing time has a dark desk (2A).
                   desks={pod.members.map((a) => ({ st: deskState(a), prop: a.character, away: away.has(a.id) || !!closing?.out.has(a.id) }))}
                   c={families[pod.dept]} famKey={pod.dept}
+                  label={t(`studio.dept.${pod.dept}`)}
                   selected={pod.members.some((a) => a.id === selected)}
                   T={T} dark={dark}
                   arriving={pod.members.some((a) => life.arriving.has(a.id))}
@@ -613,7 +622,7 @@ export function StudioStage({ config: initialConfig, bleed = 0, quietCards = fal
       </div>
     </div>
   );
-}
+});
 
 /* ── Label card (DESIGN.md 7.14) ──────────────────────────────────────────── */
 
@@ -668,7 +677,10 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
 }) {
   const { t } = useTranslation();
   const typing = useHasTerminalDraft(a.ptyId);
-  const status: StatusKind = typing ? 'typing' : (a.status as StatusKind);
+  const onBreak = useOfficeBreak();
+  const status: StatusKind = typing ? 'typing' : breakStatus(a, onBreak);
+  // Its engine isn't reporting: the tag replaces the status (issue #326, SD14).
+  const silent = useSilentEpisode(a.id);
   const next = (() => {
     const now = Date.now();
     const times = missionsFor(missions, a.id, godId).filter((m) => m.enabled).map((m) => ({ at: nextRunAt(m, now), label: m.label })).filter((x): x is { at: number; label: string } => x.at !== null);
@@ -699,7 +711,9 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
           <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', letterSpacing: '-0.02em', color: a.status === 'idle' ? 'var(--cth-ink-3)' : 'var(--cth-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInlineEnd: 78 }}>{a.name}</b>
           <i style={{ fontStyle: 'normal', fontSize: 10, lineHeight: '13px', color: 'var(--cth-ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleOf(a)}</i>
         </span>
-        <PixelBadge status={status} style={{ position: 'absolute', insetInlineEnd: 0, top: 0, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+        {silent
+          ? <NotReportingTag style={{ position: 'absolute', insetInlineEnd: 0, top: 0 }} />
+          : <PixelBadge status={status} style={{ position: 'absolute', insetInlineEnd: 0, top: 0, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />}
       </div>
       <div style={{ marginTop: 5, marginBottom: 8, fontSize: 10.5, lineHeight: '14px', color: a.status === 'idle' ? 'var(--cth-ink-3)' : 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         title={caption}>{caption || t('studio.nothingNow')}</div>
@@ -780,6 +794,12 @@ function PodChip({ style, dept, members, c, snap, onSelect, onEnter, onLeave, qu
 /** Statuses that mean someone is at work, so their pod shows its full card. */
 const ACTIVE = new Set<string>(['thinking', 'working', 'blocked', 'compacting', 'looping']);
 
+/** "On a break" for a Claude agent that is not mid turn while the plan's
+ *  usage limit holds the office (issue 124); otherwise its own status. */
+function breakStatus(a: Agent, b: OfficeBreakView | null): StatusKind {
+  return b && (a.provider ?? 'claude') === 'claude' && !ACTIVE.has(a.status) ? 'break' : (a.status as StatusKind);
+}
+
 /** Activity captions are stored lower case ("nothing to do"); a caption on
  *  its own line starts with a capital. */
 function sentence(s: string): string {
@@ -809,6 +829,8 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
   delegated: number; toYou: number; kept: number; board: Board;
 }) {
   const { t } = useTranslation();
+  const onBreak = useOfficeBreak();
+  const godSilent = useSilentEpisode(god.id);
   const ctx = god.contextTokens !== undefined && god.contextLimit ? Math.round((god.contextTokens / god.contextLimit) * 100) : null;
   const stat = (n: number, label: string, coral = false) => (
     <div style={{ padding: '6px 0 7px', textAlign: 'center' }}>
@@ -837,7 +859,9 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
             <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', color: 'var(--cth-ink)', paddingInlineEnd: 76 }}>{god.name}</b>
             <i style={{ fontStyle: 'normal', fontSize: 10, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>{t('studio.officeManager')}</i>
           </span>
-          <PixelBadge status={god.status as StatusKind} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+          {godSilent
+            ? <NotReportingTag style={{ position: 'absolute', insetInlineEnd: 11, top: 9 }} />
+            : <PixelBadge status={breakStatus(god, onBreak)} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />}
         </div>
         <div style={{ marginTop: 6, fontSize: 10.5, lineHeight: '14px', color: 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {god.action?.trim() ? sentence(actionText(god.action.trim(), t)) : t('studio.runningTheOffice')}
@@ -849,11 +873,12 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
         {stat(kept, t('studio.kept'))}
       </div>
       <button onClick={() => useStore.getState().setFloorView('tasks')} aria-label={t('floorView.tasks')} style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', width: '100%', padding: '6px 4px 7px', border: 'none', borderTop: '1px solid var(--cth-line)',
+        display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', width: '100%', padding: '6px 4px 7px', border: 'none', borderTop: '1px solid var(--cth-line)',
         background: 'transparent', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)'
       }}>
         {col(board.todo, t('studio.todo'), 'var(--cth-ink-4)')}
         {col(board.doing, t('studio.doingCol'), 'var(--cth-blue)')}
+        {col(board.waiting, t('kanban.colWaiting'), 'var(--cth-amber)')}
         {col(board.blocked, t('studio.blocked'), 'var(--cth-coral-base)')}
         {col(board.done, t('studio.done'), 'var(--cth-green)')}
       </button>
@@ -971,27 +996,6 @@ function useKickoff(pods: PodPlan<Agent>[], paused: boolean): Record<string, num
   return kick;
 }
 
-/** Who is still clocking in: their action is the clocking in marker, for at
- *  most a minute each, so a quiet engine never leaves a desk dark. */
-function useClockingIn(agents: Agent[]): Set<string> {
-  const since = useRef(new Map<string, number>());
-  const [, tick] = useState(0);
-  const now = Date.now();
-  const out = new Set<string>();
-  for (const a of agents) {
-    if (a.action !== ACTION_CLOCKING_IN) { since.current.delete(a.id); continue; }
-    if (!since.current.has(a.id)) since.current.set(a.id, now);
-    if (now - (since.current.get(a.id) ?? now) < 60_000) out.add(a.id);
-  }
-  const waiting = out.size > 0;
-  useEffect(() => {
-    if (!waiting) return;
-    const id = window.setInterval(() => tick((n) => n + 1), 5000);
-    return () => window.clearInterval(id);
-  }, [waiting]);
-  return out;
-}
-
 /* ── Closing time and daylight (DESIGN.md 8.12) ───────────────────────────── */
 
 /** Closing time, as the stage sees it: who has gone home (confirmed or
@@ -1065,7 +1069,8 @@ function useIdleQuote(
     };
     // Someone idle and in (not clocking in, not gone home at closing time), in
     // a pod where nobody still at work is busy, so a bubble never sits on an
-    // open card or a dark office.
+    // open card or a dark office. Pete, the Research member, is one of them:
+    // he wears his own face now, so nobody calls him Ryan (owner, 2026-10-13).
     const quietPeople = () => chatCandidates(live.current.pods, live.current.gone, ACTIVE, ACTION_CLOCKING_IN);
     const podOfId = (id: string) => live.current.pods.find((p) => p.members.some((m) => m.id === id));
     const pickOne = (people: Agent[]) => {
@@ -1095,8 +1100,39 @@ function useIdleQuote(
       // The exchange picks the partner, so each side is said by someone who would.
       const pick = banter(a.character, partners.map((x) => x.character));
       if (!pick) return false;
-      const b = partners[pick.partner];
-      const beats = pick.beats;
+      talk(a, partners[pick.partner], pick.beats);
+      return true;
+    };
+
+    // Pete's first day welcome (peteWelcome.ts): after the owner turns Research
+    // on, the first conversation that can be one of Pete's is, with someone in
+    // another pod. Only the timer asks for it, never demo or lab banter, so a
+    // demo cannot use it up. Nothing fits yet: the tick goes on as usual.
+    const welcomeChat = (): boolean => {
+      if (!welcomeArmed(browserStorage(), ROSTER_BOOT_HOME)) return false;
+      const idle = quietPeople();
+      const pete = idle.find((p) => p.id === RESEARCH_ID);
+      if (!pete) return false;
+      const others = idle.filter((b) => podOfId(b.id) !== podOfId(pete.id));
+      const own = others.length ? banter(pete.character, others.map((x) => x.character), pete.character) : null;
+      if (own) {
+        lastSpeaker.current = pete.id;
+        talk(pete, others[own.partner], own.beats, () => markWelcomed(browserStorage(), ROSTER_BOOT_HOME));
+        return true;
+      }
+      for (const a of [...others].sort(() => Math.random() - 0.5)) {
+        const pick = banter(a.character, [pete.character], pete.character);
+        if (!pick) continue;
+        lastSpeaker.current = a.id;
+        talk(a, pete, pick.beats, () => markWelcomed(browserStorage(), ROSTER_BOOT_HOME));
+        return true;
+      }
+      return false;
+    };
+
+    // Plays one exchange between a (who opens) and b; `thrown` runs once the
+    // first beat is in the air.
+    const talk = (a: Agent, b: Agent, beats: readonly string[], thrown?: () => void) => {
       const holdFor = (text: string) => Math.min(3600, Math.max(2000, 1200 + text.length * 50));
       busyUntil = Date.now() + beats.reduce((t, x) => t + FLIGHT_MS + holdFor(x), 0) + 2000;
       const play = (i: number) => {
@@ -1105,6 +1141,7 @@ function useIdleQuote(
         const still = quietPeople().map((x) => x.id);
         if (!still.includes(from.id) || !still.includes(to.id)) { busyUntil = 0; return; }
         if (!live.current.throwNote(from.id, to.id)) { busyUntil = 0; return; }
+        if (i === 0) thrown?.();
         const text = beats[i];
         const last = i === beats.length - 1;
         const hold = holdFor(text);
@@ -1114,7 +1151,6 @@ function useIdleQuote(
         });
       };
       play(0);
-      return true;
     };
 
     // The first comes soon after the office opens, then every 15 to 30 s:
@@ -1122,6 +1158,7 @@ function useIdleQuote(
     let first = true;
     const tick = () => {
       if (Date.now() < busyUntil) return;
+      if (welcomeChat()) return;
       if (Math.random() < 0.55 && chat()) return;
       say();
     };

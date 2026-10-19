@@ -23,7 +23,7 @@ import { arabicJoinRanges } from '@/terminal/arabicJoiner';
 import { attachArabicSpacingFix } from '@/terminal/arabicSpacingFix';
 import { isArabicTerminalEnabled } from '@/terminal/arabicSetting';
 import {
-  classifyPathToken, isPathToken, pathTokenMatcher, stripPathToken, type PathAction
+  classifyPathToken, isPathToken, linkCellRange, pathTokenMatcher, stripPathToken, type PathAction
 } from '@shared/terminalPaths';
 import {
   createTerminalRecoveryState,
@@ -40,6 +40,7 @@ import {
   type TerminalAutomationBlock
 } from './terminalAutomation';
 import { sanitizeTerminalSelection } from './terminalSelection';
+import { watchOnlyData } from './watchOnlyInput';
 import '@xterm/xterm/css/xterm.css';
 
 export interface TerminalEntry {
@@ -357,8 +358,11 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
   // Keystrokes → pty. A small line buffer surfaces the last submitted prompt.
   // It lives on the entry (see TerminalEntry.lineBuf) so every prompt-clearing
   // path resets it too.
-  term.onData((data) => {
+  term.onData((raw) => {
     if (entry.exited) return;
+    // Watch-only: the owner's mouse and focus never reach the program.
+    const data = entry.inputLocked ? watchOnlyData(raw) : raw;
+    if (!data) return;
     window.cth.writePty(ptyId, data);
     // A lone Escape or Ctrl-C closes interactive pickers. Arrow-key escape
     // sequences must NOT clear the block while the user navigates a picker.
@@ -1011,6 +1015,16 @@ async function activatePath(abs: string, action: PathAction): Promise<void> {
   storeApi?.getState().openFileInIde(hit.path);
 }
 
+/** A buffer line's cells as linkCellRange reads them. */
+function cellsOf(line: NonNullable<ReturnType<Terminal['buffer']['active']['getLine']>>): Array<{ chars: string; width: number }> {
+  const out: Array<{ chars: string; width: number }> = [];
+  for (let x = 0; x < line.length; x++) {
+    const c = line.getCell(x);
+    out.push({ chars: c?.getChars() ?? '', width: c?.getWidth() ?? 1 });
+  }
+  return out;
+}
+
 function registerMarkdownLinkProvider(term: Terminal, ptyId: string): void {
   try {
     term.registerLinkProvider({
@@ -1026,10 +1040,12 @@ function registerMarkdownLinkProvider(term: Terminal, ptyId: string): void {
           const abs = resolvePathCandidate(ptyId, raw);
           if (!abs) continue;
           const action = classifyPathToken(stripPathToken(raw));
+          const span = line ? linkCellRange(cellsOf(line), m.index, m.index + raw.length, raw) : null;
+          if (!span) continue;
           links!.push({
             range: {
-              start: { x: m.index + 1, y: bufferLineNumber },
-              end: { x: m.index + raw.length, y: bufferLineNumber }
+              start: { x: span.startX, y: bufferLineNumber },
+              end: { x: span.endX, y: bufferLineNumber }
             },
             text: raw,
             decorations: { underline: true, pointerCursor: true },

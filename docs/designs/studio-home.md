@@ -114,7 +114,7 @@ schedule requests). Tabs: **Profile**, **Access**, **Work** (terminal plus compo
 
 | In the mockup | Reality today |
 |---|---|
-| Approve / Decline on a $240 refund | No structured approval path. `control:approvalRequest` has no listener; spending rules are prompt text only |
+| Approve / Decline on a $240 refund | No structured approval path. `control:approvalRequest` had no listener and was removed (2026-10-10, issue #103); spending rules are prompt text only |
 | "Web off" per person | No per person web switch exists |
 | "Spending asks you" chip | Prompt only, not enforced |
 | Pack tool levels off / ask / auto | In pack data, not shown, not enforced |

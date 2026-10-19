@@ -4,8 +4,10 @@ import type { MailProposal } from '@shared/mailProposals';
 import type { OwnerRequest } from '@shared/ownerRequests';
 import type { WorkStyleOffer } from '@shared/workStyleUpdates';
 import type { EngineSetupStatus } from '@shared/engineSetup';
+import { stopNeedsOwner, type OfficeBreakView } from '@shared/officeBreak';
 import { openQuestion, openQuestions, parseTasks, waitsOnHuman, type HiveTask } from '../components/hiveTasks';
 import { openReportIndexes } from '@shared/askMeRouting';
+import { silentCards, type SilentEpisode } from '@shared/silentEngine';
 
 const POLL_MS = 5000;
 
@@ -33,14 +35,22 @@ export interface NeedsYouFeed {
   proposals: MailProposal[];
   /** Where Michael's engine stands (get-michael-ready.md); null until read. */
   engineSetup: EngineSetupStatus | null;
+  /** The office stop or break, if any (office-stopped-account.md). */
+  stop: OfficeBreakView | null;
+  /** Members whose engine isn't reporting to the app (issue #326); each card
+   *  (one per engine version, and Michael's) is one in `count`. */
+  silent: SilentEpisode[];
   /** Open asks, passed-on schedule requests, job description offers, emails to
-   *  approve, and one for an engine Michael cannot start on. */
+   *  approve, one for an engine Michael cannot start on, and one for a stop
+   *  only the owner can fix (out of credit, sign in). */
   count: number;
   /** Reports Michael put on Ask me (michael-replies.md, 14A): never coral, never in `count`. */
   reports: number;
+  /** The one time Research card after the update (issue #230, design D9): a report. */
+  researchNotice: boolean;
 }
 
-let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, count: 0, reports: 0 };
+let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], count: 0, reports: 0, researchNotice: false };
 // The offers need the team and the packs, which this module does not import;
 // the app hands it the reader at start (App.tsx).
 let offersSource: (() => Promise<WorkStyleOffer[]>) | null = null;
@@ -87,7 +97,7 @@ let taskReads = 0;
 let requestReads = 0;
 let ownerReads = 0;
 
-function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup'>>): void {
+function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice'>>): void {
   // A poll that brings nothing new changes nothing, so nobody re-renders.
   const changed = (Object.keys(next) as Array<keyof typeof next>).some((k) => JSON.stringify(next[k]) !== JSON.stringify(feed[k]));
   if (!changed) return;
@@ -96,10 +106,16 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
   feed = {
     ...merged,
     count: merged.tasks.reduce((n, t) => n + openQuestions(t).length, 0) + merged.requests.length + merged.offers.length + merged.proposals.length,
-    reports: merged.tasks.reduce((n, t) => n + openReportIndexes(t.humanQA).length, 0)
+    reports: merged.tasks.reduce((n, t) => n + openReportIndexes(t.humanQA).length, 0) + (merged.researchNotice ? 1 : 0)
   };
-  // One more while Michael cannot start for want of his engine (get-michael-ready.md).
-  if (merged.engineSetup?.applies && merged.engineSetup.needed) feed = { ...feed, count: feed.count + 1 };
+  // One more while Michael cannot start for want of his engine (get-michael-ready.md),
+  // unless a sign in stop already says so: one problem, one card (eng R3).
+  if (setupCardShown(merged)) feed = { ...feed, count: feed.count + 1 };
+  // One more for a stop only the owner can fix (office-stopped-account.md, design D2).
+  if (stopNeedsOwner(merged.stop)) feed = { ...feed, count: feed.count + 1 };
+  // One per not reporting card (DESIGN.md §7.6b, SD1).
+  const silent = silentCards(merged.silent).length;
+  if (silent) feed = { ...feed, count: feed.count + silent };
   for (const l of [...listeners]) l();
   // Ready after Michael could not start: hand the terminals that could not
   // start to useHive, which restarts exactly those (agents at work keep going).
@@ -123,6 +139,18 @@ function readTasks(): void {
     .catch(() => { /* keep the last value */ });
   readOffers(false);
   readEngine(false);
+  readResearchNotice(false);
+}
+
+// The Research card changes only on the update and when the owner reads it,
+// so the poll reads it at most once a minute; refreshNeedsYou reads it at once.
+let researchReadAt = 0;
+function readResearchNotice(force = true): void {
+  if (!force && Date.now() - researchReadAt < 60_000) return;
+  researchReadAt = Date.now();
+  void window.cth.researchStatus?.()
+    .then((s) => publish({ researchNotice: !!s?.notice }))
+    .catch(() => { /* keep the last value */ });
 }
 
 function readRequests(): void {
@@ -149,6 +177,20 @@ function readProposals(): void {
     .catch(() => { /* keep the last value */ });
 }
 
+/** Whether the Get Michael ready card shows: Michael cannot start, and no sign
+ *  in stop is already asking the owner the same thing (eng R3). */
+export function setupCardShown(f: Pick<NeedsYouFeed, 'engineSetup' | 'stop'>): boolean {
+  return !!(f.engineSetup?.applies && f.engineSetup.needed) && f.stop?.reason !== 'signin';
+}
+
+let offStop: (() => void) | null = null;
+let offSilent: (() => void) | null = null;
+function readStop(): void {
+  void window.cth.officeBreakView?.()
+    .then((v) => publish({ stop: v ?? null }))
+    .catch(() => { /* keep the last value */ });
+}
+
 /** Listen for changes; the first listener starts the poll, the last stops it. */
 export function subscribeNeedsYou(listener: () => void): () => void {
   listeners.add(listener);
@@ -160,6 +202,10 @@ export function subscribeNeedsYou(listener: () => void): () => void {
     offRequests = window.cth.onScheduleRequestsUpdated(readRequests);
     offProposals = window.cth.onMailProposalsUpdated?.(readProposals) ?? null;
     offEngine = window.cth.onEngineSetupChanged?.(() => readEngine()) ?? null;
+    readStop();
+    offStop = window.cth.onOfficeBreak?.((v) => publish({ stop: v ?? null })) ?? null;
+    void window.cth.silentList?.().then((list) => publish({ silent: Array.isArray(list) ? list : [] })).catch(() => { /* keep the last value */ });
+    offSilent = window.cth.onSilentChanged?.((list) => publish({ silent: list })) ?? null;
   }
   return () => {
     listeners.delete(listener);
@@ -172,6 +218,10 @@ export function subscribeNeedsYou(listener: () => void): () => void {
       offProposals = null;
       offEngine?.();
       offEngine = null;
+      offStop?.();
+      offStop = null;
+      offSilent?.();
+      offSilent = null;
     }
   };
 }
@@ -202,6 +252,7 @@ export function refreshNeedsYou(): void {
   readRequests();
   readProposals();
   readOffers();
+  readResearchNotice();
 }
 
 /** Show a local change at once (an answer just saved, a card dismissed); the

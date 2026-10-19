@@ -265,7 +265,7 @@ export function proposalSendProblem(p: MailProposal | undefined, agentId: string
   if (p.state === 'changes') return 'The owner asked for changes to this email. Write a new version and propose it again.';
   if (p.state === 'declined') return 'The owner chose not to send this email. Do not send it another way.';
   if (p.state === 'cancelled') return `This email was withdrawn: ${p.cancelReason ?? 'it can no longer be sent'}. Do not send it another way.`;
-  if (p.state === 'sending') return 'This email may already have gone out: the app stopped while sending it. Look in the mailbox\'s Sent folder; do not send it again.';
+  if (p.state === 'sending') return 'This email may already have gone out: sending it was interrupted. Look in the mailbox\'s Sent folder; do not send it again.';
   return 'This email cannot be sent. Propose it again.';
 }
 

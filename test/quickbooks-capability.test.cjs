@@ -113,7 +113,6 @@ test('by default Oscar reads the books and cannot change them; Pam cannot use Qu
   const p = await f.call('company_info', 'pam');
   assert.ok(denied(p));
   assert.match(p.hookSpecificOutput.permissionDecisionReason, /not given you QuickBooks/);
-  assert.ok(f.sent.some((s) => s.c === 'control:approvalRequest' && s.p.agentId === 'pam'), 'the floor hears about it');
 });
 
 test('the owner\'s choice wins over the role default, on the very next call', async (t) => {

@@ -230,3 +230,17 @@ export function teamMemberStart(
   const known = typeof registryCwd === 'string' && registryCwd.trim() ? registryCwd : undefined;
   return { start: true, cwd: known ?? setupFolder };
 }
+
+/**
+ * Michael's note when picked team members did not start. The owner hears it
+ * through him (docs/designs/michael-only-notifications.md), and the app tries
+ * those members again the next time the office opens.
+ */
+export function didNotStartNote(names: string[], again: boolean): { subject: string; body: string } {
+  const one = names.length === 1;
+  const who = one ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return {
+    subject: one ? `${who} did not start` : 'Team members did not start',
+    body: `${who} did not start ${again ? 'again on this launch' : 'when the office opened'} and ${one ? 'is' : 'are'} not on the floor. The app tries again the next time the office opens. Tell the owner who is missing.`
+  };
+}

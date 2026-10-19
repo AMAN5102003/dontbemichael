@@ -1,5 +1,5 @@
-import { askTitle } from './askHeadline';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { askTitle, askedAgo } from './askHeadline';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
@@ -13,10 +13,10 @@ import { useBackdropClose } from '@/hooks/useBackdropClose';
 
 export { openQuestion, openQuestions, waitsOnHuman, parseTasks, type HiveTask, type HumanQA } from './hiveTasks';
 import { refreshNeedsYou, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
-import { waitsOnHuman, type HiveTask, type TaskStatus } from './hiveTasks';
-import { AskFileRows, useAskFileVerdicts } from './AskFileRows';
+import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches, byNext, nextGroup, type NextGroup } from './hiveTasks';
+import { FileText, useAskFileChecks } from './FileChip';
 import { blockedWithNothingAsked, michaelCardState, type WorkHours } from '@shared/ownerRequests';
-import { isAnswered, isWithdrawn } from '@shared/askMeRouting';
+import { askAsText, isAnswered, isWithdrawn, readAskShape } from '@shared/askMeRouting';
 
 type Status = TaskStatus;
 
@@ -122,6 +122,20 @@ export function TasksKanban() {
       : undefined;
 
   const [showAllDone, setShowAllDone] = useState(false);
+  // A render a minute, so the time groups move with the clock (Today becomes
+  // Overdue, Tomorrow becomes Today); `now` above is read on each render.
+  const [, setTick] = useState(0);
+  useEffect(() => { const tick = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(tick); }, []);
+  // Search and one team member (issue 158). While either is set every match
+  // shows, Done included, and the counts are of the matches.
+  const [query, setQuery] = useState('');
+  const [member, setMember] = useState('');
+  const filter = { query, assignee: member };
+  const filtering = filterActive(filter);
+  const shown = filtering ? tasks.filter((x) => taskMatches(x, filter)) : tasks;
+  const members = [...new Set(tasks.map((x) => x.assignee).filter((a): a is string => !!a))]
+    .map((id) => ({ id, name: nameFor(id) ?? id }))
+    .sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative', padding: '18px 24px 0' }}>
       {/* Header (DESIGN.md 7.20): the board's counts, and why there is no add
@@ -138,7 +152,7 @@ export function TasksKanban() {
           }}>
             <i style={{ width: 6, height: 6, borderRadius: 2, background: col.accent, display: 'block' }} />
             {t(col.labelKey)}
-            <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600 }}>{tasks.filter((x) => x.status === col.key).length}</b>
+            <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600 }}>{shown.filter((x) => x.status === col.key).length}</b>
           </span>
         ))}
         <span style={{ marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--cth-ink-3)' }}>
@@ -149,12 +163,50 @@ export function TasksKanban() {
         </span>
       </div>
 
+      {/* Find a card: search and one team member (issue 158). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap', marginBottom: 12 }}>
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('kanban.search')}
+          aria-label={t('kanban.search')}
+          className="cth-input"
+          style={{
+            borderRadius: 'var(--cth-r-md)', flex: '0 1 260px', minWidth: 140, height: 30, padding: '0 10px',
+            background: 'var(--cth-card)', color: 'var(--cth-ink)', border: 'none', outline: 'none',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 12.5
+          }}
+        />
+        <select
+          value={member}
+          onChange={(e) => setMember(e.target.value)}
+          aria-label={t('kanban.member')}
+          style={{
+            borderRadius: 'var(--cth-r-md)', height: 30, padding: '0 8px', maxWidth: 220,
+            background: 'var(--cth-card)', color: 'var(--cth-ink)', border: 'none',
+            boxShadow: 'inset 0 0 0 1px var(--cth-line-input)', fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, cursor: 'pointer'
+          }}
+        >
+          <option value="">{t('kanban.everyone')}</option>
+          {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
+        {filtering && (
+          <button type="button" onClick={() => { setQuery(''); setMember(''); }} style={{
+            minHeight: 28, padding: '0 8px', border: 'none', borderRadius: 'var(--cth-r-md)', background: 'transparent', cursor: 'pointer',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)'
+          }}>{t('common.clear')}</button>
+        )}
+      </div>
+
       {/* Columns */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
         {COLUMNS.map((col) => {
-          const all = tasks.filter((x) => x.status === col.key);
+          const all = shown.filter((x) => x.status === col.key);
           // Done reads newest first, folded or not (it is kept in creation order).
-          const cards = col.key === 'done' ? (showAllDone ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : all;
+          // A filter shows every match, so an old Done card can be found. Every
+          // open column reads earliest Next first (owner, 2026-10-17).
+          const cards = col.key === 'done' ? (showAllDone || filtering ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : byNext(all);
           return (
             <div key={col.key} style={{
               flex: '1 1 0', minWidth: 200, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
@@ -169,7 +221,14 @@ export function TasksKanban() {
                 {all.length === 0 && (
                   <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>{t('kanban.empty')}</div>
                 )}
-                {cards.map((x) => (
+                {(() => { const dated = cards.some((c) => nextGroup(c.nextAt, now) !== 'none'); return cards.map((x, i) => {
+                  // Open lanes are cut into time groups, each with its heading
+                  // (owner, 2026-10-17); Done is not.
+                  // A lane with no dated card shows no headings: a lone "No date" says nothing.
+                  const group = col.key === 'done' || !dated ? null : nextGroup(x.nextAt, now);
+                  const heading = group && (i === 0 || group !== nextGroup(cards[i - 1].nextAt, now))
+                    ? <GroupHeading key={`g-${group}`} group={group} first={i === 0} /> : null;
+                  return [heading, (
                   <TaskCard
                     key={x.id}
                     task={x}
@@ -182,8 +241,9 @@ export function TasksKanban() {
                     onOpen={() => openTaskDetail(x.id)}
                     onDismiss={() => dismissTask(x.id)}
                   />
-                ))}
-                {col.key === 'done' && all.length > DONE_SHOWN && (
+                  )];
+                }); })()}
+                {col.key === 'done' && !filtering && all.length > DONE_SHOWN && (
                   <button onClick={() => setShowAllDone((v) => !v)} style={{
                     alignSelf: 'flex-start', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
                     fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, color: 'var(--cth-ink-3)'
@@ -195,6 +255,18 @@ export function TasksKanban() {
         })}
       </div>
     </div>
+  );
+}
+
+/** A time group's heading in an open lane: 11.5 px 600 `ink-3`, Overdue in
+ *  `coral-text` (DESIGN.md 7.20). */
+function GroupHeading({ group, first }: { group: NextGroup; first: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div role="heading" aria-level={3} data-next-group={group} style={{
+      margin: first ? '2px 2px -4px' : '6px 2px -4px', fontSize: 11.5, fontWeight: 600,
+      color: group === 'overdue' ? 'var(--cth-coral-text)' : 'var(--cth-ink-3)'
+    }}>{t(`kanban.group.${group}`)}</div>
   );
 }
 
@@ -215,8 +287,9 @@ function TaskCard({ task, done, assigneeName, withGod, nothingAsked, godName, on
   onOpen: () => void;
   onDismiss: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [hover, setHover] = useState(false);
+  const next = nextAtLabel(task.nextAt, i18n.language);
   return (
     <div style={{ position: 'relative', display: 'flex' }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <button
@@ -240,6 +313,21 @@ function TaskCard({ task, done, assigneeName, withGod, nothingAsked, godName, on
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--cth-ink-3)' }}>
             <AgentAvatar id={task.assignee} name={assigneeName} size={17} />
             {assigneeName}
+          </span>
+        )}
+        {/* When its one off next step is due, in the owner's local time (house rule 8). */}
+        {!done && next && (
+          <span data-next-at style={{ fontSize: 11, fontWeight: 500, color: 'var(--cth-ink-2)' }}>{t('kanban.nextAt', { when: next })}</span>
+        )}
+        {/* What came of it, first line of Michael's result (issue 51); a card
+            the owner closed says so below instead. */}
+        {done && task.closedBy !== 'owner' && resultHeadline(task.result) && (
+          <span data-result title={resultHeadline(task.result)} style={{
+            fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-3)',
+            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+          }}>
+            <span aria-hidden style={{ color: 'var(--cth-green-text)', fontWeight: 600, marginInlineEnd: 4 }}>✓</span>
+            {resultHeadline(task.result)}
           </span>
         )}
         {task.status === 'waiting' && (
@@ -310,20 +398,28 @@ function TaskCard({ task, done, assigneeName, withGod, nothingAsked, godName, on
 // the big stage instead of the narrow side panel. Exported for App's
 // TaskDetailOverlay; opened via the store's openTaskDetail from anywhere.
 
-export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose }: {
+export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign, onClose }: {
   task: HiveTask;
   all: HiveTask[];
   assigneeName?: string;
   onMove: (s: Status) => void;
+  /** Out of Done, into To do, with the owner's reason (card-lifecycle.md 10). */
+  onReopen: (reason: string) => void;
   onAssign: () => void;
   onClose: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const [reopening, setReopening] = useState(false);
+  const [why, setWhy] = useState('');
+  const next = nextAtLabel(task.nextAt, i18n.language);
   const rtl = useRtl();
   const detailGodName = useResolvedGodName();
   // Every file the Q&A trail names, checked in one go rather than per question.
   const qaAssignee = typeof task.assignee === 'string' ? task.assignee : undefined;
-  const qaFiles = useAskFileVerdicts(task.humanQA, qaAssignee);
+  // Each question as the card shows it, options and parts included, so a file
+  // named in an option gets its chip checked too (ask-me-options.md).
+  const qaShown = useMemo(() => task.humanQA?.map((e) => ({ ...e, q: askAsText(e.q, readAskShape(e)) })), [task.humanQA]);
+  const qaFiles = useAskFileChecks(qaShown, qaAssignee);
   const col = COLUMNS.find((c) => c.key === task.status) ?? COLUMNS[0];
   // Belt + suspenders: parseTasks normalizes these, but the ledger is a
   // hand-written file — never trust a card's shape at the point of use.
@@ -368,7 +464,12 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
           {/* Facts */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, auto)', justifyContent: 'space-between', gap: 12, paddingTop: 14 }}>
             <div>{label(t('kanban.status'))}
-              <select value={task.status} onChange={(e) => onMove(e.target.value as Status)} style={{
+              <select value={task.status} onChange={(e) => {
+                const next = e.target.value as Status;
+                // A Done card leaves Done only into To do, with a reason.
+                if (task.status === 'done' && next !== 'done') { setReopening(true); return; }
+                onMove(next);
+              }} style={{
                 height: 30, padding: '0 8px', borderRadius: 'var(--cth-r-md)', border: 'none', cursor: 'pointer',
                 background: col.soft, color: col.text, boxShadow: 'inset 0 0 0 1px var(--cth-line-input)',
                 fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, fontWeight: 600
@@ -376,7 +477,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                 {/* Blocked means a question waits on Ask me, and Waiting names who the
                     card waits on, so only Michael sets them; a card in one shows it as
                     its current state (ship 2026-10-03). */}
-                {COLUMNS.filter((c) => (c.key !== 'blocked' && c.key !== 'waiting') || task.status === c.key).map((c) => (
+                {COLUMNS.filter((c) => ((c.key !== 'blocked' && c.key !== 'waiting') || task.status === c.key) && !(task.status === 'done' && c.key === 'doing')).map((c) => (
                   <option key={c.key} value={c.key} disabled={c.key === 'blocked' || c.key === 'waiting'}>{t(c.labelKey)}</option>
                 ))}
               </select>
@@ -408,22 +509,59 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
             </div>
           </div>
 
-          {/* What the card is for, and the notes kept on it, line by line;
-              nothing for either when the card has none. */}
-          {([['description', task.description], ['notes', task.notes]] as const).map(([key, text]) => text?.trim() ? (
-            <div key={key}>{label(t(`kanban.${key}`))}
-              <div style={{ fontSize: 12.5, lineHeight: '19px', color: 'var(--cth-ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} dir={rtl ? 'auto' : undefined}>
-                {text.trim()}
+          {/* What came of a Done card, in Michael's words, first (issue 51):
+              never checked or invented, and nothing when he wrote none. */}
+          {task.status === 'done' && task.result && (
+            <div data-result>{label(t('kanban.result'))}
+              <div dir={rtl ? 'auto' : undefined} style={{
+                padding: '10px 12px', borderRadius: 'var(--cth-r-lg)', background: 'var(--cth-green-soft)',
+                boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 30%, transparent)',
+                fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)'
+              }}>
+                <FileText source={task.result} who={{ assignee: qaAssignee }} />
               </div>
             </div>
-          ) : null)}
+          )}
 
-          {/* The owner Q&A trail: every decision documented on the card. */}
+          {/* Out of Done only into To do, with a reason (card-lifecycle.md 10): its own
+              row, so the four facts above keep their place. */}
+          {task.status === 'done' && reopening && (
+            <div data-reopen style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <textarea className="cth-input" autoFocus rows={2} value={why} onChange={(e) => setWhy(e.target.value)} placeholder={t('kanban.reopenWhy')} aria-label={t('kanban.reopenWhy')} style={{
+                resize: 'vertical', padding: '6px 8px', border: 'none', outline: 'none',
+                background: 'var(--cth-card)', color: 'var(--cth-ink)', fontFamily: 'var(--cth-font-ui)', fontSize: 12.5
+              }} />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <PixelButton variant="primary" size="sm" disabled={!why.trim()} onClick={() => { onReopen(why.trim()); setReopening(false); setWhy(''); }}>{t('kanban.reopen')}</PixelButton>
+                <PixelButton variant="secondary" size="sm" onClick={() => { setReopening(false); setWhy(''); }}>{t('common.cancel')}</PixelButton>
+              </div>
+            </div>
+          )}
+
+          {/* What the card is for, when a request gave it one. No running notes:
+              an agent's activity lives in its conversation and the office log
+              (owner, 2026-10-11). */}
+          {task.description?.trim() && (
+            <div>{label(t('kanban.description'))}
+              <div style={{ fontSize: 12.5, lineHeight: '19px', color: 'var(--cth-ink)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }} dir={rtl ? 'auto' : undefined}>
+                {task.description.trim()}
+              </div>
+            </div>
+          )}
+          {task.status !== 'done' && next && (
+            <div data-next-at style={{ fontSize: 12.5, color: 'var(--cth-ink)' }}>{t('kanban.nextAt', { when: next })}</div>
+          )}
+
+          {/* The owner Q&A trail: every decision documented on the card, newest
+              first like Ask me (owner, 2026-10-12), each with when it was asked.
+              The key stays the entry's place in the ledger, so a new ask does not
+              shift the others. Agents write tasks.json, so check the time's type. */}
           {(task.humanQA?.length ?? 0) > 0 && (
             <div>{label(t('kanban.humanQA'))}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {task.humanQA!.map((e, i) => {
+                {task.humanQA!.map((e, i) => [e, i] as const).reverse().map(([e, i]) => {
                   const open = !isAnswered(e) && !isWithdrawn(e);
+                  const ago = askedAgo(typeof e.askedAt === 'string' ? e.askedAt : undefined, Date.now(), i18n.language, t('askMe.justNow'));
                   return (
                     <div key={i} style={{
                       padding: '10px 12px', borderRadius: 'var(--cth-r-lg)',
@@ -433,10 +571,11 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                     }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                         <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{t('kanban.question')}</span>
+                        {ago && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{ago}</span>}
                         {open && <span style={{ marginInlineStart: 'auto', padding: '1px 8px', borderRadius: 999, background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)', fontSize: 10.5, fontWeight: 600 }}>{t('kanban.awaitingAnswer')}</span>}
                       </div>
-                      <MarkdownPreview source={e.q} variant="card" />
-                      <AskFileRows question={e.q} raisedBy={e.raisedBy} assignee={qaAssignee} verdicts={qaFiles[e.raisedBy ?? ''] ?? {}} endRule={!isAnswered(e)} style={{ marginTop: 8 }} />
+                      {/* With its options or questions, which no longer sit in the text (ask-me-options.md). */}
+                      <FileText source={qaShown?.[i]?.q ?? e.q} who={{ raisedBy: e.raisedBy, assignee: qaAssignee }} checks={qaFiles[e.raisedBy ?? ''] ?? {}} />
                       {isAnswered(e) ? (
                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--cth-line)' }}>
                           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--cth-green-text)', marginBottom: 2 }}>{t('kanban.answer')}</div>
@@ -448,6 +587,8 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                         <div dir={rtl ? 'auto' : undefined} style={{ marginTop: 6, fontSize: 12, color: 'var(--cth-ink-3)' }}>
                           {e.dismissedBy === 'card-closed'
                             ? t('kanban.askWithdrawnCardClosed')
+                            : e.dismissedBy === 'member-deleted'
+                            ? t('kanban.askWithdrawnMemberDeleted')
                             : e.dismissedReason?.trim()
                               ? t('kanban.askWithdrawnBecause', { reason: `\u2068${e.dismissedReason.trim()}\u2069` })
                               : t('kanban.askWithdrawn')}

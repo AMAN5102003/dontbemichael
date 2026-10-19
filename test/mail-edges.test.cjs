@@ -109,6 +109,16 @@ test('classifyMailError: timeouts, unknown errors and MailError pass through', (
   assert.equal(classifyMailError({ responseText: 'Please log in via your web browser' }).kind, 'provider-blocked');
 });
 
+test('classifyMailError: 535 is a refused login only as a reply code, not inside an address or a number', () => {
+  assert.equal(classifyMailError({ response: '535-5.7.8 Username and Password not accepted' }).kind, 'auth', 'a multiline 535 reply');
+  assert.equal(classifyMailError(new Error('Invalid login: 535 Incorrect authentication data')).kind, 'auth');
+  // nodemailer copies the server's reply into the message, address and all.
+  const reply = '550 5.1.1 <ann1535@example.com>: Recipient address rejected';
+  const rejected = Object.assign(new Error(`Can't send mail - all recipients were rejected: ${reply}`), { code: 'EENVELOPE', response: reply });
+  assert.equal(classifyMailError(rejected).kind, 'unknown');
+  assert.equal(classifyMailError({ response: '552 5.3.4 Message size exceeds fixed limit (35350000 bytes)' }).kind, 'unknown');
+});
+
 // ── handleMailRequest: refusals and error mapping ───────────────────────────
 
 test('mail route: unknown tool 404, missing id or subject 400, numeric id reads, missing message 404', async () => {
@@ -183,7 +193,7 @@ test('a mailbox with no saved password is refused in plain words and marked need
 
 // ── send failures ───────────────────────────────────────────────────────────
 
-test('send failures: a refusal says "Not sent" and is not remembered; a timeout not found in Sent is not sent', async () => {
+test('send failures: a refusal says "Not sent" and is not remembered; a timeout not found in Sent is held as maybe sent', async () => {
   const { call, state } = setup();
   state.smtpError = Object.assign(new Error('535 Authentication failed'), { code: 'EAUTH' });
   const msg = { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' };
@@ -203,9 +213,42 @@ test('send failures: a refusal says "Not sent" and is not remembered; a timeout 
   state.sentHit = false;
   const r = await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' });
   assert.equal(r.status, 502, 'ETIMEDOUT classifies as network');
-  assert.match(r.body.error, /^Not sent\./);
+  // A drop mid-send may have delivered it (issue 101): held, never reported as not sent.
+  assert.match(r.body.error, /^This email may already have gone out/);
   assert.ok(state.queries.some((q) => q.header && q.header['message-id']), 'Sent was checked first');
   }
+  {
+  // The connection closing mid-send may have delivered it too (adversarial review).
+  const { call, state } = setup();
+  state.smtpError = Object.assign(new Error('Connection closed unexpectedly'), { code: 'ECONNECTION' });
+  state.sentHit = false;
+  const r = await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' });
+  assert.match(r.body.error, /^This email may already have gone out/);
+  }
+  // A server that was never reached took nothing: that is plainly not sent, and a retry may send it.
+  for (const never of [
+    Object.assign(new Error('connect ECONNREFUSED 10.0.0.1:465'), { code: 'ESOCKET', syscall: 'connect' }),
+    Object.assign(new Error('Connection timeout'), { code: 'ETIMEDOUT' }),
+    Object.assign(new Error('Greeting never received'), { code: 'ETIMEDOUT' })
+  ]) {
+    const { call, state } = setup();
+    state.smtpError = never;
+    state.sentHit = false;
+    const r = await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' });
+    assert.match(r.body.error, /^Not sent\./, never.message);
+    state.smtpError = null;
+    assert.equal((await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' })).status, 200, `${never.message}: the retry sends`);
+  }
+});
+
+test('a rejected recipient whose address holds 535 is not sent, and the mailbox is not marked as needing a password', async () => {
+  const { call, state } = setup();
+  const reply = '550 5.1.1 <ann1535@example.com>: Recipient address rejected';
+  state.smtpError = Object.assign(new Error(`Can't send mail - all recipients were rejected: ${reply}`), { code: 'EENVELOPE', response: reply });
+  const r = await call('dwight', 'send', { mailbox: 'sales', to: 'ann1535@example.com', subject: 's', body: 'b' });
+  assert.match(r.body.error, /^Not sent\./);
+  assert.doesNotMatch(r.body.error, /password/);
+  assert.equal(state.statuses.some((s) => s.status === 'needs-attention'), false, 'the password is fine; only the recipient was refused');
 });
 
 test('a send from a non Gmail mailbox files a copy in Sent; Gmail does not', async () => {

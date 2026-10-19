@@ -74,7 +74,8 @@ export interface WebhookEndpointRef {
 export interface WebhookInbound {
   message: string;
   title?: string;
-  /** Declared by the caller when they bothered to; the handler classifies when not. */
+  /** Declared by the caller. Only 'directive' is taken as given; a 'communication'
+   *  label is checked like an unlabeled message (index.ts handleWebhookMessage). */
   kind?: InboundKind;
   /** Who is sending, for the trigger history. Falls back to the endpoint name. */
   from?: string;
@@ -241,7 +242,9 @@ export class WebhookServer {
       const server = createServer((req, res) => this.handleRequest(req, res));
       const onError = (e: Error): void => reject(e);
       server.once('error', onError);
-      server.listen(this.port, () => {
+      // This computer only (issue 102): the tunnel reaches it over loopback, and
+      // nothing else on the local network can.
+      server.listen(this.port, '127.0.0.1', () => {
         server.off('error', onError);
         this.server = server;
         resolve();

@@ -22,11 +22,14 @@ import { execFile } from 'node:child_process';
 /** Pages OCR'd from one PDF. A 300-page scan would take minutes; the rest is reported as skipped. */
 export const MAX_OCR_PAGES = 50;
 /** Covers the one-time cold model load; a warm page is well under a second. */
-const OCR_TIMEOUT_MS = 180_000;
+export const OCR_TIMEOUT_MS = 180_000;
 
+/** The OCR contract both readers keep: this one and winOcr.ts. `extractor` names
+ *  the reader, as the knowledge store records it. `no-language`: Windows has no
+ *  OCR for any language the owner uses. */
 export type OcrResult =
-  | { ok: true; pages: string[]; truncated: boolean }
-  | { ok: false; reason: 'unsupported' | 'timeout' | 'failed' };
+  | { ok: true; pages: string[]; truncated: boolean; extractor: string }
+  | { ok: false; reason: 'unsupported' | 'timeout' | 'failed' | 'no-language' };
 
 /**
  * JXA run(argv): argv = [kind, path, maxPages]. Prints JSON:
@@ -83,7 +86,7 @@ export function macOcr(path: string, kind: 'image' | 'pdf', maxPages = MAX_OCR_P
         try {
           const parsed = JSON.parse(String(stdout)) as { pages?: unknown; truncated?: unknown; error?: unknown };
           if (!Array.isArray(parsed.pages)) { resolve({ ok: false, reason: 'failed' }); return; }
-          resolve({ ok: true, pages: parsed.pages.map(String), truncated: parsed.truncated === true });
+          resolve({ ok: true, pages: parsed.pages.map(String), truncated: parsed.truncated === true, extractor: 'vision-ocr@1' });
         } catch {
           resolve({ ok: false, reason: 'failed' });
         }

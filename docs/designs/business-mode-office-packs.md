@@ -399,7 +399,7 @@ From /plan-eng-review on 2026-09-15, scope: all three phases. Each decision was 
 - **Finding:** §2 sends `ask`-level calls "into the approvals queue", but no queue exists:
   - `src/main/hooks.ts:272-273` leaves approval to Claude's native prompt.
   - Michael's prompt says "there is NO separate approval queue" (`src/main/hive.ts:1487`).
-  - `control:approvalRequest` (`hooks.ts:381`) has no listener in the renderer.
+  - `control:approvalRequest` (`hooks.ts:381`) had no listener in the renderer; it was removed on 2026-10-10 (issue #103), and refusals reach the owner through Michael.
   - A call can't be held while the owner is busy: the hook shim exits after 5 s (`hive.ts:3001`), and Claude Code's command-hook timeout is 600 s.
 - **Decision:**
   - **Record:** each approval is persisted in the hive folder as `approvals/<id>.json` with agent, capability, plain-language summary, exact request payload, created and expires times, status, and owner note.

@@ -1,12 +1,14 @@
-# Don't Be Michael v0.1.7
+# Don't Be Michael v0.2.3
 
 **An AI office for your small business.** Pick your kind of business, pick your team, and Michael, your office manager, runs the floor while you run the business.
 
-## What's new in 0.1.7
+## What's new in 0.2.3
 
-- **Microsoft 365 on your own domain gets a clear message.** Testing a mailbox like info@yourbusiness.com that runs on Microsoft 365 now says it cannot be connected yet, instead of a misleading server or password error.
-- **Large Office files cannot take the office down.** A Word, Excel or PowerPoint file too big to read is refused before anything is unpacked.
-- **No repeat emails after a restart,** and web links open in your browser instead of replacing the app.
+- **The office opens with a Clocking in card** showing who is in and who is still coming.
+- **Waiting cards come back.** Each one gets a check back time; Michael follows up and, after two follow ups with no reply, asks you whether to keep waiting.
+- **Pulse lists what the team learned,** note by note, and closing time no longer waits on a member whose AI engine isn't reporting.
+- **Run a scheduled job now** from its schedule row, and file chips have actions such as Copy path.
+- **Each team member's notes are its own,** and Needs you says when a member stops reporting to the app, with Restart.
 
 Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvivekkumar/dontbemichael/blob/main/docs/FEATURES.md)
 
@@ -14,15 +16,15 @@ Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvi
 
 | Platform | Download |
 |---|---|
-| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.1.7-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.1.7-mac-universal.dmg) |
+| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.3-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.3-mac-universal.dmg) |
 
 <!-- windows -->
-**Windows 11 (x64):** [`Dont-Be-Michael-0.1.7-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.1.7/Dont-Be-Michael-0.1.7-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
+**Windows 11 (x64):** [`Dont-Be-Michael-0.2.3-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.3/Dont-Be-Michael-0.2.3-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
 <!-- /windows -->
 
 Linux will follow.
 
-[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.1.7.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.1.7.tar.gz)
+[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.3.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.3.tar.gz)
 
 ## Installing on your Mac
 

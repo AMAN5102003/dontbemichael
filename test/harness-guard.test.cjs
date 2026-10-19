@@ -44,10 +44,22 @@ test('the protocol files an agent is told to write are allowed', () => {
     `${HIVE}/agents/oscar/memory/handoff.md`,
     `${HIVE}/agents/oscar/outbox/msg-1.json`,
     `${HIVE}/agents/oscar/inbox/.done/msg-0.json`,
-    `${HIVE}/tasks.json`
+    `${HIVE}/triage/20261011T143000-oscar.json`
   ]) {
     assert.equal(decide(p).deny, false, p);
   }
+});
+
+test('only Michael writes the board; a team member files once in triage/ and Michael files it away', () => {
+  // Value: protects=the single writer of tasks.json (ship review D8) and the filing path it depends on; fails_when=the guard refuses a filing, so team members fall back to tasks.json, or still lets them write tasks.json; why_new=review D8 red team found triage/ refused; seam=harnessWriteDecision
+  const d = decide(`${HIVE}/tasks.json`);
+  assert.equal(d.deny, true, 'a team member never writes tasks.json');
+  assert.match(d.reason, /one new file per filing in the triage folder; Michael alone writes tasks\.json, so tell him what changed/);
+  assert.equal(decide(`${HIVE}/triage/.done/20261011T143000-oscar.json`).deny, true, 'filing away is Michael\'s');
+  assert.equal(decide(`${HIVE}/triage/sub/x.json`).deny, true);
+  const god = { agentId: 'god', isGod: true, cwd: '/Users/me/Documents/Pho/Office' };
+  assert.equal(decide(`${HIVE}/tasks.json`, god).deny, false);
+  assert.equal(decide(`${HIVE}/triage/.done/20261011T143000-oscar.json`, god).deny, false);
 });
 
 test('a business document in the hive is refused, and the reason says where it belongs', () => {
@@ -92,6 +104,13 @@ test('board.md is Michael\'s alone, and nobody files spawn requests in this buil
 test('`..` cannot smuggle a write out of an allowed folder', () => {
   assert.equal(decide(`${HIVE}/agents/oscar/outbox/../../../board.md`).deny, true);
   assert.equal(decide(`${HIVE}/agents/oscar/outbox/../report.pdf`).deny, true);
+});
+
+test('a name that starts with two dots is still inside the harness folder', () => {
+  assert.equal(decide(`${HOME}/..notes.md`).deny, true);
+  assert.equal(decide(`${HOME}/..shared/brand-voice.md`).deny, true);
+  assert.equal(decide(`${HIVE}/..board.md`).deny, true);
+  assert.equal(decide(`${HOME}/../outside.md`).deny, false, 'a real step out of the folder is still outside');
 });
 
 test('changing the case of the path does not get around it on macOS', () => {
@@ -141,4 +160,11 @@ test('a refusal names the agent\'s folder only when that folder is outside the h
     tool: 'Write', toolInput: 'oops', cwd: FOLDER, agentId: 'oscar', isGod: false,
     harnessHome: HOME, hiveRoot: HIVE, caseInsensitive: true
   }).deny, false);
+});
+
+test('an agent saves into its own scratch folder in the app\'s home, and no one else\'s', posixOnly('POSIX paths'), () => {
+  // Value: protects=a member's session can save temp files in its own scratch folder, which moved out of /tmp; fails_when=the guard refuses it (every scratch save fails) or lets an agent into another's; why_new=ship review pass 3 (D6.1 regression); seam=none
+  assert.equal(decide(`${HOME}/agent-tmp/oscar/claude-501/s/scratchpad/notes.md`).deny, false);
+  assert.equal(decide(`${HOME}/agent-tmp/pam/notes.md`).deny, true, 'another agent\'s');
+  assert.equal(decide(`${HOME}/agent-tmp/oscar-2/notes.md`).deny, true, 'a name that only starts the same');
 });

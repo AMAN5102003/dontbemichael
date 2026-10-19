@@ -37,7 +37,7 @@ require.cache[electron] = {
     }
   }
 };
-const { setSecret, getSecret, hasSecret, deleteSecret, canStoreSecrets } = loadTs('src/main/integrations.ts');
+const { setSecret, getSecret, hasSecret, deleteSecret, canStoreSecrets, secretStoreUnavailableReason } = loadTs('src/main/integrations.ts');
 const { writeFileAtomic, sweepStaleTemps } = loadTs('src/main/atomicFile.ts');
 const scratch = [userData];
 test.after(() => { for (const d of scratch) fs.rmSync(d, { recursive: true, force: true }); });
@@ -85,11 +85,24 @@ test('with OS encryption off, nothing is written in plaintext and nothing is los
   try {
     const r = setSecret('mail:support', 'plain-should-never-land');
     assert.equal(r.ok, false);
-    assert.match(r.error, /encryption is unavailable/);
+    assert.equal(r.error, secretStoreUnavailableReason());
+    assert.match(r.error, /nothing was saved/);
+    assert.doesNotMatch(r.error, /safeStorage|plaintext|encryption is unavailable/, 'plain words, not the raw error');
   } finally {
     encryptionOn = true;
   }
   assert.equal(fs.readFileSync(secretsFile, 'utf8'), before, 'the file is untouched');
+});
+
+test('secretStoreUnavailableReason says what to do on each platform, in plain words', () => {
+  assert.match(secretStoreUnavailableReason('darwin'), /keychain/);
+  assert.match(secretStoreUnavailableReason('linux'), /keyring/);
+  assert.match(secretStoreUnavailableReason('win32'), /Restart the computer/);
+  for (const p of ['darwin', 'linux', 'win32']) {
+    const reason = secretStoreUnavailableReason(p);
+    assert.match(reason, /nothing was saved/);
+    assert.match(reason, /try again/i);
+  }
 });
 
 test('canStoreSecrets follows OS encryption, so a mailbox is refused before its login test', () => {

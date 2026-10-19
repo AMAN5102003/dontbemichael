@@ -10,7 +10,10 @@ export type StatusKind =
   // prompt, which holds its queue. Never stored on the agent (the pty parser
   // would overwrite it); derived at render, see `hasTerminalDraft`. Without it
   // a held queue looked identical to an idle agent doing nothing.
-  | 'typing';
+  | 'typing'
+  // The office break (issue 124): the Claude plan reached its usage limit.
+  // Derived at render from the break, like 'typing'.
+  | 'break';
 
 export interface PixelBadgeProps {
   status: StatusKind;
@@ -30,7 +33,8 @@ const pillByStatus: Record<StatusKind, { text: string; fill: string }> = {
   ghost:      { text: 'var(--cth-ink-3)', fill: 'var(--cth-neutral-soft)' },
   compacting: { text: 'var(--cth-violet-text)', fill: 'var(--cth-violet-soft)' },
   looping:    { text: 'var(--cth-amber-text)', fill: 'var(--cth-amber-soft)' },
-  typing:     { text: 'var(--cth-indigo-text)', fill: 'var(--cth-indigo-soft)' }
+  typing:     { text: 'var(--cth-indigo-text)', fill: 'var(--cth-indigo-soft)' },
+  break:      { text: 'var(--cth-amber-text)', fill: 'var(--cth-amber-soft)' }
 };
 
 const colorByStatus: Record<StatusKind, string> = {
@@ -43,7 +47,8 @@ const colorByStatus: Record<StatusKind, string> = {
   ghost:    'var(--cth-status-ghost)',
   compacting: 'var(--cth-status-compacting)',
   looping:    'var(--cth-status-looping)',
-  typing:     'var(--cth-status-typing)'
+  typing:     'var(--cth-status-typing)',
+  break:      'var(--cth-amber)'
 };
 
 // i18n key per status. "blocked" is reserved for the god agent waiting on YOU,
@@ -61,7 +66,8 @@ const labelKeyByStatus: Record<StatusKind, string> = {
   looping:    'badge.looping',
   // Reads as "you are typing", not "the agent is typing" — it is your text
   // sitting on the prompt, and it is why nothing is being delivered.
-  typing:     'badge.typing'
+  typing:     'badge.typing',
+  break:      'badge.onBreak'
 };
 
 export function PixelBadge({ status, label, style }: PixelBadgeProps) {

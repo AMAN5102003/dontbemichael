@@ -26,6 +26,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { ConnectionThrottle, HOLD_MAX_MS } from './brokerThrottle';
 import {
   type IntegrationRecord,
   buildAuthHeaders,
@@ -84,6 +85,8 @@ function isLoopback(addr: string): boolean {
 export class IntegrationBroker {
   private server: Server | null = null;
   private port = 0;
+  /** When each connected app may be called again (brokerThrottle.ts). */
+  private readonly throttle = new ConnectionThrottle();
   private readonly deps: IntegrationBrokerDeps;
   /** token -> capability. In-memory only; NEVER persisted. */
   private readonly byToken = new Map<string, Capability>();
@@ -161,6 +164,14 @@ export class IntegrationBroker {
     return undefined;
   }
 
+  /** A call to an app that is still rate limiting: answered now with when to
+   *  try again, so the agent waits instead of retrying blind. */
+  private static sendThrottled(res: ServerResponse, label: string, waitMs: number): void {
+    const seconds = Math.ceil(waitMs / 1000);
+    res.writeHead(429, { 'content-type': 'application/json', 'retry-after': String(seconds) });
+    res.end(JSON.stringify({ error: `${label} asked the app to slow down. Try again in ${seconds} seconds.`, code: 'rate_limited' }));
+  }
+
   private static sendError(res: ServerResponse, status: number, code: string, message: string): void {
     if (res.headersSent) { try { res.end(); } catch { /* noop */ } return; }
     res.writeHead(status, { 'content-type': 'application/json' });
@@ -219,6 +230,15 @@ export class IntegrationBroker {
     const rec = this.deps.getRecord(integrationId);
     if (!rec) return IntegrationBroker.sendError(res, 404, 'not_found', 'unknown integration');
     if (!rec.enabled) return IntegrationBroker.sendError(res, 403, 'forbidden', 'integration is disabled');
+    // 5b) An app that asked to slow down is not called until its time is up: a
+    //     short wait is held here (the call runs again then), a long one is
+    //     answered now.
+    const wait = this.throttle.waitFor(integrationId);
+    if (wait > HOLD_MAX_MS) return IntegrationBroker.sendThrottled(res, rec.label || integrationId, wait);
+    if (wait > 0) {
+      setTimeout(() => { if (!req.destroyed && !res.writableEnded) this.handle(req, res); }, wait);
+      return;
+    }
 
     // 6) Confine the upstream URL under the integration origin (NOT an open proxy).
     const upstream = resolveUpstreamUrl(rec.baseUrl, path + query);
@@ -308,6 +328,7 @@ export class IntegrationBroker {
       // The message could in theory contain the URL but never the secret.
       return IntegrationBroker.sendError(res, 502, 'bad_gateway', `upstream request failed: ${(e as Error).message}`);
     }
+    this.throttle.note(rec.id, upstreamRes.status, upstreamRes.headers);
 
     // Stream the response back (status + sanitized headers + body).
     const respHeaders: Record<string, string> = {};
@@ -322,7 +343,9 @@ export class IntegrationBroker {
         res.end();
       }
     } catch {
-      try { res.end(); } catch { /* socket gone */ }
+      // The status is already sent and the body has no length, so a clean end
+      // would read to the agent as a whole answer. Drop the connection instead.
+      res.destroy();
     } finally {
       clearTimeout(timer);
     }

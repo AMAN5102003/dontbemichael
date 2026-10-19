@@ -28,7 +28,8 @@ const business = { name: 'Taco Shop', city: 'Austin' };
 
 test('every character but Michael has a job family whose card exists in some pack', () => {
   const cards = H.cardJobs(packs, core, 'restaurant-food', business);
-  for (const c of OFFICE_CAST.filter((n) => n !== 'michael')) {
+  // Pete is the Research member's own face, never a hire's (owner, third ship D4).
+  for (const c of OFFICE_CAST.filter((n) => n !== 'michael' && n !== 'pete')) {
     const job = H.ownJob(c, [], cards);
     assert.ok(job, `${c} has a job`);
   }
@@ -73,6 +74,17 @@ test('a hire gets its own folder, suffixed with its name on a clash', () => {
   assert.equal(H.hireFolderName('Finance', 'Kevin', (f) => taken.has(f)), 'Finance');
   assert.equal(H.hireFolderName('Admin', 'Jim', (f) => taken.has(f)), 'Admin_Jim');
   assert.equal(H.hireFolderName('Admin', 'Erin', (f) => taken.has(f)), 'Admin_Erin_2');
+});
+
+test('a folder name never ends in a dot or a space that Windows would drop', () => {
+  // "a".repeat(59) + " b" is 61 chars: the 60-char cut used to leave a
+  // trailing space, which Windows silently drops from the folder on disk.
+  const long = H.safeFolder(`${'a'.repeat(59)} b`);
+  assert.equal(long.length, 59);
+  assert.equal(long, 'a'.repeat(59));
+  assert.equal(H.safeFolder('AR/AP Clerk'), 'AR-AP Clerk');
+  assert.equal(H.safeFolder('  ..Reports  '), 'Reports');
+  assert.equal(H.hireFolderName('Sales', 'Dwight.', (f) => f === 'Sales'), 'Sales_Dwight');
 });
 
 test('the rules flag a near copy of what to send, not a title', () => {

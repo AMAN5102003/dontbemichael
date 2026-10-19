@@ -41,6 +41,7 @@ Order: title, who and when, the question, its files, the reply, the footer. The 
 rows sit between the question they belong to and the answer, because the owner works
 through the file and then replies.
 
+- **Superseded 2026-10-10** for D1 and D2 by `docs/designs/open-file-tab.md`: files are chips in place of the path, and readable kinds open as an office tab.
 - **D1 What Open does.** A document opens in the owner's default app: `md`, `markdown`,
   `txt`, `csv`, `tsv`, `xlsx`, `docx`, `pptx`, `pdf`, `png`, `jpg`, `jpeg`, `gif`,
   `webp` (eng R2: `xls` only shows in Finder). Only when `safeResolve` (src/main/fs.ts)

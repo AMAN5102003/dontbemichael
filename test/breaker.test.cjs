@@ -111,6 +111,23 @@ test('a progressing beat resets the no-progress debounce', () => {
   assert.equal(d.state.level, 'healthy', `reason: ${d.state.reason}`);
 });
 
+test('an idle beat resets the no-progress debounce: lone bursts never add up', () => {
+  const b = makeBreaker();
+  beat(b, 'a', sample('a', T0, 0), false, T0);
+  beat(b, 'a', sample('a', T0 + BEAT, 500), false, T0 + BEAT);         // a lone burst: count 1
+  beat(b, 'a', sample('a', T0 + 2 * BEAT, 500), false, T0 + 2 * BEAT); // idle, no new output
+  const d = beat(b, 'a', sample('a', T0 + 3 * BEAT, 900), false, T0 + 3 * BEAT); // another lone burst
+  assert.equal(d.state.level, 'healthy', `reason: ${d.state.reason}`);
+  // And so on all afternoon: idle, burst, idle, burst. Each burst stands alone.
+  let out = 900;
+  for (let i = 4; i < 12; i += 2) {
+    beat(b, 'a', sample('a', T0 + i * BEAT, out), false, T0 + i * BEAT);
+    out += 400;
+    const burst = beat(b, 'a', sample('a', T0 + (i + 1) * BEAT, out), false, T0 + (i + 1) * BEAT);
+    assert.equal(burst.state.level, 'healthy', `burst at beat ${i + 1}: ${burst.state.reason}`);
+  }
+});
+
 // ── fix 1: compaction exemption ──────────────────────────────────────────────
 
 test('compaction exempts the no-progress trip', () => {

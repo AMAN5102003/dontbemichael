@@ -57,7 +57,6 @@ test('with Gmail off in Settings, an agent reading Gmail is refused through the 
   assert.match(r.hookSpecificOutput.permissionDecisionReason, /Gmail turned off for the team in Settings/);
   assert.ok(denied(await f.call('mcp__claude_ai_Google_Calendar__list_events')));
   assert.ok(denied(await f.call('mcp__claude_ai_Gmail__search_threads', 'god')), 'Michael too');
-  assert.ok(f.sent.some((s) => s.c === 'control:approvalRequest' && s.p.agentId === 'pam'), 'the floor hears about it');
 });
 
 test('on in Settings, only the agents given Gmail or Calendar use them, Michael like anyone', async (t) => {
@@ -117,5 +116,4 @@ test('an md-mail tool the gate does not know is refused, and md-mail never reads
   assert.ok(denied(await call('mcp__md-mail__search', { mailbox: 42 })), 'a mailbox that is not a string');
   assert.ok(!denied(await call('mcp__md-mail__send', { mailbox: 'sales' })), 'Can send, switch off: still allowed');
   assert.ok(denied(await call('mcp__md-mail__list_mailboxes', {}, 'god')), 'Michael follows the same rule: no capability, no mail');
-  assert.ok(f.sent.some((s) => s.c === 'control:approvalRequest' && /Unknown mail tool/.test(JSON.stringify(s.p))), 'the floor hears about the refusal');
 });
