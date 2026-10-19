@@ -3098,10 +3098,11 @@ export class HiveManager {
     return n;
   }
 
-  /** One of the app's fixed upkeep notes, delivered: from the owner's side or
-   *  the app, word for word the app's own. */
+  /** App upkeep, delivered: a schedule decision (only the scheduler sends
+   *  as 'scheduler'), or word for word one of the app's fixed notes from the
+   *  owner's side or the app. */
   private isAppUpkeep(m: { from?: unknown; subject?: unknown; body?: unknown }): boolean {
-    return (m.from === 'human' || m.from === 'system') && isAnyFixedUpkeep(m.subject, m.body);
+    return m.from === 'scheduler' || ((m.from === 'human' || m.from === 'system') && isAnyFixedUpkeep(m.subject, m.body));
   }
 
   /** As Research turns off: every message waiting in its inbox goes back to
@@ -3260,9 +3261,9 @@ export class HiveManager {
     // through the trust layer first, in the background (ship review D2.1).
     // Research not reporting: its questions wait with Michael like anyone's (SD16).
     if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && this.memberMail?.(RESEARCH_ID) === 'hold') {
-      // The app's fixed upkeep notes are not Michael's to pass on: dropped
-      // quietly, as with Research off.
-      if (upkeep && isFixedUpkeep(upkeep, msg.subject, msg.body)) { this.appendLog({ kind: 'drop', reason: 'research-held', from: msg.from, id: msg.id, upkeep }); return; }
+      // The app's upkeep notes are not Michael's to pass on (his resend would
+      // make them a listed question): dropped quietly, as with Research off.
+      if (upkeep) { this.appendLog({ kind: 'drop', reason: 'research-held', from: msg.from, id: msg.id, upkeep }); return; }
       this.holdForMichael(msg, [RESEARCH_ID], godId);
       return;
     }
@@ -3567,10 +3568,11 @@ export class HiveManager {
           // from the sent copy, so the conversation read every reply as "".
           const msg = this.normalize({ ...partial, id: undefined }, id);
           msg.from = id; // sender is authoritative — the owning directory
-          // A time an agent typed later than now could close the owner's next
-          // question in that conversation: the app's time is used instead.
+          // One canonical time, never later than now: readers compare times as
+          // strings, and a later one could close the owner's next question in
+          // that conversation.
           const typedAt = Date.parse(msg.created_at);
-          if (!Number.isFinite(typedAt) || typedAt > Date.now()) msg.created_at = new Date().toISOString();
+          msg.created_at = new Date(Number.isFinite(typedAt) ? Math.min(typedAt, Date.now()) : Date.now()).toISOString();
           // The sent copy carries what was delivered: the app's id, sender and
           // time (and repaired text), written in place before the one rename
           // that archives it. Only a plain file of the agent's own is written
@@ -4064,6 +4066,9 @@ export class HiveManager {
     if (!tasks) return;
     const before = this.guardState();
     const fixed = guardCards(tasks, before);
+    // guardCards builds its state without the Waiting clocks: carry them over
+    // before any save, so the file never lacks them and a quiet tick writes nothing.
+    const next: GuardState = { ...fixed.state, ...(before.waiting ? { waiting: before.waiting } : {}) };
     const godId = this.registry().godId;
     // Every note and reminder of one tick shares one commit, so a restart
     // with many overdue steps never stalls the app on a commit per message.
@@ -4084,15 +4089,13 @@ export class HiveManager {
       // A board being written this moment waits for the next tick.
       const now = readBoard();
       if (!now) return;
-      this.guard = fixed.state;
+      this.guard = next;
       this.writeTasks(applyGuardFixes(now, fixed.fixes, fixed.restored) as HiveTask[]);
       for (const r of fixed.reopened) tell(reopenedNote(r.card, r.to, r.openAsk), r.card.id);
       for (const t of fixed.restored) tell(restoredDoneNote(t), t.id);
       for (const u of fixed.untriaged) tell(untriagedNote(u.card, u.to), u.card.id);
     }
-    // guardCards builds its state without the Waiting clocks: carry them over,
-    // so the file never lacks them and a quiet tick writes nothing.
-    this.guard = { ...fixed.state, ...(before.waiting ? { waiting: before.waiting } : {}) };
+    this.guard = next;
     const reg = this.registry();
     const godName = resolveGodName(reg.agents[godId ?? 'god']?.name);
     const reminders = dueReminders(tasks.map((t) => {

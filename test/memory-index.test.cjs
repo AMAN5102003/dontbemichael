@@ -245,6 +245,19 @@ test('a pass whose state write fails after the index landed counts its notes onc
   assert.equal(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').split('\n').filter((l) => l.includes('New fact')).length, 1);
 });
 
+test('a processing file left after the index landed is never read back into the inbox', async (t) => {
+  // Value: protects=a cleanup that failed (Windows can hold the file open) never adds or counts notes twice; fails_when=the stranded recovery appends notes the index already has; why_new=ship review cycle 2; seam=the processing file emptied as the fallback leaves it
+  const f = addedOffice(t);
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  await f.tidy.tidyNow();
+  // What the fallback leaves when the file cannot be removed: an empty file.
+  fs.writeFileSync(path.join(f.dir, 'memory', 'inbox.processing.md'), '');
+  f.tidy.askModel = async () => ({ ops: [] });
+  await f.tidy.tidyNow();
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.doesNotMatch(fs.readFileSync(path.join(f.dir, 'memory', 'inbox.md'), 'utf8').replace(/\s/g, ''), /\S/, 'nothing came back');
+});
+
 // POSIX only: a read only folder is how the write is made to fail, and Windows
 // ignores those permission bits (platform-scoped tests, owner 2026-10-09).
 test('a pass whose index write fails reports no new notes', { skip: process.platform === 'win32' }, async (t) => {

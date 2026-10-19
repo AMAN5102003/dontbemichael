@@ -153,6 +153,52 @@ test('a check back time cleared after Michael was told still counts as a follow 
   assert.equal(s.waiting.x.toldAt, undefined, 'told again when the new time comes');
 });
 
+test('the same check back time written another way is no change', () => {
+  // Value: protects=rewriting tasks.json never counts a follow up that did not happen; fails_when=nextAt is compared as text; why_new=ship review cycle 2; seam=pure waitingChecks()
+  const t0 = Date.UTC(2026, 9, 19, 14);
+  let s = G.waitingChecks([card('x', { nextAt: '2026-10-20T09:00:00-05:00' })], {}, t0);
+  s = G.waitingChecks([card('x', { nextAt: '2026-10-20T09:00:00-05:00' })], s.waiting, Date.UTC(2026, 9, 20, 15));
+  assert.equal(s.due.length, 1);
+  s = G.waitingChecks([card('x', { nextAt: '2026-10-20T14:00:00Z' })], s.waiting, Date.UTC(2026, 9, 20, 16));
+  assert.equal(s.waiting.x.followUps, 0, 'the same instant');
+  assert.ok(s.waiting.x.toldAt, 'still told');
+});
+
+test('without Michael the Waiting clocks are kept as they were and nobody is told', async (t) => {
+  // Value: protects=a tick with no Michael never loses or moves a clock; fails_when=the carry over drops the clocks when godId is missing; why_new=state matrix cell, ship review cycle 2; seam=refreshOwnerRequests() and the private guard file
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-waiting-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home, role: 'Support' });
+  hive.writeTasks([card('refund')]);
+  hive.refreshOwnerRequests();
+  const file = path.join(home, 'private', 'card-guard.json');
+  const clock = { since: '2026-10-01T09:00:00.000Z', seenAt: '2026-10-01T09:00:00.000Z', checkAt: '2026-10-06T09:00:00.000Z', followUps: 1 };
+  fs.writeFileSync(file, JSON.stringify({ ...JSON.parse(fs.readFileSync(file, 'utf8')), waiting: { refund: clock } }));
+  const fresh = new HiveManager(() => home);
+  fresh.refreshOwnerRequests();
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).waiting, { refund: clock });
+});
+
+test('a tick that fixes a card saves the guard with the Waiting clocks', async (t) => {
+  // Value: protects=a stop mid tick never loses the clocks; fails_when=the fix path saves guardCards' state before the clocks are carried; why_new=ship review cycle 2; seam=writeTasks wrapped to read the file at its save
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-waiting-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home, role: 'Support' });
+  hive.writeTasks([card('refund'), card('d1', { status: 'done' })]);
+  hive.refreshOwnerRequests();
+  const file = path.join(home, 'private', 'card-guard.json');
+  const seen = [];
+  const write = hive.writeTasks.bind(hive);
+  hive.writeTasks = (tasks) => { write(tasks); seen.push(!!JSON.parse(fs.readFileSync(file, 'utf8')).waiting?.refund); };
+  write([card('refund')]); // the Done card is gone: the guard puts it back
+  hive.refreshOwnerRequests();
+  assert.ok(seen.length >= 1, 'the guard fixed the board');
+  assert.ok(seen.every(Boolean), 'the clocks were in the file at every save');
+});
+
 test('the words Michael reads match the limits the app keeps', () => {
   // Value: protects=Michael's rules and the gone quiet list say what the app does; fails_when=a constant changes and the words do not; why_new=maintainability review, ship; seam=source
   const words = ['zero', 'one', 'two', 'three', 'four', 'five'];

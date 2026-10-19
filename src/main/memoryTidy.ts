@@ -224,7 +224,11 @@ export class MemoryTidy {
     // next pass.
     if (outcome.added.length) { try { this.onAdded(id, outcome.added); } catch { /* the notes stand; only the count misses them */ } }
     try { writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8'); } catch { /* tidied again sooner */ }
-    try { rmSync(processing, { force: true }); } catch { /* read back on the next pass */ }
+    try { rmSync(processing, { force: true }); } catch {
+      // Emptied instead (Windows can hold a file open), so the next pass never
+      // reads notes the index already has back into the inbox.
+      try { writeFileSync(processing, '', 'utf8'); } catch { /* left as is */ }
+    }
 
     const tokens = estimateTokens(entriesBlock(outcome.entries));
     try {

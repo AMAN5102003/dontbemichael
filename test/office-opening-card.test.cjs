@@ -134,6 +134,13 @@ test('the clock pill says Opening and the count while the office opens', () => {
   assert.match(bar, /t\('shell\.openingCount', \{ count: total - out, total \}\)/);
 });
 
+test('Michael\'s start line comes from the language files', () => {
+  // Value: protects=Chinese and Arabic offices read Michael's start in their language; fails_when=the English line is put back in the component; why_new=design review, ship; seam=source pin (no DOM harness)
+  const booting = read('src/renderer/src/components/MichaelBooting.tsx');
+  assert.match(booting, /line=\{t\('office\.opening\.michaelLine', \{ name: godName \}\)\}/);
+  assert.doesNotMatch(booting, /settling into the corner office/);
+});
+
 test('every opening word in three languages, with no dash', () => {
   // Value: protects=the new words reach Chinese and Arabic offices; fails_when=a key is missing or uses a dash; why_new=new words; seam=locale files
   const keys = ['title', 'announce', 'stillComing', 'stillComingMore', 'nameSep', 'allIn', 'missingOne', 'missingMore', 'michael', 'michaelLine'];

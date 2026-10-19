@@ -135,15 +135,19 @@ test('an upkeep stamp on words that are not the app\'s fixed note is checked, an
   assert.deepEqual(lines(hive, 'trust-checked'), []);
 });
 
-test('a fixed upkeep note for a Pete who isn\'t reporting is dropped quietly, never held for Michael', async (t) => {
+test('upkeep for a Pete who isn\'t reporting is dropped quietly, never held for Michael; an owner note is still held', async (t) => {
   // Value: protects=Michael is never asked to pass on the app's own note (which would make it a listed question); fails_when=the hold check runs before the upkeep rule; why_new=red team, ship review; seam=memberMail stub
   const { hive } = await office(t, layerWith());
   hive.memberMail = (id) => (id === 'research' ? 'hold' : null);
   hive.send({ to: 'research', act: 'inform', subject: O.OFFICE_OPEN_SUBJECT, body: O.officeOpenBody() }, 'human', 'office-open');
+  hive.send({ to: 'research', act: 'inform', subject: 'Schedule change approved', body: 'Michael approved: News scan.' }, 'scheduler', 'schedule-decision');
   await settle();
-  assert.equal(msgsIn(hive, 'god').length, 0, 'Michael is not asked to resend it');
+  assert.equal(msgsIn(hive, 'god').length, 0, 'Michael is not asked to resend them');
   assert.equal(msgsIn(hive, 'research').length, 0);
-  assert.deepEqual(lines(hive, 'drop').map((e) => [e.reason, e.upkeep]), [['research-held', 'office-open']]);
+  assert.deepEqual(lines(hive, 'drop').map((e) => [e.reason, e.upkeep]), [['research-held', 'office-open'], ['research-held', 'schedule-decision']]);
+  hive.send({ to: 'research', act: 'inform', subject: 'Focus', body: 'Look at flour prices' }, 'human');
+  await settle();
+  assert.equal(msgsIn(hive, 'god').filter((m) => /^\[held:/.test(m.subject)).length, 1, 'the owner\'s note waits with Michael as before');
 });
 
 test('the app\'s own upkeep waiting in Pete\'s inbox is not counted, and is removed quietly when he is turned off', async (t) => {
@@ -151,11 +155,14 @@ test('the app\'s own upkeep waiting in Pete\'s inbox is not counted, and is remo
   const { hive } = await office(t, layerWith());
   hive.send({ to: 'research', act: 'inform', subject: O.OFFICE_OPEN_SUBJECT, body: O.officeOpenBody() }, 'human', 'office-open');
   await settle();
-  assert.equal(msgsIn(hive, 'research').length, 1, 'delivered');
-  assert.equal(hive.researchWaiting(), 0, 'not a question waiting');
+  hive.send({ to: 'research', act: 'inform', subject: 'Schedule change approved', body: 'Michael approved: News scan.' }, 'scheduler', 'schedule-decision');
+  hive.send({ to: 'research', act: 'inform', subject: 'Focus', body: 'Look at flour prices' }, 'human');
+  await settle();
+  assert.equal(msgsIn(hive, 'research').length, 3, 'delivered');
+  assert.equal(hive.researchWaiting(), 1, 'only the owner\'s note is a question waiting');
   hive.returnResearchInbox();
   assert.equal(msgsIn(hive, 'research').length, 0, 'removed');
-  assert.equal(msgsIn(hive, 'god').length, 0, 'Michael is not told');
+  assert.deepEqual(msgsIn(hive, 'god').map((m) => /A note from the owner/.test(m.body)), [true], 'Michael hears of the owner\'s note only');
 });
 
 test('upkeep checked again after a privacy change is still never listed or counted', async (t) => {

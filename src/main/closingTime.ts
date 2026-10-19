@@ -336,7 +336,11 @@ export class ClosingTimeController {
     const name = this.hive.registry().agents[agentId]?.name ?? agentId;
     try {
       this.hive.send({ to: agentId, act: 'request', subject: 'Closing time', body: WORKER_STEER }, 'human');
-      if (this.toldEnded.delete(agentId)) {
+      // Michael waits for it again if he was told it ended or isn't reporting
+      // (a member still not reporting stays told: its brief waits with him).
+      const ended = this.toldEnded.delete(agentId);
+      const quiet = !this.isSilent(agentId) && this.toldNotReporting.delete(agentId);
+      if (ended || quiet) {
         this.hive.send({
           to: this.godId,
           act: 'inform',
@@ -396,18 +400,20 @@ export class ClosingTimeController {
     for (const id of [...this.toldNotReporting]) {
       if (silent.includes(id) || this.acked.has(id) || this.excused.has(id) || !live.has(id) || reg.agents[id]?.archived) continue;
       const name = reg.agents[id]?.name ?? id;
+      try { this.hive.send({ to: id, act: 'request', subject: 'Closing time', body: WORKER_STEER }, 'human'); }
+      catch (e) { console.error('[closing-time] reporting again mail:', e); continue; }
+      // The brief went out: never sent again, whatever happens to the note.
+      this.toldNotReporting.delete(id);
+      this.control?.removeSteer(id, WORKER_STEER);
+      this.control?.steer(id, WORKER_STEER);
       try {
-        this.hive.send({ to: id, act: 'request', subject: 'Closing time', body: WORKER_STEER }, 'human');
         this.hive.send({
           to: this.godId,
           act: 'inform',
-          subject: `Closing time: ${name} is reporting again`,
-          body: `${name} (${id}) is reporting to the app again, so wait for their CLOSING-TIME-ACK after all before you send CLOSING-TIME-COMPLETE.`
+          subject: `Closing time: wait for ${name} after all`,
+          body: `${name} (${id}) can get the closing steps again, so wait for their CLOSING-TIME-ACK after all before you send CLOSING-TIME-COMPLETE.`
         }, 'human');
-        this.toldNotReporting.delete(id);
-      } catch (e) { console.error('[closing-time] reporting again mail:', e); continue; }
-      this.control?.removeSteer(id, WORKER_STEER);
-      this.control?.steer(id, WORKER_STEER);
+      } catch (e) { console.error('[closing-time] wait after all mail:', e); }
     }
     const ended = [...this.workers].filter(
       (id) => !this.acked.has(id) && !this.excused.has(id) && !this.toldEnded.has(id) && (!live.has(id) || reg.agents[id]?.archived)

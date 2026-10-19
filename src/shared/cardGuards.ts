@@ -252,10 +252,13 @@ export function waitingChecks(
     const was = clocks[t.id];
     const nextAt = isNextAt(t.nextAt) ? t.nextAt : undefined;
     let clock: WaitingClock;
-    if (!was || was.nextAt !== nextAt) {
+    // The same time written another way (an offset or Z) is no change.
+    const sameTime = was?.nextAt === nextAt || (!!was?.nextAt && !!nextAt && Date.parse(was.nextAt) === Date.parse(nextAt));
+    if (!was || !sameTime) {
       // Any change after the last time came is a follow up done, a cleared
-      // time included, so the owner is always asked in the end (owner,
-      // 2026-10-18 ship review).
+      // time included, so resetting the clock always moves toward asking the
+      // owner (owner, 2026-10-18 ship review). A card left as it is stays on
+      // Michael's gone quiet list.
       const followUps = was ? was.followUps + (was.toldAt ? 1 : 0) : 0;
       const seen = now;
       const check = soundCheck(nextAt, seen) ?? addBusinessDays(seen, WAITING_DEFAULT_BUSINESS_DAYS);

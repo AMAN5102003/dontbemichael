@@ -569,6 +569,47 @@ test('a reopen asked for mid-close counts, but a refused re-press never turns it
   assert.equal(last(g.events).relaunch, false, 'the refused press changed nothing');
 });
 
+test('a member reporting again whose brief fails is briefed on a later update; one revived while not reporting is briefed once', (t) => {
+  // Value: protects=the brief reaches a member back mid close exactly once (owner, 2026-10-18 ship review D4); fails_when=a failed send drops it, a failed note to Michael repeats the brief, or revive and the reporting again step both brief it; why_new=ship review cycle 2; seam=failSend and the notReporting callback
+  const silent = new Set(['dwight']);
+  const f = floor({ t, silent });
+  f.ct.start();
+  const briefs = () => f.sent.filter((m) => m.to === 'dwight' && m.subject === 'Closing time').length;
+  const waitNotes = () => f.sent.filter((m) => m.to === 'god' && /after all/.test(m.body)).length;
+  f.ct.refresh(); // Michael is told it isn't reporting
+  const before = briefs();
+  f.failSend((m) => m.to === 'dwight');
+  silent.delete('dwight');
+  f.ct.refresh();
+  assert.deepEqual([briefs() - before, waitNotes()], [0, 0], 'nothing went out');
+  f.failSend((m) => m.to === 'god' && /after all/.test(m.body));
+  f.ct.refresh();
+  assert.equal(briefs() - before, 1, 'briefed on the next update');
+  f.failSend(null);
+  f.ct.refresh();
+  assert.equal(briefs() - before, 1, 'a failed note to Michael never repeats the brief');
+
+  const gSilent = new Set(['dwight']);
+  const g = floor({ t, silent: gSilent });
+  g.ct.start();
+  const gBriefs = () => g.sent.filter((m) => m.to === 'dwight' && m.subject === 'Closing time').length;
+  const start = gBriefs();
+  g.ct.refresh();
+  g.ct.revive('dwight');
+  assert.equal(gBriefs() - start, 1, 'revived while still not reporting: one brief');
+  // Then it reports again: revive's brief was held for Michael, so one more.
+  gSilent.delete('dwight');
+  g.ct.refresh();
+  assert.equal(gBriefs() - start, 2);
+  // Comes back reporting and is revived the same moment: one brief, not two.
+  gSilent.add('dwight'); g.ct.refresh();
+  gSilent.delete('dwight');
+  g.ct.revive('dwight');
+  assert.equal(gBriefs() - start, 3, 'one brief for one comeback');
+  g.ct.refresh();
+  assert.equal(gBriefs() - start, 3);
+});
+
 test('a team member that is not reporting is shown apart, not waited on, and Michael hears once', (t) => {
   // Value: protects=closing time finishes when a member's engine isn't reporting (its mail is held, so it can never hear closing time); fails_when=it stays in waiting, COMPLETE is refused over it, Michael is not told or is told twice, or a member that reports again is not waited on; why_new=owner report 2026-10-17 (closing time stuck at 0 of 10); seam=the notReporting callback (main passes mailFor hold)
   const silent = new Set(['dwight']);
@@ -584,18 +625,24 @@ test('a team member that is not reporting is shown apart, not waited on, and Mic
   assert.match(told()[0].body, /Do not wait for it; send CLOSING-TIME-COMPLETE once everyone else has acknowledged\./);
   assert.doesNotMatch(told()[0].body, /[–—]| - /, 'no dashes in what Michael reads');
   // Reporting again before closing ends: waited on again, so its ACK still counts.
+  const steered = f.steers.filter((s) => s.id === 'dwight').length;
+  const unsteered = f.removed.filter((s) => s.id === 'dwight').length;
   silent.delete('dwight');
   f.ct.refresh();
   assert.deepEqual(last(f.events).waiting, ['pam', 'dwight']);
   // It never got the brief (held for Michael): sent again, and Michael waits for it after all.
   assert.equal(f.sent.filter((m) => m.to === 'dwight' && m.subject === 'Closing time').length, 1, 'the brief again');
-  const back = f.sent.filter((m) => m.to === 'god' && /dwight|Dwight/.test(m.subject) && /reporting again/.test(m.subject));
-  assert.equal(back.length, 1);
-  assert.match(back[0].body, /wait for their CLOSING-TIME-ACK after all/);
-  assert.ok(f.steers.some((s) => s.id === 'dwight'), 'steered too');
+  const back = () => f.sent.filter((m) => m.to === 'god' && m.subject === 'Closing time: wait for Dwight after all');
+  assert.equal(back().length, 1);
+  assert.match(back()[0].body, /wait for their CLOSING-TIME-ACK after all/);
+  assert.doesNotMatch(back()[0].body, /[–—]| - /);
+  assert.equal(f.steers.filter((s) => s.id === 'dwight').length, steered + 1, 'steered again');
+  assert.equal(f.removed.filter((s) => s.id === 'dwight').length, unsteered + 1);
   f.ct.refresh();
-  assert.equal(f.sent.filter((m) => /reporting again/.test(m.subject)).length, 1, 'once');
+  assert.equal(back().length, 1, 'once');
   silent.add('dwight');
+  f.ct.refresh();
+  assert.equal(told().length, 2, 'silent again: Michael hears again');
   f.ct.refresh();
   f.route('pam', 'CLOSING-TIME-ACK');
   f.route('god', 'CLOSING-TIME-COMPLETE', ['human']);

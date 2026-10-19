@@ -1172,6 +1172,9 @@ test('a time an agent typed later than now is replaced by the app\'s', async (t)
   const got = Object.fromEntries(msgsIn(hive, 'god').map((m) => [m.subject, Date.parse(m.created_at)]));
   assert.ok(got.late >= before - 1000 && got.late <= Date.now(), 'the app\'s time');
   assert.equal(got.early, Date.parse('2026-01-01T00:00:00Z'), 'an earlier time is kept');
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'offset', body: 'b', created_at: '2026-01-01T10:00:00-05:00' }, 'm3.json');
+  hive.routeOnce();
+  assert.equal(msgsIn(hive, 'god').find((m) => m.subject === 'offset').created_at, '2026-01-01T15:00:00.000Z', 'one canonical form, so string order is time order');
 });
 
 test('Research\'s schedule request is archived as Research wrote it', async (t) => {
