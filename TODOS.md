@@ -166,18 +166,6 @@
 **Priority:** P3
 **Depends on:** None
 
-### Backfill when Pulse first opens
-
-**What:** Start `pulseBackfillOnce` from the `pulse:snapshot` handler as well as the 30 s beat.
-
-**Why:** On the first launch after an update, opening Pulse within 30 s shows the office without its past weeks.
-
-**Context:** From the second Codex adversarial review, 2026-10-16. `index.ts` pulse:snapshot and the beat.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
 ### Pulse keeps a card finished just before a quit
 
 **What:** Record card status changes where Michael's board write lands (or persist the last seen board) instead of only diffing the 8 s poll in memory.
@@ -185,18 +173,6 @@
 **Why:** A card that reaches Done in the seconds before the app quits or crashes is taken as the new baseline on the next launch and never counted in Tasks done.
 
 **Context:** From the Codex adversarial review, 2026-10-16. `telemetryStore.ts` tasks(): the first read of an office only remembers.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
-### Prune the processor's saved cost totals
-
-**What:** Drop session keys from the processor's saved state (`state.costs`) that have not changed for a long horizon, or keep them in a keyed table.
-
-**Why:** Two keys per agent and session are kept forever and parsed and written every 30 s, so an office with many restarts grows a large kv row.
-
-**Context:** From the Codex adversarial review, 2026-10-16. `telemetryProcessor.ts` saveState.
 
 **Effort:** S (human) / S (CC)
 **Priority:** P3
@@ -224,18 +200,6 @@
 
 **Effort:** S (human) / S (CC)
 **Priority:** P2
-**Depends on:** None
-
-### Bound the refused hook frame counters
-
-**What:** Count a refused frame under its claimed id only when that id is in the registry (else "unknown"), cap the maps, and rate limit the impostor count Pulse records.
-
-**Why:** Any local process that reaches the hook socket without a secret can grow the maps, the office log and the Kept safe impostor tile with made up names.
-
-**Context:** From the /ship red team review, 2026-10-16. `hooks.ts` authenticate (`rejected`, `rejectLogged`, `onRefused('impostor')`).
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
 **Depends on:** None
 
 ### Hand the hook secret over where another process cannot read it

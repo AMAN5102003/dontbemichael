@@ -25,6 +25,7 @@ import { claudeProjectsRoot, projectDir } from './transcript';
 import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
 export { TERMINAL_PROMPT_TYPES, isTerminalPrompt };
 import { resolveGodName } from '../shared/godIdentity';
+import { ownValue } from '../shared/ownValue';
 import { APP_NAME } from '../shared/appName';
 
 /** The same terminal prompt is relayed to Michael at most once in this window. */
@@ -369,10 +370,34 @@ export class HookServer {
   }
   private readonly rejected = new Map<string, number>();
   private readonly rejectLogged = new Map<string, number>();
+  private readonly impostorReported = new Map<string, number>();
+  /** Most names each refusal map keeps; past it a frame counts as "unknown". */
+  static readonly MAX_REFUSED_NAMES = 256;
+
+  /** The name a refused frame is counted under: the id it claims only when
+   *  that is a member of this office, so a process without a secret can't
+   *  fill the maps, the log and Pulse with made up names (TODOS.md). */
+  private refusedName(claimed: string | null): string {
+    if (!claimed) return 'unknown';
+    if (!this.hive.hasHookToken(claimed) && ownValue(this.registryMembers(), claimed) === undefined) return 'unknown';
+    return this.rejected.has(claimed) || this.rejected.size < HookServer.MAX_REFUSED_NAMES ? claimed : 'unknown';
+  }
+  /** The registry's members, read at most once a second, so a flood of
+   *  refused frames is not a flood of registry reads. */
+  private registryMembers(): Readonly<Record<string, unknown>> {
+    const now = Date.now();
+    if (this.membersMemo && now - this.membersMemo.at < 1000) return this.membersMemo.agents;
+    let agents: Readonly<Record<string, unknown>> = {};
+    try { agents = this.hive.registry().agents; } catch { /* no registry: no members */ }
+    this.membersMemo = { at: now, agents };
+    return agents;
+  }
+  private membersMemo: { at: number; agents: Readonly<Record<string, unknown>> } | null = null;
 
   /** Whether a frame came from the agent it names, by its hook secret. On
    *  success the frame names that agent and the secret is removed; on failure
-   *  the refusal is counted, and logged at most every 10 minutes per name. */
+   *  the refusal is counted, and logged and reported to Pulse at most every
+   *  10 minutes per name. */
   authenticate(p: HookPayload): boolean {
     const token = (p as { hook_token?: unknown }).hook_token;
     delete (p as { hook_token?: unknown }).hook_token;
@@ -382,14 +407,17 @@ export class HookServer {
       p.agent_id = owner;
       return true;
     }
-    const who = claimed ?? 'unknown';
+    const who = this.refusedName(claimed);
     this.rejected.set(who, (this.rejected.get(who) ?? 0) + 1);
     // No secret, or another member's: something is speaking for someone it is
     // not. A secret this start never made is a process left from an earlier
     // start, shutting down: refused, but not a protection worth showing.
     const reason = owner ? 'wrong-sender' : typeof token === 'string' && token ? 'old-secret' : 'no-secret';
-    if (reason !== 'old-secret') { try { this.onRefused?.(claimed ?? undefined, 'impostor'); } catch { /* counting never blocks a refusal */ } }
     const now = Date.now();
+    if (reason !== 'old-secret' && now - (this.impostorReported.get(who) ?? 0) > 10 * 60_000) {
+      this.impostorReported.set(who, now);
+      try { this.onRefused?.(who === 'unknown' ? undefined : who, 'impostor'); } catch { /* counting never blocks a refusal */ }
+    }
     if (now - (this.rejectLogged.get(who) ?? 0) > 10 * 60_000) {
       this.rejectLogged.set(who, now);
       try { this.hive.appendLog({ kind: 'hook-frame-rejected', reason, agentId: who, event: p.hook_event_name ?? null }); } catch { /* best-effort */ }
@@ -1026,8 +1054,9 @@ export class HookServer {
   /** agentId → its stuck episode: when the app restarted it for a prompt,
    *  whether the new session started, and whether Michael was told it is
    *  still stuck. It ends when the member moves on, so there is one automatic
-   *  restart per episode and no raise and withdraw loop on Ask me. */
-  private stuckEpisodes = new Map<string, { at: number; text: string; restarted: boolean; confirmed: boolean; escalated: boolean }>();
+   *  restart per episode and no raise and withdraw loop on Ask me. timedOut:
+   *  Michael heard the new session never started, so a late start is news too. */
+  private stuckEpisodes = new Map<string, { at: number; text: string; restarted: boolean; confirmed: boolean; escalated: boolean; timedOut?: boolean }>();
   /** agentId → when the app last restarted it for a prompt; outlives the episode. */
   private stuckRestartAt = new Map<string, number>();
 
@@ -1081,7 +1110,7 @@ export class HookServer {
     const now = this.now();
     for (const [agentId, ep] of this.stuckEpisodes) {
       if (ep.restarted && !ep.confirmed && !ep.escalated && now - ep.at >= STUCK_CONFIRM_MS) {
-        ep.escalated = this.relayStuckToMichael(agentId, ep.text, false);
+        ep.escalated = ep.timedOut = this.relayStuckToMichael(agentId, ep.text, false);
       }
     }
   }
@@ -1095,6 +1124,15 @@ export class HookServer {
       ep.confirmed = true;
       const name = this.displayName(agentId);
       this.tellMichael(agentId, `${name} was restarted`, `${name}'s session stopped on a prompt only a person could answer${ep.text ? ` ("${ep.text}")` : ''}, so the app restarted ${name} and told them to carry on with their current work. Check that ${name} picks their work back up. This is not for the owner's Ask me board: if you asked the owner whether ${name} is stuck, withdraw that question.`);
+    } else if (event === 'SessionStart' && ep.timedOut) {
+      // Michael heard the restart never took, but it did: tell him once, and a
+      // prompt that comes back after this is news for him again.
+      ep.timedOut = false;
+      ep.confirmed = true;
+      ep.escalated = false;
+      this.relayedPrompts.delete(agentId);
+      const name = this.displayName(agentId);
+      this.tellMichael(agentId, `${name} was restarted after all`, `${name}'s session started again after all, so the restart went through and ${name} is not stuck. Leave ${name}'s open work with them, and if you asked the owner whether ${name} is stuck, withdraw that question.`);
     } else if (STUCK_MOVED_ON.has(event)) {
       this.stuckEpisodes.delete(agentId);
     }

@@ -167,6 +167,33 @@ export function catchUpRequests(
   return out;
 }
 
+/** How long after the owner's last Ask me answer the catch-up runs again. */
+export const OWNER_ANSWER_RETRY_MS = 60_000;
+
+/**
+ * The catch-up again in the same launch (card-lifecycle.md section 5): the
+ * renderer records an answer on the card, then sends Michael's request, so a
+ * send that failed left the answer off Ask me with Michael unaware until the
+ * next launch. A minute after the owner's last answer the fleet tick runs the
+ * catch-up once more. A request that did go is in his inbox by then, so its
+ * answer is skipped and nothing goes twice. A catch-up that fails is tried
+ * again a minute later.
+ */
+export class OwnerAnswerRetry {
+  private dueAt = 0;
+  /** `catchUp` runs the catch-up and says whether it finished. */
+  constructor(private catchUp: () => boolean, private waitMs = OWNER_ANSWER_RETRY_MS) {}
+  /** The app recorded an answer the owner gave. */
+  answered(now: number): void {
+    this.dueAt = now + this.waitMs;
+  }
+  /** The fleet tick. */
+  tick(now: number): void {
+    if (!this.dueAt || now < this.dueAt) return;
+    this.dueAt = this.catchUp() ? 0 : now + this.waitMs;
+  }
+}
+
 /** How long an owner request may sit with Michael, in office time, before the
  *  Tasks view says he hasn't moved it (card-lifecycle.md section 3, D4): one
  *  working day. With no office hours known, a working day is 24 hours of an

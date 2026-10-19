@@ -126,6 +126,10 @@ only the owner's own answer may be relayed as the owner's (security review,
 Michael sees it on his "Blocked cards with nothing asked" list (section 7).
 Code, for every install; no data is edited by hand.
 
+The catch-up runs again a minute after the owner's last answer, so a request
+the app failed to send reaches Michael in the same launch; one that went is in
+his inbox by then and is skipped.
+
 ### 6. Michael's standup how
 
 Built with `schedule-focus-areas.md` (F6): Michael's default Work style, and
@@ -385,7 +389,7 @@ and the hook reads the cache. No other new work.
 ### Failure modes
 | Path | Failure | Covered by | Owner sees |
 |---|---|---|---|
-| Answer request | send fails | the answer is still on the card; launch catch-up re-sends | card shows With Michael once sent |
+| Answer request | send fails | the answer is still on the card; the catch-up re-sends a minute after the owner's last answer, and at launch | card shows With Michael once sent |
 | Closure | Michael replies without in_reply_to | stays open; listed each turn | With Michael, then overdue |
 | Catch-up | runs twice | once per launch; a request sent since the answer skips the card | one request per answer |
 | Catch-up | an agent wrote an answer into the card | not in the app's record (card, answer time, sha256 of question and answer), so never relayed | the card on Michael's Blocked with nothing asked list |

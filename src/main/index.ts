@@ -38,7 +38,7 @@ import { terminalLaunches } from './terminalAtFolder';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
 import { answerMessages, cardConversation, mergeHumanQA, MICHAEL_ID, raiserOf } from '../shared/askMeRouting';
 import { FIRST_TASK_EDITED_MAX, firstTaskCard, firstTaskCardFromText } from '../shared/firstTask';
-import { answerKey, catchUpRequests, ownerWorkOrder } from '../shared/ownerRequests';
+import { answerKey, catchUpRequests, OwnerAnswerRetry, ownerWorkOrder } from '../shared/ownerRequests';
 import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
@@ -1671,6 +1671,14 @@ function catchUpOwnerAnswers(): void {
     console.error('[owner answers catch-up]', e);
   }
 }
+/** The catch-up again a minute after the owner answers on Ask me, in case the
+ *  renderer's request to Michael never went (ownerRequests.ts OwnerAnswerRetry).
+ *  It sends only what the renderer would have, so it need not wait for Michael. */
+const ownerAnswerRetry = new OwnerAnswerRetry(() => {
+  ownerCatchUpDone = false;
+  catchUpOwnerAnswers();
+  return ownerCatchUpDone;
+});
 
 function standupOnOfficeOpen(): void {
   if (standupFiredThisLaunch || !hive.enabled()) return;
@@ -5601,7 +5609,7 @@ ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown, index: unkn
   if (!added.length) return { ok: true, landed: false };
   const ok = hive.patchTask(id, { humanQA: humanQA as HiveTask['humanQA'] });
   const keys = answerKeysOf(id, added.map((i) => humanQA[i]));
-  if (ok && keys.length) recordOwnerAnswerKeys(keys);
+  if (ok && keys.length) { recordOwnerAnswerKeys(keys); ownerAnswerRetry.answered(Date.now()); }
   return { ok, landed: ok };
 });
 /** The most recorded owner answers kept: far more than any office has open. */
@@ -6624,7 +6632,10 @@ ipcMain.handle('pulse:learned', (_evt, from: unknown, to: unknown) => {
 ipcMain.handle('pulse:checked', (_evt, fromMs: unknown, toMs: unknown, way: unknown) =>
   (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) && (way === 'in' || way === 'out') ? pulse.checked(fromMs, toMs, way) : { rows: [], since: null }));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
-  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) pulseProcessor.tick(office); } catch (e) { console.error('[pulse] snapshot tick', e); }
+  // Opening Pulse starts the backfill too, not only the 30 s beat, so a first
+  // look right after an update gets the past weeks (the view refreshes when
+  // they land).
+  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) { pulseBackfillOnce(office); pulseProcessor.tick(office); } } catch (e) { console.error('[pulse] snapshot tick', e); }
   return pulse.snapshot(isPeriod(period) ? period : 'this-week', compare === true);
 });
 ipcMain.handle('pulse:apply', (_evt, id: unknown, expected: unknown) => (typeof id === 'string' ? pulse.apply(id, expected) : { ok: false, error: 'stale' }));
@@ -8033,6 +8044,7 @@ function armAlwaysOnBeats(): void {
     writeFleetSnapshot();
     try { silentBeat(); } catch (e) { console.error('[silent beat]', e); }
     try { if (hive.enabled()) hive.refreshOwnerRequests(); } catch (e) { console.error('[owner requests]', e); }
+    ownerAnswerRetry.tick(Date.now());
   };
   fleetBeat();
   fleetTimer = setInterval(fleetBeat, 8_000);
