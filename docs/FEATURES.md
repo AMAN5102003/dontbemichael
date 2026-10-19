@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.2). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.3). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -159,6 +159,22 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.3 (2026-10-18)
+- The office opens with a Clocking in card over Michael's desk: how many are in, who is still
+  coming, then Everyone's in or who hasn't clocked in after a minute. The clock pill says Opening.
+- Waiting cards come back: a check back time per card (a date named, the member's judgement, else
+  three business days), one Follow up due note to Michael, a gone quiet list, and after two follow
+  ups with no reply a question for you on Ask me.
+- Pulse's Learning card lists its notes, counted when a note is added.
+- Needs you says when a team member stops reporting to the app, with Restart; Michael restarts a
+  member that never checked in once. Each member's notes, inbox and hive folder are its own.
+- A person's panel and Edit agent open wide; Pulse has Today, This week and This month with
+  Compare, and lists what the privacy check did.
+- Closing time doesn't wait on a member that isn't reporting. The app's own notes to Pete are not
+  questions. The app makes every message's id and time.
+- Run a scheduled job now, file chip actions, a Codex context gauge, connected apps waited out when
+  they rate limit, and about 40 more contributor fixes and translations.
 
 ### 0.2.2 (2026-10-16)
 - Pulse, a new tab beside Tasks: recommendations to save (a check run less often, a lighter or
