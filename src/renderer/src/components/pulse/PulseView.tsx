@@ -1,10 +1,11 @@
 /**
  * Pulse: the office's performance and cost, as pictures (docs/designs/team-performance.md,
  * approved mockups pulse-final.html and pulse-v3.html). Top to bottom:
- * recommendations, what got done, kept safe, learning, the office row, then
- * team at work (owner, 2026-10-15, proposal 3). Fields first; each explanation sits
- * behind an (i). Advice is amber, savings green, coral never: Ask me stays the
- * only thing that needs the owner.
+ * recommendations, what got done (one grid of every tile with something to
+ * say, then a row of quiet chips), then team at work (owner, 2026-10-15,
+ * proposal 3; 2026-10-19, docs/designs/pulse-smart-view.md). Fields first; each
+ * explanation sits behind an (i). Advice is amber, savings green, coral never:
+ * Ask me stays the only thing that needs the owner.
  *
  *   Pulse ─ pulse:snapshot(period, compare) (on open, on a period or Compare
  *           change, on pulse:updated, and at each local midnight)
@@ -18,6 +19,7 @@ import type { Advice } from '@shared/teamAdvice';
 import type { LearnedNote } from '@shared/teamLearning';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
 import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
+import { pulseTiles, type PulseTile } from '@shared/pulseTiles';
 import { heldCause, notesPreview, HELD_TO_MEMORY, type HeldRow } from '@shared/heldRecord';
 import { changesInContext, showAsMarks, withHidden, wordChanges, type ChangePart, type CheckedList, type CheckedRow } from '@shared/checkedRecord';
 import { OFFICE_OPEN_SUBJECT } from '@shared/officeOpen';
@@ -38,6 +40,8 @@ import { useBackdropClose } from '@/hooks/useBackdropClose';
 const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
 const KIND_ICON: Record<WorkKind, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock' };
+/** A quiet tile's chip: its short name and icon (pulse-smart-view.md 5A). Spent never folds. */
+const QUIET_ICON: Record<PulseTile, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock', toInternet: 'shield', webAnswers: 'search', held: 'pause', rules: 'lock', learned: 'book', questions: 'help', spent: 'ledger', yourTime: 'bell' };
 
 /** The team average mark: a dashed line drawn as a gradient. */
 const AVG_DASH = 'repeating-linear-gradient(to bottom, var(--cth-ink-3) 0 3px, transparent 3px 6px)';
@@ -131,6 +135,20 @@ export function PulseView() {
   const [heldOpen, setHeldOpen] = useState(false);
   // The new notes behind Learning's number (owner, 2026-10-18).
   const [learnedOpen, setLearnedOpen] = useState(false);
+  // Quiet tiles opened from their chips, and the folded quiet members, until the
+  // period changes; leaving Pulse unmounts the view (pulse-smart-view.md 2A, 1C).
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const [quietRowsOpen, setQuietRowsOpen] = useState(false);
+  const [focusTile, setFocusTile] = useState<string | null>(null);
+  // The tiles the last render showed, so a tile or chip that moves fades in (3A).
+  const shownBefore = useRef<ReadonlySet<string> | null>(null);
+  useEffect(() => { setOpened(new Set()); setQuietRowsOpen(false); }, [period]);
+  // An opened chip's tile takes focus once it is in the grid (6A).
+  useEffect(() => {
+    if (!focusTile) return;
+    document.getElementById(`pulse-tile-${focusTile}`)?.focus();
+    setFocusTile(null);
+  }, [focusTile]);
   // The questions and answers lists (owner, 2026-10-16).
   const [checkedOpen, setCheckedOpen] = useState<'in' | 'out' | null>(null);
   const [applied, setApplied] = useState<Array<{ advice: Advice; appliedId: number; text: string }>>([]);
@@ -216,6 +234,7 @@ export function PulseView() {
   const grid = (n: number): CSSProperties => ({ display: 'grid', gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, gap: 12 });
 
   let body: ReactNode;
+  let shownNow: ReadonlySet<string> | null = null;
   if (failed || (view && !view.available)) {
     body = (
       <div style={{ ...card, padding: 26, textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'center' }}>
@@ -239,8 +258,6 @@ export function PulseView() {
     const rulesTotal = rules.reduce((n, [, x]) => n + x, 0);
     // A snapshot from a main process older than this view (before a restart) has no period figures.
     const learn = view.learning?.period ? view.learning : { period: { added: { you: 0, job: 0, michael: 0 }, asks: 0, turns: 0, per100: null }, previous: null, notes: 0, procedures: 0, knows: {} };
-    // Learning, money and your time: one row of four tiles.
-    const row4: CSSProperties = { display: 'grid', gridTemplateColumns: layout === 'wide' ? 'repeat(4, minmax(0, 1fr))' : layout === 'mid' ? 'repeat(2, minmax(0, 1fr))' : '1fr', gap: 12 };
     const tight: CSSProperties = { ...card, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 };
     // Learning follows the period (owner, 2026-10-15).
     const cur = learn.period;
@@ -273,62 +290,16 @@ export function PulseView() {
     const outcomeAria = (o: Outcome): string => `${outcomeLabel(o)}: ${o.by.map((b) => `${nameOf(b.agentId)} ${b.count}`).join(', ')}`;
     // Saved by your changes shows only once a change was applied (owner, 2026-10-15).
     const savedShown = view.saved.state !== 'none';
-    body = (
-      <>
-        {gaps.length > 0 && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--cth-ink-2)', background: 'var(--cth-neutral-soft)', borderRadius: 'var(--cth-r-lg)', padding: '8px 11px' }}>
-            <Icon name="info" /> {t('pulse.gapNotice', { days: gaps.map(fmtDay).join(', ') })}
-          </div>
-        )}
-
-        <Section title={t('pulse.recommendations')} tip={t('pulse.recommendationsTip')}>
-          <div style={grid(sugCols)}>
-            {applied.map((x) => (
-              <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>{t('pulse.applied')} {x.text}</div>
-                <div><PixelButton variant="secondary" size="sm" onClick={() => { void undo(x); }}>{t('pulse.undo')}</PixelButton></div>
-              </div>
-            ))}
-            {shownAdvice.slice(0, Math.max(0, 3 - applied.length)).map((a) => {
-              const txt = adviceText(a);
-              return (
-                <div key={a.id} style={{ background: 'var(--cth-amber-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-amber) 40%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <AgentAvatar id={a.agentId} name={nameOf(a.agentId)} size={22} />
-                    <div style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>{txt.title}</div>
-                  </div>
-                  <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>{txt.evidence}</div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <PixelButton size="sm" disabled={busy === a.id} onClick={() => { void apply(a); }}>
-                      {a.change.kind === 'editor' ? t('pulse.openSchedules') : t('pulse.apply')}
-                    </PixelButton>
-                    <PixelButton variant="secondary" size="sm" onClick={() => { void notNow(a); }}>{t('pulse.notNow')}</PixelButton>
-                    {a.savesPerWeek !== null && a.savesPerWeek > 0 && (
-                      <span style={{ marginInlineStart: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--cth-green-text)', background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-pill)', padding: '2px 8px' }}>
-                        {t('pulse.savesAbout', { usd: money(a.savesPerWeek) })}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-            {shownAdvice.length === 0 && applied.length === 0 && (
-              <div style={{ ...card, padding: '12px 14px', fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink-2)', display: 'flex', alignItems: 'center', gridColumn: savedShown ? (sugCols > 1 ? `span ${sugCols - 1}` : undefined) : '1 / -1' }}>
-                {view.adviceFrom ? t('pulse.adviceStarts', { day: fmtDay(view.adviceFrom), since: fmtDay(view.liveSince ?? Date.now()) }) : t('pulse.nothingToChange')}
-              </div>
-            )}
-            {savedShown && <div style={{ ...card, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'center' }}>
-              <div style={label}>{t('pulse.savedByChanges')}<InfoTip text={t('pulse.savedTip')} /></div>
-              {view.saved.state === 'measuring' && <><div style={{ fontSize: 22, fontWeight: 600 }}>{t('pulse.measuring')}</div><div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.firstResult', { day: fmtDay(view.saved.firstAt) })}</div></>}
-              {view.saved.state === 'measured' && <><div style={{ ...mono, fontSize: 22, fontWeight: 600, color: view.saved.usd >= 0 ? 'var(--cth-green-text)' : 'var(--cth-ink)' }}>{view.saved.usd < 0 ? '−' : ''}{money(Math.abs(view.saved.usd))}</div><div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t(view.saved.usd < 0 ? 'pulse.costMore' : 'pulse.since', { day: fmtDay(view.saved.since) })}</div></>}
-            </div>}
-          </div>
-        </Section>
-
-        <Section title={t('pulse.whatGotDone')}>
-          <div style={grid(cols)}>
-            {s.outcomes.map((o) => (
-              <div key={o.kind} style={{ ...card, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+    const noAdvice = shownAdvice.length === 0 && applied.length === 0;
+    // What shows and what folds (owner, 2026-10-19; pulse-smart-view.md, eng D2):
+    // one grid in today's order, then a chip for each quiet tile.
+    const tilesNow = pulseTiles({ snapshot: s, keptSafe: safe, learning: cur }, pv && pk ? { snapshot: pv, keptSafe: pk, learning: pl } : null, opened);
+    shownNow = new Set(tilesNow.shown);
+    // A tile that just joined the grid, or a chip that just joined the row, fades in (3A).
+    const fresh = (id: string, inGrid: boolean): boolean => shownBefore.current !== null && shownBefore.current.has(id) !== inGrid;
+    const periodWord = t(`pulse.quiet.period.${s.period}`);
+    const outcomeTile = (o: Outcome): ReactNode => (
+                <div style={{ ...card, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div aria-hidden style={{ width: 30, height: 30, borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card-2)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', display: 'grid', placeItems: 'center', color: 'var(--cth-ink-2)' }}><Icon name={KIND_ICON[o.kind]} size={1.125} /></div>
                 <div style={{ ...mono, fontSize: 28, fontWeight: 600, lineHeight: '30px' }}>{o.total.toLocaleString(i18n.language)}</div>
                 <div style={{ fontSize: 12, color: 'var(--cth-ink-2)' }}>{outcomeLabel(o)}</div>
@@ -337,30 +308,25 @@ export function PulseView() {
                   ? <WhoBar by={[{ agentId: '__work', count: o.sub ?? 0 }, { agentId: '__none', count: o.total - (o.sub ?? 0) }]} colorOf={(id) => (id === '__work' ? 'var(--cth-ink-2)' : 'var(--cth-line-2)')} nameOf={(id) => t(id === '__work' ? 'pulse.foundWork' : 'pulse.nothingToDo')} aria={outcomeLabel(o)} />
                   : <WhoBar by={o.by} colorOf={colorOf} nameOf={nameOf} aria={outcomeAria(o)} />}
               </div>
-            ))}
-          </div>
-        </Section>
-
-        {/* Kept safe (owner, 2026-10-15): no header; each tile names what it counts
-            in a few words, the same at zero, and its (i) says how (2026-10-18). */}
-        <section aria-label={t('pulse.safe.title')}>
-          <div style={grid(cols)}>
-            <StatTile icon="shield" value={toNet} trend={pk && pair(toNetOf(pk), toNet, t('pulse.safe.toInternet'))} tip={t('pulse.safe.toInternetTip')} text={t('pulse.safe.toInternet')}
+    );
+    const oTile = (k: WorkKind): ReactNode => { const o = s.outcomes.find((x) => x.kind === k); return o ? outcomeTile(o) : null; };
+    // Each tile keeps its own build wherever it shows (eng R3).
+    const tile: Record<PulseTile, ReactNode> = {
+      email: oTile('email'),
+      sent: oTile('sent'),
+      task: oTile('task'),
+      check: oTile('check'),
+      toInternet: <StatTile icon="shield" value={toNet} trend={pk && pair(toNetOf(pk), toNet, t('pulse.safe.toInternet'))} tip={t('pulse.safe.toInternetTip')} text={t('pulse.safe.toInternet')}
               parts={[{ n: safe.toInternet.pass, name: t('pulse.safe.sentAsWritten'), color: 'var(--cth-ink-2)' }, { n: safe.toInternet.clean, name: t('pulse.safe.privateOut'), color: 'var(--cth-green)' }, { n: safe.toInternet.stop, name: t('pulse.safe.stopped'), color: 'var(--cth-amber)' }]}
-              open={toNet > 0 ? { label: t('pulse.checked.q.open'), onClick: () => setCheckedOpen('in') } : undefined} />
-            <StatTile icon="search" value={safe.webAnswers.clean} of={answers} trend={pk && pair(pk.webAnswers.clean, safe.webAnswers.clean, t('pulse.safe.answersCleaned'), 'var(--cth-green)')} tip={t('pulse.safe.answersTip')} text={t('pulse.safe.answersCleaned')}
+              open={toNet > 0 ? { label: t('pulse.checked.q.open'), onClick: () => setCheckedOpen('in') } : undefined} />,
+      webAnswers: <StatTile icon="search" value={safe.webAnswers.clean} of={answers} trend={pk && pair(pk.webAnswers.clean, safe.webAnswers.clean, t('pulse.safe.answersCleaned'), 'var(--cth-green)')} tip={t('pulse.safe.answersTip')} text={t('pulse.safe.answersCleaned')}
               parts={[{ n: safe.webAnswers.clean, name: t('pulse.safe.cleaned'), color: 'var(--cth-green)' }, { n: safe.webAnswers.pass, name: t('pulse.safe.nothingToRemove'), color: 'var(--cth-ink-4)' }, { n: safe.webAnswers.flagged, name: t('pulse.safe.flagged'), color: 'var(--cth-amber)' }]}
-              open={answers > 0 ? { label: t('pulse.checked.a.open'), onClick: () => setCheckedOpen('out') } : undefined} />
-            <StatTile icon="pause" value={safe.held} trend={pk && pair(pk.held, safe.held, t('pulse.safe.held'), 'var(--cth-amber)')} tip={t('pulse.safe.heldTip')} text={t('pulse.safe.held')} amber={safe.held > 0}
-              open={safe.held > 0 ? { label: t('pulse.held.open'), onClick: () => setHeldOpen(true) } : undefined} />
-            <StatTile icon="lock" value={rulesTotal} trend={pk && pair(rulesOf(pk), rulesTotal, t('pulse.safe.rules'))} tip={t('pulse.safe.rulesTip')} text={t('pulse.safe.rules')}
-              parts={[...rules].sort((a, b) => b[1] - a[1]).map(([g, n], i) => ({ n, name: t(`pulse.safe.gate.${g}`), color: ['var(--cth-ink-2)', 'var(--cth-ink-3)', 'var(--cth-ink-4)', 'var(--cth-line-2)'][Math.min(i, 3)] }))} />
-          </div>
-        </section>
-
-        {/* Learning, money and your time in one row of four (owner, 2026-10-15):
-            each tile only as big as what it shows. */}
-        <section aria-label={t('pulse.learning.title')} style={row4}>
+              open={answers > 0 ? { label: t('pulse.checked.a.open'), onClick: () => setCheckedOpen('out') } : undefined} />,
+      held: <StatTile icon="pause" value={safe.held} trend={pk && pair(pk.held, safe.held, t('pulse.safe.held'), 'var(--cth-amber)')} tip={t('pulse.safe.heldTip')} text={t('pulse.safe.held')} amber={safe.held > 0}
+              open={safe.held > 0 ? { label: t('pulse.held.open'), onClick: () => setHeldOpen(true) } : undefined} />,
+      rules: <StatTile icon="lock" value={rulesTotal} trend={pk && pair(rulesOf(pk), rulesTotal, t('pulse.safe.rules'))} tip={t('pulse.safe.rulesTip')} text={t('pulse.safe.rules')}
+              parts={[...rules].sort((a, b) => b[1] - a[1]).map(([g, n], i) => ({ n, name: t(`pulse.safe.gate.${g}`), color: ['var(--cth-ink-2)', 'var(--cth-ink-3)', 'var(--cth-ink-4)', 'var(--cth-line-2)'][Math.min(i, 3)] }))} />,
+      learned: (
           <div style={tight}>
             <TileTitle icon="book" title={t('pulse.learning.learned')} sub={t(`pulse.learning.sub.${s.period}`)} tip={t('pulse.learning.tip')} />
             <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{curAdded.toLocaleString(i18n.language)}</div>
@@ -370,6 +336,8 @@ export function PulseView() {
             {curAdded > 0 && <button type="button" onClick={() => setLearnedOpen(true)} style={{ alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--cth-indigo-text)' }}>{t('pulse.learning.open')}</button>}
             <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.inAll', { notes: learn.notes.toLocaleString(i18n.language), procedures: learn.procedures })}</div>
           </div>
+      ),
+      questions: (
           <div style={tight}>
             <TileTitle icon="help" title={t('pulse.learning.questions')} sub={t('pulse.learning.questionsSub')} />
             <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{rate !== null ? rate.toFixed(1) : '…'}</div>
@@ -381,9 +349,11 @@ export function PulseView() {
             {/* The earlier bar's "…" says why (pulse compare v2). */}
             {pl && pl.per100 === null && rate !== null && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.tooFewBefore', { before: pairLabels[0] })}</div>}
           </div>
-          {/* One total (owner, 2026-10-15): who spent what is Team at work's job.
-              Plan use sits at the foot of the same tile, as a bar, so the tile
-              is filled top to bottom like its neighbours. */}
+      ),
+      // One total (owner, 2026-10-15): who spent what is Team at work's job.
+      // Plan use sits at the foot of the same tile, as a bar, so the tile
+      // is filled top to bottom like its neighbours.
+      spent: (
           <div style={{ ...tight, justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <div style={label}>
@@ -414,8 +384,10 @@ export function PulseView() {
               </div>
             )}
           </div>
-          {/* Your time and while you were away: both about you, one tile; the
-              number at the top, what it means at the foot. */}
+      ),
+      // Your time and while you were away: both about you, one tile; the
+      // number at the top, what it means at the foot.
+      yourTime: (
           <div style={{ ...tight, flexDirection: 'row', gap: 14 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -434,61 +406,161 @@ export function PulseView() {
                 : <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.awayLine')}</div>}
             </div>
           </div>
-        </section>
+      )
+    };
+    // One member's row; it opens their week.
+    const memberRow = (m: (typeof rows)[number]): ReactNode => {
+      const chip = work.chips[m.agentId];
+      const quiet = chip?.kind === 'quiet';
+      const color = m.agentId === godId ? 'var(--cth-indigo)' : colorOf(m.agentId, 0);
+      const role = m.agentId === godId ? t('pulse.officeManager') : byId.get(m.agentId) ? roleOf(byId.get(m.agentId)!) : '';
+      return (
+        <div key={m.agentId} role="listitem"><button type="button" onClick={() => setDetail(m.agentId)}
+          aria-label={t('pulse.work.rowAria', { name: nameOf(m.agentId), time: duration(m.busyMs, t), value: money(m.usd) })}
+          style={{ ...workGrid, width: '100%', minHeight: 44, border: 'none', borderTop: '1px solid var(--cth-line)', background: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'var(--cth-font-ui)', color: 'var(--cth-ink)', padding: 0 }}>
+          <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, opacity: quiet ? 0.7 : 1 }}>
+            <span style={{ borderRadius: '50%', boxShadow: `0 0 0 1.5px ${color}`, display: 'inline-flex', flex: 'none' }}><AgentAvatar id={m.agentId} name={nameOf(m.agentId)} size={24} /></span>
+            <span style={{ minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(m.agentId)}</span>
+              <span style={{ display: 'block', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{role}</span>
+            </span>
+          </span>
+          <span style={{ position: 'relative', height: 14, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)' }}>
+            <i style={{ position: 'absolute', insetInlineStart: 0, top: 0, bottom: 0, width: `${(m.busyMs / maxBusy) * 100}%`, background: color, borderRadius: 'var(--cth-r-pill)' }} />
+            <b style={{ position: 'absolute', top: -6, bottom: -6, width: 1.5, insetInlineStart: `${(work.avgMs / maxBusy) * 100}%`, background: AVG_DASH }} />
+            {chip && <span style={{ position: 'absolute', insetInlineEnd: 0, top: -3 }}><WorkChipView chip={chip} /></span>}
+          </span>
+          <span style={{ ...mono, fontSize: 13, fontWeight: 600, opacity: quiet ? 0.7 : 1 }}>{duration(m.busyMs, t)}</span>
+          <span style={{ ...mono, fontSize: 13, fontWeight: 600, textAlign: 'end' }}>{money(m.usd)}</span>
+        </button></div>
+      );
+    };
+    const busyRows = rows.filter((m) => m.busyMs > 0);
+    const idleRows = rows.filter((m) => m.busyMs <= 0);
+    body = (
+      <>
+        {gaps.length > 0 && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 12, color: 'var(--cth-ink-2)', background: 'var(--cth-neutral-soft)', borderRadius: 'var(--cth-r-lg)', padding: '8px 11px' }}>
+            <Icon name="info" /> {t('pulse.gapNotice', { days: gaps.map(fmtDay).join(', ') })}
+          </div>
+        )}
+
+        {/* Before any advice: one short line, the why behind the (i) (1D). */}
+        <Section title={t('pulse.recommendations')} tip={noAdvice && view.adviceFrom ? t('pulse.adviceStarts', { day: fmtDay(view.adviceFrom), since: fmtDay(view.liveSince ?? Date.now()) }) : t('pulse.recommendationsTip')}>
+          {noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
+          {(!noAdvice || savedShown) && <div style={grid(sugCols)}>
+            {applied.map((x) => (
+              <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{t('pulse.applied')} {x.text}</div>
+                <div><PixelButton variant="secondary" size="sm" onClick={() => { void undo(x); }}>{t('pulse.undo')}</PixelButton></div>
+              </div>
+            ))}
+            {shownAdvice.slice(0, Math.max(0, 3 - applied.length)).map((a) => {
+              const txt = adviceText(a);
+              return (
+                <div key={a.id} style={{ background: 'var(--cth-amber-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-amber) 40%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <AgentAvatar id={a.agentId} name={nameOf(a.agentId)} size={22} />
+                    <div style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px' }}>{txt.title}</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>{txt.evidence}</div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <PixelButton size="sm" disabled={busy === a.id} onClick={() => { void apply(a); }}>
+                      {a.change.kind === 'editor' ? t('pulse.openSchedules') : t('pulse.apply')}
+                    </PixelButton>
+                    <PixelButton variant="secondary" size="sm" onClick={() => { void notNow(a); }}>{t('pulse.notNow')}</PixelButton>
+                    {a.savesPerWeek !== null && a.savesPerWeek > 0 && (
+                      <span style={{ marginInlineStart: 'auto', fontSize: 11, fontWeight: 600, color: 'var(--cth-green-text)', background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-pill)', padding: '2px 8px' }}>
+                        {t('pulse.savesAbout', { usd: money(a.savesPerWeek) })}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {savedShown && <div style={{ ...card, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4, justifyContent: 'center' }}>
+              <div style={label}>{t('pulse.savedByChanges')}<InfoTip text={t('pulse.savedTip')} /></div>
+              {view.saved.state === 'measuring' && <><div style={{ fontSize: 22, fontWeight: 600 }}>{t('pulse.measuring')}</div><div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.firstResult', { day: fmtDay(view.saved.firstAt) })}</div></>}
+              {view.saved.state === 'measured' && <><div style={{ ...mono, fontSize: 22, fontWeight: 600, color: view.saved.usd >= 0 ? 'var(--cth-green-text)' : 'var(--cth-ink)' }}>{view.saved.usd < 0 ? '−' : ''}{money(Math.abs(view.saved.usd))}</div><div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t(view.saved.usd < 0 ? 'pulse.costMore' : 'pulse.since', { day: fmtDay(view.saved.since) })}</div></>}
+            </div>}
+          </div>}
+        </Section>
+
+        <Section title={t('pulse.whatGotDone')}>
+          <div style={grid(cols)}>
+            {tilesNow.shown.map((id) => (
+              <div key={id} id={`pulse-tile-${id}`} tabIndex={-1} role="group" aria-label={t(`pulse.quiet.name.${id}`)} className={fresh(id, true) ? 'cth-tile-in' : undefined} style={{ display: 'grid', borderRadius: 'var(--cth-r-xl)' }}>
+                {tile[id]}
+              </div>
+            ))}
+          </div>
+          {/* Quiet chips (5A): one wrapping row, in the grid's order; a chip opens its tile. */}
+          {tilesNow.quiet.length > 0 && (
+            <div role="group" aria-label={t('pulse.quiet.row')} style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+              {tilesNow.quiet.map((id) => {
+                const name = t(`pulse.quiet.name.${id}`);
+                return (
+                  <button key={id} type="button" className={`cth-quiet-chip${fresh(id, false) ? ' cth-tile-in' : ''}`}
+                    aria-label={t('pulse.quiet.chipAria', { name, period: periodWord })}
+                    onClick={() => { setOpened((o) => new Set(o).add(id)); setFocusTile(id); setNotice(t('pulse.quiet.opened', { name, period: periodWord })); }}>
+                    <Icon name={QUIET_ICON[id]} size={0.875} />
+                    <span className="cth-quiet-chip-name">{name}</span>
+                    <span className="cth-quiet-chip-n">{(0).toLocaleString(i18n.language)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </Section>
 
         <Section title={t('pulse.work.title')} tip={t('pulse.work.tip')}>
           <div style={{ ...card, padding: '12px 16px 10px' }}>
-            {work.totalMs <= 0 ? <div style={{ fontSize: 13, color: 'var(--cth-ink-2)', padding: '6px 0' }}>{t('pulse.work.none')}</div> : <>
-              <div style={{ fontSize: 13, color: 'var(--cth-ink-2)', lineHeight: '19px' }}>
+            {work.totalMs <= 0
+              ? <div style={{ fontSize: 13, color: 'var(--cth-ink-2)', lineHeight: '19px' }}>{t(`pulse.work.nobody.${s.period}`)}</div>
+              : <div style={{ fontSize: 13, color: 'var(--cth-ink-2)', lineHeight: '19px' }}>
                 {work.topTwo && <b style={{ color: 'var(--cth-ink)' }}>{t('pulse.work.headTop', { a: nameOf(work.topTwo.ids[0]), b: nameOf(work.topTwo.ids[1]), pct: pct(work.topTwo.share) })}</b>}
                 {work.quiet.length > 0 && <> {t(work.quiet.length === 1 ? 'pulse.work.headQuietOne' : 'pulse.work.headQuiet', { names: listNames(work.quiet.map(nameOf)) })}</>}
                 {work.costliest && <> {t('pulse.work.headCostly', { name: nameOf(work.costliest.agentId), usd: money(work.costliest.usd), time: duration(work.costliest.busyMs, t) })}</>}
-              </div>
+              </div>}
+            {rows.length > 0 && (
               <div role="list" aria-label={t('pulse.work.title')} style={{ marginTop: 6 }}>
+                {(busyRows.length > 0 || quietRowsOpen) && (
                 <div aria-hidden style={{ ...workGrid, height: 26 }}>
                   <span style={label}>{t('pulse.work.member')}</span>
                   <span style={label}>{t('pulse.work.time')}</span>
                   <span style={label}>{t('pulse.work.hours')}</span>
                   <span style={{ ...label, justifyContent: 'flex-end' }}>{t(costWord)}</span>
                 </div>
-                {rows.map((m) => {
-                  const chip = work.chips[m.agentId];
-                  const quiet = chip?.kind === 'quiet';
-                  const color = m.agentId === godId ? 'var(--cth-indigo)' : colorOf(m.agentId, 0);
-                  const role = m.agentId === godId ? t('pulse.officeManager') : byId.get(m.agentId) ? roleOf(byId.get(m.agentId)!) : '';
-                  return (
-                    <div key={m.agentId} role="listitem"><button type="button" onClick={() => setDetail(m.agentId)}
-                      aria-label={t('pulse.work.rowAria', { name: nameOf(m.agentId), time: duration(m.busyMs, t), value: money(m.usd) })}
-                      style={{ ...workGrid, width: '100%', minHeight: 44, border: 'none', borderTop: '1px solid var(--cth-line)', background: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'var(--cth-font-ui)', color: 'var(--cth-ink)', padding: 0 }}>
-                      <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, opacity: quiet ? 0.7 : 1 }}>
-                        <span style={{ borderRadius: '50%', boxShadow: `0 0 0 1.5px ${color}`, display: 'inline-flex', flex: 'none' }}><AgentAvatar id={m.agentId} name={nameOf(m.agentId)} size={24} /></span>
-                        <span style={{ minWidth: 0 }}>
-                          <span style={{ display: 'block', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(m.agentId)}</span>
-                          <span style={{ display: 'block', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{role}</span>
-                        </span>
-                      </span>
-                      <span style={{ position: 'relative', height: 14, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)' }}>
-                        <i style={{ position: 'absolute', insetInlineStart: 0, top: 0, bottom: 0, width: `${(m.busyMs / maxBusy) * 100}%`, background: color, borderRadius: 'var(--cth-r-pill)' }} />
-                        <b style={{ position: 'absolute', top: -6, bottom: -6, width: 1.5, insetInlineStart: `${(work.avgMs / maxBusy) * 100}%`, background: AVG_DASH }} />
-                        {chip && <span style={{ position: 'absolute', insetInlineEnd: 0, top: -3 }}><WorkChipView chip={chip} /></span>}
-                      </span>
-                      <span style={{ ...mono, fontSize: 13, fontWeight: 600, opacity: quiet ? 0.7 : 1 }}>{duration(m.busyMs, t)}</span>
-                      <span style={{ ...mono, fontSize: 13, fontWeight: 600, textAlign: 'end' }}>{money(m.usd)}</span>
-                    </button></div>
-                  );
-                })}
+                )}
+                {busyRows.map(memberRow)}
+                {/* Members with no working time fold into one row (1C). */}
+                {idleRows.length > 0 && (
+                  <div role="listitem">
+                    <button type="button" aria-expanded={quietRowsOpen} onClick={() => setQuietRowsOpen((v) => !v)}
+                      style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', minHeight: 36, border: 'none', borderTop: busyRows.length > 0 ? '1px solid var(--cth-line)' : 'none', background: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-3)', padding: 0 }}>
+                      <span aria-hidden style={{ display: 'inline-block', transition: 'transform var(--cth-dur-fast) var(--cth-ease)', transform: quietRowsOpen ? 'rotate(90deg)' : 'none' }}>›</span>
+                      {t(busyRows.length > 0 ? (idleRows.length === 1 ? 'pulse.work.quietMoreOne' : 'pulse.work.quietMore') : (idleRows.length === 1 ? 'pulse.work.quietAllOne' : 'pulse.work.quietAll'), { n: idleRows.length })}
+                    </button>
+                  </div>
+                )}
+                {quietRowsOpen && idleRows.map(memberRow)}
               </div>
+            )}
+            {work.totalMs > 0 && (
               <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11, color: 'var(--cth-ink-3)', alignItems: 'center', paddingTop: 8, borderTop: '1px solid var(--cth-line)' }}>
                 <span><span style={{ display: 'inline-block', width: 1.5, height: 12, background: AVG_DASH, marginInlineEnd: 5, verticalAlign: 'middle' }} />{t('pulse.work.average', { time: duration(work.avgMs, t) })}</span>
                 <span>{t(view.plan ? 'pulse.work.planLegend' : view.billing === 'apiKey' ? 'pulse.work.valueSpent' : 'pulse.work.valueLegend')}</span>
                 <span style={{ marginInlineStart: 'auto' }}>{t('pulse.work.open')}</span>
               </div>
-            </>}
+            )}
           </div>
         </Section>
       </>
     );
   }
+
+  // Remember what this render showed, so the next one can fade in what moved (3A).
+  useEffect(() => { shownBefore.current = shownNow; });
 
   const notReady = view?.compareFrom ? t('pulse.compareNotReady', { period: t(`pulse.periods.${period}`), day: fmtDay(view.compareFrom) }) : t('pulse.tooFew');
   return (

@@ -248,6 +248,20 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   * { animation-duration: 0s !important; transition-duration: 0s !important; }
 }
 
+/* Pulse (docs/designs/pulse-smart-view.md): a quiet tile's chip (5A), and a
+   tile or chip that just moved between the grid and the chip row (3A). */
+.cth-quiet-chip {
+  height: 26px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px;
+  border: none; border-radius: var(--cth-r-pill); background: var(--cth-neutral-soft);
+  color: var(--cth-ink-3); font-family: var(--cth-font-ui); cursor: pointer;
+}
+.cth-quiet-chip:hover { background: var(--cth-card); box-shadow: inset 0 0 0 1px var(--cth-line-2); }
+.cth-quiet-chip-name { font-size: 12px; color: var(--cth-ink-2); }
+.cth-quiet-chip-n { font-family: var(--cth-font-mono); font-size: 12px; color: var(--cth-ink-3); }
+.cth-tile-in { animation: cth-tile-in 150ms var(--cth-ease) both; }
+@keyframes cth-tile-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .cth-tile-in { animation: none; } }
+
 /* xterm: disable font ligatures.
  * Some browsers (e.g. Firefox 130+) treat sequences like "ff"/"ft"/"fi" as
  * ligatures, which breaks xterm's per-char width measuring: an "f" gets measured

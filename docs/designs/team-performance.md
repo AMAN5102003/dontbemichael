@@ -443,7 +443,7 @@ so the view can show what changed and when.
      -> PERSIST (insert telemetry_events, one prepared statement) -> PROCESSOR (cursor) -> rollups, runs, advice -> push
   shadow paths:
     nil agent id or unknown kind ......... dropped, counted in a debug counter (Section 8)
-    empty tasks.json / no cards .......... no card events; view shows zeros, says so
+    empty tasks.json / no cards .......... no card events; those tiles fold into quiet chips (pulse-smart-view.md, owner 2026-10-19)
     malformed tasks.json ................. tick skipped, last good snapshot kept (Section 2)
     insert fails ......................... D15: failure counted per day, flagged, advice skips the day
     duplicate event (replay after crash) . cursor saved in the same transaction as rollups: no double count

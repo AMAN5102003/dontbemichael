@@ -1268,15 +1268,32 @@ half written message survives the switch.
   week" chip. An applied card turns `green` soft with "Applied." and Undo. Beside them, once a
   change was applied, Saved by your changes: "Measuring" with the first result date for 7
   days, then mono dollars in `green` text; before any change it is not there. With nothing to
-  recommend, one calm line, "Nothing to change this week." Before two full weeks of work, that
-  line gives the start date and why, in business words (never "records"): a few unusually busy
-  or quiet days alone could lead to the wrong advice.
+  recommend, no card: one short `t-meta` `ink-3` line under the header, "Nothing to change
+  this week", or before two full weeks of work "Advice from Thu, Oct 29" (owner, 2026-10-19).
+  The header's (i) then gives the start date and why, in business words (never "records"): a
+  few unusually busy or quiet days alone could lead to the wrong advice.
 - **What got done**: four tiles (emails organized, emails sent for you, tasks finished,
   scheduled checks), each a line icon (mail, send, check, clock, 18 px `ink-2` on a `card-2`
   square), a mono 28 px number, a label, and a who did it bar: members of one department take
   its `acc`, then `m`, then `d`, with a 2 px gap and a named legend.
+- **Only tiles with something to say** (owner, 2026-10-19; docs/designs/pulse-smart-view.md):
+  the What got done, Kept safe and row of four tiles flow into one grid under "What got done",
+  in this order: emails organized, emails sent, tasks finished, scheduled checks, questions to
+  the internet, web answers cleaned, messages held, steps blocked, what the team learned,
+  questions to you, Spent, your time. Each keeps its own build. A tile shows when something
+  happened in it in the period, or in the span before while Compare is on: web answers count
+  every answer checked, Questions to you the questions, Your time the questions or any work
+  while the owner was away, every other tile its number. Spent always shows. Otherwise the tile
+  folds into a **quiet chip**: a 26 px pill, `neutral-soft` fill, no border, a 14 px `ink-3`
+  line icon, the name in `t-meta` `ink-2` and the count in mono `ink-3`; on hover the `card`
+  fill and a `line-2` hairline. Chips sit in one wrapping row under the grid, in its order.
+  A chip is a button ("Emails sent: 0 today. Show tile."): it puts the tile back in its place,
+  moves focus to it and reads it in a polite line; opened tiles stay until the period changes
+  or the owner leaves Pulse. A tile or chip that moves fades and slides in over 150 ms on
+  `--cth-ease`; reduced motion snaps. The grid keeps 4, 2 or 1 columns; fewer tiles leave the
+  end of the last row empty.
 - **Kept safe**, with no header (owner, 2026-10-15): four tiles of the same build (line icons
-  shield, search, pause, lock). Each names its number in a few words, the same at zero and above,
+  shield, search, pause, lock), in the What got done grid. Each names its number in a few words,
   and its own (i) says how (owner, 2026-10-18: fields only): "questions to the internet" (As
   written, Private parts removed, Stopped; the (i): each question is checked for private details
   before it goes out), "web answers cleaned" with "of N" (Cleaned, Already clean, Flagged to
@@ -1309,7 +1326,7 @@ half written message survives the switch.
   into one line ("17 sent as written") that opens one line items between hairlines. The
   questions list points to the held list when the period has holds. Every text is plain,
   `dir="auto"`; marks carry hidden "taken out:" and "sent instead:" for screen readers.
-- **One row of four tiles** under Kept safe (owner, 2026-10-15), each only as big as what it
+- **The four tiles after Kept safe** (owner, 2026-10-15), in the same grid, each only as big as what it
   shows, 12/14 px padding: What the team learned (the period's new notes as one mono 24 px number, a bar and legend by
   source: `green` your answers, `ink-4` on the job, `indigo` Michael; under it the notes and
   written ways of working held in all), Questions to you per 100 requests in the period (one
@@ -1333,10 +1350,14 @@ half written message survives the switch.
   avatar ringed in department `acc`, name and role, a working time bar in that `acc` with the
   team average as a dashed mark, hours and cost (no day strip, per hour or Knows column,
   owner 2026-10-15). Callouts sit on the bar's end: Busiest, "Nx the
-  team" (twice the average or more), Quiet (under a quarter of it), and `amber` soft "Costly
+  team" (twice the average or more), Quiet (some working time, under a quarter of it), and `amber` soft "Costly
   for its work" (twice the usual value per hour, with ten minutes of work and three peers at
-  least). A row opens the member detail, an overlay like Task detail (§7.21): six facts in
-  `card-2` boxes and a four week value bar.
+  least). Members with no working time fold into one last row, "9 more were quiet" in `ink-3`
+  with a chevron, a disclosure button that opens their rows (owner, 2026-10-19); the headline
+  names only members with some time. With nobody working, the headline reads "Nobody has
+  worked yet today" (this week, this month) above the folded row. A row opens the member
+  detail, an overlay like Task detail (§7.21): six facts in `card-2` boxes and a four week
+  value bar.
 - **Compare** (owner, 2026-10-16): with the switch on, every top tile shows two small bars
   under its total, the span before and this one, named Yesterday and Today, Last week and This
   week, Last month and This month. The span before runs up to the same day: all of yesterday;
@@ -2022,6 +2043,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-18 | Office opening: the Clocking in card is the one colored card on the floor (indigo, `t-view` title, a bar, who is still coming), ends with "Everyone's in" or who has not clocked in at the cap, runs only from launch or a Restore team, and Michael's own start shares it; the clock pill says "Opening" and the count meanwhile; the screen reader hears start and end only (§7.3, §7.24). |
 | 2026-10-18 | Michael's wall and hub card count Waiting: five columns in the Tasks view's order (To do, Doing, Waiting, Blocked, Done), Waiting in `amber`; the hub card is 212 px so the five labels never touch (§7.17, §8.4). |
 | 2026-10-18 | Pulse, Kept safe: each tile names its number in a few words, the same at zero, with its own (i); shorter legend and gate names; a tile's legend shows only once a part is above zero (§7.27). |
+| 2026-10-19 | Pulse shows only tiles with something to say: one grid in a fixed order, quiet tiles as chips in one row that open their tile, Spent always; members with no working time fold into one row; Recommendations before advice is one `ink-3` line (§7.27). |
 | 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
 

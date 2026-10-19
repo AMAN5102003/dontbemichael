@@ -30,18 +30,47 @@ test('Pulse is a fixed view tab between Tasks and Who talks to whom, and takes t
   assert.match(read('src/renderer/src/store/store.ts'), /if \(view === 'office' \|\| view === 'file'\) return \{\};/);
 });
 
-test('sections run recommendations, what got done, kept safe, learning, the office row, then team at work', () => {
-  // Value: protects=D2 and D3 order as the owner set it on 2026-10-15 (proposal 3: Kept safe and Learning in the top area, Team at work in place of the Team tiles, "Recommendations" title), the saved card only once something was applied, and the start date with its reason; fails_when=a section moves, a table returns, the saved card shows with nothing in it, or the start date loses its reason; why_new=owner ask 2026-10-15; seam=none; no_claim=none beyond protects
+test('sections run recommendations, what got done (one grid, then the quiet chips), then team at work', () => {
+  // Value: protects=D2 and D3 order (owner, 2026-10-15) as the smart view set it on 2026-10-19 (pulse-smart-view.md 1E: Kept safe and the row of four join the What got done grid, eng R3), the saved card only once something was applied, and the start date with its reason behind the (i); fails_when=a section moves, the grid stops reading pulseTiles, a table returns, the saved card shows with nothing in it, or the start date loses its reason; why_new=owner asks 2026-10-15 and 2026-10-19; seam=none; no_claim=pixel layout (live check)
   assert.equal(en.pulse.recommendations, 'Recommendations');
   assert.match(view, /const savedShown = view\.saved\.state !== 'none';/);
   assert.match(view, /\{savedShown && <div/);
   assert.match(en.pulse.adviceStarts, /\{\{day\}\}[\s\S]*two full weeks[\s\S]*\{\{since\}\}/);
   assert.doesNotMatch(en.pulse.adviceStarts, /record/i, 'business words, not records (owner, 2026-10-15)');
-  assert.match(view, /t\('pulse\.adviceStarts', \{ day: fmtDay\(view\.adviceFrom\), since: /);
-  const order = ['pulse.recommendations', 'pulse.whatGotDone', 'pulse.safe.title', 'pulse.learning.title', 'pulse.whereMoneyWent', 'pulse.work.title'].map((k) => view.indexOf(`t('${k}')`));
+  assert.match(view, /tip=\{noAdvice && view\.adviceFrom \? t\('pulse\.adviceStarts', \{ day: fmtDay\(view\.adviceFrom\), since: /, 'the why sits behind the header (i) (1D)');
+  assert.match(view, /view\.adviceFrom \? t\('pulse\.adviceFrom', \{ day: fmtDay\(view\.adviceFrom\) \}\) : t\('pulse\.nothingToChange'\)/, 'one short line before advice (1D)');
+  assert.equal(en.pulse.adviceFrom, 'Advice from {{day}}');
+  const order = ["t('pulse.recommendations')", "t('pulse.whatGotDone')", 'tilesNow.shown.map', "t('pulse.quiet.row')", "t('pulse.work.title')"].map((k) => view.indexOf(k, view.indexOf('body = (')));
   assert.ok(order.every((i) => i > 0), 'every section is there');
   assert.deepEqual([...order].sort((a, b) => a - b), order);
+  assert.match(view, /const tilesNow = pulseTiles\(\{ snapshot: s, keptSafe: safe, learning: cur \}, pv && pk \? \{ snapshot: pv, keptSafe: pk, learning: pl \} : null, opened\);/);
   assert.doesNotMatch(view, /<table/);
+});
+
+test('a quiet chip is a labelled button that opens its tile, moves focus to it and reads it out (5A, 2A, 6A)', () => {
+  // Value: protects=pulse-smart-view.md 5A, 2A and 6A; fails_when=a chip loses its label, opening stops adding the tile, focus or the polite line, or opened tiles survive a period change; why_new=new behavior; seam=none; no_claim=focus ring and VoiceOver output (live check)
+  assert.match(view, /<button key=\{id\} type="button" className=\{`cth-quiet-chip/);
+  assert.match(view, /aria-label=\{t\('pulse\.quiet\.chipAria', \{ name, period: periodWord \}\)\}/);
+  assert.match(view, /onClick=\{\(\) => \{ setOpened\(\(o\) => new Set\(o\)\.add\(id\)\); setFocusTile\(id\); setNotice\(t\('pulse\.quiet\.opened'/);
+  assert.match(view, /document\.getElementById\(`pulse-tile-\$\{focusTile\}`\)\?\.focus\(\);/);
+  assert.match(view, /id=\{`pulse-tile-\$\{id\}`\} tabIndex=\{-1\} role="group"/);
+  assert.match(view, /useEffect\(\(\) => \{ setOpened\(new Set\(\)\); setQuietRowsOpen\(false\); \}, \[period\]\);/);
+  assert.equal(en.pulse.quiet.chipAria, '{{name}}: 0 {{period}}. Show tile.');
+  const css = read('src/renderer/src/design/global.css');
+  assert.match(css, /\.cth-quiet-chip \{[\s\S]*?height: 26px;[\s\S]*?background: var\(--cth-neutral-soft\);/);
+  assert.match(css, /\.cth-tile-in \{ animation: cth-tile-in 150ms var\(--cth-ease\) both; \}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{ \.cth-tile-in \{ animation: none; \} \}/);
+});
+
+test('Team at work folds members with no working time into one disclosure row, and says when nobody worked (1C, 2B)', () => {
+  // Value: protects=pulse-smart-view.md 1C and 2B, eng D1; fails_when=idle members get full rows again, the fold loses aria-expanded, or an empty period goes back to one bare line; why_new=new behavior; seam=none; no_claim=pixel layout (live check)
+  assert.match(view, /const busyRows = rows\.filter\(\(m\) => m\.busyMs > 0\);\n    const idleRows = rows\.filter\(\(m\) => m\.busyMs <= 0\);/);
+  assert.match(view, /<button type="button" aria-expanded=\{quietRowsOpen\}/);
+  assert.match(view, /\{quietRowsOpen && idleRows\.map\(memberRow\)\}/);
+  assert.match(view, /t\(`pulse\.work\.nobody\.\$\{s\.period\}`\)/);
+  assert.equal(en.pulse.work.quietMore, '{{n}} more were quiet');
+  assert.equal(en.pulse.work.nobody.today, 'Nobody has worked yet today.');
+  assert.equal(en.pulse.work.none, undefined, 'the old bare line is gone');
 });
 
 test('suggestions are amber soft cards, applied ones green with Undo; no coral and no left stripe anywhere', () => {

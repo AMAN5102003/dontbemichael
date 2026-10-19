@@ -2566,6 +2566,7 @@
     "notNow": "暂不",
     "savesAbout": "每周约节省 {{usd}}",
     "adviceStarts": "建议将于 {{day}} 开始，届时 Pulse 已观察你的团队工作满两周。它从 {{since}} 开始，仅凭几天异常忙碌或清闲的情况可能会给出错误的建议。",
+    "adviceFrom": "{{day}} 起提供建议",
     "nothingToChange": "本周没有需要更改的。",
     "savedByChanges": "你的更改节省了",
     "savedTip": "根据记录测量：你更改前每项工作的成本，对比之后的成本。按 API 价格计算。",
@@ -2641,7 +2642,6 @@
     "awayMine": "的工作",
     "fourWeeks": "价值，最近 4 周",
     "safe": {
-      "title": "安全保障",
       "toInternet": "个发往互联网的问题",
       "sentAsWritten": "按原文",
       "privateOut": "已去除隐私部分",
@@ -2670,7 +2670,6 @@
       "rulesTip": "每位成员只能使用你在设置中授予的内容；其他一律阻止。"
     },
     "learning": {
-      "title": "学习",
       "tip": "笔记在加入成员记忆的当天计入，修改不计入。向你提出的问题按团队处理的请求数计算。",
       "fromYou": "来自你的回答",
       "onJob": "工作中学到",
@@ -2695,10 +2694,18 @@
     "work": {
       "title": "团队工作情况",
       "tip": "工作时间从成员接到每个请求起，到其最后一次回复为止，每个请求最多计一小时。成本为每位成员按工作份额分摊的套餐费用。",
-      "none": "尚未记录工作时间。",
+      "nobody": {
+        "today": "今天还没有人工作。",
+        "this-week": "本周还没有人工作。",
+        "this-month": "本月还没有人工作。"
+      },
       "headTop": "{{a}} 和 {{b}} 完成了团队 {{pct}} 的工作时间。",
       "headQuiet": "{{names}} 大多比较清闲。",
       "headQuietOne": "{{names}} 大多比较清闲。",
+      "quietMore": "另有 {{n}} 人没有动静",
+      "quietMoreOne": "另有 1 人没有动静",
+      "quietAll": "{{n}} 人没有动静",
+      "quietAllOne": "1 人没有动静",
       "headCostly": "{{name}} 以最少的工作花费最多：{{time}} 花费 {{usd}}。",
       "member": "成员",
       "time": "工作时间",
@@ -2850,6 +2857,30 @@
       },
       "earlier": "还有 {{count}} 条没有详情。",
       "notesEmpty": "里面还没有笔记，只有 {{research}} 的空白笔记页。"
+    },
+    "quiet": {
+      "row": "暂无动静",
+      "chipAria": "{{name}}：{{period}} 0。显示卡片。",
+      "opened": "{{name}}，{{period}} 0",
+      "period": {
+        "today": "今天",
+        "this-week": "本周",
+        "this-month": "本月"
+      },
+      "name": {
+        "email": "整理的邮件",
+        "sent": "发出的邮件",
+        "task": "完成的任务",
+        "check": "定时检查",
+        "toInternet": "发往互联网的问题",
+        "webAnswers": "清理的网络答案",
+        "held": "暂扣的消息",
+        "rules": "被阻止的步骤",
+        "learned": "新笔记",
+        "questions": "向你提出的问题",
+        "spent": "支出",
+        "yourTime": "你的时间"
+      }
     }
   }
 }

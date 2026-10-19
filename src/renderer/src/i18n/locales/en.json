@@ -2566,6 +2566,7 @@
     "notNow": "Not now",
     "savesAbout": "Saves about {{usd}} a week",
     "adviceStarts": "Recommendations start on {{day}}, once Pulse has seen two full weeks of your team at work. It began on {{since}}, and a few unusually busy or quiet days alone could lead to the wrong advice.",
+    "adviceFrom": "Advice from {{day}}",
     "nothingToChange": "Nothing to change this week.",
     "savedByChanges": "Saved by your changes",
     "savedTip": "Measured from the records: what each piece of work cost before your change, against what it costs since. At API prices.",
@@ -2641,7 +2642,6 @@
     "awayMine": "of their work",
     "fourWeeks": "Value, last 4 weeks",
     "safe": {
-      "title": "Kept safe",
       "toInternet": "questions to the internet",
       "sentAsWritten": "As written",
       "privateOut": "Private parts removed",
@@ -2670,7 +2670,6 @@
       "rulesTip": "Each member can only use what you gave them in Settings; anything else is blocked."
     },
     "learning": {
-      "title": "Learning",
       "tip": "A note counts on the day it is added to a member's memory; an edit does not. Questions to you are counted against the requests the team took.",
       "fromYou": "From your answers",
       "onJob": "Learned on the job",
@@ -2695,10 +2694,18 @@
     "work": {
       "title": "Team at work",
       "tip": "Working time runs from each request a member takes to its last reply, up to an hour each. Cost is each member's part of your plan by their share of the work.",
-      "none": "No working time recorded yet.",
+      "nobody": {
+        "today": "Nobody has worked yet today.",
+        "this-week": "Nobody has worked yet this week.",
+        "this-month": "Nobody has worked yet this month."
+      },
       "headTop": "{{a}} and {{b}} did {{pct}} of the team's working time.",
       "headQuiet": "{{names}} were mostly quiet.",
       "headQuietOne": "{{names}} was mostly quiet.",
+      "quietMore": "{{n}} more were quiet",
+      "quietMoreOne": "1 more was quiet",
+      "quietAll": "{{n}} were quiet",
+      "quietAllOne": "1 was quiet",
       "headCostly": "{{name}} cost the most for the least work: {{usd}} for {{time}}.",
       "member": "Member",
       "time": "Working time",
@@ -2850,6 +2857,30 @@
       },
       "earlier": "{{count}} more without details.",
       "notesEmpty": "There were no notes in it yet, only {{research}}'s empty notes page."
+    },
+    "quiet": {
+      "row": "Quiet so far",
+      "chipAria": "{{name}}: 0 {{period}}. Show tile.",
+      "opened": "{{name}}, 0 {{period}}",
+      "period": {
+        "today": "today",
+        "this-week": "this week",
+        "this-month": "this month"
+      },
+      "name": {
+        "email": "emails organized",
+        "sent": "emails sent",
+        "task": "tasks finished",
+        "check": "scheduled checks",
+        "toInternet": "questions to the internet",
+        "webAnswers": "web answers cleaned",
+        "held": "messages held",
+        "rules": "steps blocked",
+        "learned": "new notes",
+        "questions": "questions to you",
+        "spent": "spent",
+        "yourTime": "your time"
+      }
     }
   }
 }

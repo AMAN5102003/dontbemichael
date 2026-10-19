@@ -8,6 +8,10 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 
 ## [Unreleased]
 
+### Changed
+
+- **Pulse shows only what has something to say.** Tiles with nothing in the period fold into a row of small quiet chips under the others ("emails sent 0"); a chip opens its tile. Spent always shows, and with Compare on a tile stays while the span before had something. Team at work folds members with no working time into one "9 more were quiet" row and says "Nobody has worked yet today" when that is so. Before advice starts, Recommendations is one short line, with the why behind its (i).
+
 ### Fixed
 
 - A message a team member sent is delivered once even if the app quits between delivering it and filing it away, and a schedule request is never filed twice.
