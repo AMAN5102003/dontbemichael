@@ -10,6 +10,7 @@ import {
   unlinkSync, mkdirSync, renameSync, createWriteStream, copyFileSync, lstatSync,
   readlinkSync, symlinkSync, realpathSync, watch as watchFs
 } from 'node:fs';
+import { promises as fsPromises } from 'node:fs';
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { join, resolve, sep, basename, dirname, isAbsolute } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
@@ -26,7 +27,7 @@ import {
 import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
-import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_WORK_STYLE } from '../shared/research';
+import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
 import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -41,6 +42,9 @@ import { answerKey, catchUpRequests, ownerWorkOrder } from '../shared/ownerReque
 import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
+import { CHECKED_FILE } from '../shared/checkedRecord';
+import { HELD_FILE } from '../shared/heldRecord';
+import { ensureCheckedBackfill } from './checkedBackfill';
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
 import { normalizeTimes, timesDelayMs } from '../shared/scheduleTimes';
 import {
@@ -76,9 +80,9 @@ import { PulseService } from './pulse';
 import { knownPrice } from './pricing';
 import bakedModelCatalog from '../shared/modelCatalog.json';
 import { parseModelCatalog, type ModelCatalog } from '../shared/modelCatalogPayload';
-import type { Period } from '../shared/teamPerformance';
+import { isPeriod } from '../shared/teamPerformance';
 import { makeResearchGoal } from './researchGoal';
-import { ownResearchDir, readResearchNotes } from './researchNotes';
+import { ownResearchDir } from './researchNotes';
 import { backfilled, runBackfill } from './pulseBackfill';
 import { readTeamMemory } from './teamMemory';
 import { readClaudePlan } from './claudeAccount';
@@ -133,8 +137,11 @@ import { COLLECT_USAGE_STATS, SHOW_DELIVERY_SWITCH, SHOW_VOICE, SHOW_SLACK, SHOW
 import { fetchHireManifest, readHireManifestFiles } from './hire';
 import { parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
+import { SilentWatch, type WatchMember } from './silentWatch';
+import { mailFor, noticeForOpened, type SilentEpisode } from '../shared/silentEngine';
 import {
   argsWithAutoModeFlag,
+  bridgeOf,
   inferAgentProvider,
   isClaudeProvider,
   nonInteractiveEnvForProvider,
@@ -153,13 +160,14 @@ import { ALLOW_TEMP_WORKERS } from '../shared/buildFeatures';
 import { APP_NAME, APP_DATA_DIR, APP_URL_SCHEME } from '../shared/appName';
 import { copyOfficeData, homeFolderStatus, homeReadyAtLaunch } from './homeFolder';
 import { backfillOfficeRecord, findOffice, folderLayoutFor, isUsableTeamFolder, syncOfficeRecord } from './officeFile';
-import { folderPolicy, AGENT_TMP_DIR, agentTmpName, researchFolderPolicy, withAgentTmpWall, RESEARCH_TMP_DIR, shellTempWalls, withResearchWall, type AgentFolderPolicy, type FolderLayout } from '../shared/folderAccess';
+import { folderPolicy, AGENT_TMP_DIR, agentTmpName, researchFolderPolicy, withAgentTmpWall, withMemberWall, RESEARCH_TMP_DIR, shellTempWalls, withResearchWall, type AgentFolderPolicy, type FolderLayout } from '../shared/folderAccess';
 import { sandboxNetwork } from '../shared/webAccess';
 import { MCP_CATALOG } from '../shared/mcpCatalog';
 import { legacyBusinessFolder, touchesOffice } from '../shared/officeRecord';
 import { cleanCompanyProfile, companyProfileContext } from '../shared/companyProfile';
 import { scheduledRunBody } from '../shared/scheduleMessage';
 import { OFFICE_OPEN_SUBJECT, officeClosedInLog, officeOpenBody } from '../shared/officeOpen';
+import { CARRY_ON_NOTES } from '../shared/upkeep';
 import { CLAUDE_MODEL_CLI_FLOOR, modelForCli } from '../shared/modelCliFloor';
 import { cliUpdateStatus, type CliUpdateStatus } from '../shared/cliUpdate';
 import {
@@ -453,6 +461,10 @@ const workerWake = new WorkerWakeWatchdog();
 const promptSubmits = new PromptSubmits();
 // HookServer needs BOTH: Oscar's control registry (HITL pause/gate/steer/halt via
 // hook returns) AND Jim's breaker (feed recordToolUse on each PostToolUse).
+// The not reporting watch (issue #326), set up once the store exists below.
+let silentWatch: SilentWatch | null = null;
+/** Closing time, once built further down: the silent watch refreshes its rows. */
+let closingTimeRef: ClosingTimeController | null = null;
 const hookServer = new HookServer(
   hive,
   () => liveWebContents(),
@@ -468,6 +480,9 @@ const hookServer = new HookServer(
       else if (event === 'Stop') pulseTelemetry.record({ agentId, kind: 'stop', ts: Date.now() });
     }
     workerWake.noteHook(agentId, event, message);
+    // Any event, a Claude status tick included, is a check in (issue #326);
+    // the event name tells it when a long tool call starts and ends.
+    silentWatch?.noteHook(agentId, event);
     safeClearer.noteHook(agentId, event, message);
     if (agentId && event === 'UserPromptSubmit') promptSubmits.note(agentId);
     if (agentId && (event === 'Notification' || event === 'PermissionRequest')) promptSubmits.noteAttention(agentId);
@@ -538,11 +553,142 @@ const memoryTidy = new MemoryTidy(
   () => {
     const cfg = readConfig();
     return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
-  }
+  },
+  // Learning counts notes from the app's own record (owner, 2026-10-18).
+  (agentId, added) => { const ts = Date.now(); for (const n of added) pulseTelemetry.record({ agentId, kind: 'note-added', ts, attrs: { id: n.id, source: n.source } }); }
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
 const persist = new PersistStore();
+
+// ─── Not reporting (issue #326; src/main/silentWatch.ts) ────────────────────
+const SILENT_KV_KEY = 'silent.episodes';
+/** pty id → the owner's last keystroke into it (pty:write). */
+const ptyInputAt = new Map<string, number>();
+/** Engine versions per command, probed once in the background. A terminal
+ *  keeps the bare command it was started with ('claude', 'gemini'), so it is
+ *  resolved to its binary the way the spawn resolved it; the probe reads only
+ *  a real path (ship review 2026-10-17: versions were always unknown). */
+const silentVersions = new Map<string, string | null>();
+function silentVersion(command: string): string | null {
+  if (!silentVersions.has(command)) {
+    silentVersions.set(command, null);
+    let bin: string | null = null;
+    try { bin = ptyManager.commandPath(command); } catch { /* unknown */ }
+    if (bin) void claudeCliVersion(bin).then((v) => { silentVersions.set(command, v); }).catch(() => { /* unknown */ });
+  }
+  return silentVersions.get(command) ?? null;
+}
+function silentName(agentId: string): string {
+  try { return hive.registry().agents[agentId]?.name || agentId; } catch { return agentId; }
+}
+function silentNoteToMichael(subject: string, body: string): void {
+  try { if (hive.enabled()) hive.send({ to: hive.registry().godId ?? 'god', act: 'inform', subject, body }, 'system'); } catch (e) { console.error('[silent] note', e); }
+}
+/** One desktop notice when a card first appears (SD10): Michael's name, or the
+ *  office's own for Michael's card; a click brings the window and Needs you. */
+function silentNotice(e: SilentEpisode): void {
+  if (!readConfig().notifications) return;
+  const name = silentName(e.agentId);
+  const title = e.isMichael ? (readConfig().businessName || APP_NAME) : michaelName();
+  const body = `${name} isn't reporting to the app. ${name} is still working, but the app can't check ${name}'s folders and tools.`;
+  try {
+    if (!Notification.isSupported()) return;
+    const n = new Notification({ title, body });
+    n.on('click', () => {
+      if (mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
+      try { liveWebContents()?.send('silent:open'); } catch { /* window gone */ }
+    });
+    n.show();
+  } catch { /* unsupported platform */ }
+}
+silentWatch = new SilentWatch({
+  now: () => Date.now(),
+  platform: process.platform,
+  mayAutoRestart: (agentId) => hookServer.mayAutoRestart(agentId),
+  restart: (agentId, auto) => {
+    const wc = liveWebContents();
+    if (!wc) return false;
+    try { wc.send('agent:restartSilent', { agentId }); } catch { return false; }
+    if (auto) {
+      hookServer.noteAutoRestart(agentId);
+      // A quiet line in Michael's activity (SD11).
+      try { hive.appendLog({ kind: 'silent-auto-restart', agentId, note: `Restarted ${silentName(agentId)}: no check in` }); } catch { /* best effort */ }
+    }
+    return true;
+  },
+  // End its terminal (R1) and everything that counts it as live (the breaker,
+  // the roster, fleet.json, its mail token), but not teardownPty's archive,
+  // which would drop it off its own card; Restart & Continue starts it again.
+  stop: (m) => { if (m.ptyId) { try { ptyManager.kill(m.ptyId); } catch { /* already gone */ } pausePty(m.ptyId); } },
+  changed: (episodes) => {
+    try { persist.setKv(SILENT_KV_KEY, episodes); } catch { /* the store may not be open yet */ }
+    try { liveWebContents()?.send('silent:changed', episodes); } catch { /* window gone */ }
+    // Closing time's rows follow: a member that stops or starts reporting
+    // moves between waited on and not reporting.
+    try { closingTimeRef?.refresh(); } catch (e) { console.error('[closing-time] refresh:', e); }
+  },
+  event: ({ type, episode }) => {
+    const name = silentName(episode.agentId);
+    if (type === 'opened') {
+      if (noticeForOpened(episode, silentWatch?.list() ?? [])) silentNotice(episode);
+      if (!episode.isMichael) {
+        silentNoteToMichael(`${name} isn't reporting to the app`,
+          `${name}'s engine stopped reporting to the app, so the app can't check ${name}'s folders and tools. Until it reports again, ${name}'s new mail comes to you. Give ${name} no new cards; route the work to someone else or let it wait. The owner has a card on Needs you.`);
+      }
+    } else if (type === 'resolved' && !episode.isMichael) {
+      silentNoteToMichael(`${name} is reporting again`, `${name} is reporting to the app again. Work can go to ${name} as usual.${resendLine(name)}`);
+    } else if (type === 'dropped' && !episode.isMichael) {
+      silentNoteToMichael(`${name} is on an engine the app doesn't watch`, `${name} now runs on an engine that sends the app no reports, so the app no longer watches it. Work can go to ${name} as usual.${resendLine(name)}`);
+    } else if (type === 'removed' && !episode.isMichael) {
+      silentNoteToMichael(`${name} left the team`, `${name} was closed or left the team while it wasn't reporting.${resendLine(name, true)}`);
+    } else if (type === 'kept') {
+      silentNoteToMichael(`${name} works unchecked`, `The owner chose to keep ${name} working without the app's checks. Work can go to ${name} again; it reaches ${name} through the terminal.${resendLine(name)}`);
+    }
+  }
+});
+/** Mail for a member that isn't reporting came to Michael (SD12) until it
+ *  was kept: whatever of it still needs doing is his to send or route. */
+function resendLine(name: string, routeOnly = false): string {
+  return routeOnly
+    ? ` If any of ${name}'s mail came to you meanwhile, route what still needs doing to someone else.`
+    : ` If any of ${name}'s mail came to you while it wasn't reporting, send ${name} what still needs doing.`;
+}
+/** The watch's beat: every member in the registry, running or not. */
+function silentBeat(): void {
+  if (!silentWatch || !hive.enabled()) return;
+  const reg = hive.registry();
+  const sessions = new Map(ptyManager.list().map((s) => [s.id, s]));
+  const godId = reg.godId ?? 'god';
+  // Archived members too, as not running: a card outlives a relaunch or a
+  // break (SD8). One the owner closed or deleted is gone, and so is its card.
+  const members: WatchMember[] = Object.entries(reg.agents ?? {}).filter(([, a]) => a && !a.isAssistant && !(a.archived && a.closedByOwner)).map(([id, a]) => {
+    const ptyId = ptyForAgent(id) ?? '';
+    const s = ptyId && !a.archived ? sessions.get(ptyId) : undefined;
+    const provider = (a.provider ?? 'claude') as AgentProvider;
+    const claude = isClaudeProvider(provider);
+    return {
+      id, ptyId, running: !!s, pid: s?.pid,
+      engine: claude ? 'claude' : provider,
+      engineLabel: providerPreset(provider).label,
+      version: s?.command ? silentVersion(s.command) : null,
+      isMichael: id === godId,
+      isResearch: id === RESEARCH_ID,
+      reports: claude || !!bridgeOf(provider),
+      statusTicks: claude,
+      hasOutput: !!s?.hasOutput,
+      lastOutputAt: s?.lastOutputAt ?? 0,
+      lastInputAt: ptyId ? ptyInputAt.get(ptyId) ?? 0 : 0
+    };
+  });
+  silentWatch.beat(members);
+}
+// Its mail: held for Michael, or by terminal when kept (SD12).
+hive.memberMail = (agentId) => mailFor(silentWatch?.episode(agentId));
+ipcMain.handle('silent:list', () => silentWatch?.list() ?? []);
+ipcMain.handle('silent:restart', (_evt, ids: unknown) => { if (Array.isArray(ids)) silentWatch?.restart(ids.filter((x): x is string => typeof x === 'string')); });
+ipcMain.handle('silent:keep', (_evt, ids: unknown) => { if (Array.isArray(ids)) silentWatch?.keep(ids.filter((x): x is string => typeof x === 'string')); });
+ipcMain.handle('silent:checkAgain', (_evt, id: unknown) => { if (typeof id === 'string') silentWatch?.checkAgain(id); });
 
 // ─── Pulse telemetry (docs/designs/team-performance.md) ─────────────────────
 // The isolated store: written only here, in harness.db, keyed by office.
@@ -606,7 +752,30 @@ const pulse = new PulseService({
   applyMissions: (change) => applyMissions(change),
   billing: () => (readConfig().claudeAuth === 'apiKey' ? 'apiKey' : 'account'),
   plan: () => planPrice(readClaudePlan(), readConfig().planPriceMonthly),
-  memory: () => { const root = hive.root(); return root ? readTeamMemory(root, Object.keys(hive.registry().agents ?? {})) : { notes: [], procedures: {} }; }
+  memory: () => { const root = hive.root(); return root ? readTeamMemory(root, Object.keys(hive.registry().agents ?? {})) : { notes: [], procedures: {} }; },
+  readHeld: () => {
+    const home = readConfig().harnessHome;
+    if (!home) return '';
+    // The same path the hive writes to (hive.ts recordHeld uses the home as configured).
+    try { return readFileSync(join(privateRoot(home), HELD_FILE), 'utf8'); } catch { return ''; }
+  },
+  readChecked: () => {
+    const home = readConfig().harnessHome;
+    if (!home) return '';
+    // Checks from before the lists kept words, put together once from the
+    // office's files (owner, 2026-10-16: "still not saying changed message").
+    try {
+      const reg = hive.registry();
+      ensureCheckedBackfill(privateRoot(home), {
+        hiveRoot: hive.root() ?? join(home, 'hive'), researchId: RESEARCH_ID,
+        researchNames: Array.from(new Set([hive.researchName(), RESEARCH_NAME])),
+        nameOf: (id) => (id === 'human' || id === 'system' ? null : id === RESEARCH_ID ? hive.researchName() : reg.agents?.[id]?.name?.trim() || (['god', 'michael'].includes(id) ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : null))
+      });
+    } catch (e) { console.error('[pulse] filling in earlier checks', e); }
+    // No file yet is an empty record; any other failure is the list's error (DD5).
+    // Read without blocking the main process (ship review 2026-10-17).
+    return fsPromises.readFile(join(privateRoot(home), CHECKED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
+  }
 });
 // The office log kinds Pulse counts, and the board each tick reads.
 hive.logObserver = (e) => {
@@ -620,6 +789,10 @@ hive.logObserver = (e) => {
     pulseTelemetry.record({ agentId: e.agentId, kind: 'sent', ts: e.ts });
   } else if (kind === 'card-reopen') {
     pulseTelemetry.record({ agentId: typeof e.agentId === 'string' ? e.agentId : null, kind: 'card-reopen', ts: e.ts, attrs: { id: e.id } });
+  } else if (kind === 'trust-held' && (e.way === 'in' || e.way === 'out')) {
+    pulseTelemetry.record({ agentId: null, kind: 'trust-held', ts: e.ts, attrs: { way: e.way } });
+  } else if (kind === 'trust-checked' && (e.way === 'in' || e.way === 'out')) {
+    pulseTelemetry.record({ agentId: null, kind: 'trust-checked', ts: e.ts, attrs: { way: e.way, decision: e.decision, flagged: e.flagged === true } });
   }
 };
 hive.tasksObserver = (tasks) => pulseTelemetry.tasks(tasks as never);
@@ -797,34 +970,22 @@ const trustLayer = makeTrustLayer({
     // Why a check got no answer, beside the layer's own deny line, so the next
     // failure says what happened (2026-10-15: launch checks lost their Enter).
     if (!r.ok) { try { hive.appendLog({ kind: 'trust-check-failed', error: r.error ?? 'unknown' }); } catch { /* best-effort */ } }
-    return r.ok && r.text ? r.text : null;
+    // Why it failed rides on the deny, for Pulse's held list (owner, 2026-10-16).
+    return r.ok && r.text ? r.text : r.ok ? null : { error: r.error ?? 'unknown' };
   },
   settings: () => dataClassSettings(readConfig().dataClasses),
+  // Every AI team member's name, Michael's and Research's included, passes as
+  // written; real people's names stay private (owner, 2026-10-16).
+  teamNames: () => {
+    const reg = hive.registry();
+    return [...Object.values(reg.agents ?? {}).map((a) => a?.name), resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name), hive.researchName()];
+  },
   log: (event) => {
     try { hive.appendLog(event); } catch { /* best-effort */ }
     // Pulse's Kept safe: the decision only, never the text it judged.
-    if (event.kind === 'trust-layer') pulseTelemetry.record({ agentId: null, kind: 'trust', ts: Date.now(), attrs: { way: event.way, decision: event.decision, by: event.by ?? null, flagged: event.flagged === true } });
+    if (event.kind === 'trust-layer') pulseTelemetry.record({ agentId: null, kind: 'trust', ts: Date.now(), attrs: { way: event.way, decision: event.decision, by: event.by ?? null, flagged: event.flagged === true, ...(typeof event.v === 'number' ? { v: event.v } : {}) } });
   }
 });
-
-/** Research's notes reach the team's shared memory only as a copy the trust
- *  layer cleaned of instructions aimed at agents (ship review D2.9); a note the
- *  layer can't check is left out. Every other agent is mined as is. */
-async function researchNotesForPalace(id: string, agentDir: string): Promise<string | null | undefined> {
-  if (id !== RESEARCH_ID) return undefined;
-  const home = readConfig().harnessHome;
-  if (!home) return null;
-  const dir = join(privateRoot(expandTilde(home)), 'research-mined');
-  const text = readResearchNotes(agentDir);
-  // A copy the layer did not pass this time is not kept from last time.
-  const clear = (): null => { try { rmSync(join(dir, 'memory.md'), { force: true }); } catch { /* next time */ } return null; };
-  if (!text) return clear();
-  const v = await trustLayer.outbound({ subject: 'Research notes', body: text });
-  if (v.decision === 'deny') return clear();
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, 'memory.md'), `${v.body}\n`, 'utf8');
-  return dir;
-}
 
 /** Research's desk: its own working folder, in the app's home, outside the
  *  hive and the business folder. */
@@ -995,14 +1156,41 @@ const preservedWorktrees = new Map<string, PreservedWorktree>();
  * step is wrapped so a teardown error can never crash the caller (an IPC
  * handler or node-pty's onExit).
  */
-function teardownPty(id: string): void {
+/** Terminals the not reporting watch stopped, by terminal id: still this
+ *  member's, so a later teardown (a closed tab, a delete) archives it. */
+const pausedPty = new Map<string, string>();
+
+/** A terminal stopped by the not reporting watch (issue #326, R1): what
+ *  counts it as live goes (its mail token, the map that makes it live for the
+ *  breaker, the roster and fleet.json, the watchdog and breaker state), but
+ *  it is not archived and its worktree stays, since it is started again. */
+function pausePty(id: string): void {
+  const agentId = ptyToAgent.get(id);
+  try { removeMdMailMcp(agentId ?? id); } catch { /* best-effort */ }
+  try { integrationBroker.revoke(id); } catch { /* best-effort */ }
+  if (!agentId) return;
+  ptyToAgent.delete(id);
+  pausedPty.set(id, agentId);
+  try { workerWake.forget(agentId, id); } catch { /* best-effort */ }
+  try { breaker.forget(agentId); } catch { /* best-effort */ }
+  // The restart is a new terminal with its own usage counter.
+  try { telemetry.forgetAgent(agentId); } catch { /* best-effort */ }
+  try { hive.stopProxyBridge(agentId); } catch { /* best-effort */ }
+  // Closing time stops waiting for it; the keep awake follows the terminals.
+  try { closingTime.refresh(agentId); } catch (e) { console.error('[closing-time] refresh:', e); }
+  syncKeepAwake();
+}
+
+function teardownPty(id: string, opts: { keepWorktree?: boolean } = {}): void {
   // Ephemeral-worker flag, read BEFORE the cleanup below deletes the entry. All
   // worker deaths (done-release, idle/token reap, manual stop, crash) funnel
   // through here, so this is the one place their floor card gets archived
   // (workers card via the hive:agentSpawned broadcast in processSpawnRequest).
   // pty id == worker id == agent id for workers.
   const wasWorker = liveWorkers.has(id);
-  const agentId = ptyToAgent.get(id);
+  // A terminal the watch stopped is still its member's (pausePty).
+  const agentId = ptyToAgent.get(id) ?? pausedPty.get(id);
+  pausedPty.delete(id);
   // 0) Drop the md-mail MCP file that holds this agent's broker token (#63),
   //    then revoke this id's broker capability (if any). File first so a sibling
   //    cannot read a live path after revoke races a slow delete. Idempotent +
@@ -1029,7 +1217,9 @@ function teardownPty(id: string): void {
     }
   }
   // 2) Remove the isolated worktree, if any. Non-blocking; errors are logged.
-  const wtPath = worktreePaths.get(id);
+  // Not on a restart: the member starts again in it at once, its uncommitted
+  // work included (ship review 2026-10-17).
+  const wtPath = opts.keepWorktree ? undefined : worktreePaths.get(id);
   if (wtPath) {
     const origCwd = worktreeOrigins.get(id) ?? wtPath;
     worktreePaths.delete(id);
@@ -1050,11 +1240,12 @@ function teardownPty(id: string): void {
   }
   // A worker whose isolation failed (non-repo cwd) has no worktree to gate above —
   // still clear its tracking entry so the controller stops watching a dead PTY.
-  if (liveWorkers.has(id)) liveWorkers.delete(id);
+  // A restart keeps it, so its later teardown still goes through the gate.
+  if (!opts.keepWorktree && liveWorkers.has(id)) liveWorkers.delete(id);
   // Archive the dead worker's floor card (mirrors killAgent's voice-kill path;
   // the renderer's archiveAgent is a no-op if the card is already gone). NOT
   // done for regular agents: their kill flows already manage their own card.
-  if (wasWorker) {
+  if (wasWorker && !opts.keepWorktree) {
     try { liveWebContents()?.send('hive:agentArchived', { id }); } catch { /* window torn down */ }
   }
   // A terminal that ends during closing time leaves the dialog's list at once.
@@ -1112,9 +1303,8 @@ async function finalizeWorkerWorktree(wtPath: string, origCwd: string, worker: W
     if (!r.ok) { console.error('[worker] removeWorktree failed:', r.error); return; }
     // Worktree is gone (clean/integrated at teardown), but DEFER its scratch-dir
     // cleanup to the throttled GC sweep rather than deleting it synchronously here:
-    // HIVE_ROOT/agents/<id> holds the worker's memory.md and the MemPalace miner
-    // ingests it asynchronously, so an immediate delete can beat the miner and
-    // permanently lose the worker's durable notes from the shared palace. Register
+    // HIVE_ROOT/agents/<id> holds the worker's memory.md, which the owner's
+    // views still read for a while after it stops. Register
     // it (its worktree path is now absent) so the sweep's path-gone branch reclaims
     // the scratch after a window — same throttled path the preserved case uses.
     preservedWorktrees.set(wtPath, {
@@ -1451,7 +1641,8 @@ function tellOfficeOpen(agentId: string): void {
     const a = hive.registry().agents[agentId];
     if (!a || a.isAssistant) return;
     toldOfficeOpen.add(agentId);
-    hive.send({ to: agentId, act: 'inform', subject: OFFICE_OPEN_SUBJECT, body: officeOpenBody() }, 'human');
+    // The app's own upkeep note, never a question for the internet (shared/upkeep.ts).
+    hive.send({ to: agentId, act: 'inform', subject: OFFICE_OPEN_SUBJECT, body: officeOpenBody() }, 'human', 'office-open');
   } catch (e) {
     console.error('[office-open]', e);
   }
@@ -1534,7 +1725,7 @@ const scheduleRequests = makeScheduleRequests({
   readConfig, writeConfig, applyMissions, michaelName, ownerToast,
   godId: hiveGodId,
   agentName: (id) => hive.registry().agents[id]?.name,
-  hive: { enabled: () => hive.enabled(), send: (msg, from) => { hive.send(msg, from); } },
+  hive: { enabled: () => hive.enabled(), send: (msg, from, upkeep) => { hive.send(msg, from, upkeep); } },
   updated: () => { liveWebContents()?.send('scheduleRequests:updated'); }
 });
 const { receiveScheduleRequest, decideScheduleRequest, sweepScheduleRequests } = scheduleRequests;
@@ -1893,34 +2084,34 @@ function armOfficeBreak(): void {
  *  translated. */
 interface StopWords { start: string; subject: string; check: string; carryOn: string; over: string }
 function stopWords(reason: OfficeStopReason, until: number | null): StopWords {
-  const carry = 'Continue the task you were working on when it stopped; do not repeat work that is already done.';
+  // Each carry on note is one of the app's fixed upkeep notes (shared/upkeep.ts).
   if (reason === 'credit') return {
     start: 'The office stopped. Your Anthropic account is out of credit.',
-    subject: 'Credit may be back',
+    subject: CARRY_ON_NOTES.credit.subject,
     check: 'The office stopped because the Anthropic account was out of credit, and work may start again now. Carry on with what was waiting.',
-    carryOn: `The Anthropic account has credit again. ${carry}`,
+    carryOn: CARRY_ON_NOTES.credit.body,
     over: 'The office is back at work.'
   };
   if (reason === 'signin') return readConfig().claudeAuth === 'apiKey' ? {
     start: 'The office stopped. The Anthropic API key stopped working.',
-    subject: 'New API key',
+    subject: CARRY_ON_NOTES.apiKey.subject,
     check: 'The office stopped because the Anthropic API key stopped working. A new key is in place, so work may start again now. Carry on with what was waiting.',
-    carryOn: `The Anthropic API key works again. ${carry}`,
+    carryOn: CARRY_ON_NOTES.apiKey.body,
     over: 'The office is back at work.'
   } : {
     start: 'The office stopped. Your Claude account needs you to sign in again.',
-    subject: 'Signed in again',
+    subject: CARRY_ON_NOTES.signin.subject,
     check: 'The office stopped because the Claude sign in had expired, and work may start again now. Carry on with what was waiting.',
-    carryOn: `Claude is signed in again. ${carry}`,
+    carryOn: CARRY_ON_NOTES.signin.body,
     over: 'The office is back at work.'
   };
   return {
     start: until
       ? `The office is on a break. Your Claude plan reached its limit. Work starts again around ${breakClock(until)}.`
       : 'The office is on a break. Your Claude plan reached its limit. Work starts again when it resets.',
-    subject: 'Usage limit reset',
+    subject: CARRY_ON_NOTES.limit.subject,
     check: 'The Claude plan\'s usage limit should have reset, so the office\'s break may be over. Carry on with what was waiting.',
-    carryOn: 'The Claude plan\'s usage limit has reset. Continue the task you were working on when it was reached; do not repeat work that is already done.',
+    carryOn: CARRY_ON_NOTES.limit.body,
     over: 'The break is over. The team is back at work.'
   };
 }
@@ -2015,7 +2206,7 @@ function endOfficeBreak(ended: OfficeBreakState): void {
     const cutOff = [...ended.cutOff].sort((a, b) => (a === godId ? -1 : b === godId ? 1 : 0));
     if (hive.enabled()) {
       for (const id of cutOff) {
-        hive.send({ to: id, act: 'inform', subject: words.subject, body: words.carryOn }, 'system');
+        hive.send({ to: id, act: 'inform', subject: words.subject, body: words.carryOn }, 'system', 'carry-on');
       }
     }
     hive.appendLog({ kind: 'office-break', step: 'over', reason: ended.reason, cutOff: cutOff.length });
@@ -3833,7 +4024,11 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           ? folderPolicy({ isGod: !!opts.hive!.isGod, cwd: opts.cwd }, businessFolderLayout(businessFolder), process.platform !== 'linux')
           : privateOnlyFolderPolicy(!!opts.hive!.isGod, opts.cwd);
         if (!base) return undefined;
-        const walled = withAgentTmpWall(withResearchWall(base, researchFolders()), home, opts.hive!.id, !!opts.hive!.isGod);
+        const hiveRoot = hive.root();
+        // Each member's hive folder and the hive's history are closed to the
+        // others, Michael included (owner, 2026-10-16).
+        const walled = withMemberWall(withAgentTmpWall(withResearchWall(base, researchFolders()), home, opts.hive!.id, !!opts.hive!.isGod),
+          hiveRoot ?? '', opts.hive!.id, Object.keys(hive.registry().agents ?? {}));
         // Michael's commands stay in their sandbox too, where his shell
         // reaches no host and Research's folders are walled (owner, D7.1,
         // D9.1; every office, ship 2 D16).
@@ -3845,7 +4040,6 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           // Research's walls (eng review R1): no shared memory, no company
           // knowledge, no business folder, no default servers, no connectors;
           // the business's name, type and city only.
-          semanticMemory: false,
           knowledgeGraph: false,
           theme: readConfig().terminalTheme ?? 'light',
           mcpDefaults: Object.fromEntries(MCP_CATALOG.map((m) => [m.id, { enabled: false }])),
@@ -3867,7 +4061,6 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
             homedir()
           )
         } : {
-          semanticMemory: memory.active(),
           knowledgeGraph: knowledge.active(),
           // Bake the ABSOLUTE KG CLI path into the agent's prompt. The prompt used
           // to spell it `$KG_CLI`, which is POSIX-only: under cmd.exe/PowerShell it
@@ -4106,6 +4299,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
   // live terminal means active — ensureAgent above already cleared `archived`.
   if (opts.hive?.id) {
     ptyToAgent.set(opts.id, opts.hive.id);
+    pausedPty.delete(opts.id);
     // Worker inbox-wake watchdog (#151): boot grace starts at spawn so the
     // initial orientation prompt is never mistaken for an idle agent.
     workerWake.noteSpawn(opts.id);
@@ -4254,6 +4448,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
 }
 ipcMain.handle('pty:write', (_evt, id: string, data: string) => {
   if (typeof id !== 'string' || typeof data !== 'string') return { ok: false, error: 'invalid args' };
+  // Typing into a terminal keeps it busy without a report: the not reporting
+  // watch leaves it alone meanwhile (issue #326, SD9).
+  ptyInputAt.set(id, Date.now());
   return ptyManager.write(id, data);
 });
 ipcMain.handle('pty:resize', (_evt, id: string, cols: number, rows: number) => {
@@ -4279,13 +4476,15 @@ ipcMain.handle('pty:redraw', (_evt, id: string) => {
   if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
   return ptyManager.redraw(id);
 });
-ipcMain.handle('pty:kill', (_evt, id: string) => {
+ipcMain.handle('pty:kill', (_evt, id: string, opts?: unknown) => {
   if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
   // Kill the process, then run the shared lifecycle teardown (archive the agent,
   // remove its isolated worktree, drop the maps). teardownPty is idempotent, so
   // node-pty firing onExit once the child actually dies is a harmless no-op.
+  // A restart keeps the worktree: the member starts again in it.
+  const restart = !!opts && typeof opts === 'object' && (opts as { restart?: unknown }).restart === true;
   const res = ptyManager.kill(id);
-  teardownPty(id);
+  teardownPty(id, { keepWorktree: restart });
   // The owner closed it: it no longer waits on Claude, so no card or restart.
   claudeBlocked.delete(id);
   return res;
@@ -6155,8 +6354,12 @@ const closingTime = new ClosingTimeController(
   },
   // #7C.2 steering — the graceful interrupt that reaches deeply busy agents
   // at their next hook boundary instead of waiting for a Stop.
-  control
+  control,
+  // A member that isn't reporting has its mail held: closing time can't reach
+  // it, so it is shown apart and not waited on (owner, 2026-10-17).
+  (agentId) => mailFor(silentWatch?.episode(agentId)) === 'hold'
 );
+closingTimeRef = closingTime;
 hive.setRoutedObserver((msg, targets) => closingTime.onRouted(msg, targets));
 // A dev build quits instead of reopening, so the dialog must not say "Reopening".
 ipcMain.handle('app:startClosingTime', (_evt, opts?: { relaunch?: boolean }) =>
@@ -6403,15 +6606,26 @@ ipcMain.handle('missions:upsert', (_evt, mission: unknown): MissionOpResult => {
   return applyMissions((list) => upsertMission(list, clean, Date.now()));
 });
 // ─── IPC: Pulse (docs/designs/team-performance.md) ───────────────────────────
-const PULSE_PERIODS: readonly string[] = ['this-week', 'last-week', '4-weeks'];
 // The detected Claude plan and its list price, for Settings > Agents.
 ipcMain.handle('claude:plan', () => {
   const id = readClaudePlan();
   return { label: id ? PLAN_LABELS[id] : null, listMonthly: id ? PLAN_PRICES[id] : null };
 });
-ipcMain.handle('pulse:snapshot', (_evt, period: unknown) => {
+// The held tile's list (owner, 2026-10-16): two times, checked here.
+ipcMain.handle('pulse:held', (_evt, fromMs: unknown, toMs: unknown) =>
+  (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) ? pulse.held(fromMs, toMs) : []));
+// The new notes behind Learning's number (owner, 2026-10-18): two local days.
+ipcMain.handle('pulse:learned', (_evt, from: unknown, to: unknown) => {
+  const day = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  return day(from) && day(to) ? pulse.learned(from, to) : [];
+});
+// The questions and answers lists (owner, 2026-10-16): two times and a way,
+// checked here. A record that can't be read rejects, so the list says so.
+ipcMain.handle('pulse:checked', (_evt, fromMs: unknown, toMs: unknown, way: unknown) =>
+  (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) && (way === 'in' || way === 'out') ? pulse.checked(fromMs, toMs, way) : { rows: [], since: null }));
+ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
   try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) pulseProcessor.tick(office); } catch (e) { console.error('[pulse] snapshot tick', e); }
-  return pulse.snapshot(PULSE_PERIODS.includes(String(period)) ? (period as Period) : 'this-week');
+  return pulse.snapshot(isPeriod(period) ? period : 'this-week', compare === true);
 });
 ipcMain.handle('pulse:apply', (_evt, id: unknown, expected: unknown) => (typeof id === 'string' ? pulse.apply(id, expected) : { ok: false, error: 'stale' }));
 ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from: unknown, to: unknown) =>
@@ -7568,10 +7782,6 @@ function bootstrapHiveServices(): void {
   hive.setBusinessOffice(!!(readConfig().businessFolder || readConfig().officeFolder));
   hive.onScheduleRequest(receiveScheduleRequest);
   hive.setTrustLayer(trustLayer);
-  memory.setNotesFilter(researchNotesForPalace);
-  // Research's cleaned copy is made again when the owner changes what stays
-  // private, not only when its notes change (Codex review, third ship).
-  memory.setMineKey((id) => (id === RESEARCH_ID ? trustLayer.policyKey?.() ?? '' : ''));
   hive.setResearchEnabled(() => !!readConfig().research?.on);
   hive.setResearchName(() => readConfig().research?.name);
   // The update that took the internet from the team (issue #230): an office
@@ -7821,6 +8031,7 @@ function armAlwaysOnBeats(): void {
   // (docs/designs/card-lifecycle.md), so a prompt never scans his mail.
   const fleetBeat = (): void => {
     writeFleetSnapshot();
+    try { silentBeat(); } catch (e) { console.error('[silent beat]', e); }
     try { if (hive.enabled()) hive.refreshOwnerRequests(); } catch (e) { console.error('[owner requests]', e); }
   };
   fleetBeat();
@@ -7971,6 +8182,8 @@ app.whenReady().then(() => {
   try { persist.open(); } catch (e) { console.error('[db] open failed:', e); }
   // A break saved before quitting is still on (issue 124).
   armOfficeBreak();
+  // Members that were not reporting when the app quit: Checking (issue #326, SD8).
+  try { silentWatch?.restore(persist.getKv<SilentEpisode[]>(SILENT_KV_KEY) ?? []); } catch (e) { console.error('[silent] restore', e); }
   // Auto-update from GitHub releases (installed builds only; always on since
   // 2026-10-02). Download-in-background + restart-to-apply toast;
   // never restarts on its own. Falls back to a notify-only releases/latest

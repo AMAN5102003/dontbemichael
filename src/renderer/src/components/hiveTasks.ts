@@ -153,16 +153,65 @@ export function parseTasks(raw: unknown): HiveTask[] {
 const nextAtFormats = new Map<string, Intl.DateTimeFormat>();
 
 /** A card's next step time in the viewer's local time and the app's language,
- *  like "Mon, 12 Oct, 8:00 AM". */
-export function nextAtLabel(nextAt: string | undefined, lang?: string): string | undefined {
+ *  like "Mon, 12 Oct, 8:00 AM", with the year when it is not this year
+ *  ("Mon, 4 Jan 2027, 9:00 AM"), so a sorted column reads right across the
+ *  turn of the year (owner, 2026-10-17). */
+export function nextAtLabel(nextAt: string | undefined, lang?: string, now = Date.now()): string | undefined {
   if (!isNextAt(nextAt)) return undefined;
-  const key = lang ?? '';
+  const when = new Date(nextAt);
+  const withYear = when.getFullYear() !== new Date(now).getFullYear();
+  const key = `${lang ?? ''}|${withYear ? 'y' : ''}`;
   let f = nextAtFormats.get(key);
   if (!f) {
-    f = new Intl.DateTimeFormat(lang || undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+    f = new Intl.DateTimeFormat(lang || undefined, {
+      weekday: 'short', day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' as const } : {}), hour: 'numeric', minute: '2-digit'
+    });
     nextAtFormats.set(key, f);
   }
-  return f.format(new Date(nextAt));
+  return f.format(when);
+}
+
+/** The time groups an open column is cut into (owner, 2026-10-17), in time
+ *  order, in the viewer's local calendar. Each card goes in the first that
+ *  fits. The rest of the current quarter is "This quarter", except in the last
+ *  quarter, where it is the rest of the year ("Later this year"), and "Next
+ *  quarter" is then next January to March. "Later" is two years or more away. */
+export type NextGroup =
+  | 'overdue' | 'today' | 'tomorrow' | 'thisMonth' | 'thisQuarter' | 'laterThisYear'
+  | 'nextQuarter' | 'nextYear' | 'later' | 'none';
+
+export function nextGroup(nextAt: string | undefined, now = Date.now()): NextGroup {
+  if (!isNextAt(nextAt)) return 'none';
+  const t = Date.parse(nextAt);
+  if (t < now) return 'overdue';
+  const d = new Date(t);
+  const n = new Date(now);
+  const day = (x: Date): number => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const tomorrow = new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1);
+  if (day(d) === day(n)) return 'today';
+  if (day(d) === day(tomorrow)) return 'tomorrow';
+  // Months counted from this January: this month is m, this quarter ends at q.
+  const m = n.getMonth();
+  const at = (d.getFullYear() - n.getFullYear()) * 12 + d.getMonth();
+  const q = m - (m % 3) + 2;
+  if (at === m) return 'thisMonth';
+  if (at <= q) return q === 11 ? 'laterThisYear' : 'thisQuarter';
+  if (at <= q + 3) return 'nextQuarter';
+  if (at <= 11) return 'laterThisYear';
+  if (at <= 23) return 'nextYear';
+  return 'later';
+}
+
+/** The order of an open column (owner, 2026-10-17): the earliest Next time
+ *  first, cards with none after them; at the same time the higher priority
+ *  first, then the order the cards were made (the board's own order). A time
+ *  already passed is simply earliest. */
+export function byNext<T extends { nextAt?: string; priority: number }>(cards: readonly T[]): T[] {
+  const at = (c: T): number => (isNextAt(c.nextAt) ? Date.parse(c.nextAt as string) : Infinity);
+  return cards
+    .map((c, i) => ({ c, i, t: at(c) }))
+    .sort((a, b) => (a.t === b.t ? 0 : a.t < b.t ? -1 : 1) || b.c.priority - a.c.priority || a.i - b.i)
+    .map((x) => x.c);
 }
 
 /** The first line of a Done card's result, as plain text for the board: its

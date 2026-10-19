@@ -136,6 +136,18 @@ export const MarkdownPreview = memo(function MarkdownPreview({
               </a>
             );
           },
+          // A table sits in its own box, which scrolls sideways when it is too
+          // wide, so the table itself can fill its column; the box takes Tab so a
+          // keyboard can scroll it (design review 5.2A, 6.1A).
+          table: ({ node: _node, ...props }) => (
+            <div className="cth-md-table" tabIndex={0} role="region" aria-label={t('markdown.table')}>
+              <table {...props} />
+            </div>
+          ),
+          // Right aligned columns (GFM `--:`) are amounts: marked here, not
+          // matched on the inline style, so the dock can set them in mono (5.1A).
+          th: ({ node: _node, ...props }) => <th {...props} className={numClass(props.style)} />,
+          td: ({ node: _node, ...props }) => <td {...props} className={numClass(props.style)} />,
           // Images. LOCAL ones render for real (bytes via the root-confined fs
           // IPC → blob URL); remote ones stay a placeholder chip. Until now
           // every image was a chip, which meant an agent's report saying "see
@@ -154,6 +166,11 @@ export const MarkdownPreview = memo(function MarkdownPreview({
     </div>
   );
 });
+
+/** `cth-md-num` on a right aligned table cell, the GFM mark for an amount column. */
+function numClass(style: React.CSSProperties | undefined): string | undefined {
+  return style?.textAlign === 'right' ? 'cth-md-num' : undefined;
+}
 
 /** The plain text of a rendered element (a link's words), however nested. */
 function hastText(node: unknown): string {
