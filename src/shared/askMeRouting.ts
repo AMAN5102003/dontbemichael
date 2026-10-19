@@ -70,6 +70,8 @@ export function answerMessages(p: {
   title: string;
   q: string;
   a: string;
+  /** When the owner answered; named on the last line (answeredAtOf). */
+  answeredAt?: string;
 }): AnswerMessage[] {
   const title = cardText(p.title);
   // The card id comes from the ledger agents write, so it is cleaned like the title.
@@ -95,10 +97,20 @@ export function answerMessages(p: {
       // one who raised it, who comes back only for what they still need.
       p.raiser === MICHAEL_ID
         ? 'Check each question of the ask against the answer. Settle any the owner left unanswered yourself where you can, and ask the owner again only for what you still need.'
-        : `Check each question of the ask against the answer. Send any the owner left unanswered to ${p.raiserName} with the answers: they settle what they can and file back to you only what they still need. Ask the owner again only for that.`
+        : `Check each question of the ask against the answer. Send any the owner left unanswered to ${p.raiserName} with the answers: they settle what they can and file back to you only what they still need. Ask the owner again only for that.`,
+      ...(p.answeredAt ? [`Answered at ${p.answeredAt}.`] : [])
     ].join('\n')
   };
   return [forMichael];
+}
+
+/** The last line of an answer's request to Michael: which answer it carries,
+ *  so the launch catch-up matches each request to its own answer. */
+const ANSWERED_AT_LINE = /\nAnswered at (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\.$/;
+
+/** The answer time a request to Michael names, if it names one. */
+export function answeredAtOf(body: unknown): string | undefined {
+  return typeof body === 'string' ? ANSWERED_AT_LINE.exec(body)?.[1] : undefined;
 }
 
 /**
@@ -147,10 +159,13 @@ export function openReportIndexes(qa: readonly (AskEntry | null | undefined)[] |
  *  the same and still open on disk. Its list is a few seconds old, so a
  *  withdrawal (dismissedAt) Michael wrote since, a slot whose question changed
  *  and an entry added on disk all stand (pre-landing review, 2026-10-05).
+ *  `only`: the one slot being answered; no other slot takes an answer, so a
+ *  stale answer in the list never lands on a question asked again since.
  *  `added`: the slots that took an answer. */
-export function mergeHumanQA(onDisk: unknown[], incoming: unknown[]): { humanQA: unknown[]; added: number[] } {
+export function mergeHumanQA(onDisk: unknown[], incoming: unknown[], only?: number): { humanQA: unknown[]; added: number[] } {
   const added: number[] = [];
   const humanQA = onDisk.map((d, i) => {
+    if (only !== undefined && i !== only) return d;
     const e = incoming[i];
     if (!d || typeof d !== 'object' || !e || typeof e !== 'object') return d;
     const disk = d as AskEntry;

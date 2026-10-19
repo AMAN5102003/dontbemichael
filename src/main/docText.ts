@@ -6,9 +6,10 @@
  * the upload reported success and nothing in the file was ever searchable. PDFs
  * depended on a `pdftotext` binary that a typical owner's Mac does not have. This
  * reads the formats owners actually keep, using pure-JS code that ships inside
- * the app plus what macOS already has (`textutil`, and the Vision OCR for scans
- * and photos, via macOcr.ts) — nothing to install — and says plainly when a file
- * can't be read, instead of storing junk that looks like it worked.
+ * the app plus what the computer already has (`textutil` and the Vision OCR on a
+ * Mac, via macOcr.ts; Windows' own OCR, via winOcr.ts) — nothing to install —
+ * and says plainly when a file can't be read, instead of storing junk that looks
+ * like it worked.
  *
  * Runs in two places, both from inside the app bundle: the main process (the
  * knowledge store's ingest) and `docTextCli.ts`, the `doc-text` command agents
@@ -19,8 +20,14 @@ import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { extname, posix } from 'node:path';
 import { unzipSync, strFromU8 } from 'fflate';
-import { macOcr, MAX_OCR_PAGES } from './macOcr';
+import { macOcr, MAX_OCR_PAGES, type OcrResult } from './macOcr';
+import { winOcr } from './winOcr';
 import { ownValue } from '../shared/ownValue';
+
+/** Scans and photos go to the OCR this computer has: Windows' own, or the Mac's (which reports `unsupported` elsewhere). */
+function ocrFile(srcPath: string, kind: 'image' | 'pdf'): Promise<OcrResult> {
+  return process.platform === 'win32' ? winOcr(srcPath, kind) : macOcr(srcPath, kind);
+}
 
 export type DocExtraction =
   /** Converted here; index this text. */
@@ -368,8 +375,8 @@ async function readPdf(srcPath: string): Promise<DocExtraction> {
   }
 
   // No text layer: common for a small business — a scanned receipt, a signed
-  // contract. Read the page images with the Mac's built-in OCR (macOcr.ts).
-  const ocr = await macOcr(srcPath, 'pdf');
+  // contract. Read the page images with the computer's built-in OCR.
+  const ocr = await ocrFile(srcPath, 'pdf');
   if (ocr.ok) {
     const read = tidy(
       ocr.pages
@@ -379,7 +386,7 @@ async function readPdf(srcPath: string): Promise<DocExtraction> {
     );
     if (read) {
       const note = ocr.truncated ? `\n\n[Only the first ${MAX_OCR_PAGES} pages of this scan were read.]` : '';
-      return { kind: 'text', text: read + note, extractor: 'vision-ocr@1', modality: 'pdf', mime: MIME.pdf };
+      return { kind: 'text', text: read + note, extractor: ocr.extractor, modality: 'pdf', mime: MIME.pdf };
     }
   }
   return {
@@ -388,11 +395,15 @@ async function readPdf(srcPath: string): Promise<DocExtraction> {
       ? 'This PDF is a scan or a photo, and no writing could be read from it. It may be too faint or blurry.'
       : ocr.reason === 'timeout'
         ? 'This scanned PDF took too long to read. Try a shorter one, or split it.'
-        : 'This PDF has no text in it. It\'s probably a scan or a photo, and scans can only be read on a Mac.'
+        : ocr.reason === 'no-language'
+          ? 'This PDF is a scan or a photo, and Windows can\'t read text in your language yet. In Windows Settings, open Time & language, then Language & region, and add the language it is written in.'
+          : ocr.reason === 'failed'
+            ? 'This PDF is a scan or a photo, and it could not be read. Try a clearer scan, or save it as a picture and add that.'
+            : 'This PDF has no text in it. It\'s probably a scan or a photo, and scans can only be read on a Mac or a Windows PC for now.'
   };
 }
 
-// ─── Images, via the Mac's built-in OCR ──────────────────────────────────────
+// ─── Images, via the computer's built-in OCR ─────────────────────────────────
 
 /**
  * A photo of a menu or a receipt has text worth finding. One without writing
@@ -400,10 +411,11 @@ async function readPdf(srcPath: string): Promise<DocExtraction> {
  * name and caption — so it falls back to passthrough rather than a refusal.
  */
 async function readImage(srcPath: string, ext: string): Promise<DocExtraction> {
-  const ocr = await macOcr(srcPath, 'image');
-  const text = ocr.ok ? tidy(ocr.pages.join('\n')) : '';
+  const ocr = await ocrFile(srcPath, 'image');
+  if (!ocr.ok) return { kind: 'passthrough' };
+  const text = tidy(ocr.pages.join('\n'));
   return text
-    ? { kind: 'text', text, extractor: 'vision-ocr@1', modality: 'image', mime: `image/${ext === 'jpg' ? 'jpeg' : ext}` }
+    ? { kind: 'text', text, extractor: ocr.extractor, modality: 'image', mime: `image/${ext === 'jpg' ? 'jpeg' : ext}` }
     : { kind: 'passthrough' };
 }
 

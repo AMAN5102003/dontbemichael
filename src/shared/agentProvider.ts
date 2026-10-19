@@ -597,7 +597,7 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // a node-free machine can still self-heal. Trusted hardcoded constants only.
     nativeInstallCommand: {
       posix: 'curl https://cursor.com/install -fsS | bash',
-      win32: 'irm https://cursor.com/install?win32=true | iex'
+      win32: 'powershell -c irm https://cursor.com/install?win32=true ^| iex'
     },
     docsUrl: 'https://cursor.com/docs/cli/install'
   },
@@ -727,13 +727,14 @@ export function argsWithAutoModeFlag(args: string[], autoMode: boolean, provider
 
 /** True when argv already states a permission posture for this provider: the
  *  auto flag's leading token, or any of the preset's `autoStanceTokens`. Token
- *  match, not substring — copilot's flag starts with `-s`. */
+ *  match, not substring — copilot's flag starts with `-s`. A flag written with
+ *  its value (`--permission-mode=plan`) counts by its name. */
 export function hasAutoModeStance(args: string[], provider: AgentProvider): boolean {
   const preset = providerPreset(provider);
   const flag = preset.autoModeFlag ?? '';
   const lead = flag.trim().split(/\s+/)[0];
   const stance = new Set([...(lead ? [lead] : []), ...(preset.autoStanceTokens ?? [])]);
-  return args.some((a) => stance.has(a));
+  return args.some((a) => stance.has(a.split('=')[0]));
 }
 
 /** Returns any env vars the provider needs for non-interactive / first-run suppression. */

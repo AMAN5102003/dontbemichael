@@ -214,7 +214,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   // The backdrop closes through the same guard, and only on a real click on
   // it: a click outside used to drop staged changes without asking.
   const backdrop = useBackdropClose(() => closeFnRef.current());
-  const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? 'the orchestrator';
+  const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? t('common.orchestrator');
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>(initialSection ?? 'General');
@@ -673,7 +673,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setSlackBusy(true); setSlackNote('');
     try {
       await window.cth.slackSetConfig(slackPatch(slackEnabled));
-      setSlackNote('saved');
+      setSlackNote(t('settings.connections.noteSaved'));
     } catch (e) {
       setSlackNote(e instanceof Error ? e.message : String(e));
     } finally { setSlackBusy(false); }
@@ -690,9 +690,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         setRunning(true);
         // Keep the last URL if this start returned none (tunnel hiccup) - don't blank it.
         if (res.url) setTunnelUrl(res.url);
-        setSlackNote(res.url ? 'listening' : (res.error ?? 'started, but tunnel unavailable'));
+        setSlackNote(res.url ? t('settings.connections.noteListening') : (res.error ?? t('settings.connections.noteNoTunnel')));
       } else {
-        setSlackNote(res.error ?? 'failed to start');
+        setSlackNote(res.error ?? t('settings.connections.noteStartFailed'));
       }
     } catch (e) {
       setSlackNote(e instanceof Error ? e.message : String(e));
@@ -704,7 +704,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     // Keep the last Request URL visible (greyed) after Stop.
     // Mirror startSlack: main persists slackEnabled:false, this keeps the pill
     // honest without waiting for a Settings reopen.
-    try { await window.cth.slackStop(); setRunning(false); setSlackEnabled(false); setSlackNote('stopped'); }
+    try { await window.cth.slackStop(); setRunning(false); setSlackEnabled(false); setSlackNote(t('settings.connections.noteStopped')); }
     catch (e) { setSlackNote(e instanceof Error ? e.message : String(e)); }
     finally { setSlackBusy(false); }
   };
@@ -719,8 +719,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setWebhookBusy(true); setWebhookNote('');
     try {
       const res = await triggersApi().saveWebhooks(list);
-      if (res && res.ok === false) { setWebhookNote(res.error ?? 'could not save'); return; }
-      setWebhookNote('saved');
+      if (res && res.ok === false) { setWebhookNote(res.error ?? t('settings.connections.noteSaveFailed')); return; }
+      setWebhookNote(t('settings.connections.noteSaved'));
       setTimeout(() => setWebhookNote(''), 1500);
     } catch (e) {
       setWebhookNote(e instanceof Error ? e.message : String(e));
@@ -778,7 +778,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setWebhookBusy(true); setWebhookNote('');
     try {
       await triggersApi().deleteWebhook(id);
-      setWebhookNote('deleted');
+      setWebhookNote(t('settings.connections.noteDeleted'));
       setTimeout(() => setWebhookNote(''), 1500);
     } catch (e) {
       setWebhookNote(e instanceof Error ? e.message : String(e));
@@ -809,8 +809,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     setOrgBusy(true); setOrgNote('');
     try {
       const res = await triggersApi().setOrgTrigger(next);
-      if (res && res.ok === false) { setOrgNote(res.error ?? 'could not save'); return; }
-      setOrgNote('saved');
+      if (res && res.ok === false) { setOrgNote(res.error ?? t('settings.connections.noteSaveFailed')); return; }
+      setOrgNote(t('settings.connections.noteSaved'));
       setTimeout(() => setOrgNote(''), 1500);
     } catch (e) {
       setOrgNote(e instanceof Error ? e.message : String(e));
@@ -892,7 +892,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     if (snap) clearLocalState();
     try {
       const res = await window.cth.changeHome(changeHome, changeMode);
-      if (!res.ok) { if (snap) restoreLocalState(snap); setChangeErr(res.error ?? 'Could not change the home folder.'); setChangeBusy(false); }
+      if (!res.ok) { if (snap) restoreLocalState(snap); setChangeErr(res.error ?? t('settings.changeHome.couldNotChange')); setChangeBusy(false); }
       // ok === true never returns (the process relaunches).
     } catch (e) {
       if (snap) restoreLocalState(snap);

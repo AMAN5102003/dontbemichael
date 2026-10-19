@@ -176,7 +176,7 @@ test('answering from a few seconds old card never erases a question added since'
   const replaced = [{ q: 'Rewritten on disk?' }];
   assert.deepEqual(mergeHumanQA(replaced, stale), { humanQA: replaced, added: [] }, 'a slot whose question changed keeps the disk entry');
   const main = read('src/main/index.ts');
-  assert.match(main, /const \{ humanQA, added \} = mergeHumanQA\(onDisk, qa\);\s*if \(!added\.length\) return \{ ok: true, landed: false \};/);
+  assert.match(main, /const \{ humanQA, added \} = mergeHumanQA\(onDisk, qa, index\);\s*if \(!added\.length\) return \{ ok: true, landed: false \};/);
 });
 
 test('a stale answer never undoes a withdrawal Michael wrote after the owner opened the card', () => {

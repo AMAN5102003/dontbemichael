@@ -3,7 +3,7 @@ import type { FileHandle } from 'node:fs/promises';
 import { constants, existsSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
-import { imageMimeForPath } from '../shared/imageTypes';
+import { imageMimeForExtension } from '../shared/imageTypes';
 import { OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, kindOf, type AskFileVerdict } from '../shared/askFiles';
 import { isSameOrInside } from './pathInside';
 import { RESEARCH_ID } from '../shared/research';
@@ -269,7 +269,7 @@ export async function readFileBinary(root: string, rel: string, maxBytes = MAX_B
     return {
       ok: true,
       bytes,
-      mime: imageMimeForPath(abs) ?? 'application/octet-stream',
+      mime: imageMimeForExtension(extensionOf(abs)) ?? 'application/octet-stream',
       path: abs,
       size: s.size
     };

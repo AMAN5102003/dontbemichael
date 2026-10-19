@@ -9,6 +9,7 @@ import { P, S, curvePts, dpath, pts, type Pt } from './iso';
 import { Box, EllipseAt, Poly } from './shapes';
 import type { Family, SceneTokens } from './theme';
 import { PROP_ART, hasProp } from '@/scene/office/props';
+import { cutText } from '@shared/cutText';
 
 /** What a desk's screen and floor show (DESIGN.md 3.5, 8.5). */
 export type DeskState = 'working' | 'thinking' | 'waiting' | 'needs' | 'compacting' | 'looping' | 'success' | 'idle';
@@ -397,7 +398,7 @@ function Beacon({ at: [bx, by], T }: { at: Pt; T: SceneTokens }) {
 /* ── Michael's glass pod ──────────────────────────────────────────────────── */
 
 export function Hub({ T, dark, board, busy = false, ringing = false, lightsOut = false, stats, name = 'Michael', plateLit = false }: {
-  T: SceneTokens; dark: boolean; board: { todo: number; doing: number; blocked: number; done: number };
+  T: SceneTokens; dark: boolean; board: { todo: number; doing: number; waiting: number; blocked: number; done: number };
   /** Michael is at work: his screens scroll, the marker writes on the board. */
   busy?: boolean;
   /** A scheduled job just started: the wall clock rings. */
@@ -420,10 +421,13 @@ export function Hub({ T, dark, board, busy = false, ringing = false, lightsOut =
   const z1 = ph + wh;
   const bz0 = z0 + 18;
   const bz1 = z0 + 62;
-  // Left to right as you read the wall: To do, Doing, Blocked, Done.
-  const cols: [number, string, number][] = [
-    [0.15, '#9C97CC', board.todo], [-0.21, T.blue, board.doing], [-0.57, T.coral, board.blocked], [-0.93, T.green, board.done]
-  ];
+  // Left to right as you read the wall, in the Tasks view's order: To do,
+  // Doing, Waiting, Blocked, Done. Five columns fill the board the way four
+  // did, each at 80% of the old width (design review 2026-10-18, D2 A).
+  const cw = 0.8;
+  const cols: [number, string, number][] = ([
+    ['#9C97CC', board.todo], [T.blue, board.doing], [T.amber, board.waiting], [T.coral, board.blocked], [T.green, board.done]
+  ] as [string, number][]).map(([c, n], i) => [0.47 - 0.32 * cw - i * 0.36 * cw, c, n]);
   const hubFlicker = useLightsOn(lightsOut);
   return (
     <g className={lightsOut ? 'cth-st-lightsout' : hubFlicker}>
@@ -438,7 +442,7 @@ export function Hub({ T, dark, board, busy = false, ringing = false, lightsOut =
       <polygon points={pts([P(-a + 0.01, -0.97, bz0), P(-a + 0.01, 0.47, bz0), P(-a + 0.01, 0.47, bz1), P(-a + 0.01, -0.97, bz1)])} fill={T.board} stroke={T.boardBd} strokeWidth={1} />
       {/* Each column's count at its head, written on the board's plane. */}
       {cols.map(([g0, col, n]) => {
-        const [tx, ty] = P(-a + 0.02, g0 + 0.155, bz1 - 13);
+        const [tx, ty] = P(-a + 0.02, g0 + 0.155 * cw, bz1 - 13);
         return (
           <g key={`n-${g0}`} transform={`matrix(1,-0.5,0,1,${tx.toFixed(1)},${ty.toFixed(1)})`}>
             <text key={n} className="cth-st-tick" y={0} textAnchor="middle" fontFamily="IBM Plex Mono, monospace" fontWeight={600} fontSize={11} fill={col}>{n}</text>
@@ -451,7 +455,7 @@ export function Hub({ T, dark, board, busy = false, ringing = false, lightsOut =
         const zz = bz1 - 19 - j * 6;
         return <polygon key={`${g0}-${j}`} className={ci === 1 ? 'cth-st-pop cth-st-doing' : 'cth-st-pop'}
           style={ci === 1 ? { animationDelay: `0s, ${j * 0.3}s` } : undefined}
-          points={pts([P(-a + 0.02, g0 + 0.03, zz - 4.2), P(-a + 0.02, g0 + 0.28, zz - 4.2), P(-a + 0.02, g0 + 0.28, zz), P(-a + 0.02, g0 + 0.03, zz)])} fill={col} opacity={0.9} />;
+          points={pts([P(-a + 0.02, g0 + 0.03 * cw, zz - 4.2), P(-a + 0.02, g0 + 0.28 * cw, zz - 4.2), P(-a + 0.02, g0 + 0.28 * cw, zz), P(-a + 0.02, g0 + 0.03 * cw, zz)])} fill={col} opacity={0.9} />;
       }))}
       {/* Michael's marker writing a line under the columns while he works. */}
       {busy && (() => {
@@ -570,7 +574,7 @@ function StatsSign({ at: [x, y], stats, T, dark }: { at: Pt; stats: { delegated:
 }
 
 /** The name as the plate shows it: long names are shortened to fit the glass. */
-export function plateName(name: string): string { return name.length > 12 ? `${name.slice(0, 11)}…` : name; }
+export function plateName(name: string): string { return cutText(name, 12); }
 /** The plate's width in stage px, sized to the glass (owner, 2026-09-30: the
  *  first plate was too big for the wall and ran onto the next one). */
 export function plateWidth(name: string): number { return Math.round(16 + plateName(name).length * 4.7); }

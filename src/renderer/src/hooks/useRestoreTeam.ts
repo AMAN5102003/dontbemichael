@@ -48,6 +48,8 @@ function subscribe(listener: () => void): () => void {
 const getRestoring = (): boolean => restoring;
 const getNote = (): string | null => note;
 const getAutoRestoring = (): boolean => autoRestoring;
+/** A Restore team run is in flight, so the office opening waits for it. */
+export const restoreInFlight = (): boolean => restoring;
 
 export interface RestoreTeamState {
   restoring: boolean;
@@ -75,6 +77,8 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
     if (restoring) return;
     restoring = true;
     note = null;
+    // The team coming back is an opening: the card and the pill say so.
+    useStore.getState().reopenOffice();
     emit();
     const restorableAgents = useStore.getState().restorableAgents;
     // Tally every agent's outcome so the run ALWAYS leaves a visible trace — the
