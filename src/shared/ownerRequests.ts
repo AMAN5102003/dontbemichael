@@ -1,4 +1,4 @@
-import { isNextAt } from './cardGuards';
+import { isNextAt, WAITING_FOLLOW_UPS } from './cardGuards';
 import { ownValue } from './ownValue';
 import { answerMessages, cardOfConversation, cardText, isAnswered, isWithdrawn, MICHAEL_ID, openAskIndexes, raiserOf, type AnswerMessage } from './askMeRouting';
 
@@ -361,9 +361,9 @@ export function waitingDueNote(
   task: { id: string; title?: string; assignee?: string; waitingOn?: unknown },
   clock: { since: string; followUps: number },
   askOwner: boolean,
-  now: number,
-  followUpsMax = 2
+  now: number
 ): { subject: string; body: string } {
+  const followUpsMax = WAITING_FOLLOW_UPS;
   const card = `Card ${cardText(task.id, 60)} "${cardText(task.title ?? task.id)}"`;
   const who = typeof task.waitingOn === 'string' && task.waitingOn.trim() ? cardText(task.waitingOn, 60) : 'someone outside the office';
   const waited = `has waited on ${who} for ${daysAgo(clock.since, now)}`;

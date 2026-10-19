@@ -922,7 +922,8 @@
       "allIn": "全员到齐",
       "missingOne": "{{name}} 还没打卡。",
       "missingMore": "{{name}} 和另外 {{count}} 人还没打卡。",
-      "michael": "{{name}} 正在打卡上班"
+      "michael": "{{name}} 正在打卡上班",
+      "michaelLine": "{{name}} 正在角落办公室安顿下来，为大家准备好办公区。请稍候…"
     },
     "clockedInCount": "已到 {{count}} / {{total}}",
     "gpuError": "办公楼层丢失了 GPU 上下文。\n\n同时使用 GPU 的终端太多了。\n关闭几个智能体终端，或重启应用，即可恢复。",

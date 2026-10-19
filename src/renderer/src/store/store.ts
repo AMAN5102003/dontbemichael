@@ -284,7 +284,7 @@ interface State {
   sidebarTab: SidebarTab;
   godStatus: GodStatus;
   /** The office opening (DESIGN.md 7.24): the Clocking in card and the clock
-   *  pill read it; OfficeOpening.tsx moves it on. */
+   *  pill read it; TeamClockingIn.tsx moves it on (shell/clockingIn.ts). */
   opening: OfficeOpening;
   /** Per-agent outgoing message queue (agent id → messages awaiting delivery).
    *  Lets the user keep "talking" to a busy agent: messages park here and are

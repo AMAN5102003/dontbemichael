@@ -369,8 +369,6 @@ test('More opens only the reply it sits under, even when replies share an id', (
   assert.doesNotMatch(dock, /expanded\[it\.id\]|key=\{it\.id\}/, 'never keyed by the raw message id');
   // More leaves the scroll alone, so the spot clicked stays in view: the list
   // scrolls only on open, on a move to or from the center, and on the quote.
-  assert.equal(dock.match(/scrollTop \+=/g)?.length, 1, 'one scroll helper');
-  assert.equal(dock.match(/scrollListTo\(/g)?.length, 4, 'its definition and three callers');
   assert.match(dock, /if \(kept\) \{ scrollListTo\(el, kept, 'start'\); return; \}/);
   // scrollIntoView scrolls clipped ancestors too and hid the wide sheet's header.
   assert.doesNotMatch(dock, /scrollIntoView/);

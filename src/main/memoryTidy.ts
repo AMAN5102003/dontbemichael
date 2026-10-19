@@ -215,13 +215,16 @@ export class MemoryTidy {
       for (const p of outcome.procedures) atomicWrite(join(memDir, 'procedures', `${p.slug}.md`), p.content);
       if (outcome.archived.length) appendFileSync(join(memDir, 'archive.md'), archiveLines(outcome.archived, today) + '\n');
       atomicWrite(indexPath, renderIndex(this.nameOf(id), id, outcome.entries));
-      if (outcome.added.length) { try { this.onAdded(id, outcome.added); } catch { /* the notes stand; only the count misses them */ } }
-      writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8');
-      rmSync(processing, { force: true });
     } catch (e) {
       restore();
       return this.abort(id, 'write-failed', String(e));
     }
+    // The index holds the notes now: handing them back would add them twice,
+    // and count them twice. A state or cleanup step that fails waits for the
+    // next pass.
+    if (outcome.added.length) { try { this.onAdded(id, outcome.added); } catch { /* the notes stand; only the count misses them */ } }
+    try { writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8'); } catch { /* tidied again sooner */ }
+    try { rmSync(processing, { force: true }); } catch { /* read back on the next pass */ }
 
     const tokens = estimateTokens(entriesBlock(outcome.entries));
     try {

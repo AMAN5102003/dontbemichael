@@ -48,7 +48,7 @@ export function OpeningCard({ tone, pulse, check, title, count, progress, line, 
         <div role="status" aria-live="polite" className="cth-sr-only">{say}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {check ? (
-            <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: c.ring, color: '#fff', display: 'grid', placeItems: 'center' }}>
+            <span aria-hidden="true" style={{ width: 18, height: 18, borderRadius: '50%', flexShrink: 0, background: c.ring, color: 'var(--cth-on-green)', display: 'grid', placeItems: 'center' }}>
               <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2.5 6.2l2.3 2.3 4.7-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </span>
           ) : (
@@ -57,7 +57,7 @@ export function OpeningCard({ tone, pulse, check, title, count, progress, line, 
               boxShadow: `0 0 0 5px ${c.soft}`, animation: pulse ? 'cth-pulse 1.6s ease-in-out infinite' : undefined
             }} />
           )}
-          <div style={{ fontSize: 20, lineHeight: '26px', fontWeight: 600, color: 'var(--cth-ink)', minWidth: 0 }}>{title}</div>
+          <div style={{ fontSize: 20, lineHeight: '26px', fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--cth-ink)', minWidth: 0 }}>{title}</div>
           {count && <div style={{ marginInlineStart: 'auto', flexShrink: 0, fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-2)', fontFamily: 'var(--cth-font-mono)' }}>{count}</div>}
         </div>
         {progress && (

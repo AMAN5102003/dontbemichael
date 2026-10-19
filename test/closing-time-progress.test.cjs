@@ -587,6 +587,14 @@ test('a team member that is not reporting is shown apart, not waited on, and Mic
   silent.delete('dwight');
   f.ct.refresh();
   assert.deepEqual(last(f.events).waiting, ['pam', 'dwight']);
+  // It never got the brief (held for Michael): sent again, and Michael waits for it after all.
+  assert.equal(f.sent.filter((m) => m.to === 'dwight' && m.subject === 'Closing time').length, 1, 'the brief again');
+  const back = f.sent.filter((m) => m.to === 'god' && /dwight|Dwight/.test(m.subject) && /reporting again/.test(m.subject));
+  assert.equal(back.length, 1);
+  assert.match(back[0].body, /wait for their CLOSING-TIME-ACK after all/);
+  assert.ok(f.steers.some((s) => s.id === 'dwight'), 'steered too');
+  f.ct.refresh();
+  assert.equal(f.sent.filter((m) => /reporting again/.test(m.subject)).length, 1, 'once');
   silent.add('dwight');
   f.ct.refresh();
   f.route('pam', 'CLOSING-TIME-ACK');

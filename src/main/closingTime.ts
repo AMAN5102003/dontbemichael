@@ -351,7 +351,8 @@ export class ClosingTimeController {
   }
 
   /** A row update: first tells Michael about any waited-on terminal that
-   *  ended, then keeps the "still wrapping up" view once the timeout fired. */
+   *  ended or member that isn't reporting (or reports again), then keeps the
+   *  "still wrapping up" view once the timeout fired. */
   private emitProgress(): void {
     this.tellMichaelAboutEnded();
     this.emitState(this.timedOut ? 'timeout' : 'progress');
@@ -361,7 +362,8 @@ export class ClosingTimeController {
    * A waited-on team member whose terminal ended, or who was archived, is off
    * the list. Michael was told to wait for everyone, so he is told to stop
    * waiting for this one, or he waits until the timeout while the rows look
-   * done (owner, 2026-09-29).
+   * done (owner, 2026-09-29). The same goes for a member whose engine isn't
+   * reporting to the app: its mail is held for Michael, so no ACK can come.
    * Marked told only once the note went out, so a failed note is retried on
    * the next row update.
    */
@@ -374,7 +376,8 @@ export class ClosingTimeController {
     const reg = this.hive.registry();
     // Not reporting: its mail is held for Michael, so the brief and any
     // reminder never reach it. Michael stops waiting on it, once.
-    for (const id of this.silentIds(reg)) {
+    const silent = this.silentIds(reg);
+    for (const id of silent) {
       if (this.toldNotReporting.has(id)) continue;
       const name = reg.agents[id]?.name ?? id;
       try {
@@ -386,6 +389,25 @@ export class ClosingTimeController {
         }, 'human');
         this.toldNotReporting.add(id);
       } catch (e) { console.error('[closing-time] not reporting mail:', e); }
+    }
+    // Reporting again: the brief held for Michael never reached it, so it is
+    // sent again and Michael waits for its ACK after all, as for a terminal
+    // that comes back (owner, 2026-10-18 ship review).
+    for (const id of [...this.toldNotReporting]) {
+      if (silent.includes(id) || this.acked.has(id) || this.excused.has(id) || !live.has(id) || reg.agents[id]?.archived) continue;
+      const name = reg.agents[id]?.name ?? id;
+      try {
+        this.hive.send({ to: id, act: 'request', subject: 'Closing time', body: WORKER_STEER }, 'human');
+        this.hive.send({
+          to: this.godId,
+          act: 'inform',
+          subject: `Closing time: ${name} is reporting again`,
+          body: `${name} (${id}) is reporting to the app again, so wait for their CLOSING-TIME-ACK after all before you send CLOSING-TIME-COMPLETE.`
+        }, 'human');
+        this.toldNotReporting.delete(id);
+      } catch (e) { console.error('[closing-time] reporting again mail:', e); continue; }
+      this.control?.removeSteer(id, WORKER_STEER);
+      this.control?.steer(id, WORKER_STEER);
     }
     const ended = [...this.workers].filter(
       (id) => !this.acked.has(id) && !this.excused.has(id) && !this.toldEnded.has(id) && (!live.has(id) || reg.agents[id]?.archived)

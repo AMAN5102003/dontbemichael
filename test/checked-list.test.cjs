@@ -135,6 +135,49 @@ test('an upkeep stamp on words that are not the app\'s fixed note is checked, an
   assert.deepEqual(lines(hive, 'trust-checked'), []);
 });
 
+test('a fixed upkeep note for a Pete who isn\'t reporting is dropped quietly, never held for Michael', async (t) => {
+  // Value: protects=Michael is never asked to pass on the app's own note (which would make it a listed question); fails_when=the hold check runs before the upkeep rule; why_new=red team, ship review; seam=memberMail stub
+  const { hive } = await office(t, layerWith());
+  hive.memberMail = (id) => (id === 'research' ? 'hold' : null);
+  hive.send({ to: 'research', act: 'inform', subject: O.OFFICE_OPEN_SUBJECT, body: O.officeOpenBody() }, 'human', 'office-open');
+  await settle();
+  assert.equal(msgsIn(hive, 'god').length, 0, 'Michael is not asked to resend it');
+  assert.equal(msgsIn(hive, 'research').length, 0);
+  assert.deepEqual(lines(hive, 'drop').map((e) => [e.reason, e.upkeep]), [['research-held', 'office-open']]);
+});
+
+test('the app\'s own upkeep waiting in Pete\'s inbox is not counted, and is removed quietly when he is turned off', async (t) => {
+  // Value: protects=Michael never relays a note the owner did not write, and Pete's waiting count shows only questions (owner, 2026-10-18); fails_when=returnResearchInbox tells Michael "A note from the owner" for Office open, or researchWaiting counts it; why_new=red team, ship review D5; seam=fake layer
+  const { hive } = await office(t, layerWith());
+  hive.send({ to: 'research', act: 'inform', subject: O.OFFICE_OPEN_SUBJECT, body: O.officeOpenBody() }, 'human', 'office-open');
+  await settle();
+  assert.equal(msgsIn(hive, 'research').length, 1, 'delivered');
+  assert.equal(hive.researchWaiting(), 0, 'not a question waiting');
+  hive.returnResearchInbox();
+  assert.equal(msgsIn(hive, 'research').length, 0, 'removed');
+  assert.equal(msgsIn(hive, 'god').length, 0, 'Michael is not told');
+});
+
+test('upkeep checked again after a privacy change is still never listed or counted', async (t) => {
+  // Value: protects=the upkeep flag survives the recheck path (merge of main's retry loop); fails_when=queueForResearch drops the upkeep kind on a recheck, so a schedule decision becomes a research row; why_new=merge resolution, ship review; seam=fake layer with a policy key
+  let policy = 'loose';
+  const releases = [];
+  const layer = layerWith({ inbound: (m) => new Promise((r) => releases.push(() => r(pass(m)))) });
+  layer.policyKey = () => policy;
+  const { hive, home } = await office(t, layer);
+  hive.send({ to: 'research', act: 'inform', subject: 'Schedule change approved', body: 'Michael approved: News scan. Note: skip the Austin bakery' }, 'scheduler', 'schedule-decision');
+  await settle();
+  assert.equal(releases.length, 1);
+  policy = 'strict';
+  releases[0](); await settle();
+  assert.equal(releases.length, 2, 'checked again under the new settings');
+  assert.equal(msgsIn(hive, 'research').length, 0);
+  releases[1](); await settle();
+  assert.equal(msgsIn(hive, 'research').length, 1);
+  assert.deepEqual(rows(home), [], 'upkeep is never listed');
+  assert.deepEqual(lines(hive, 'trust-checked'), []);
+});
+
 test('a teammate cannot pass a question off as upkeep: its file is research, checked and listed', async (t) => {
   // Value: protects=the stamp comes from the app's code, never a message's file or words (owner, 2026-10-17); fails_when=an outbox file with an upkeep field or the Office open words skips the check or the list; why_new=new path; seam=fake layer; no_claim=none beyond protects
   const { asked, layer } = countingLayer();
@@ -160,6 +203,7 @@ test('with Pete off, a fixed upkeep note is dropped quietly; the app stamps its 
   assert.match(index, /subject: words\.subject, body: words\.carryOn \}, 'system', 'carry-on'\);/);
   // The schedule decision moved to scheduleRequests.ts when main took it out of index.ts.
   assert.match(read('src/main/scheduleRequests.ts'), /\}, 'scheduler', 'schedule-decision'\);/);
+  assert.match(index, /send: \(msg, from, upkeep\) => \{ hive\.send\(msg, from, upkeep\); \}/, 'the kind reaches the hive');
   assert.match(index, /carryOn: CARRY_ON_NOTES\.limit\.body,/, 'the carry on words are the fixed notes');
   assert.match(read('src/main/hooks.ts'), /\.\.\.RESTARTED_NOTE \}, 'system', 'restarted'\);/);
   assert.doesNotMatch(read('src/main/checkedBackfill.ts'), /OFFICE_OPEN_SUBJECT/, 'the backfill never matches a note by its words');

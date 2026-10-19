@@ -84,7 +84,8 @@ test('the opening waits for the saved team: never before the restore has had its
   const o = { kind: 'opening', since: t0 };
   const onlyMichael = [member('god')];
   assert.equal(O.nextOpening(o, input(onlyMichael), t0 + O.OPENING_SETTLE_MS - 1), o, 'settling');
-  assert.ok(O.OPENING_SETTLE_MS > 2_500, 'longer than the automatic restore delay');
+  const restoreDelay = Number(read('src/renderer/src/hooks/useRestoreTeam.ts').match(/export const AUTO_RESTORE_DELAY_MS = ([\d_]+);/)[1].replace(/_/g, ''));
+  assert.ok(O.OPENING_SETTLE_MS > restoreDelay, 'longer than the automatic restore delay');
   assert.equal(O.nextOpening(o, input(onlyMichael, { restoring: true }), t0 + 30_000), o, 'a restore is running');
   const store = read('src/renderer/src/hooks/useRestoreTeam.ts');
   assert.match(store, /restoring = true;\n\s+note = null;\n\s+\/\/ The team coming back is an opening: the card and the pill say so\.\n\s+useStore\.getState\(\)\.reopenOffice\(\);/, 'a Restore team opens again');
@@ -135,7 +136,7 @@ test('the clock pill says Opening and the count while the office opens', () => {
 
 test('every opening word in three languages, with no dash', () => {
   // Value: protects=the new words reach Chinese and Arabic offices; fails_when=a key is missing or uses a dash; why_new=new words; seam=locale files
-  const keys = ['title', 'announce', 'stillComing', 'stillComingMore', 'nameSep', 'allIn', 'missingOne', 'missingMore', 'michael'];
+  const keys = ['title', 'announce', 'stillComing', 'stillComingMore', 'nameSep', 'allIn', 'missingOne', 'missingMore', 'michael', 'michaelLine'];
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const j = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
     for (const k of keys) {

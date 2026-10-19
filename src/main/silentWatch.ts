@@ -95,11 +95,11 @@ export class SilentWatch {
 
   constructor(private deps: WatchDeps) {}
 
-  /** Episodes saved before the app quit (SD8): kept ones stay kept; the rest
-   *  wait for the restored member to check in. */
   /** When the last beat ran, so a gap in the beats is seen. */
   private lastBeatAt: number | null = null;
 
+  /** Episodes saved before the app quit (SD8): kept ones stay kept; the rest
+   *  wait for the restored member to check in. */
   restore(saved: SilentEpisode[]): void {
     const now = this.deps.now();
     for (const e of saved) {

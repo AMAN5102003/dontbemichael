@@ -47,7 +47,7 @@ import { randomBytes, createHash, createHmac } from 'node:crypto';
 import { readMessageFile, researchDeliveredId } from './messageFile';
 import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
 import { CHECKED_ARCHIVE_DIR, CHECKED_FILE, keepText, splitForArchive, type CheckedOutcome, type CheckedRow } from '../shared/checkedRecord';
-import { isFixedUpkeep, type UpkeepKind } from '../shared/upkeep';
+import { isAnyFixedUpkeep, isFixedUpkeep, type UpkeepKind } from '../shared/upkeep';
 import { heldWaits, heldWhy, tidy, HELD_FILE, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
@@ -84,7 +84,7 @@ import {
   privateOwnerSentDir, privateOwnerStatePath, privateRoot
 } from '../shared/agentPrivatePaths';
 import { HOUSE_RULES_CHANGED_SUBJECT, houseRulesNoticeBody, houseRulesToTell } from '../shared/houseRulesNotice';
-import { applyGuardFixes, restoreDone, dueReminders, guardSignature, emptyGuardState, guardCards, waitingChecks, WAITING_FOLLOW_UPS, type GuardCard, type GuardState } from '../shared/cardGuards';
+import { applyGuardFixes, restoreDone, dueReminders, guardSignature, emptyGuardState, guardCards, waitingChecks, type GuardCard, type GuardState } from '../shared/cardGuards';
 import { sleepSync } from './atomicFile';
 import { TELEMETRY_TOKEN_HEADER } from './telemetry';
 
@@ -2958,8 +2958,6 @@ export class HiveManager {
   private readonly researchPendingMine = new Set<string>();
   private readonly researchLostTold = new Set<string>();
 
-  /** The clean copy Research receives: built only from what the trust layer
-   *  returned, with an id, time and thread the app chose. */
   /** One of the app's fixed upkeep notes, straight to Research: its words are
    *  the app's own, so there is nothing private to check and it is not a
    *  question. Logged with its kind; with Research off it is dropped quietly. */
@@ -2970,6 +2968,8 @@ export class HiveManager {
     try { this.routeMessage(msg); } finally { this.researchCleared.delete(msg.id); }
   }
 
+  /** The clean copy Research receives: built only from what the trust layer
+   *  returned, with an id, time and thread the app chose. */
   private deliverToResearch(fromId: string, orig: HiveMessage, subject: string, body: string): void {
     // Research answers questions; it is never assigned work, so a request
     // reaches it as a query (a request would go to Michael as a teammate's
@@ -3093,8 +3093,15 @@ export class HiveManager {
     let n = this.researchQueued + this.researchUndelivered.size;
     for (const [k, c] of this.trustChecks) if (k.startsWith('in:') && !c.done) n++;
     // Only what the app delivered counts.
-    n += this.listMessages(join(this.agentDir(RESEARCH_ID), 'inbox')).length;
+    // The app's own upkeep is never a question waiting (shared/upkeep.ts).
+    n += this.listMessages(join(this.agentDir(RESEARCH_ID), 'inbox')).filter((m) => !this.isAppUpkeep(m)).length;
     return n;
+  }
+
+  /** One of the app's fixed upkeep notes, delivered: from the owner's side or
+   *  the app, word for word the app's own. */
+  private isAppUpkeep(m: { from?: unknown; subject?: unknown; body?: unknown }): boolean {
+    return (m.from === 'human' || m.from === 'system') && isAnyFixedUpkeep(m.subject, m.body);
   }
 
   /** As Research turns off: every message waiting in its inbox goes back to
@@ -3119,6 +3126,8 @@ export class HiveManager {
           const own = back && back.from === m.from ? back : null;
           this.tellSender(m.from, own ? own.origId : null, own ? own.conversation : null, NOT_SENT_SUBJECT, REFUSAL_OFF);
           n++;
+        } else if (this.isAppUpkeep(m)) {
+          // The app's own upkeep: removed quietly, never told (owner, 2026-10-18).
         } else if (m.from === 'human' || m.from === 'system') {
           // An owner or app note waiting for Research is told to Michael (D8.2).
           const godId = this.registry().godId ?? 'god';
@@ -3164,8 +3173,8 @@ export class HiveManager {
     return tell;
   }
 
-  /** Inject a message directly (used by the orchestrator / UI / tests). */
-  /** `upkeep`: the app's own upkeep note (shared/upkeep.ts), stamped here by
+  /** Inject a message directly (used by the orchestrator / UI / tests).
+   *  `upkeep`: the app's own upkeep note (shared/upkeep.ts), stamped here by
    *  the code that sends it, never read from a message's file or words. */
   send(partial: Partial<HiveMessage>, from = 'system', upkeep?: UpkeepKind): HiveMessage {
     const msg = this.normalize(partial, from);
@@ -3251,6 +3260,9 @@ export class HiveManager {
     // through the trust layer first, in the background (ship review D2.1).
     // Research not reporting: its questions wait with Michael like anyone's (SD16).
     if (addressedToResearch(msg.to, reg.agents, this.researchName()) && msg.from !== RESEARCH_ID && this.memberMail?.(RESEARCH_ID) === 'hold') {
+      // The app's fixed upkeep notes are not Michael's to pass on: dropped
+      // quietly, as with Research off.
+      if (upkeep && isFixedUpkeep(upkeep, msg.subject, msg.body)) { this.appendLog({ kind: 'drop', reason: 'research-held', from: msg.from, id: msg.id, upkeep }); return; }
       this.holdForMichael(msg, [RESEARCH_ID], godId);
       return;
     }
@@ -3555,6 +3567,10 @@ export class HiveManager {
           // from the sent copy, so the conversation read every reply as "".
           const msg = this.normalize({ ...partial, id: undefined }, id);
           msg.from = id; // sender is authoritative — the owning directory
+          // A time an agent typed later than now could close the owner's next
+          // question in that conversation: the app's time is used instead.
+          const typedAt = Date.parse(msg.created_at);
+          if (!Number.isFinite(typedAt) || typedAt > Date.now()) msg.created_at = new Date().toISOString();
           // The sent copy carries what was delivered: the app's id, sender and
           // time (and repaired text), written in place before the one rename
           // that archives it. Only a plain file of the agent's own is written
@@ -3576,7 +3592,8 @@ export class HiveManager {
             }
             this.appendLog({ kind: 'schedule-request', from: id, id: msg.id });
             this.routeMessage(this.normalize({ to: id, act: 'inform', subject: 'Schedule request', body: reply }, 'scheduler'));
-            stampSent();
+            // Research's file is moved as it is, as at its gate below.
+            if (!research) stampSent();
             this.archiveOutboxFile(full, join(outbox, '.sent'), f);
             routed++;
             continue;
@@ -3613,8 +3630,8 @@ export class HiveManager {
             }
           }
           this.routeMessage(msg);
-          // Stamped in place, then one rename archives it, so a failed step
-          // can never deliver it twice.
+          // Stamped in place, then one rename archives it. A crash between
+          // the delivery and the rename delivers it again, under a new id.
           stampSent();
           this.archiveOutboxFile(full, join(outbox, '.sent'), f); // archive, don't reprocess
           routed++;
@@ -4073,7 +4090,9 @@ export class HiveManager {
       for (const t of fixed.restored) tell(restoredDoneNote(t), t.id);
       for (const u of fixed.untriaged) tell(untriagedNote(u.card, u.to), u.card.id);
     }
-    this.guard = fixed.state;
+    // guardCards builds its state without the Waiting clocks: carry them over,
+    // so the file never lacks them and a quiet tick writes nothing.
+    this.guard = { ...fixed.state, ...(before.waiting ? { waiting: before.waiting } : {}) };
     const reg = this.registry();
     const godName = resolveGodName(reg.agents[godId ?? 'god']?.name);
     const reminders = dueReminders(tasks.map((t) => {
@@ -4128,8 +4147,8 @@ export class HiveManager {
         }));
       // Recorded as told before it goes out, so a crash never sends it twice.
       this.saveGuard();
-      for (const d of quiet.due) tell(waitingDueNote(d.card, d.clock, d.askOwner, now, WAITING_FOLLOW_UPS), d.card.id);
-    } else this.guard.waiting = before.waiting;
+      for (const d of quiet.due) tell(waitingDueNote(d.card, d.clock, d.askOwner, now), d.card.id);
+    }
     if (sent) this.commit(`hive: board guard (${sent} message${sent === 1 ? '' : 's'})`);
     this.saveGuard();
   }

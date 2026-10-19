@@ -1150,6 +1150,42 @@ test('a repaired outbox file is written over only when it is the agent\'s own pl
   assert.match(fs.readFileSync(path.join(hive.root(), 'log.jsonl'), 'utf8'), /outbox-not-a-file/);
 });
 
+test('a plain outbox file linked from outside the hive is delivered and never written through', posixOnly('hard links'), async (t) => {
+  // Value: protects=stamping the sent copy never writes an agent's text into a file it linked from elsewhere; fails_when=rewriteOwnFile loses its one name check; why_new=every routed file is stamped since the app makes every id (ship review); seam=none
+  const { hive } = await office(t);
+  const outside = path.join(path.dirname(hive.root()), 'linked-ok.json');
+  fs.writeFileSync(outside, JSON.stringify({ to: 'god', act: 'inform', subject: 'linked', body: 'b' }));
+  const before = fs.readFileSync(outside, 'utf8');
+  fs.linkSync(outside, path.join(hive.root(), 'agents', 'pam', 'outbox', 'm.json'));
+  hive.routeOnce();
+  assert.equal(fs.readFileSync(outside, 'utf8'), before, 'nothing written through the link');
+  assert.equal(msgsIn(hive, 'god').filter((m) => m.subject === 'linked').length, 1, 'still delivered');
+});
+
+test('a time an agent typed later than now is replaced by the app\'s', async (t) => {
+  // Value: protects=a forward time never closes the owner's next question in the conversation; fails_when=an outbox created_at in the future is kept; why_new=red team, ship review; seam=none
+  const { hive } = await office(t);
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'late', body: 'b', created_at: '2099-01-01T00:00:00Z' });
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'early', body: 'b', created_at: '2026-01-01T00:00:00Z' }, 'm2.json');
+  const before = Date.now();
+  hive.routeOnce();
+  const got = Object.fromEntries(msgsIn(hive, 'god').map((m) => [m.subject, Date.parse(m.created_at)]));
+  assert.ok(got.late >= before - 1000 && got.late <= Date.now(), 'the app\'s time');
+  assert.equal(got.early, Date.parse('2026-01-01T00:00:00Z'), 'an earlier time is kept');
+});
+
+test('Research\'s schedule request is archived as Research wrote it', async (t) => {
+  // Value: protects=Research's files are the app's own record, never written over (red team, third ship); fails_when=the scheduler branch stamps Research's file; why_new=ship review; seam=none
+  const { hive } = await office(t);
+  hive.onScheduleRequest(() => 'Schedule request not sent.');
+  const out = path.join(hive.root(), 'agents', 'research', 'outbox');
+  fs.mkdirSync(out, { recursive: true });
+  const raw = JSON.stringify({ to: 'scheduler', act: 'request', subject: 's', body: 'b', schedule: { kind: 'x' } });
+  fs.writeFileSync(path.join(out, 'req.json'), raw);
+  hive.routeOnce();
+  assert.equal(fs.readFileSync(path.join(out, '.sent', 'req.json'), 'utf8'), raw);
+});
+
 test('the app never deletes a folder inside Research\'s mail, so no link swapped into it leads a delete elsewhere', posixOnly('symlinks'), async (t) => {
   // Value: protects=hive files survive a folder named like a message with a link inside it; fails_when=dropResearchEntry removes recursively; why_new=red team, third ship pass 3 (rimraf in Electron's Node walks by path); seam=none
   const { hive } = await office(t);

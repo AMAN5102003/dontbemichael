@@ -20,6 +20,6 @@ export function MichaelBooting() {
   const title = t('office.opening.michael', { name: godName });
   return (
     <OpeningCard tone="indigo" pulse title={title} say={title}
-      line={`${godName} is settling into the corner office and getting the floor ready. Hang tight…`} />
+      line={t('office.opening.michaelLine', { name: godName })} />
   );
 }

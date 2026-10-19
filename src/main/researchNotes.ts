@@ -6,7 +6,7 @@
  * and are never shared with the team (owner, 2026-10-16: a member's memory is
  * private).
  */
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, opendirSync, openSync, readSync, realpathSync, rmdirSync, rmSync, statSync, unlinkSync, type Stats } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readSync, realpathSync, rmdirSync, statSync, unlinkSync, type Stats } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 /** The most one file may hold; a bigger one is skipped, not read whole into

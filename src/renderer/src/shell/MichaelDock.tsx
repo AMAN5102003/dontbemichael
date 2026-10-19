@@ -151,14 +151,22 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
     else el.scrollTop = el.scrollHeight;
   }, [open, focus, dock.items.length, anchor]);
   // Remembers the item at the top of the view as the owner reads.
+  // Measured once a frame, not on every scroll event: a long conversation
+  // has many bubbles to measure.
+  const anchorFrame = useRef(0);
   const onScroll = (): void => {
-    const el = listRef.current;
-    if (!el) return;
-    const top = el.getBoundingClientRect().top;
-    for (const it of el.querySelectorAll<HTMLElement>('[data-k]')) {
-      if (it.getBoundingClientRect().bottom > top + 1) { anchor.current = it.dataset.k ?? null; return; }
-    }
+    if (anchorFrame.current) return;
+    anchorFrame.current = requestAnimationFrame(() => {
+      anchorFrame.current = 0;
+      const el = listRef.current;
+      if (!el) return;
+      const top = el.getBoundingClientRect().top;
+      for (const it of el.querySelectorAll<HTMLElement>('[data-k]')) {
+        if (it.getBoundingClientRect().bottom > top + 1) { anchor.current = it.dataset.k ?? null; return; }
+      }
+    });
   };
+  useEffect(() => () => cancelAnimationFrame(anchorFrame.current), []);
 
   // Closes on Esc with focus inside, or a click on the office floor while the
   // composer is empty (21A). Selecting a person or opening Needs you keeps it.

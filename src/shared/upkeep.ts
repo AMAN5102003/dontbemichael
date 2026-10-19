@@ -47,6 +47,12 @@ const FIXED: Partial<Record<UpkeepKind, readonly Words[]>> = {
   'carry-on': Object.values(CARRY_ON_NOTES)
 };
 
+/** True when a note is word for word one of the app's fixed notes, of any
+ *  kind: Research's inbox keeps no kind, so this is how a delivered one is known. */
+export function isAnyFixedUpkeep(subject: unknown, body: unknown): boolean {
+  return Object.values(FIXED).some((list) => list.some((w) => w.subject === subject && w.body === body));
+}
+
 /** True when an upkeep note is exactly one of the app's fixed notes of its
  *  kind: the free check that lets it skip the paid one. */
 export function isFixedUpkeep(kind: UpkeepKind, subject: unknown, body: unknown): boolean {

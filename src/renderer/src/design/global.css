@@ -461,7 +461,7 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-dock-reply .cth-md-card .cth-md-table { margin: 0.3em 0 0.5em; }
 .cth-dock-reply .cth-md-card table { width: 100%; }
 .cth-dock-reply .cth-md-card th, .cth-dock-reply .cth-md-card td {
-  border: none; border-bottom: 1px solid var(--cth-line); padding: 4px 8px 4px 0; font-size: 12.5px;
+  border: none; border-bottom: 1px solid var(--cth-line); padding-block: 4px; padding-inline: 0 8px; font-size: 12.5px;
 }
 .cth-dock-reply .cth-md-card th { background: none; font-size: 11px; font-weight: 600; color: var(--cth-ink-3); }
 .cth-dock-reply .cth-md-card tr:last-child td { border-bottom: none; }

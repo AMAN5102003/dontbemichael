@@ -132,6 +132,54 @@ test('the fleet tick tells Michael once when a Waiting card\'s time comes, lists
   assert.equal(inbox('god').filter((m) => m.subject === 'Follow up due: card refund').length, 1, 'not again after a restart');
 });
 
+test('a new check back time set before the old one came is not a follow up', () => {
+  // Value: protects=moving the date ahead of time keeps the count and the start; fails_when=any nextAt change counts as a follow up or restarts since; why_new=state matrix cell, ship review; seam=pure waitingChecks()
+  const t0 = new Date(2026, 9, 19, 10).getTime();
+  let s = G.waitingChecks([card('x', { nextAt: iso(t0 + DAY) })], {}, t0);
+  const since = s.waiting.x.since;
+  s = G.waitingChecks([card('x', { nextAt: iso(t0 + 2 * DAY) })], s.waiting, t0 + 60_000);
+  assert.deepEqual([s.waiting.x.followUps, s.waiting.x.since, Date.parse(s.waiting.x.checkAt)], [0, since, Date.parse(iso(t0 + 2 * DAY))]);
+  assert.deepEqual(s.due, []);
+});
+
+test('a check back time cleared after Michael was told still counts as a follow up', () => {
+  // Value: protects=the owner is asked after two silent follow ups however the clock is reset (owner, 2026-10-18); fails_when=only a new nextAt counts, so clearing it loops forever; why_new=ship review D3; seam=pure waitingChecks()
+  const t0 = new Date(2026, 9, 19, 10).getTime();
+  let s = G.waitingChecks([card('x', { nextAt: iso(t0 + DAY) })], {}, t0);
+  s = G.waitingChecks([card('x', { nextAt: iso(t0 + DAY) })], s.waiting, t0 + DAY + 60_000);
+  assert.equal(s.due.length, 1);
+  s = G.waitingChecks([card('x')], s.waiting, t0 + DAY + 120_000);
+  assert.equal(s.waiting.x.followUps, 1, 'a follow up, though no new date was set');
+  assert.equal(s.waiting.x.toldAt, undefined, 'told again when the new time comes');
+});
+
+test('the words Michael reads match the limits the app keeps', () => {
+  // Value: protects=Michael's rules and the gone quiet list say what the app does; fails_when=a constant changes and the words do not; why_new=maintainability review, ship; seam=source
+  const words = ['zero', 'one', 'two', 'three', 'four', 'five'];
+  const hive = read('src/main/hive.ts');
+  assert.ok(hive.includes(`checks back in ${words[G.WAITING_DEFAULT_BUSINESS_DAYS]} business days`));
+  assert.ok(hive.includes(`after ${words[G.WAITING_FOLLOW_UPS]} follow ups with no reply`));
+  assert.ok(read('src/shared/ownerRequests.ts').includes(`After ${words[G.WAITING_FOLLOW_UPS]} follow ups with no reply`));
+});
+
+// POSIX only: an atomic write swaps the file, so its inode shows a write
+// (platform-scoped tests, owner 2026-10-09).
+test('a quiet tick leaves the guard file alone, and the file never loses the Waiting clocks', { skip: process.platform === 'win32' }, async (t) => {
+  // Value: protects=the 8 s beat writes nothing when nothing changed, and a stop between writes never loses the clocks; fails_when=guardCards' fresh state drops the clocks before the first save; why_new=performance and state machine review, ship; seam=refreshOwnerRequests() and the private guard file
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-waiting-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home, role: 'Support' });
+  hive.writeTasks([card('refund')]);
+  hive.refreshOwnerRequests();
+  const file = path.join(home, 'private', 'card-guard.json');
+  const ino = fs.statSync(file).ino;
+  hive.refreshOwnerRequests();
+  assert.equal(fs.statSync(file).ino, ino, 'not written again');
+  assert.ok(JSON.parse(fs.readFileSync(file, 'utf8')).waiting.refund);
+});
+
 test('the rules: team members name a check back time, Michael keeps it on the card, and the standup works the list', () => {
   // Value: protects=the agent behavior changes approved in D4 and D5, and offices on the old standup text get the new one; fails_when=a rule is dropped or the old focus stops being recognised; why_new=prompt changes; seam=source pins; no_claim=how agents follow them
   const hive = read('src/main/hive.ts');

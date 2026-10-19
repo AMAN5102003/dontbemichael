@@ -922,7 +922,8 @@
       "allIn": "Everyone's in",
       "missingOne": "{{name}} hasn't clocked in.",
       "missingMore": "{{name}} and {{count}} more haven't clocked in.",
-      "michael": "{{name}} is clocking in"
+      "michael": "{{name}} is clocking in",
+      "michaelLine": "{{name}} is settling into the corner office and getting the floor ready. Hang tight…"
     },
     "clockedInCount": "{{count}} of {{total}} in",
     "gpuError": "The office floor lost its GPU context.\n\nToo many terminals are using the GPU at once.\nClose a few agent terminals, or restart the app, to bring it back.",

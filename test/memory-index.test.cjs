@@ -232,6 +232,19 @@ test('the tidy pass hands its new notes on once the index is written', async (t)
   assert.ok(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').includes('New fact'), 'reported after the index holds it');
 });
 
+test('a pass whose state write fails after the index landed counts its notes once and never hands them back', async (t) => {
+  // Value: protects=one note, one count, one index line; fails_when=a failed step after the index write restores the inbox, so the next pass adds and counts the note again; why_new=ship review (state machine and QA probe); seam=state.json made a folder
+  const f = addedOffice(t);
+  const state = path.join(f.dir, 'memory', 'state.json');
+  fs.mkdirSync(state);
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  await f.tidy.tidyNow();
+  fs.rmdirSync(state);
+  await f.tidy.tidyNow();
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').split('\n').filter((l) => l.includes('New fact')).length, 1);
+});
+
 // POSIX only: a read only folder is how the write is made to fail, and Windows
 // ignores those permission bits (platform-scoped tests, owner 2026-10-09).
 test('a pass whose index write fails reports no new notes', { skip: process.platform === 'win32' }, async (t) => {

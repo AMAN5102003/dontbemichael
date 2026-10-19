@@ -1725,7 +1725,7 @@ const scheduleRequests = makeScheduleRequests({
   readConfig, writeConfig, applyMissions, michaelName, ownerToast,
   godId: hiveGodId,
   agentName: (id) => hive.registry().agents[id]?.name,
-  hive: { enabled: () => hive.enabled(), send: (msg, from) => { hive.send(msg, from); } },
+  hive: { enabled: () => hive.enabled(), send: (msg, from, upkeep) => { hive.send(msg, from, upkeep); } },
   updated: () => { liveWebContents()?.send('scheduleRequests:updated'); }
 });
 const { receiveScheduleRequest, decideScheduleRequest, sweepScheduleRequests } = scheduleRequests;

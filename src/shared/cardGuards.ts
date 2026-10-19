@@ -253,8 +253,10 @@ export function waitingChecks(
     const nextAt = isNextAt(t.nextAt) ? t.nextAt : undefined;
     let clock: WaitingClock;
     if (!was || was.nextAt !== nextAt) {
-      // A new check back time set after the last one came is a follow up done.
-      const followUps = was ? was.followUps + (was.toldAt && nextAt ? 1 : 0) : 0;
+      // Any change after the last time came is a follow up done, a cleared
+      // time included, so the owner is always asked in the end (owner,
+      // 2026-10-18 ship review).
+      const followUps = was ? was.followUps + (was.toldAt ? 1 : 0) : 0;
       const seen = now;
       const check = soundCheck(nextAt, seen) ?? addBusinessDays(seen, WAITING_DEFAULT_BUSINESS_DAYS);
       clock = { since: was?.since ?? at, ...(nextAt ? { nextAt } : {}), seenAt: at, checkAt: new Date(check).toISOString(), followUps };
