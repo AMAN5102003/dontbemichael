@@ -362,6 +362,53 @@
 **Effort:** M
 **Priority:** P2
 
+## Message times and upkeep (deferred from the ship review of mit/file-tab-no-bottom-bar, 2026-10-18)
+
+### Read a reply's time from the app's record, not the agent's file
+
+**What:** The dock and Michael's open questions read Michael's replies back from his outbox and its .sent folder, with the time he wrote. Use the time the app routed it instead: keep it in an app private record (or stamp the .sent copy even when it can't be rewritten in place), and never let a time earlier than the question it answers count as an answer.
+
+**Why:** The router now keeps an agent's time no later than now, but the files it reads back are Michael's own, and a past time (a timezone slip) can sort a reply before your question or leave a done question open.
+
+**Effort:** S
+**Priority:** P2
+
+### Deliver an outbox message once across a crash
+
+**What:** The router delivers a message, then stamps and archives the agent's file. If the app dies in between, the file is routed again on restart under a new app id, so the recipient gets it twice. Move the file into a router owned pending area (or record the id the app chose) before the first delivery, and reuse that id on replay so the second copy replaces the first.
+
+**Why:** Found by the Codex adversarial review (ship, 2026-10-18). Agent written ids used to make a replay overwrite itself; the app now makes every id, so nothing dedupes a replay. Rare (a crash in a few milliseconds), but it doubles owner traffic and task notes when it happens.
+
+**Effort:** M
+**Priority:** P2
+
+### Compare To do reminder times by the instant
+
+**What:** `dueReminders` and `guardCards` in `src/shared/cardGuards.ts` compare `nextAt` as text. Compare by `Date.parse`, as `waitingChecks` now does.
+
+**Why:** Rewriting a past due time in another spelling (Z or +00:00) sends the Next step due reminder again and resets Michael's backstop.
+
+**Effort:** S
+**Priority:** P3
+
+### Keep a schedule decision for Pete while he isn't reporting
+
+**What:** A schedule decision for Research while it isn't reporting is now dropped quietly with the other upkeep. Keep it (without Michael) and deliver it, with its upkeep kind, once Research reports again.
+
+**Why:** A decline carries Michael's or the owner's reason; dropped, Research may ask for the same change again.
+
+**Effort:** S
+**Priority:** P3
+
+### Retry closing time's wait after all note to Michael
+
+**What:** When a member reports again mid close, its brief goes out once, but a failed note telling Michael to wait for its ACK is not tried again. Keep a note owed set retried on the next row update.
+
+**Why:** Michael may close without the member's ACK.
+
+**Effort:** S
+**Priority:** P3
+
 ## Michael reply readability (deferred from the eng review, 2026-10-17)
 
 ### Check the figures in Michael's answer against the team's report

@@ -190,8 +190,10 @@ member" in Doing, so Doing could not tell work in progress from work on hold.
   missing, unreadable, past or more than 30 days out time becomes three
   business days after the app first saw the card Waiting. When the time comes,
   Michael gets one "Follow up due" note (never the person directly) and the card
-  sits on his WAITING CARDS GONE QUIET list every turn while overdue. A new
-  check back time set after one came counts as a follow up; after two with no
+  sits on his WAITING CARDS GONE QUIET list every turn while overdue. Any
+  change to the check back time after one came, a cleared one included, counts
+  as a follow up (the same time written another way does not; owner,
+  2026-10-18 ship review); after two with no
   reply, the note tells him to ask the owner on Ask me whether to keep waiting
   or close it. A card that leaves Waiting loses its clock, so one that comes
   back starts afresh. The standup's focus works the list; an office on the old

@@ -15,6 +15,10 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **Pulse: Today, This week and This month, with Compare.** Pulse's period picker offers Today, This week and This month, and Compare puts the span before beside each tile, up to the same day.
 - **Pulse lists what the privacy check did.** The held tile opens a list of each message held because the check could not run: when, who to whom, what it was about, why, and who was told. See each question and See each answer list every question sent to Research and every web answer, as written and as it went out, with what was taken out marked word by word; changed and stopped ones come first. The questions and answers lists keep 62 days and then move to an archive the app never deletes, and the held list keeps 400 days (a reset erases them; a home move takes them along). Checks from before the lists kept words are put together once from the office's files.
 - **Right-click a link to copy its address** (contributed in #372).
+- **The office opens with a Clocking in card.** When the app starts, a card over Michael's desk shows how many of the team are in, who is still coming, and turns to Everyone's in, or names who hasn't clocked in after a minute. The clock pill says Opening meanwhile. A Restore team opens it again.
+- **Waiting cards come back.** A card waiting on someone outside the office gets a check back time: the date they named, or the team member's judgement, else three business days. When it comes, Michael is told once, has its person follow up and sets a new time, and keeps a gone quiet list. After two follow ups with no reply he asks you on Ask me whether to keep waiting. (Agent behavior: team members name a check back time; Michael gets a Follow up due note and a gone quiet list; any reset of a card's check back time after he was told counts as a follow up.)
+- **Pulse: see what the team learned.** The Learning card's See the notes lists the notes behind its number for the period, grouped by where they came from; a note deleted since says so. A note now counts when it is added, from the app's own record, so an edit or a repeat is no longer a new note.
+- **Reply under Michael's question or latest answer** in the wide Talk to Michael.
 
 ### Changed
 
@@ -22,6 +26,10 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **A message to or from Research waits while the privacy check can't run.** When the check's session is not ready (often while the whole team starts), the message waits and is tried again for up to 30 minutes instead of being held at once; nothing goes out unchecked meanwhile. A check that got no answer quickly is tried once more after 15 seconds. The check keeps the names of the office's own AI team as written. Michael hears when Research's answer is held, as he does for a held question. (Agent behavior: Michael gets a note for a held answer.)
 - **Background checks run on Michael's configured engine** instead of always on Claude (contributed in #354). (Agent behavior: the app's own hidden checks use Michael's engine; the privacy check stays on Claude.)
 - **A file tab hides the Talk to Michael bar**, as Pulse does.
+- **The app's own notes to Research are not questions.** Office open, the restarted note, the carry on note and schedule decisions reach Pete without the paid privacy check when they are word for word the app's own (a schedule decision with someone's note is still checked), and are never listed or counted. While Pete is off or isn't reporting they are dropped quietly. (Agent behavior: Michael is no longer asked to resend these to Pete.)
+- **Closing time doesn't wait for a member that isn't reporting.** It shows apart, and Michael is told not to wait for it. If it reports again before closing ends, it gets the closing steps again and Michael is told to wait for it after all. (Agent behavior: Michael gets an isn't reporting note and a wait after all note.)
+- **The app makes every message's id and time.** An id a team member wrote can no longer overwrite another message, and a time it typed can't close your next question early or hide a message. A file in a member's outbox that is a link to someone else's message is set aside, never sent again as new.
+- **Each open column on the task board reads earliest next step first**, cut into time groups (Overdue, Today, Tomorrow, This week and on), and the groups move with the clock. A date shows its year when it isn't this year.
 - Saving an AI provider key on a computer that can't keep it safe says so first, like connected apps and mailboxes (contributed in #384).
 - An office stop for credit or sign in ends only once a turn has finished (contributed in #383).
 - The router reads the team list once per pass (contributed in #385).
@@ -36,6 +44,8 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 
 ### Fixed
 
+- More on a long reply from Michael opens only that reply, and the view stays where you clicked.
+- A memory note is never added or counted twice when the tidy pass is interrupted after saving.
 - Gemini members start without a workspace trust prompt (contributed in #342).
 - Quoted text that starts with a slash links only the file name in it (contributed in #378).
 - A new hire's folder name never ends in a dot or a space (contributed in #381).

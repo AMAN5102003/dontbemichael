@@ -257,7 +257,10 @@ decision) are stamped `upkeep` by the code that sends them (`hive.send`'s third 
 `src/shared/upkeep.ts`); nothing in a message's file can set it. A fixed note whose words are
 exactly the app's own reaches Research with no paid check and is logged as
 `upkeep-to-research`; upkeep carrying anyone's words (a schedule decision with a note) is
-checked. Upkeep is never listed, counted or held in the lists. Research report:
+checked. Upkeep is never listed, counted or held in the lists. While Research is off or isn't
+reporting, upkeep is dropped quietly (Michael is never asked to resend it, which would make it
+a question); a fixed note still unread when Research is turned off is removed without a note
+to Michael, and none counts as waiting (owner, 2026-10-18 ship review). Research report:
 `reports/Message type stamping for trust layer.md`.
 
 ## The guard (superseded by the trust layer above)
