@@ -185,14 +185,15 @@ test('a file named without its ending opens from its chip when the office holds 
   assert.deepEqual(askFilePaths(q), [], 'as written, no ending: this is the bug the owner saw');
   assert.deepEqual(A.askFileNames(q), ['First contact follow up draft 2026-10-19', 'IQM'], 'amounts, addresses and fenced code are never looked up');
 
-  const office = fs.mkdtempSync(path.join(os.tmpdir(), 'ask-names-'));
+  // The real path: Windows CI's temp folder comes back in its short 8.3 form (RUNNER~1).
+  const office = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ask-names-')));
   t.after(() => fs.rmSync(office, { recursive: true, force: true }));
   const sales = path.join(office, 'Sales');
   fs.mkdirSync(sales);
   fs.writeFileSync(path.join(sales, 'First contact follow up draft 2026-10-19.md'), '# Draft\n');
   fs.writeFileSync(path.join(sales, 'Plan.docx'), 'x');
   fs.writeFileSync(path.join(sales, 'Plan.md'), 'x');
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'ask-names-out-'));
+  const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ask-names-out-')));
   t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
   fs.writeFileSync(path.join(outside, 'Secret.md'), 'x');
   const roots = await resolveAskFileRoots([office, sales]);
