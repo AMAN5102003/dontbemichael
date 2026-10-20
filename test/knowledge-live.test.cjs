@@ -55,3 +55,34 @@ test('the search tool finds the store from --root, with no KG_ROOT set', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /Refund/);
 });
+
+test('a member is told again when search by meaning turns on or its language changes, with the model on the command', async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-kg-live-'));
+  const hive = new HiveManager(() => home);
+  const meaning = { bin: '/bin/mempalace', palace: '/Palace', model: 'minilm' };
+  await hive.ensureAgent({ id: 'oscar', name: 'Oscar', provider: 'claude', cwd: home }, { knowledgeGraph: true, kgCliPath: '/App/kg.cjs', meaningSearch: meaning });
+  const on = { active: true, cliPath: '/App/kg.cjs', root: '/Store' };
+  assert.equal(hive.knowledgeUpdate('oscar', { ...on, meaning }), null, 'nothing changed');
+  const switched = hive.knowledgeUpdate('oscar', { ...on, meaning: { ...meaning, model: 'embeddinggemma' } });
+  assert.ok(switched.includes('MEMPALACE_EMBEDDING_MODEL=embeddinggemma "/bin/mempalace" --palace "/Palace" search'), switched);
+  assert.equal(hive.knowledgeUpdate('oscar', { ...on, meaning: { ...meaning, model: 'embeddinggemma' } }), null, 'told once');
+  const off = hive.knowledgeUpdate('oscar', on);
+  assert.doesNotMatch(off, /mempalace/, 'search by meaning off: the line without it');
+});
+
+test('a language change clears the index so the next pass builds it with the new model', () => {
+  const { MemoryManager } = loadTs('src/main/memory.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-palace-'));
+  const palace = path.join(home, 'palace');
+  fs.mkdirSync(palace);
+  fs.writeFileSync(path.join(palace, 'mempalace_embedder.json'), '{}');
+  const m = new MemoryManager(() => home, () => ({ enabled: true, model: 'embeddinggemma' }));
+  m.binCache = null; // not installed here: the rebuild waits for a pass
+  m.modelChanged();
+  assert.equal(m.rebuildPending, true, 'kept for the next pass');
+  assert.ok(fs.existsSync(palace));
+  m.rebuild();
+  assert.equal(fs.existsSync(palace), false);
+  assert.equal(m.rebuildPending, false);
+  assert.equal(m.companySignature, null, 'company knowledge indexed again');
+});

@@ -330,12 +330,9 @@
       "steerFirst": "Steer first"
     },
     "memory": {
-      "semanticMemory": "Semantic memory",
-      "crossSession": "Recall across sessions",
-      "crossSessionDesc": "Your team remembers what it learns from one day to the next, and can find it again by meaning, not just exact words. Search it from the Memory tab on {{godName}}'s panel.",
-      "kg": "Knowledge Graph",
-      "kgTitle": "Enterprise knowledge base",
-      "kgDesc": "Add your docs, images & PDFs; agents query them on demand via the kg tool.",
+      "kg": "Company knowledge",
+      "kgTitle": "Documents your team searches",
+      "kgDesc": "Policies, prices and how the business runs: Word, Excel, PowerPoint, PDF, text or images.",
       "adding": "Adding…",
       "addFiles": "Add files…",
       "docCount": "{{count}} document indexed",
@@ -358,6 +355,11 @@
         "savedIn": "Read in your changes to {{title}}.",
         "saveFailed": "Couldn't read your changes to {{title}}: {{reason}}",
         "openFailed": "Couldn't open {{title}}."
+      },
+      "meaning": {
+        "title": "Search by meaning",
+        "tip": "Your team also finds passages that say the same thing in other words, not only the exact words. It searches company knowledge only; each member's own memory stays private.",
+        "languageTip": "Changing it indexes your documents again. Search by meaning is back once that finishes, usually within a few minutes."
       }
     },
     "connections": {
@@ -513,11 +515,9 @@
     "noIssues": "No issues fetched yet.",
     "assign": "Assign",
     "textSearch": "TEXT SEARCH (board, tasks, memory)",
-    "textSearchPlaceholder": "Find exact text across hive files…",
+    "textSearchPlaceholder": "Find words in the team's notes, the board and tasks",
     "nothingMatched": "Nothing matched.",
-    "searchNoMatch": "Nothing matched yet.",
     "semanticSearch": "SEMANTIC SEARCH (MemPalace)",
-    "semanticPlaceholder": "What does the hive know about…",
     "memoryFile": "Memory file",
     "noMemory": "No memory recorded yet.",
     "activity": "Activity",
@@ -1451,7 +1451,7 @@
     "onGettingReady": "On · getting ready…",
     "notInstalled": "Search by meaning isn't installed yet.",
     "setUpInPrereqs": "set it up in Prerequisites →",
-    "plainNotesStill": "Agents still keep plain notes without it.",
+    "plainNotesStill": "Your team still searches company knowledge by exact words without it.",
     "searchLanguage": "Search language",
     "modelFast": "Fast",
     "modelFastDetail": "English only · ~90 MB",
@@ -1964,9 +1964,7 @@
     "stepsMissing": "The steps for this aren't saved yet.",
     "showFile": "Show the file",
     "showNotes": "Show as notes",
-    "searchTitle": "Search the office",
-    "exactWords": "Exact words",
-    "byMeaning": "By meaning"
+    "searchTitle": "Search the office"
   },
   "profile": {
     "officeManager": "Office manager",

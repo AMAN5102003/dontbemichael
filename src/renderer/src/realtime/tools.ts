@@ -294,7 +294,7 @@ export function realtimeReadTools(): ReturnType<typeof tool>[] {
             c.webhookEnabled && 'webhooks',
             c.freeflowEnabled && 'Free Flow voice',
             c.realtimeVoiceEnabled && 'realtime voice (this session)',
-            c.semanticMemory && 'semantic memory',
+            c.semanticMemory && obj(c.knowledgeGraph).enabled && 'search by meaning in company knowledge',
             obj(c.knowledgeGraph).enabled && 'the knowledge graph'
           ].filter(Boolean);
           if (features.length) parts.push(`Enabled features: ${features.join(', ')}.`);
@@ -341,10 +341,9 @@ export function realtimeReadTools(): ReturnType<typeof tool>[] {
             return `From the team's notes — ${lines.join('. ')}.`;
           };
 
-          // query + agentId → search WITHIN one agent (semantic wing first, then text).
+          // query + agentId → search WITHIN one agent, exact words.
           if (query && agentId) {
-            const res = await window.cth.searchMemory(query, agentId);
-            if (res.ok && res.output.trim()) return clip(res.output.trim(), 1600);
+            // Members' notes are never indexed by meaning (owner, 2026-10-16): exact words.
             const tf = await textFallback(query, agentId);
             if (tf) return clip(tf, 1600);
             const mem = await window.cth.hiveMemory(agentId);
@@ -356,10 +355,8 @@ export function realtimeReadTools(): ReturnType<typeof tool>[] {
               : `${agentId} has not recorded any memory yet.`;
           }
 
-          // query alone → semantic across the whole palace, then text fallback across all agents.
+          // query alone → exact words across every member's notes.
           if (query) {
-            const res = await window.cth.searchMemory(query);
-            if (res.ok && res.output.trim()) return clip(res.output.trim(), 1600);
             const tf = await textFallback(query);
             if (tf) return clip(tf, 1600);
             return `I searched the team's memory but found nothing about "${query}".`;

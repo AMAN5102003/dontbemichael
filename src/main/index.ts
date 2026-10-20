@@ -539,10 +539,10 @@ function companyProfileForAgents(): string | null {
 
 /** MemPalace, for agents to search company knowledge by meaning: only when it's
  *  installed and on, and company knowledge is on. */
-function meaningSearch(): { bin: string; palace: string } | undefined {
+function meaningSearch(): { bin: string; palace: string; model: string } | undefined {
   const bin = memory.bin();
   const palace = memory.palacePath();
-  return memory.active() && knowledge.active() && bin && palace ? { bin, palace } : undefined;
+  return memory.active() && knowledge.active() && bin && palace ? { bin, palace, model: memory.model() } : undefined;
 }
 // Company knowledge: file-backed store + agent CLI (default ON).
 const knowledge = new KnowledgeManager();
@@ -4776,6 +4776,7 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   // transition so ordinary config writes never re-enter it.
   const hiveWasEnabled = hive.enabled();
   const wasOnboarded = readConfig().onboardingComplete;
+  const modelBefore = readConfig().embeddingModel ?? 'minilm';
   const next = writeConfig(patch);
   // The office describes itself in <home>/office.json, so a reinstall finds it
   // by folder rather than by the business name typed into setup. Only a save
@@ -4784,6 +4785,11 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   if (touchesOffice(patch)) syncOfficeRecord(next);
   // Company knowledge just turned on: index it for search by meaning now.
   if (patch && typeof patch === 'object' && 'knowledgeGraph' in patch) memory.companyKnowledgeChanged();
+  // A new search language: the index was built with the other model, which
+  // MemPalace refuses to search with, so it is built again (owner, 2026-10-19).
+  if (patch && typeof patch === 'object' && 'embeddingModel' in patch && (next.embeddingModel ?? 'minilm') !== modelBefore) memory.modelChanged();
+  // Search by meaning switched back on: index what changed while it was off.
+  if (patch && typeof patch === 'object' && patch.semanticMemory === true) memory.start();
   // Live opt-in/out from Settings (TELEMETRY.md); stays off while
   // COLLECT_USAGE_STATS is false.
   if (typeof patch?.telemetryEnabled === 'boolean') analytics.setEnabled(COLLECT_USAGE_STATS && patch.telemetryEnabled);

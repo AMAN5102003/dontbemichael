@@ -1537,92 +1537,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
                   {activeSection === 'Memory & Knowledge' && (
                     <>
-                      <div>
-                        <div style={sectionHead}>
-                          {t('settings.memory.semanticMemory')}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('settings.memory.crossSession')}</span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                              {t('settings.memory.crossSessionDesc', { godName })}
-                            </span>
-                          </div>
-                          <PixelButton variant={semMemOn ? 'primary' : 'secondary'} size="sm" onClick={toggleSemMem}>
-                            {semMemOn ? t('common.on') : t('common.off')}
-                          </PixelButton>
-                        </div>
-
-                        {/* Is it working? One state line, as the floor panel had. */}
-                        {memStatus && (() => {
-                          const st = !memStatus.available
-                            ? { dot: 'var(--cth-coral)', label: t('memoryPanel.notSetUp') }
-                            : !semMemOn
-                              ? { dot: 'var(--cth-ink-500)', label: t('common.off') }
-                              : memStatus.initialized
-                                ? { dot: 'var(--cth-mint)', label: t('memoryPanel.onReady') }
-                                : { dot: 'var(--cth-lemon)', label: t('memoryPanel.onGettingReady') };
-                          return (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--cth-ink-900)', marginTop: 8 }}>
-                              <span style={{ borderRadius: 'var(--cth-r-md)', width: 8, height: 8, background: st.dot, boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }} />
-                              {st.label}
-                            </span>
-                          );
-                        })()}
-
-                        {/* Not installed: send them to the setup that installs it. */}
-                        {memStatus && !memStatus.available && (
-                          <div style={{
-                            borderRadius: 'var(--cth-r-md)',
-                            marginTop: 8, fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: 1.6,
-                            background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', padding: 10
-                          }}>
-                            {t('memoryPanel.notInstalled')}
-                            <div style={{ marginTop: 8 }}>
-                              <PixelButton variant="primary" size="sm" onClick={() => setActiveSection('Prerequisites')}>
-                                {t('memoryPanel.setUpInPrereqs')}
-                              </PixelButton>
-                            </div>
-                            <div style={{ marginTop: 8, color: 'var(--cth-ink-500)' }}>{t('memoryPanel.plainNotesStill')}</div>
-                          </div>
-                        )}
-
-                        {/* Search language: a benefit framed choice, not a model codename. */}
-                        {memStatus?.available && (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
-                            <span style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('memoryPanel.searchLanguage')}</span>
-                            <div style={{ display: 'flex', gap: 8 }}>
-                              {([
-                                ['minilm', t('memoryPanel.modelFast'), t('memoryPanel.modelFastDetail')],
-                                ['embeddinggemma', t('memoryPanel.modelMultilingual'), t('memoryPanel.modelMultilingualDetail')]
-                              ] as const).map(([id, title, detail]) => {
-                                const sel = embeddingModel === id;
-                                return (
-                                  <button
-                                    key={id}
-                                    type="button"
-                                    onClick={() => pickEmbeddingModel(id)}
-                                    style={{
-                                      borderRadius: 'var(--cth-r-md)',
-                                      flex: 1, textAlign: 'left', cursor: 'pointer', border: 'none', padding: '8px 8px',
-                                      background: sel ? 'var(--cth-lemon-light)' : 'var(--cth-cream-100)',
-                                      boxShadow: sel ? 'inset 0 0 0 1.5px var(--cth-indigo)' : 'inset 0 0 0 1px var(--cth-line-2)'
-                                    }}
-                                    aria-pressed={sel}
-                                  >
-                                    <div style={{ fontSize: 14, color: 'var(--cth-ink-900)' }}>{sel ? '◉ ' : '○ '}{title}</div>
-                                    <div style={{ fontSize: 14, color: 'var(--cth-ink-500)', marginTop: 4 }}>{detail}</div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      <div style={{ height: 1, background: 'var(--cth-line)' }} />
-
-                      {/* Knowledge Graph — enterprise multimodal context for agents */}
+                      {/* Company knowledge: the documents the team searches, and searching
+                          them by meaning (owner, 2026-10-19). */}
                       <div>
                         <div style={sectionHead}>
                           {t('settings.memory.kg')}
@@ -1659,6 +1575,85 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         )}
                         {/* What agents search, and Open to read or edit it (owner, 2026-10-19). */}
                         {kgEnabled && <KnowledgeDocList refreshKey={kgDocCount} />}
+                        {/* Search by meaning (owner, 2026-10-19): part of company knowledge,
+                            which is all it ever searches; members' memory stays theirs. */}
+                        {kgEnabled && (
+                          <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--cth-line)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                                {t('settings.memory.meaning.title')}<InfoTip text={t('settings.memory.meaning.tip')} />
+                              </span>
+                              <PixelButton variant={semMemOn ? 'primary' : 'secondary'} size="sm" onClick={toggleSemMem}>
+                                {semMemOn ? t('common.on') : t('common.off')}
+                              </PixelButton>
+                            </div>
+                            {/* Is it working? One state line, as the floor panel had. */}
+                            {memStatus && (() => {
+                              const st = !memStatus.available
+                                ? { dot: 'var(--cth-coral)', label: t('memoryPanel.notSetUp') }
+                                : !semMemOn
+                                  ? { dot: 'var(--cth-ink-500)', label: t('common.off') }
+                                  : memStatus.initialized
+                                    ? { dot: 'var(--cth-mint)', label: t('memoryPanel.onReady') }
+                                    : { dot: 'var(--cth-lemon)', label: t('memoryPanel.onGettingReady') };
+                              return (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--cth-ink-900)', marginTop: 8 }}>
+                                  <span style={{ borderRadius: 'var(--cth-r-md)', width: 8, height: 8, background: st.dot, boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }} />
+                                  {st.label}
+                                </span>
+                              );
+                            })()}
+
+                            {/* Not installed: send them to the setup that installs it. */}
+                            {memStatus && !memStatus.available && semMemOn && (
+                              <div style={{
+                                borderRadius: 'var(--cth-r-md)',
+                                marginTop: 8, fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: 1.6,
+                                background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', padding: 10
+                              }}>
+                                {t('memoryPanel.notInstalled')}
+                                <div style={{ marginTop: 8 }}>
+                                  <PixelButton variant="primary" size="sm" onClick={() => setActiveSection('Prerequisites')}>
+                                    {t('memoryPanel.setUpInPrereqs')}
+                                  </PixelButton>
+                                </div>
+                                <div style={{ marginTop: 8, color: 'var(--cth-ink-500)' }}>{t('memoryPanel.plainNotesStill')}</div>
+                              </div>
+                            )}
+
+                            {/* Search language: a benefit framed choice, not a model codename. */}
+                            {memStatus?.available && semMemOn && (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('memoryPanel.searchLanguage')}<InfoTip text={t('settings.memory.meaning.languageTip')} /></span>
+                                <div style={{ display: 'flex', gap: 8 }}>
+                                  {([
+                                    ['minilm', t('memoryPanel.modelFast'), t('memoryPanel.modelFastDetail')],
+                                    ['embeddinggemma', t('memoryPanel.modelMultilingual'), t('memoryPanel.modelMultilingualDetail')]
+                                  ] as const).map(([id, title, detail]) => {
+                                    const sel = embeddingModel === id;
+                                    return (
+                                      <button
+                                        key={id}
+                                        type="button"
+                                        onClick={() => pickEmbeddingModel(id)}
+                                        style={{
+                                          borderRadius: 'var(--cth-r-md)',
+                                          flex: 1, textAlign: 'left', cursor: 'pointer', border: 'none', padding: '8px 8px',
+                                          background: sel ? 'var(--cth-lemon-light)' : 'var(--cth-cream-100)',
+                                          boxShadow: sel ? 'inset 0 0 0 1.5px var(--cth-indigo)' : 'inset 0 0 0 1px var(--cth-line-2)'
+                                        }}
+                                        aria-pressed={sel}
+                                      >
+                                        <div style={{ fontSize: 14, color: 'var(--cth-ink-900)' }}>{sel ? '◉ ' : '○ '}{title}</div>
+                                        <div style={{ fontSize: 14, color: 'var(--cth-ink-500)', marginTop: 4 }}>{detail}</div>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </>
                   )}

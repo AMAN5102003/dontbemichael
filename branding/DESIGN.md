@@ -1249,6 +1249,11 @@ company knowledge is on, a "Documents" label with its (i), then a list in one `l
 opens the store's copy in the owner's own app; a save there is read in again and a polite line
 says "Read in your changes to Price list." (or why it couldn't, as an alert). Company
 foundations carries a `neutral-soft` "Read only" tag with an (i) and opens as a read only copy.
+Search by meaning sits inside the same Company knowledge block, under a `line` rule and only while
+company knowledge is on: "Search by meaning" with its (i) and an On/Off button, the status dot
+line, the not installed card that opens Prerequisites, and the Search language pair (Fast,
+Multilingual) with an (i) saying a change indexes the documents again. There is no separate
+Semantic memory section; Michael's Memory tab searches the team's notes by exact words only.
 
 ---
 

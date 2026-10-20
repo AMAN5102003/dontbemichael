@@ -288,7 +288,7 @@ export function companyKnowledgeLine(node: string, cli: string, root?: string, m
   const at = root ? ` --root "${root}"` : '';
   // Search by meaning (owner, 2026-09-25) through MemPalace, when it's installed.
   const byMeaning = meaning
-    ? ` Search by meaning with \`"${meaning.bin}" --palace "${meaning.palace}" search "<question>" --wing company\`: it also finds passages that say the same thing in other words, and each result shows its document id.`
+    ? ` Search by meaning with \`${meaning.model ? `MEMPALACE_EMBEDDING_MODEL=${meaning.model} ` : ''}"${meaning.bin}" --palace "${meaning.palace}" search "<question>" --wing company\`: it also finds passages that say the same thing in other words, and each result shows its document id.`
     : '';
   return `COMPANY KNOWLEDGE: the owner keeps company wide information in the company knowledge store: policies, rules, prices, locations, and how the business works. When a task touches any of that, search it before relying on memory or the internet, and follow what it says.${byMeaning} Run \`"${node}" "${cli}" search "<words>"${at}\` for passages with the exact words, \`"${node}" "${cli}" list${at}\` to see what's there, and \`"${node}" "${cli}" get <id>${at}\` for a whole document. Use that Node path exactly: bare \`node\` may not be on your PATH.`;
 }
@@ -298,6 +298,15 @@ export function companyKnowledgeLine(node: string, cli: string, root?: string, m
 export interface MeaningSearch {
   bin: string;
   palace: string;
+  /** The search language's model; named on the command, so a member started
+   *  before the owner changed it still searches the index built with it. */
+  model?: string;
+}
+
+/** What an agent was last told about company knowledge: on or off, and how
+ *  it searches by meaning, so a change to either reaches it (knowledgeUpdate). */
+function knowledgeSignature(active: boolean, meaning?: MeaningSearch): string {
+  return active ? `on|${meaning ? `${meaning.bin}|${meaning.palace}|${meaning.model ?? ''}` : ''}` : 'off';
 }
 
 /** What a running agent is told when the owner turns company knowledge off. */
@@ -817,7 +826,7 @@ export class HiveManager {
   /** agentId → whether it has been told company knowledge is on, as of its
    *  spawn or its last update. Lets an owner's toggle reach running agents
    *  without a restart (knowledgeUpdate). */
-  private knowledgeTold = new Map<string, boolean>();
+  private knowledgeTold = new Map<string, string>();
   /** Per agent: the members whose hive folders its Read rules hid when it
    *  started (AgentFolderPolicy.walledMembers). The hook refuses a search over
    *  every member's folder while someone hired since is not among them. */
@@ -831,9 +840,10 @@ export class HiveManager {
    */
   knowledgeUpdate(agentId: string, k: { active: boolean; cliPath?: string; root?: string; meaning?: MeaningSearch }): string | null {
     const told = this.knowledgeTold.get(agentId);
-    if (told === undefined || told === k.active) return null;
+    const now = knowledgeSignature(k.active, k.meaning);
+    if (told === undefined || told === now) return null;
     if (k.active && !k.cliPath) return null;
-    this.knowledgeTold.set(agentId, k.active);
+    this.knowledgeTold.set(agentId, now);
     return k.active ? companyKnowledgeLine(this.nodeCommand(), k.cliPath!, k.root, k.meaning) : COMPANY_KNOWLEDGE_OFF;
   }
 
@@ -1250,7 +1260,7 @@ export class HiveManager {
     const root = this.root();
     if (!root) return { args: [], env: {} };
     this.ensureHive();
-    this.knowledgeTold.set(meta.id, !!opts.knowledgeGraph);
+    this.knowledgeTold.set(meta.id, knowledgeSignature(!!opts.knowledgeGraph, opts.knowledgeGraph ? opts.meaningSearch : undefined));
 
     const dir = this.agentDir(meta.id);
     mkdirSync(join(dir, 'inbox', '.done'), { recursive: true });

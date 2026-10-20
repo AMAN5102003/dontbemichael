@@ -16,6 +16,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 
 ### Changed
 
+- **Search by meaning is part of company knowledge.** The separate Semantic memory section in Settings is gone: its switch and search language now sit under Company knowledge, the only thing it ever searches, and the wording says so. Each member's own memory stays private and is never searched by meaning, so the By meaning search on Michael's Memory tab is gone too; exact words still search the team's notes. Changing the search language now builds the index again with the new language; before, search by meaning stopped working after a change. (Agent behavior: a member that is already running is told the new search command when the language changes or search by meaning is turned on or off, with no restart.)
 - **Pulse shows only what has something to say.** Tiles with nothing in the period fold into a row of small quiet chips under the others ("emails sent 0"); a chip opens its tile. Spent always shows, and with Compare on a tile stays while the span before had something. Team at work folds members with no working time into one "9 more were quiet" row and says "Nobody has worked yet today" when that is so. Before advice starts, Recommendations is one short line, with the why behind its (i).
 
 ### Fixed
