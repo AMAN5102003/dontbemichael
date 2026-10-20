@@ -1948,6 +1948,27 @@ the recommendation stacked, Team at work without roles and with hours over cost.
 the Busiest and Quiet callouts are hidden and the frame's padding is 12. The section never
 scrolls sideways, also at 320 px with a scrollbar.
 
+### 9.18 Setup foundations inset (web)
+
+Under the setup inset (§9.12), a second quiet inset with the same fill, inset line, radius and
+padding, for what comes after setup (Company foundations, §7.27a): Michael's avatar, "Then the
+team learns your business" (600, 14/20), two inline items with 16 px icons ("One question to you,
+only when work needs the answer" and "Learns the rest from your answers and the team's work") and an
+`ink-3` line under them. Beside the text, a read only picture of one foundation card (§7.27a) in
+the story's cast, at the story's app scale: the question "Financial year" as its title; Oscar's
+Finance raiser chip and "needs this, 2h ago" in `ink-3`; Michael's one bold evidence line, example
+copy in the app's form ("Oscar set this quarter's sales tax reminder without knowing when your
+financial year starts."); the visible "Your answer" label, an empty box and the hint under it ("A
+few plain sentences, under 300 characters. For more, name the file that holds it."); Save answer
+(primary), Have Oscar draft it (secondary) and Not now as a quiet text link at the line's end; and
+the footer above a `line` rule, "Finance uses this" and "Asked weekly until answered". Oscar is in
+every pack, so the card holds whatever business the visitor picks. The card is one picture with
+one description (role=img): its buttons are drawn, and nothing in the inset can be clicked, as in
+§9.12. No coral: the card waits on an answer, it is not Blocked. Its own `fd-` classes; no class
+from another section. At 980 px and up the text and the card sit side by side, the card 380 px
+wide; under that the card goes under the text, up to 420 px wide. Never scrolls sideways, also at
+320 px with a scrollbar.
+
 ---
 
 ## 10. Iconography [Both]
@@ -2196,6 +2217,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-19 | Pulse, before two weeks: Early look insight cards take the one line's place when the advice rules already see something (§7.27). Company knowledge in Settings, Memory & Knowledge: no switch, a Documents list with Open, search by meaning inside the same block and no Semantic memory section (§7.26). Company foundations: the strip, the count and the member detail box on Pulse (§7.27), the foundation card and the one time Company knowledge is always on card on Needs you (§7.27a). A file named without its ending is a chip when the office's folders hold it (§7.8). |
 | 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
+| 2026-10-20 | Web: Setup foundations inset (§9.18), a second Setup inset after Then Michael gets ready: Then the team learns your business, with a read only foundation card (§7.27a) for Oscar's Financial year question, its buttons drawn, nothing clickable. |
 | 2026-10-20 | Web: privacy wording that holds on Windows: Pete does the team's web research and the rest of the team is told to ask Pete; the app turns off the web tools for everyone else, gives Pete questions only, and the trust layer checks what passes through it both ways; /security's first section is Who is given what; data kept on the computer (§9.15, §9.16). |
 | 2026-10-19 | Web: Pulse (web), a read only picture of Pulse after the file tabs with three notes (§9.17); the Ask Michael tile names picking Michael's choices with a click (§9.5); the board's Waiting note names Michael asking whether to keep waiting (§9.13); /security names the memory wall and Pulse's lists, and who is told when a message is held (§9.16); the file tabs picture shows the Pulse tab (§9.14). |
 
