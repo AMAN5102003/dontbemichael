@@ -729,7 +729,9 @@ stands on its own.
 - Files the question names (owner, 2026-10-04 and 2026-10-10; `docs/designs/open-file-tab.md`)
   are chips in place of their path, inside the text: a code span with a known file
   ending, a full path in plain text (`/`, `~/`, a drive letter), or a Markdown link to a
-  full path. Chip: `neutral-soft` fill, `r-sm`, 24 px tall, padding 0 8, gap 6; a 14 px
+  full path. A code span that names a file without its ending becomes a chip only when a file
+  of that name is found in the office's folders (owner, 2026-10-19); otherwise it stays text.
+  Chip: `neutral-soft` fill, `r-sm`, 24 px tall, padding 0 8, gap 6; a 14 px
   `file`, `sheet` or `image` icon in `ink-3`; the file name without folder or extension
   (12 / 500 `ink`, ellipsis at 200 px, the full path as its tooltip); then the action in
   `indigo-text` 600: "Open" for a file the office can show (it opens as a file tab, §7.2)
@@ -1405,7 +1407,8 @@ half written message survives the switch.
   job whose work hit an empty question, most hit first: `neutral-soft` pill, 30 px, the job
   name, "1/6" in mono and a 42 px `indigo` bar on `line-2`. A pill is a button named "Marketing,
   1 of 6 answered. Open its questions"; it opens that job's waiting foundation card in Needs
-  you, else Settings at Memory & Knowledge. A job leaves once every question its work hit is
+  you, else the Company foundations document as a read only copy in the owner's own app
+  (Settings at Memory & Knowledge when it can't open). A job leaves once every question its work hit is
   answered; the strip goes with the last. On Team at work a member missing any foundation shows
   a 12 px `indigo` ring and "Foundations 2 of 6" in `ink-3` 11 px under its role; nothing once
   all are answered. Member detail adds a Foundations box in `card-2`: the ring and "1 of 6",
@@ -2037,7 +2040,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 6 | App | Pixel icon set | `components/Icon.tsx` | Done: outline icons behind the same component |
 | 7 | App | Settings and onboarding dialogs lack `role=dialog`, focus trap and Esc | `SettingsModal`, `OnboardingWizard` | Done: `shell/Dialog.tsx` and `useDialog` for Settings, hire, edit, quit and closing time; Esc reaches only the top dialog |
 | 8 | App | Task detail has no Esc handler | `TaskDetailOverlay` | Done |
-| 9 | App | Role to department mapping does not exist | `src/shared/officeRoles.ts` | Done: `departmentOf` in `scene/studio/layout.ts` |
+| 9 | App | Role to department mapping does not exist | `src/shared/officeRoles.ts` | Done: `departmentOf` in `src/shared/officeRoles.ts`, which `scene/studio/layout.ts` and Company foundations share |
 | 10 | App | No counters for delegated and kept | hive | Done: counted from the hive log and tasks, shown on Michael's wall sign and hub card |
 | 11 | App | UI strings not audited for dashes | `src/renderer/src/i18n` | Done: `test/no-dashes.test.cjs`; ALL CAPS strings moved to sentence case (§4) |
 | 12 | App | Reference screens use 9 to 9.5 px text and off-grid spacing | `reference/studio/` | Done: re-shot from the build (#25) |
@@ -2117,6 +2120,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-18 | Michael's wall and hub card count Waiting: five columns in the Tasks view's order (To do, Doing, Waiting, Blocked, Done), Waiting in `amber`; the hub card is 212 px so the five labels never touch (§7.17, §8.4). |
 | 2026-10-18 | Pulse, Kept safe: each tile names its number in a few words, the same at zero, with its own (i); shorter legend and gate names; a tile's legend shows only once a part is above zero (§7.27). |
 | 2026-10-19 | Pulse shows only tiles with something to say: one grid in a fixed order, quiet tiles as chips in one row that open their tile, Spent always; members with no working time fold into one row; Recommendations before advice is one `ink-3` line (§7.27). |
+| 2026-10-19 | Pulse, before two weeks: Early look insight cards take the one line's place when the advice rules already see something (§7.27). Company knowledge in Settings, Memory & Knowledge: no switch, a Documents list with Open, search by meaning inside the same block and no Semantic memory section (§7.26). Company foundations: the strip, the count and the member detail box on Pulse (§7.27), the foundation card and the one time Company knowledge is always on card on Needs you (§7.27a). A file named without its ending is a chip when the office's folders hold it (§7.8). |
 | 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
 

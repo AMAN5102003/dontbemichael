@@ -29,7 +29,10 @@ Mockup: `~/.gstack/projects/agentvivekkumar-dontbemichael/designs/pulse-smart-ti
   time keeps a full row. The headline is unchanged.
 - **1D, Recommendations before advice:** no card. One short `ink-3` line under the header:
   "Advice from Thu, Oct 29" before two weeks; "Nothing to change this week" after. The why sits
-  behind the header's (i). Advice cards and Saved by your changes are unchanged.
+  behind the header's (i). Advice cards and Saved by your changes are unchanged. Later the
+  same day (owner, 2026-10-19), Early look insight cards take this line's place before two
+  weeks whenever the advice rules already see something (team-performance.md, Early patterns;
+  DESIGN.md §7.27).
 - **1E, one grid, one chip row.** Every tile with data flows into one grid under "What got
   done", in today's order: emails organized, emails sent, tasks finished, scheduled checks,
   questions to the internet, web answers cleaned, messages held, steps blocked, what the team

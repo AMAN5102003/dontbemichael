@@ -58,17 +58,16 @@ Plain Markdown, one section per job, numbered questions with an answer after the
 ```
 
 - **Business agnostic.** The questions ship the same for every install; the answers are this
-  business's. Sections follow the office's jobs (Sales, Marketing, Finance, Support, Admin, HR,
-  IT, Security, Quality, Supply Chain, Inventory; `officeRoles.ts`). A section appears for each
-  job the office has. Questions live in `src/shared/foundations.ts`, one catalog.
+  business's. Sections follow the office's departments (Sales, Marketing, Finance, Customer
+  support, Front desk and admin, People, IT, Operations; `officeRoles.ts`). A section appears for
+  each job the office has. Questions live in `src/shared/foundations.ts`, one catalog.
 - **A shared question has one answer** (owner, 2026-10-19: "marketing ICP and sales ICP
   should be same even it is repeated in the document"). Each question has an id in the catalog
   (`customers`, `offer`, `voice` ...); a job section lists the ids it needs, so "Who we sell
   to" shows under Sales and Marketing, but it is one answer. Answering or changing it anywhere
   writes the same answer at every place it appears.
-- **A head start.** At setup the app answers what it already knows from the company profile
-  (what we sell, businesses or consumers, where the business is), so the document never starts
-  at zero.
+- **A head start.** At setup the app answers what the company profile already holds (opening
+  hours, financial year), so the document never starts at zero.
 - **One set of facts with the company profile** (architecture review, 2026-10-19). Where a
   question repeats a company profile field, the two stay in step: setup writes the profile
   answer into the foundations, a profile change in Settings updates the same answer, and an
@@ -83,13 +82,14 @@ Architecture review, 2026-10-19: the company knowledge store is a search index (
 added, split into chunks and indexed; none is edited in place), so it cannot be the live record
 that agents write to at any time.
 
-- **The record** is one structured file the app alone writes: `foundations.json` beside the
-  company knowledge store in the app's data, out of every member's reach (the app files gate).
-  It holds each question's answer once, with who gave it, when, and where it came from.
+- **The record** is one structured file the app alone writes: `foundations.json` in the
+  office's private folder (`private/` in the office folder), out of every member's reach (the
+  app files gate). It holds each question's answer once, with who gave it, when, and where it
+  came from.
 - **The readable copy** is the Company foundations document above, published into company
   knowledge from the record every time it changes (the old copy removed, the new one added).
-  Members search it like any company document; the owner sees it in Settings > Company
-  knowledge.
+  Members search it like any company document; the owner sees it in Settings, Memory &
+  Knowledge, where it opens as a read only copy.
 - **The owner's own editing** (a form in Settings) comes in a later release (owner,
   2026-10-19). Until then the document fills through Ask me answers and what the office learns
   (sections 4 and 5).
@@ -157,8 +157,16 @@ that agents write to at any time.
     a web page or any outside text goes to Michael first, under the existing screening rule
     (high confidence flags to Michael, never the owner); only what he confirms is written.
     Answers from the owner or the office's own records go straight in.
-  - **Short answers.** Each answer is capped (about 300 characters; a longer one points to a
-    file), so the document stays a few dozen lines.
+  - **A cited owner message is checked** (ship review, 2026-10-20). The app keeps the ids of
+    the messages the owner sends, and who got each, in its private folder
+    (`owner-said.jsonl`), out of the team's reach; only those count as the owner's words, never
+    a line in the hive log, which a member's shell can write. A member citing one fills only an
+    empty answer, marked as taught to that member. Only Michael can change an answer the owner
+    wrote, and only by citing a message the owner sent him.
+  - **Own job only.** A member answers and reports gaps only for its own job's questions;
+    Michael for any. Only the member the owner asked, or Michael, fills a draft.
+  - **Short answers.** Each answer is one plain line, capped at about 300 characters (a longer
+    one points to a file), so the document stays a few dozen lines.
   - **Conflicts are caught.** When a member sends an answer that differs from a learned one,
     the app keeps the first and raises the difference to Michael instead of overwriting.
 
@@ -188,7 +196,8 @@ Pulse counts only what the app records).
   header while it shows): "Foundations  Marketing 1/6  Sales 2/6". Only jobs whose work hit an
   empty question appear, the most hit first (D4). A job leaves once every question its work hit
   is answered, and the strip goes when no job is left (D7). Clicking a job opens its waiting
-  foundation cards in Needs you, or the document at that job when none is waiting (D5).
+  foundation cards in Needs you, or the Company foundations document as a read only copy when
+  none is waiting (D5).
 - **Team at work** (D6): a member missing any foundation shows a small ring and "Foundations
   2 of 6" under its role; the table keeps its four columns. Nothing shows once all of its
   questions are answered (D9).
@@ -196,7 +205,8 @@ Pulse counts only what the app records).
   work hit as pills (each opens its waiting card), "and 3 more no work has needed yet", and once
   the evidence exists two small bars: work kept as is without the answer and with it.
 - **Early look and Recommendations**: once the kept as is evidence exists, "Answer who we sell
-  to: Ryan's posts are kept as is 45% without it, 85% with".
+  to: Ryan's posts are kept as is 45% without it, 85% with". Deferred at ship (owner, D2,
+  2026-10-20) and kept in TODOS.md; until then the proof shows only in member detail.
 
 ## 8. Agent behavior changes (each needs the owner's decision)
 
@@ -221,6 +231,13 @@ Pulse counts only what the app records).
   copy. The owner's editing form waits for a later release (owner, 2026-10-19).
 - "Foundations 2 of 6", never a quality score; kept as is stays the quality measure.
 - The foundations and the company profile hold one set of shared facts.
+
+## Changed at ship (2026-10-20)
+
+The reviews below describe the plan as reviewed. Finding 2, R4 and the architecture sketch say
+the app finds a cited owner message in the hive log; as built, it checks the app's own list of
+the owner's sent messages in the private folder (section 5). The Early look and Recommendations
+line (section 7) is deferred to TODOS.md.
 
 ## NOT in scope
 
