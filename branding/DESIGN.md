@@ -1617,7 +1617,8 @@ across from 481 to 979 px, one column at 480 px and under (owner, 2026-10-09). A
 `ink` 20 px icon on a 36 px `neutral-soft` square, a `w-h3` title and one or two lines in
 `ink-2`. The Ask Michael tile adds decorative status pills (§7.13 colors: Sent idle, Michael
 has it working, Waiting on someone `amber-soft` with `amber-text`, Answered done), hidden
-from screen readers; its text carries the meaning.
+from screen readers; its text carries the meaning. Its last line also says that when Michael
+offers choices you pick one and press Reply, and his pick is tagged (§7.8; owner, 2026-10-19).
 
 ### 9.6 Footer
 
@@ -1694,8 +1695,10 @@ card carries an `amber` soft "Waiting on {who}" chip, one on a customer and one 
 teammate; the Blocked card is the story's refund (Northwind Cafe, Invoice #4471) with the
 18 px coral "?" and a `coral` soft "Waiting for you" chip; Done cards show a green check and
 the first line of Michael's result (`ink-2`, 11/15), then "N more". Under the frame, three
-plain notes keyed like the columns: Waiting says who it waits on, Blocked always waits on
-you, Done shows what came of it. The frame is one `role="img"` with a full text label;
+plain notes keyed like the columns: Waiting says who it waits on, and that when someone
+outside the office doesn't reply after two follow ups, Michael asks you whether to keep waiting
+(owner, 2026-10-19); Blocked always
+waits on you; Done shows what came of it. The frame is one `role="img"` with a full text label;
 nothing in it can be clicked. Five columns at 980 px and up. Under that the board leads with
 what an owner checks first (owner, 2026-10-12): Blocked and Waiting side by side, Done across
 both columns with its cards two across, then To do and Doing as count rows without cards;
@@ -1708,8 +1711,8 @@ tiles: eyebrow "Files", heading "Read the file he means, beside his question.", 
 names only what opens in a tab (CSV files, notes, text and pictures; never "spreadsheets" or
 "in the office", owner CEO D8) and sets the picture later that morning, after the board's
 9:15, and a read only picture of a file tab (§7.2) opened from a file chip on an Ask me card (§7.8). Same
-frame as §9.13 (`card-2`, `r-2xl`, `shadow-lg`). The top bar as §7.2: Office, Tasks, Who
-talks to whom, the `line-2` hairline, then two file tabs (a Markdown note, and a CSV that is
+frame as §9.13 (`card-2`, `r-2xl`, `shadow-lg`). The top bar as §7.2: Office, Tasks, Pulse,
+Who talks to whom, the `line-2` hairline, then two file tabs (a Markdown note, and a CSV that is
 selected, `ink` fill, its name whole), each named as the app names it, without folder or
 extension (the same name as its chip), and the coral Needs you pill showing 1. Under it, the
 file view (§7.2: name, "Oscar / Payments" in `ink-3`, Open in app and Show in Finder) with
@@ -1725,7 +1728,7 @@ question stays beside it (§7.2); and it reads what your business already has: E
 from accounting and payroll software, long PDFs and PowerPoint decks (owner, 2026-10-15; the
 five tab limit is left to the app). The frame is one `role="img"` with a full text label; nothing in it
 can be clicked. File view and card side by side at 980 px and up; under that the card comes
-first (no wider than the app's 520 px right column), then the file, and the tab bar drops Who talks to whom and the Markdown tab, then the
+first (no wider than the app's 520 px right column), then the file, and the tab bar drops Pulse, Who talks to whom and the Markdown tab, then the
 Needs you pill under 600 px and Tasks under 480 px, so the selected file tab keeps its whole
 name. Under 400 px the table steps down to 11 / 16. The section never scrolls sideways.
 
@@ -1770,14 +1773,67 @@ sideways.
 hero, no cards, Download the only call to action. One column at about 70 characters: h1
 "Privacy and security", a one line summary, a link back to the home page's privacy section,
 then six sections under h2s: Who reaches what (one table: your team, Michael and Pete
-against web pages and search, your files and mailboxes, and connectors), The trust layer
-(out: as written, cleaned or not sent; in: instructions removed, the answer labelled, an answer
-that tries to steer flagged to Michael; nothing goes through when the check can't run), What
+against web pages and search, your files and mailboxes, and connectors; and one line: each team
+member's notes and inbox are its own, and teammates, Michael included, are told to ask it instead
+of opening them), The trust
+layer (out: as written, cleaned or not sent; in: instructions removed, the answer labelled, an
+answer that tries to steer flagged to Michael; nothing goes through when the check can't run, the teammate who asked is told and so is Michael, and Pulse lists each message held because the check couldn't run (when, who it was between,
+what it was about, why, and who was told); every message to Pete, from a teammate, Michael, the
+app or one of your answers, is checked, except the app's own fixed notes, which go as written; Pete's notes are not copied for the team; and one line after the way in: since 0.2.3,
+Pulse lists each question sent to Research and each web answer, with what was taken out marked
+word by word, §7.27; owner, 2026-10-19), What
 stays private (the twelve kinds with their defaults), Links in the app (every link in a reply
 names the site it opens, and shows the real one when the words name a different site, §7.8;
 owner, 2026-10-15), What goes to Claude, and Where your data
 lives. Every sentence holds on Mac and Windows; the page states no limit notes. Headings sit
 closer to their text than to the section above; the page never scrolls sideways at 320 px.
+### 9.17 Pulse (web)
+
+A home page section right after the file tabs (§9.14) and before the "Everything else" tiles
+(owner, 2026-10-19, site design review): eyebrow "Pulse", heading "See what the office got
+done, and what it cost.", lead "A Pulse tab beside Tasks shows the week: what each team member
+did, what it cost, and ways to save that wait for your Apply. Here it is on Friday afternoon."
+A read only picture of Pulse (§7.27) in the story's cast for This week, Compare off: the
+header ("Pulse" 18/24 600, the period select reading This week, the Compare switch off,
+"Collecting since" in `t-meta` `ink-3`); one recommendation card in the app's own words (Run Kelly's "check the support inbox" less
+often / It found nothing to do on 258 of 312 runs. Every 1h to every 2h., the hourly job the
+story's Kelly runs, a `green` soft "Saves about $3.90 a week" chip at API prices as the app shows it, and Not now
+with an `ink` Apply kept together on one line); the scene is Friday afternoon of the week whose
+plan use resets Mon, Nov 2, late enough for the app to show advice; then twelve tiles in §7.27's order, four to a row,
+every one above zero so no quiet chip is drawn: emails organized, emails sent for you, tasks
+finished, scheduled checks, questions to the internet, web answers cleaned, messages held
+(`amber` soft, "See what was held" drawn, not a link), steps blocked by your settings, what
+the team learned, questions to you, Spent with plan use (a Claude Max 20x price; Spent is
+the plan's real cost for Monday to Friday afternoon by the app's own formula, §7.27) and your
+time; then Team at work with six rows, busiest first, the team average dashed, Busiest and
+Quiet callouts, hours and cost. Tokens as the board's picture (§9.13): a `card-2` frame,
+`r-2xl`, `shadow-lg`, padding 18; tiles `card`, `r-lg`, `shadow-sm` with a 1 px `line`,
+padding 12/14; numbers IBM Plex Mono 28/32 600 (24/28 on the last four); who did it bars in
+each member's department `acc`. Its CSS is its own block with a `pl-` prefix: it reuses no
+board or file tab class. Coral is never used. Under the frame, three plain notes: Ways to
+save (each looks at the last 14 days, comes with the numbers behind it and changes nothing until you click Apply; Undo
+puts it back; on a Claude plan the saving is counted at pay per use prices and frees plan
+use; advice starts two weeks after Pulse starts recording), Compare (this
+week beside last week, counted up to the same day, once there is a week before to compare), Real costs (on a Claude plan, what you pay
+for the plan split by each member's share of the work). The frame is one `role="img"` whose
+label carries every number and name in reading order; nothing in it can be clicked. As the app
+draws them: the held tile's icon square `card` with `amber-text`; the Quiet callout `neutral-soft`
+with `ink-3` and the Busiest callout `card` with `ink` and an inset 1 px `line-2` ring; from 480 px, where the chip
+shows, the quiet row's avatar and name at 70% (its role keeps full `ink-3`, so it stays readable), and its hours, in
+`ink`, at 70% from 760 px; legend dots 7 px with a 1 px `line` ring and
+counts in `ink-2`; the plan use percent in IBM Plex Mono 12/600 `ink` and the plan line 11/15
+`ink-3`; roles and callouts 10 px. Trimmed on the web, deliberately (owner, 2026-10-19, ship
+review): legend parts at zero, the See each question and See each answer links, the icons and
+sublines on the learned and questions tiles, Your time's While you were away half (its share is
+a sentence under Your time), the Team at work column heads and average footer, and the
+recommendation's button order (Not now, then Apply), and the learned tile's See the notes link and its in all footer.
+Questions to you counts at least one request per scheduled check and question to Pete. Four
+tiles a row at 1100 px and up, two from 760 to 1099; under 760 two compact tiles a row (icon
+and legend hidden, number, label and bar kept), Spent and Your time each across both columns,
+the recommendation stacked, Team at work without roles and with hours over cost. Under 480 px
+the Busiest and Quiet callouts are hidden and the frame's padding is 12. The section never
+scrolls sideways, also at 320 px with a scrollbar.
+
 ---
 
 ## 10. Iconography [Both]
@@ -2024,6 +2080,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-18 | Pulse, Kept safe: each tile names its number in a few words, the same at zero, with its own (i); shorter legend and gate names; a tile's legend shows only once a part is above zero (§7.27). |
 | 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
+| 2026-10-19 | Web: Pulse (web), a read only picture of Pulse after the file tabs with three notes (§9.17); the Ask Michael tile names picking Michael's choices with a click (§9.5); the board's Waiting note names Michael asking whether to keep waiting (§9.13); /security names the memory wall and Pulse's lists, and who is told when a message is held (§9.16); the file tabs picture shows the Pulse tab (§9.14). |
 
 ---
 
