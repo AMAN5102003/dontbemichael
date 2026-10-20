@@ -1242,17 +1242,18 @@ the Research member (an info icon says it stays the Research member whatever its
 string here takes the current name. Its engine offers Claude only, shown as plain text once on
 Claude.
 
-**Company knowledge documents** (Memory & Knowledge, owner 2026-10-19): under Add files, while
-company knowledge is on, a "Documents" label with its (i), then a list in one `line` framed box
+**Company knowledge documents** (Memory & Knowledge, owner 2026-10-19): company knowledge has no
+switch; its title carries an (i). Under Add files, a "Documents" label with its (i), then a list in one `line` framed box
 (scrolls past 300 px): each row the title in `ink-900` 13 px, under it the file name and "added
 19 Oct 2026" (or "updated ...") in `ink-500` 11.5 px, and Open (secondary, small) at the end. Open
 opens the store's copy in the owner's own app; a save there is read in again and a polite line
 says "Read in your changes to Price list." (or why it couldn't, as an alert). Company
 foundations carries a `neutral-soft` "Read only" tag with an (i) and opens as a read only copy.
-Search by meaning sits inside the same Company knowledge block, under a `line` rule and only while
-company knowledge is on: "Search by meaning" with its (i) and an On/Off button, the status dot
-line, the not installed card that opens Prerequisites, and the Search language pair (Fast,
-Multilingual) with an (i) saying a change indexes the documents again. There is no separate
+Search by meaning sits inside the same Company knowledge block, under a `line` rule, with no
+switch: it runs whenever MemPalace is installed. Its row is "Search by meaning" with its (i) and,
+at the end, the status dot and Ready, Getting ready or Not set up; then the not installed card
+that opens Prerequisites, and the Search language pair (Fast, Multilingual) with an (i) saying a
+change indexes the documents again. There is no separate
 Semantic memory section; Michael's Memory tab searches the team's notes by exact words only.
 
 ---

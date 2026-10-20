@@ -107,7 +107,7 @@ test('Settings lists the documents with Open, and a removed document stops being
   assert.match(list, /window\.cth\.kgList\(\)/);
   assert.match(list, /window\.cth\.kgOpen\?\.\(d\.id\)/);
   assert.match(list, /settings\.memory\.docs\.readOnly/);
-  assert.match(read('src/renderer/src/components/SettingsModal.tsx'), /\{kgEnabled && <KnowledgeDocList refreshKey=\{kgDocCount\} \/>\}/);
+  assert.match(read('src/renderer/src/components/SettingsModal.tsx'), /<KnowledgeDocList refreshKey=\{kgDocCount\} \/>/);
   const main = read('src/main/index.ts');
   assert.match(main, /ipcMain\.handle\('kg:open'/);
   assert.match(main, /if \(typeof id === 'string'\) knowledgeEdits\.stop\(id\);/);
@@ -116,3 +116,28 @@ test('Settings lists the documents with Open, and a removed document stops being
     for (const text of Object.values(docs)) assert.doesNotMatch(text, /[–—]| - /, `${lang}: ${text}`);
   }
 });
+
+test('an edited document is mirrored again for search by meaning, and its new time changes the signature', (t) => {
+  const { KnowledgeManager } = loadTsWithElectron();
+  const dir = tmp(t);
+  const root = path.join(dir, 'kg');
+  const m = new KnowledgeManager();
+  m.root = () => root;
+  assert.equal(m.hasDocuments(), false, 'empty: members are not pointed at it');
+  const { docId } = kg.ingest(root, { text: 'Large pizza costs 14 dollars.', title: 'Price list' });
+  assert.equal(m.hasDocuments(), true);
+  const first = m.meaningMirror();
+  const file = path.join(first.dir, `${docId}.md`);
+  assert.match(fs.readFileSync(file, 'utf8'), /14 dollars/);
+  fs.utimesSync(file, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
+  kg.reindex(root, docId, { text: 'Large pizza costs 16 dollars.' });
+  const second = m.meaningMirror();
+  assert.match(fs.readFileSync(file, 'utf8'), /16 dollars/);
+  assert.notEqual(second.signature, first.signature);
+});
+
+function loadTsWithElectron() {
+  const electron = require.resolve('electron');
+  require.cache[electron] = { id: electron, filename: electron, loaded: true, exports: { app: { getPath: () => os.tmpdir(), getAppPath: () => process.cwd(), isPackaged: false } } };
+  return loadTs('src/main/knowledge.ts');
+}

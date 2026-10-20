@@ -311,7 +311,7 @@ function knowledgeSignature(active: boolean, meaning?: MeaningSearch): string {
 
 /** What a running agent is told when the owner turns company knowledge off. */
 export const COMPANY_KNOWLEDGE_OFF =
-  'COMPANY KNOWLEDGE: the owner has turned the company knowledge store off. Its commands stop working until it is turned on again.';
+  'COMPANY KNOWLEDGE: the company knowledge store is empty now, so there is nothing to search in it until the owner adds a document.';
 
 /**
  * How an agent keeps its memory (owner, 2026-09-25): it reads its index (given

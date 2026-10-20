@@ -358,7 +358,7 @@
       },
       "meaning": {
         "title": "Search by meaning",
-        "tip": "Your team also finds passages that say the same thing in other words, not only the exact words. It searches company knowledge only; each member's own memory stays private.",
+        "tip": "Your team also finds passages that say the same thing in other words, not only the exact words. It searches company knowledge only; each member's own memory stays private. It runs once MemPalace is set up in Prerequisites.",
         "languageTip": "Changing it indexes your documents again. Search by meaning is back once that finishes, usually within a few minutes."
       }
     },
@@ -1447,8 +1447,8 @@
   },
   "memoryPanel": {
     "notSetUp": "Not set up",
-    "onReady": "On · ready",
-    "onGettingReady": "On · getting ready…",
+    "onReady": "Ready",
+    "onGettingReady": "Getting ready…",
     "notInstalled": "Search by meaning isn't installed yet.",
     "setUpInPrereqs": "set it up in Prerequisites →",
     "plainNotesStill": "Your team still searches company knowledge by exact words without it.",

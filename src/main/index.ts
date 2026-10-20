@@ -510,7 +510,9 @@ hookServer.restartStuck = (agentId) => {
 };
 const memory = new MemoryManager(
   () => readConfig().harnessHome,
-  () => { const c = readConfig(); return { enabled: c.semanticMemory !== false, model: c.embeddingModel ?? 'minilm' }; },
+  // Search by meaning runs whenever MemPalace is installed (owner, 2026-10-19:
+  // no switch; installing it in Prerequisites is the choice).
+  () => ({ enabled: true, model: readConfig().embeddingModel ?? 'minilm' }),
   // Company knowledge, indexed into the palace for searching by meaning.
   () => knowledge.meaningMirror()
 );
@@ -542,7 +544,7 @@ function companyProfileForAgents(): string | null {
 function meaningSearch(): { bin: string; palace: string; model: string } | undefined {
   const bin = memory.bin();
   const palace = memory.palacePath();
-  return memory.active() && knowledge.active() && bin && palace ? { bin, palace, model: memory.model() } : undefined;
+  return memory.active() && knowledge.hasDocuments() && bin && palace ? { bin, palace, model: memory.model() } : undefined;
 }
 // Company knowledge: file-backed store + agent CLI (default ON).
 const knowledge = new KnowledgeManager();
@@ -742,7 +744,6 @@ const foundations = new Foundations({
   home: () => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; },
   record: (ev) => pulseTelemetry.record(ev),
   publish: (text, oldId) => {
-    if (!knowledge.active()) return undefined;
     const r = knowledge.ingestText(text, { title: FOUNDATIONS_TITLE, tags: ['foundations'] }) as { docId?: string };
     if (oldId && oldId !== r?.docId) { try { knowledge.remove(oldId); } catch { /* gone already */ } }
     return r?.docId;
@@ -4155,7 +4156,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
             homedir()
           )
         } : {
-          knowledgeGraph: knowledge.active(),
+          knowledgeGraph: knowledge.hasDocuments(),
           // Bake the ABSOLUTE KG CLI path into the agent's prompt. The prompt used
           // to spell it `$KG_CLI`, which is POSIX-only: under cmd.exe/PowerShell it
           // expands to nothing, so every knowledge-graph instruction was dead on a
@@ -4788,8 +4789,6 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   // A new search language: the index was built with the other model, which
   // MemPalace refuses to search with, so it is built again (owner, 2026-10-19).
   if (patch && typeof patch === 'object' && 'embeddingModel' in patch && (next.embeddingModel ?? 'minilm') !== modelBefore) memory.modelChanged();
-  // Search by meaning switched back on: index what changed while it was off.
-  if (patch && typeof patch === 'object' && patch.semanticMemory === true) memory.start();
   // Live opt-in/out from Settings (TELEMETRY.md); stays off while
   // COLLECT_USAGE_STATS is false.
   if (typeof patch?.telemetryEnabled === 'boolean') analytics.setEnabled(COLLECT_USAGE_STATS && patch.telemetryEnabled);

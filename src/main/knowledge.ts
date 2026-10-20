@@ -59,9 +59,17 @@ export interface KnowledgeStatus {
 }
 
 export class KnowledgeManager {
-  /** Whether the feature flag is on. */
+  /** Company knowledge is always on (owner, 2026-10-19: no switch). Kept as
+   *  a method so callers read one place. */
   active(): boolean {
-    return readConfig().knowledgeGraph?.enabled === true;
+    return true;
+  }
+
+  /** Whether the store holds any document: members are pointed at it only
+   *  then, so nobody spends a step searching an empty store. */
+  hasDocuments(): boolean {
+    const docs = join(this.root(), 'docs');
+    try { return readdirSync(docs).some((id) => existsSync(join(docs, id, 'meta.json'))); } catch { return false; }
   }
 
   /** The store directory (config override or <userData>/knowledge). */
@@ -109,12 +117,18 @@ export class KnowledgeManager {
     try { mkdirSync(dir, { recursive: true }); } catch { return null; }
     const docs = existsSync(root) ? core.list(root) : [];
     const ids = new Set<string>();
+    const versions: string[] = [];
     for (const meta of docs) {
       const id = String(meta.id ?? '');
       if (!/^[A-Za-z0-9_-]+$/.test(id)) continue;
+      // An edited document carries updatedAt: its mirror file is written again,
+      // and the new time changes the signature, so it is indexed again.
+      const version = meta.updatedAt ? `edited ${meta.updatedAt}` : String(meta.addedAt ?? '');
       ids.add(id);
+      versions.push(`${id}@${version}`);
       const file = join(dir, `${id}.md`);
-      if (existsSync(file)) continue;
+      const changed = !!meta.updatedAt && (() => { try { return statSync(file).mtimeMs < Date.parse(meta.updatedAt!); } catch { return true; } })();
+      if (existsSync(file) && !changed) continue;
       const doc = core.getDoc(root, id);
       if (!doc) continue;
       try {
@@ -128,13 +142,13 @@ export class KnowledgeManager {
         try { rmSync(join(dir, f), { force: true }); } catch { /* next pass */ }
       }
     }
-    return { dir, signature: [...ids].sort().join(',') };
+    return { dir, signature: versions.sort().join(',') };
   }
 
   /** What a running agent needs to search the store: whether it's on, the CLI,
    *  and the store's folder (passed as --root, so no restart is needed). */
   agentAccess(): { active: boolean; cliPath?: string; root?: string } {
-    if (!this.active()) return { active: false };
+    if (!this.hasDocuments()) return { active: false };
     return { active: true, cliPath: this.cliPath(), root: this.root() };
   }
 

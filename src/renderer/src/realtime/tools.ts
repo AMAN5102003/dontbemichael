@@ -294,8 +294,6 @@ export function realtimeReadTools(): ReturnType<typeof tool>[] {
             c.webhookEnabled && 'webhooks',
             c.freeflowEnabled && 'Free Flow voice',
             c.realtimeVoiceEnabled && 'realtime voice (this session)',
-            c.semanticMemory && obj(c.knowledgeGraph).enabled && 'search by meaning in company knowledge',
-            obj(c.knowledgeGraph).enabled && 'the knowledge graph'
           ].filter(Boolean);
           if (features.length) parts.push(`Enabled features: ${features.join(', ')}.`);
           return parts.join(' ');

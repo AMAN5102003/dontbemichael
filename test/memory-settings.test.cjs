@@ -19,22 +19,26 @@ test('the office floor no longer carries the memory panel', () => {
   assert.ok(!fs.existsSync(path.resolve(__dirname, '../src/renderer/src/components/MemoryPanel.tsx')));
 });
 
-test('search by meaning sits under Company knowledge: its switch, status and search language', () => {
+test('Company knowledge and search by meaning have no switches: the document tools, the status and the search language', () => {
   const s = read('src/renderer/src/components/SettingsModal.tsx');
   const start = s.indexOf("activeSection === 'Memory & Knowledge'");
   const section = s.slice(start, start + 9000);
-  // One section: company knowledge first, search by meaning inside it, only while it is on.
   assert.ok(section.indexOf("t('settings.memory.kg')") < section.indexOf("t('settings.memory.meaning.title')"));
-  assert.match(section, /\{kgEnabled && \(\n\s*<div style=\{\{ marginTop: 14, paddingTop: 12/);
-  assert.doesNotMatch(s, /settings\.memory\.semanticMemory|settings\.memory\.crossSession/);
-  assert.match(section, /onClick=\{toggleSemMem\}/);
+  assert.doesNotMatch(s, /toggleKg|toggleSemMem|kgEnabled|semMemOn|stage\(\{ semanticMemory|stage\(\{ knowledgeGraph/);
+  assert.doesNotMatch(section, /t\('common\.on'\)|t\('common\.off'\)/, 'no On or Off button in the section');
+  assert.match(section, /<KnowledgeDocList refreshKey=\{kgDocCount\} \/>/);
   assert.match(section, /t\('memoryPanel\.onReady'\)/);
   assert.match(section, /onClick=\{\(\) => pickEmbeddingModel\(id\)\}/);
   assert.match(section, /settings\.memory\.meaning\.languageTip/);
-  // Saved with the rest of Settings, not instantly like the old panel.
   assert.match(s, /stage\(\{ embeddingModel: m \} as Partial<HarnessConfig>\);/);
   // Not installed: straight to the setup that installs it.
   assert.match(section, /setActiveSection\('Prerequisites'\)/);
+  // Main: always on; search by meaning follows the install; members pointed at the store once it has a document.
+  const main = read('src/main/index.ts');
+  assert.match(main, /\(\) => \(\{ enabled: true, model: readConfig\(\)\.embeddingModel \?\? 'minilm' \}\)/);
+  assert.match(main, /knowledgeGraph: knowledge\.hasDocuments\(\),/);
+  assert.match(read('src/main/knowledge.ts'), /if \(!this\.hasDocuments\(\)\) return \{ active: false \};/);
+  assert.doesNotMatch(read('src/main/realtimeActions.ts'), /semanticMemory/, 'voice cannot turn it off either');
 });
 
 test('Michael\'s Memory tab searches the team\'s notes by exact words only', () => {

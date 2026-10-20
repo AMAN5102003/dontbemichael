@@ -348,12 +348,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     const n = maxTurnsVal.trim() === '' ? undefined : Number(maxTurnsVal);
     return { maxTurns: Number.isFinite(n as number) && (n as number) > 0 ? Math.round(n as number) : undefined } as Partial<HarnessConfig>;
   };
-  const [semMemOn, setSemMemOn] = useState<boolean>(cfgX.semanticMemory !== false);
-  const toggleSemMem = async () => {
-    const next = !semMemOn;
-    setSemMemOn(next);
-    stage({ semanticMemory: next } as Partial<HarnessConfig>);
-  };
   // Search language + live status. Moved here from the floating "hive memory"
   // panel that sat on the office floor: nothing in it was about the floor, its
   // on/off duplicated the switch above, and searching memory is already on
@@ -495,9 +489,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [orgNote, setOrgNote] = useState('');
 
   // ─── Knowledge Graph (enterprise multimodal context for agents) ───────────
-  const [kgEnabled, setKgEnabled] = useState<boolean>(
-    (config as HarnessConfig & { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true
-  );
   const [kgDocCount, setKgDocCount] = useState(0);
   const [kgBusy, setKgBusy] = useState(false);
   const [kgNote, setKgNote] = useState('');
@@ -505,15 +496,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const refreshKgStatus = async () => {
     try { const s = await window.cth.kgStatus(); setKgDocCount(s.docCount); }
     catch { /* status unavailable */ }
-  };
-
-  const toggleKg = async () => {
-    const next = !kgEnabled;
-    setKgEnabled(next);
-    try {
-      stage({ knowledgeGraph: { enabled: next } });
-      if (next) await refreshKgStatus();
-    } catch { setKgEnabled(!next); }
   };
 
   const addKgFiles = async () => {
@@ -621,8 +603,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setSlackChannel(cc.slackChannelId ?? '');
       setSlackPort(String(cc.slackPort ?? 3847));
       setSlackProactivePosting(cc.slackProactivePosting ?? false);
-      const kgOn = (cc as { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true;
-      setKgEnabled(kgOn);
       setFreeflowEnabled(cc.freeflowEnabled !== false);
       setGroqKey(cc.groqApiKey ?? '');
       setFreeflowModel(cc.freeflowModel ?? 'whisper-large-v3-turbo');
@@ -1543,24 +1523,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         <div style={sectionHead}>
                           {t('settings.memory.kg')}
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
-                              {t('settings.memory.kgTitle')}
-                            </span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                              {t('settings.memory.kgDesc')}
-                            </span>
-                          </div>
-                          <PixelButton
-                            variant={kgEnabled ? 'primary' : 'secondary'}
-                            size="sm"
-                            onClick={toggleKg}
-                          >
-                            {kgEnabled ? t('common.on') : t('common.off')}
-                          </PixelButton>
-                        </div>
-                        {kgEnabled && (
+                        {/* Always on (owner, 2026-10-19): no switch; members are pointed
+                            at it once it holds a document. */}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                          {t('settings.memory.kgTitle')}<InfoTip text={t('settings.memory.kgDesc')} />
+                        </span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
                             <PixelButton variant="secondary" size="sm" onClick={addKgFiles} disabled={kgBusy}>
                               {kgBusy ? t('settings.memory.adding') : t('settings.memory.addFiles')}
@@ -1572,40 +1539,33 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             </span>
                             {kgNote && <span style={{ fontSize: 12, color: 'var(--cth-mint)' }}>{kgNote}</span>}
                           </div>
-                        )}
                         {/* What agents search, and Open to read or edit it (owner, 2026-10-19). */}
-                        {kgEnabled && <KnowledgeDocList refreshKey={kgDocCount} />}
+                        <KnowledgeDocList refreshKey={kgDocCount} />
                         {/* Search by meaning (owner, 2026-10-19): part of company knowledge,
                             which is all it ever searches; members' memory stays theirs. */}
-                        {kgEnabled && (
                           <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--cth-line)' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
                                 {t('settings.memory.meaning.title')}<InfoTip text={t('settings.memory.meaning.tip')} />
                               </span>
-                              <PixelButton variant={semMemOn ? 'primary' : 'secondary'} size="sm" onClick={toggleSemMem}>
-                                {semMemOn ? t('common.on') : t('common.off')}
-                              </PixelButton>
-                            </div>
-                            {/* Is it working? One state line, as the floor panel had. */}
-                            {memStatus && (() => {
-                              const st = !memStatus.available
-                                ? { dot: 'var(--cth-coral)', label: t('memoryPanel.notSetUp') }
-                                : !semMemOn
-                                  ? { dot: 'var(--cth-ink-500)', label: t('common.off') }
+                              {/* No switch (owner, 2026-10-19): it runs whenever MemPalace is
+                                  installed; this line says whether it is working. */}
+                              {memStatus && (() => {
+                                const st = !memStatus.available
+                                  ? { dot: 'var(--cth-coral)', label: t('memoryPanel.notSetUp') }
                                   : memStatus.initialized
                                     ? { dot: 'var(--cth-mint)', label: t('memoryPanel.onReady') }
                                     : { dot: 'var(--cth-lemon)', label: t('memoryPanel.onGettingReady') };
-                              return (
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--cth-ink-900)', marginTop: 8 }}>
-                                  <span style={{ borderRadius: 'var(--cth-r-md)', width: 8, height: 8, background: st.dot, boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }} />
-                                  {st.label}
-                                </span>
-                              );
-                            })()}
-
+                                return (
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--cth-ink-900)' }}>
+                                    <span style={{ borderRadius: 'var(--cth-r-md)', width: 8, height: 8, background: st.dot, boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }} />
+                                    {st.label}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             {/* Not installed: send them to the setup that installs it. */}
-                            {memStatus && !memStatus.available && semMemOn && (
+                            {memStatus && !memStatus.available && (
                               <div style={{
                                 borderRadius: 'var(--cth-r-md)',
                                 marginTop: 8, fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: 1.6,
@@ -1622,7 +1582,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             )}
 
                             {/* Search language: a benefit framed choice, not a model codename. */}
-                            {memStatus?.available && semMemOn && (
+                            {memStatus?.available && (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
                                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('memoryPanel.searchLanguage')}<InfoTip text={t('settings.memory.meaning.languageTip')} /></span>
                                 <div style={{ display: 'flex', gap: 8 }}>
@@ -1653,7 +1613,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               </div>
                             )}
                           </div>
-                        )}
                       </div>
                     </>
                   )}
