@@ -107,11 +107,11 @@ export function AskMeTab() {
   const [answeredHere, setAnsweredHere] = useState<{ id: string; title: string; a: string; who?: string; whoId?: string }[]>([]);
   const [line] = useState(() => 1 + Math.floor(Math.random() * ALL_CLEAR_LINES));
   const rootRef = useRef<HTMLDivElement>(null);
-  // A foundation answer just saved: one polite line, as the card leaves (design states table).
-  const [foundationSaved, setFoundationSaved] = useState(false);
+  // A foundation answer just saved, or sent to Michael to add: one polite line, as the card leaves.
+  const [foundationSaved, setFoundationSaved] = useState<'saved' | 'michael' | null>(null);
   useEffect(() => {
     if (!foundationSaved) return;
-    const timer = setTimeout(() => setFoundationSaved(false), 4000);
+    const timer = setTimeout(() => setFoundationSaved(null), 4000);
     return () => clearTimeout(timer);
   }, [foundationSaved]);
 
@@ -157,7 +157,8 @@ export function AskMeTab() {
   // owner put off with Not now stays out for its week.
   const asks = rowsOf(openAskIndexes);
   const now = Date.now();
-  const foundationRows = asks.filter((r) => { const id = foundationAsk(r.ask); return !!id && !isSnoozed(foundations?.snoozed, id, now); });
+  // A question answered another way (a member, a file, Michael) leaves the board too.
+  const foundationRows = asks.filter((r) => { const id = foundationAsk(r.ask); return !!id && !isSnoozed(foundations?.snoozed, id, now) && !foundations?.answers?.[id]; });
   const waiting: AskRow[] = [...asks.filter((r) => !foundationAsk(r.ask)), ...foundationRows, ...rowsOf(openReportIndexes)];
   const rowsRef = useRef<AskRow[]>(waiting);
   rowsRef.current = waiting;
@@ -268,7 +269,7 @@ export function AskMeTab() {
       <WorkStyleUpdateCards offers={offers} />
       <MailProposalCards proposals={proposals} refresh={refreshNeedsYou} />
       {/* Always mounted, so screen readers announce the line when it fills. */}
-      <div role="status" style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)', padding: '0 2px', display: foundationSaved ? undefined : 'contents' }}>{foundationSaved ? translate('foundations.card.saved') : ''}</div>
+      <div role="status" style={foundationSaved ? { fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)', padding: '0 2px' } : statusIdle}>{foundationSaved === 'saved' ? translate('foundations.card.saved') : foundationSaved === 'michael' ? translate('foundations.card.sentToMichael', { godName }) : ''}</div>
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
       {!engineCard && !onBreak && !researchNotice && !knowledgeNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
@@ -299,7 +300,9 @@ export function AskMeTab() {
               raiserId={raiser} raiserName={nameFor(raiser)} raiserIsMember={!!member}
               chipStyle={{ ...personChip, ...(fam ? { background: fam.l, boxShadow: `inset 0 0 0 1px ${fam.m}` } : {}) }}
               foundations={foundations}
-              onAnswer={async (text) => { const ok = await sendAnswer(row, text); if (ok) setFoundationSaved(true); return ok; }}
+              memberName={(mid) => agents.find((a) => a.id === mid)?.name}
+              onAnswer={(text) => sendAnswer(row, text)}
+              onSaved={setFoundationSaved}
             />
           );
         }
@@ -607,6 +610,10 @@ function KnowledgeNoticeCard() {
     </section>
   );
 }
+
+/** The saved line's live region while empty: out of the layout, still in the
+ *  accessibility tree, so it is announced when its text arrives. */
+const statusIdle: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
 
 const reportTag: CSSProperties = {
   fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 'var(--cth-r-pill)',

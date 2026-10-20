@@ -2750,7 +2750,8 @@
       "open": "点击成员查看其本周",
       "rowAria": "{{name}}：工作 {{time}}，{{value}}",
       "cost": "成本",
-      "planLegend": "成本：每位成员分摊的套餐费用"
+      "planLegend": "成本：每位成员分摊的套餐费用",
+      "rowAriaFoundations": "{{row}}，{{foundations}}"
     },
     "plan": {
       "yourPlan": "Claude 套餐",
@@ -3010,7 +3011,8 @@
       "failed": "无法保存，请重试。",
       "saved": "已保存到公司基础信息。",
       "failedDraft": "无法请 {{name}} 起草，请重试。",
-      "failedLater": "无法暂缓，请重试。"
+      "failedLater": "无法暂缓，请重试。",
+      "sentToMichael": "已发给 {{godName}}，由其添加到公司基础信息。"
     }
   },
   "knowledgeNotice": {

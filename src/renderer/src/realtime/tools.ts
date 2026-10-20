@@ -366,14 +366,8 @@ export function realtimeReadTools(): ReturnType<typeof tool>[] {
             return mem.trim() ? clip(mem.trim(), 1600) : `${agentId} has not recorded any memory yet.`;
           }
 
-          // neither → status, but make clear search always works.
-          const status = await window.cth.memoryStatus();
-          const sem = status.active
-            ? 'Semantic memory is active'
-            : status.available
-            ? 'Semantic memory is enabled but idle'
-            : 'Semantic memory is offline';
-          return `${sem} — but I can always text-search every agent's notes, active or archived. Ask me to search a topic, or name an agent to read their memory.`;
+          // neither → say how it searches.
+          return 'I search every agent\'s notes by exact words, active or archived. Ask me to search a topic, or name an agent to read their memory.';
         }, 'memory')
     }),
 

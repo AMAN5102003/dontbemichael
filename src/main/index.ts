@@ -20,9 +20,9 @@ import { PtyManager, type ProcessLaunch, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath } from './shellEnv';
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
-import { Foundations } from './foundations';
+import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, isFoundationsDoc, jobOf, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -716,8 +716,6 @@ const pulseOffice = (): string | null => { const h = readConfig().harnessHome; r
 const pulseTelemetry = new TelemetryStore(() => persist.database(), pulseOffice);
 const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTelemetry);
 
-/** Each roster member's job, for Company foundations (office-foundations.md):
- *  read like its studio department; Michael, Research and assistants have none. */
 /** The team as Company foundations reads it, from one read of the registry
  *  and the roster (the hook asks on every prompt): each member's job (read
  *  like its studio department; Michael, Research and assistants have none),
@@ -739,24 +737,22 @@ function foundationsTeam(): { jobs: Record<string, FoundationJob[]>; office: Fou
   };
   return { jobs, office: FOUNDATION_JOBS.filter((j) => all.has(j)), nameOf, godId: reg.godId ?? null };
 }
+/** A member's or Michael's name for the foundations, from the registry alone. */
+function foundationsNameOf(id: string): string {
+  if (id === 'owner') return 'the owner';
+  const reg = hive.registry();
+  return id === reg.godId || id === 'god' ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : (reg.agents?.[id]?.name ?? id);
+}
 /** Company foundations' one writer (main/foundations.ts). */
 const foundations = new Foundations({
   home: () => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; },
   record: (ev) => pulseTelemetry.record(ev),
-  publish: (text) => {
-    const r = knowledge.ingestText(text, { title: FOUNDATIONS_TITLE, tags: [FOUNDATIONS_TAG] }) as { docId?: string };
-    // One copy in the store, which every office shares: our old copy and any
-    // other office's go, so no business reads another's answers.
-    for (const d of knowledge.list()) {
-      if (d.id !== r?.docId && isFoundationsDoc(d)) { try { knowledge.remove(d.id); } catch { /* gone already */ } }
-    }
-    memory.companyKnowledgeChanged(); // search by meaning reads the new copy
-    return r?.docId;
-  },
+  publish: (text) => publishCopy(knowledge, text, () => memory.companyKnowledgeChanged()),
   exists: (id) => !!knowledge.get(id),
   jobs: () => foundationsTeam().office,
   jobsOf: (id) => foundationsTeam().jobs[id] ?? [],
-  nameOf: (id) => foundationsTeam().nameOf(id),
+  // Names only: the registry, not the whole team (a document names each learned answer's member).
+  nameOf: (id) => foundationsNameOf(id),
   godId: () => hive.registry().godId ?? null,
   profile: () => cleanCompanyProfile(readConfig().companyProfile),
   setProfile: (patch) => { writeConfig({ companyProfile: { ...cleanCompanyProfile(readConfig().companyProfile), ...patch } }); },
@@ -5568,16 +5564,16 @@ function turnResearchOff(): number {
   try { return hive.returnResearchInbox(); } catch (e) { console.error('[research] return inbox failed', e); return 0; }
 }
 ipcMain.handle('research:off', () => ({ ok: true, returned: turnResearchOff() }));
-/** The one time update card was read (Got it or Open Research settings). */
 // Company knowledge has no switch (owner, 2026-10-19): an owner who had turned
 // it off, with documents of their own in it, is told once that the team can
 // search them now.
 ipcMain.handle('kg:notice', () => {
   const cfg = readConfig();
   if (cfg.knowledgeGraph?.enabled !== false || cfg.knowledgeOnNoticeSeen) return { notice: false };
-  try { return { notice: knowledge.list().some((d) => !isFoundationsDoc(d)) }; } catch { return { notice: false }; }
+  try { return { notice: knowledgeNoticeDue(cfg.knowledgeGraph?.enabled, cfg.knowledgeOnNoticeSeen, knowledge.list()) }; } catch { return { notice: false }; }
 });
 ipcMain.handle('kg:noticeSeen', () => { writeConfig({ knowledgeOnNoticeSeen: true }); return { ok: true }; });
+/** The one time update card was read (Got it or Open Research settings). */
 ipcMain.handle('research:noticeSeen', () => {
   const cfg = readConfig();
   if (cfg.research?.notice) writeConfig({ research: { ...cfg.research, notice: false } });
@@ -5634,7 +5630,8 @@ ipcMain.handle('hive:rememberOwnerAnswer', (_evt, p: unknown) => {
 ipcMain.handle('hive:send', (_evt, partial: Partial<HiveMessage>, from: unknown) => {
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
   const sender = typeof from === 'string' ? from : 'system';
-  const msg = hive.send(partial ?? {}, sender);
+  // A 'human' send from the window is the owner's own (ownerSaid trusts only these).
+  const msg = hive.send(partial ?? {}, sender, undefined, sender === 'human');
   // Count only what a PERSON sent. Every renderer surface that dispatches on a
   // human's behalf passes 'human' (Command Center dispatch, thread replies, ASK
   // ME answers); agent-to-agent traffic passes the agent id and would swamp the

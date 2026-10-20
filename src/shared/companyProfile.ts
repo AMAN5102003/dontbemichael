@@ -197,3 +197,22 @@ export function companyProfileContext(
     'Everything else about the company (products and prices, ideal customers, how it sells, policies) is in the company knowledge store.'
   ].join('\n');
 }
+
+/**
+ * A profile page's save on top of the latest profile: only the fields the
+ * owner changed since the page opened are taken from the page, so a page left
+ * open never undoes a newer answer (Company foundations writes opening hours
+ * and the financial year into the profile; review, 2026-10-20).
+ */
+export function mergeEditedProfile(opened: CompanyProfile, edited: CompanyProfile, latest: CompanyProfile): CompanyProfile {
+  const out: Record<string, unknown> = { ...latest };
+  const keys = new Set([...Object.keys(opened), ...Object.keys(edited)]);
+  for (const k of keys) {
+    const was = (opened as Record<string, unknown>)[k];
+    const now = (edited as Record<string, unknown>)[k];
+    if (JSON.stringify(was) === JSON.stringify(now)) continue;
+    if (now === undefined) delete out[k];
+    else out[k] = now;
+  }
+  return cleanCompanyProfile(out);
+}

@@ -21,7 +21,7 @@ import { refreshNeedsYou } from '@/shell/useNeedsYou';
  * then writes the answer into the foundations (the app's one writer); if that
  * write fails, Michael is asked to add it, as he does any owner answer.
  */
-export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raiserName, raiserIsMember = true, chipStyle, foundations, onAnswer }: {
+export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raiserName, raiserIsMember = true, memberName, chipStyle, foundations, onAnswer, onSaved }: {
   id: FoundationId;
   rowKey: string;
   taskId: string;
@@ -32,11 +32,15 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
   raiserName?: string;
   /** Whether the raiser is on the team now: only then can it draft. */
   raiserIsMember?: boolean;
+  /** A team member's name, or undefined for someone not on the team now. */
+  memberName?: (id: string) => string | undefined;
   /** The raiser chip in the member's department color (D11). */
   chipStyle: CSSProperties;
   foundations: FoundationsView | null;
   /** Answer the card like any Ask me reply; resolves false when it did not land. */
   onAnswer: (text: string) => Promise<boolean>;
+  /** Where the answer went: written into the foundations, or to Michael to add. */
+  onSaved?: (how: 'saved' | 'michael') => void;
 }) {
   const { t, i18n } = useTranslation();
   const rtl = useRtl();
@@ -48,7 +52,9 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
   const [failed, setFailed] = useState<'save' | 'draft' | 'later' | null>(null);
   const asked = foundations?.drafts?.[id];
   // A request waits 2 days; after that the card offers to ask again.
-  const drafting = draftPending(asked, Date.now());
+  // Who was asked (or filled it): named from the record, never the card's raiser.
+  const askedName = asked ? memberName?.(asked.by) : undefined;
+  const drafting = draftPending(asked, Date.now()) && !!askedName;
   const drafter = raiserName ?? '';
   const [filled, setFilled] = useState(false);
   // The member's draft fills an empty box once (D8), labeled as theirs.
@@ -69,9 +75,12 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
       // The card first: the answer reaches Michael, who closes it.
       if (!(await onAnswer(text))) throw new Error('card changed');
       const r = await window.cth.foundationsAnswer(id, text).catch(() => null);
-      if (!r?.ok) {
+      if (r?.ok) onSaved?.('saved');
+      else {
         // Not written: Michael adds it, as he does any owner answer.
-        await window.cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${text}` }, 'human').catch(() => undefined);
+        const sent = await window.cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${text}` }, 'human').catch(() => null);
+        if (!sent?.ok) throw new Error('not saved');
+        onSaved?.('michael');
       }
       refreshNeedsYou();
     } catch {
@@ -105,7 +114,7 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
       {/* A visible label, and the hint as its description (D12). */}
       <label htmlFor={`${hintId}-box`} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 11, fontWeight: 600, color: 'var(--cth-ink-3)', marginBottom: 4 }}>
         {t('foundations.card.yourAnswer')}
-        {asked?.text && filled && <span style={{ fontWeight: 500, color: 'var(--cth-indigo-text)' }}>{t('foundations.card.draftedBy', { name: drafter })}</span>}
+        {asked?.text && filled && <span style={{ fontWeight: 500, color: 'var(--cth-indigo-text)' }}>{t('foundations.card.draftedBy', { name: askedName ?? drafter })}</span>}
       </label>
       <GrowingTextarea
         id={`${hintId}-box`}
@@ -125,7 +134,7 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
       <div id={hintId} style={{ marginTop: 4, fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-3)' }}>{t('foundations.card.hint', { n: FOUNDATION_CAP })}</div>
       {drafting && (
         <div role="status" style={{ marginTop: 8, padding: '6px 10px', borderRadius: 'var(--cth-r-lg)', background: 'var(--cth-indigo-soft)', color: 'var(--cth-indigo-text)', fontSize: 12, lineHeight: '17px' }}>
-          {t('foundations.card.drafting', { name: drafter })}
+          {t('foundations.card.drafting', { name: askedName })}
         </div>
       )}
       {/* At 320 px Save and Draft share a line and Not now wraps to its own (D13). */}

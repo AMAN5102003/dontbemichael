@@ -2750,7 +2750,8 @@
       "open": "انقر على عضو لرؤية أسبوعه",
       "rowAria": "{{name}}: {{time}} من العمل، {{value}}",
       "cost": "التكلفة",
-      "planLegend": "التكلفة: حصة كل عضو من خطتك"
+      "planLegend": "التكلفة: حصة كل عضو من خطتك",
+      "rowAriaFoundations": "{{row}}، {{foundations}}"
     },
     "plan": {
       "yourPlan": "خطة Claude",
@@ -3010,7 +3011,8 @@
       "failed": "تعذر الحفظ، حاول مرة أخرى.",
       "saved": "تم الحفظ في أساسيات الشركة.",
       "failedDraft": "تعذر أن نطلب من {{name}} كتابة مسودة، حاول مرة أخرى.",
-      "failedLater": "تعذر التأجيل، حاول مرة أخرى."
+      "failedLater": "تعذر التأجيل، حاول مرة أخرى.",
+      "sentToMichael": "أرسلت إلى {{godName}} لإضافتها إلى أساسيات الشركة."
     }
   },
   "knowledgeNotice": {

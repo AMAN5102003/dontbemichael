@@ -51,7 +51,6 @@ interface KgCore {
 }
 
 export interface KnowledgeStatus {
-  enabled: boolean;
   root: string;
   docCount: number;
   chunkCount: number;
@@ -146,12 +145,11 @@ export class KnowledgeManager {
   }
 
   status(): KnowledgeStatus {
-    const enabled = true;
     const root = this.root();
     const s = existsSync(root)
       ? core.stats(root)
       : { docCount: 0, chunkCount: 0, byModality: {} };
-    return { enabled, root, docCount: s.docCount, chunkCount: s.chunkCount, byModality: s.byModality };
+    return { root, docCount: s.docCount, chunkCount: s.chunkCount, byModality: s.byModality };
   }
 
   /** Ingest a file from disk. No-op-safe when off (callers gate on status).

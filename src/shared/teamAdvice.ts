@@ -17,6 +17,10 @@
 import type { ModelTier } from './modelCatalogPayload';
 
 export const ADVICE_WINDOW_MS = 14 * 86_400_000;
+/** Early patterns need half the evidence advice needs (owner, 2026-10-19, eng D1). */
+export const EARLY_SCALE = 0.5;
+/** The reopen rule's minimum of reopened cards. */
+export const REOPEN_MIN = 3;
 export const MIN_RUNS = 10;
 export const MIN_INTERVAL_MS = 15 * 60_000;
 
@@ -173,7 +177,7 @@ export function adviceFor(input: {
       });
       continue;
     }
-    const weak = (p.keptDecisions >= min(10) && p.keptShare !== null && p.keptShare < 0.6) || p.reopens >= min(3);
+    const weak = (p.keptDecisions >= min(10) && p.keptShare !== null && p.keptShare < 0.6) || p.reopens >= min(REOPEN_MIN);
     const up = weak ? nextTier(input.ladder, p.provider, p.model, 1) : null;
     if (up) {
       out.push({

@@ -38,7 +38,7 @@ import { godNameNow } from '@/i18n';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
 import { getNeedsYouFeed } from '@/shell/useNeedsYou';
 import { FOUNDATION_QUESTIONS, foundationAsk, isFoundationsDoc, type FoundationId, type FoundationsJobRow, type FoundationsMember } from '@shared/foundations';
-import { ADVICE_WINDOW_MS } from '@shared/teamAdvice';
+import { ADVICE_WINDOW_MS, EARLY_SCALE, REOPEN_MIN } from '@shared/teamAdvice';
 
 const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
@@ -53,8 +53,8 @@ const dollars = (v: number): string => `$${Math.round(v)}`;
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
 /** Days before advice starts (the advice window). */
 const ADVICE_DAYS = Math.round(ADVICE_WINDOW_MS / 86_400_000);
-/** Reopened cards an early line names: the reopen rule's 3, at early half evidence. */
-const EARLY_REOPENS = 2;
+/** Reopened cards an early line names: the reopen rule's minimum, at early evidence. */
+const EARLY_REOPENS = Math.ceil(REOPEN_MIN * EARLY_SCALE);
 
 /** Open a foundation question's waiting card in Needs you, else the document
  *  in company knowledge (office-foundations.md, design D5). */
@@ -530,7 +530,9 @@ export function PulseView() {
       const fm = view.foundations?.members[m.agentId];
       return (
         <div key={m.agentId} role="listitem"><button type="button" onClick={() => setDetail(m.agentId)}
-          aria-label={t('pulse.work.rowAria', { name: nameOf(m.agentId), time: duration(m.busyMs, t), value: money(m.usd) }) + (fm && fm.answered < fm.total ? `, ${t('pulse.foundations.count', { answered: fm.answered, total: fm.total })}` : '')}
+          aria-label={fm && fm.answered < fm.total
+            ? t('pulse.work.rowAriaFoundations', { row: t('pulse.work.rowAria', { name: nameOf(m.agentId), time: duration(m.busyMs, t), value: money(m.usd) }), foundations: t('pulse.foundations.count', { answered: fm.answered, total: fm.total }) })
+            : t('pulse.work.rowAria', { name: nameOf(m.agentId), time: duration(m.busyMs, t), value: money(m.usd) })}
           style={{ ...workGrid, width: '100%', minHeight: 44, border: 'none', borderTop: '1px solid var(--cth-line)', background: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'var(--cth-font-ui)', color: 'var(--cth-ink)', padding: 0 }}>
           <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, opacity: quiet ? 0.7 : 1 }}>
             <span style={{ borderRadius: '50%', boxShadow: `0 0 0 1.5px ${color}`, display: 'inline-flex', flex: 'none' }}><AgentAvatar id={m.agentId} name={nameOf(m.agentId)} size={24} /></span>

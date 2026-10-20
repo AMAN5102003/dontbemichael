@@ -39,7 +39,7 @@ import {
   existsSync, mkdirSync, readFileSync, writeFileSync, renameSync,
   readdirSync, statSync, lstatSync, realpathSync, rmSync, appendFileSync,
   symlinkSync, unlinkSync, copyFileSync, cpSync, chmodSync,
-  openSync, fstatSync, closeSync, ftruncateSync, writeSync, constants, type Stats
+  openSync, fstatSync, closeSync, ftruncateSync, writeSync, readSync, constants, type Stats
 } from 'node:fs';
 import { join, dirname, basename, isAbsolute, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
@@ -517,6 +517,8 @@ export interface SpawnInjection {
 }
 
 const HOP_CAP = 12;
+/** How much of the log's end ownerSaid reads (a cited owner message is recent). */
+const OWNER_SAID_SPAN = 8 * 1024 * 1024;
 
 /** One outbox file's entry in the outbox journal (HiveManager.routingFile). */
 interface RoutingRecord { ino: number; birth: number; id: string; created_at: string; delivered: boolean }
@@ -805,24 +807,32 @@ export class HiveManager {
   /** Company foundations' writer (main/foundations.ts): what a member sends to
    *  `foundations`, answered with a reply or nothing. */
   private foundationsHandler: ((actor: string, payload: unknown) => string | null) | null = null;
+  /** True while send() routes a message the owner sent (see send). */
+  private sendingByOwner = false;
   onFoundations(handler: (actor: string, payload: unknown) => string | null): void { this.foundationsHandler = handler; }
 
-  /** Whether a message with this id came from the owner and reached
-   *  `recipient`: an owner message the log recorded as delivered to it (Company
-   *  foundations checks a member's "the owner said"). The log is scanned by
-   *  the id's mark only, never split whole. */
+  /** Whether a message with this id is one the owner sent (logged byOwner,
+   *  never an app notice sent as 'human') and it reached `recipient` (Company
+   *  foundations checks a member's "the owner said"). Only the log's last
+   *  8 MB is read, since a cited message is recent, and by the id's mark. */
   ownerSaid(messageId: string, recipient: string): boolean {
     const root = this.root();
     if (!root || !messageId || messageId.length > 120 || !recipient) return false;
     let text = '';
-    try { text = readFileSync(join(root, 'log.jsonl'), 'utf8'); } catch { return false; }
+    try {
+      const file = join(root, 'log.jsonl');
+      const size = statSync(file).size;
+      const span = Math.min(size, OWNER_SAID_SPAN);
+      const fd = openSync(file, 'r');
+      try { const buf = Buffer.alloc(span); readSync(fd, buf, 0, span, size - span); text = buf.toString('utf8'); } finally { closeSync(fd); }
+    } catch { return false; }
     const mark = `"id":${JSON.stringify(messageId)}`;
     for (let at = text.indexOf(mark); at !== -1; at = text.indexOf(mark, at + mark.length)) {
       const start = text.lastIndexOf('\n', at) + 1;
       const end = text.indexOf('\n', at);
       try {
-        const e = JSON.parse(text.slice(start, end === -1 ? undefined : end)) as { kind?: unknown; from?: unknown; to?: unknown; id?: unknown; delivered?: unknown };
-        if (e.kind !== 'message' || e.from !== 'human' || e.id !== messageId) continue;
+        const e = JSON.parse(text.slice(start, end === -1 ? undefined : end)) as { kind?: unknown; from?: unknown; to?: unknown; id?: unknown; delivered?: unknown; byOwner?: unknown };
+        if (e.kind !== 'message' || e.from !== 'human' || e.id !== messageId || e.byOwner !== true) continue;
         if (e.to === recipient || (Array.isArray(e.delivered) && e.delivered.includes(recipient))) return true;
       } catch { /* a torn line */ }
     }
@@ -3233,9 +3243,13 @@ export class HiveManager {
   /** Inject a message directly (used by the orchestrator / UI / tests).
    *  `upkeep`: the app's own upkeep note (shared/upkeep.ts), stamped here by
    *  the code that sends it, never read from a message's file or words. */
-  send(partial: Partial<HiveMessage>, from = 'system', upkeep?: UpkeepKind): HiveMessage {
+  /** `byOwner`: the owner typed or clicked this (the window's sends as
+   *  'human'). The app's own notices go as 'human' too, so only this flag,
+   *  kept in the log, says the owner said it (Company foundations, ownerSaid). */
+  send(partial: Partial<HiveMessage>, from = 'system', upkeep?: UpkeepKind, byOwner = false): HiveMessage {
     const msg = this.normalize(partial, from);
-    this.routeMessage(msg, upkeep);
+    this.sendingByOwner = byOwner && from === 'human';
+    try { this.routeMessage(msg, upkeep); } finally { this.sendingByOwner = false; }
     this.commit(`hive: msg ${msg.from}→${msg.to} (${msg.act})`);
     return msg;
   }
@@ -3415,7 +3429,7 @@ export class HiveManager {
       }
     }
     if (held.length) this.holdForMichael(msg, held, godId);
-    this.appendLog({ kind: 'message', from: msg.from, to: msg.to, act: msg.act, subject: msg.subject, id: msg.id, delivered });
+    this.appendLog({ kind: 'message', from: msg.from, to: msg.to, act: msg.act, subject: msg.subject, id: msg.id, delivered, ...(this.sendingByOwner ? { byOwner: true } : {}) });
     this.lastRouted = { id: msg.id, delivered };
     this.emitMessage(msg, targets);
     // Main-process observer (e.g. the closing-time controller watching for the
@@ -4607,7 +4621,7 @@ export class HiveManager {
     this.atomicWriteJson(join(done, `${id}.json`), msg);
     this.ownerFlags(id, (f) => ({ ...f, deliveredAt: f.deliveredAt ?? Date.now(), notSentAt: undefined }));
     // The log is committed with the office: the owner's words stay out of it.
-    this.appendLog({ kind: 'message', from: 'human', to: godId, act: msg.act, subject: 'Owner question', id: msg.id, delivered: [godId] });
+    this.appendLog({ kind: 'message', from: 'human', to: godId, act: msg.act, subject: 'Owner question', id: msg.id, delivered: [godId], byOwner: true });
     this.emitMessage(msg, [godId]);
     try { this.routedObserver?.(msg, [godId]); } catch { /* observer error */ }
     this.refreshOwnerRequests();

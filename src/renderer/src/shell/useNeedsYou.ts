@@ -135,7 +135,7 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
 /** A card's open questions the board shows: a foundation card the owner put
  *  off with Not now stays out for its week (office-foundations.md, D2). */
 export function shownQuestions(t: HiveTask, f: FoundationsView | null, now = Date.now()): ReturnType<typeof openQuestions> {
-  return openQuestions(t).filter((e) => { const id = foundationAsk(e); return !id || !isSnoozed(f?.snoozed, id, now); });
+  return openQuestions(t).filter((e) => { const id = foundationAsk(e); return !id || (!isSnoozed(f?.snoozed, id, now) && !f?.answers?.[id]); });
 }
 
 let foundationReads = 0;
@@ -159,14 +159,15 @@ function readTasks(): void {
     .catch(() => { /* keep the last value */ });
   readOffers(false);
   readEngine(false);
-  readResearchNotice(false);
+  readNotices(false);
   readFoundations();
 }
 
-// The Research card changes only on the update and when the owner reads it,
-// so the poll reads it at most once a minute; refreshNeedsYou reads it at once.
+// The one time cards (Research's, and company knowledge's for an owner who
+// had it off) change only on the update and when the owner reads them, so the
+// poll reads them at most once a minute; refreshNeedsYou reads them at once.
 let researchReadAt = 0;
-function readResearchNotice(force = true): void {
+function readNotices(force = true): void {
   if (!force && Date.now() - researchReadAt < 60_000) return;
   researchReadAt = Date.now();
   void window.cth.researchStatus?.()
@@ -280,7 +281,7 @@ export function refreshNeedsYou(): void {
   readRequests();
   readProposals();
   readOffers();
-  readResearchNotice();
+  readNotices();
 }
 
 /** Show a local change at once (an answer just saved, a card dismissed); the

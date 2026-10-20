@@ -68,8 +68,8 @@ function windowMs(name: string): number {
   return /five_hour|5h/i.test(name) ? 5 * 3_600_000 : 7 * 86_400_000;
 }
 
-/** Early patterns need half the evidence advice needs (owner, 2026-10-19, eng D1). */
-export const EARLY_SCALE = 0.5;
+export { EARLY_SCALE } from '../shared/teamAdvice';
+import { EARLY_SCALE } from '../shared/teamAdvice';
 /** At most this many early lines, the most evidence first. */
 export const EARLY_MAX = 3;
 /** The early lines to show: the most evidence first, at most EARLY_MAX. */

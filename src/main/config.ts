@@ -216,9 +216,9 @@ export interface CircuitBreakerConfig {
 
 /** Company knowledge (the Knowledge Graph store + agent access tool).
  *  The owner adds their own documents, sheets, PDFs and images; agents search
- *  them on demand via the `kg` CLI and MemPalace. On by default (owner,
- *  2026-09-25); `enabled` still gates everything (no env injected, no prompt
- *  line, no palace indexing when off). See docs/design/knowledge-graph.md. */
+ *  them on demand via the `kg` CLI and MemPalace. Always on since 2026-10-19
+ *  (owner: no switch); members are pointed at it while it holds a document.
+ *  See docs/design/knowledge-graph.md. */
 export interface KnowledgeGraphConfig {
   /** The old switch. Company knowledge has no switch since 2026-10-19 (owner);
    *  an office whose owner had set this false is told once (knowledgeOnNoticeSeen). */
@@ -369,9 +369,9 @@ export interface HarnessConfig {
    *  (michael-replies.md, R4). Read once, moved to userData/owner-dock-keys.json,
    *  then cleared. */
   ownerDockKeys?: string[];
-  /** One-time guard: the knowledge feature was switched on for this install
-   *  when it became the company knowledge store (2026-09-25). An owner who
-   *  turns it off afterwards keeps it off. */
+  /** Legacy one-time guard (2026-09-25): the old switch was turned on once for
+   *  this install. The switch is gone; an `enabled` false left by an owner who
+   *  turned it off later only brings the one time knowledge notice. */
   knowledgeOnSeeded?: boolean;
   /** The one time card telling an owner who had company knowledge off that it
    *  has no switch now and its documents are searchable was read. */

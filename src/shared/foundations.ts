@@ -146,7 +146,7 @@ export function questionsFor(jobs: readonly FoundationJob[]): FoundationId[] {
  *  answer, a message the app found in the hive log, or Settings); `profile`:
  *  the company profile; `file`: a file in the office folders; `michael`:
  *  outside text Michael checked and confirmed. */
-export type FoundationSourceKind = 'owner' | 'profile' | 'file' | 'michael';
+export type FoundationSourceKind = 'owner' | 'profile' | 'file' | 'michael' | 'taught';
 
 export interface FoundationAnswer {
   text: string;
@@ -196,7 +196,7 @@ export function emptyRecord(): FoundationsRecord {
 }
 
 const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v : undefined);
-const SOURCES: FoundationSourceKind[] = ['owner', 'profile', 'file', 'michael'];
+const SOURCES: FoundationSourceKind[] = ['owner', 'profile', 'file', 'michael', 'taught'];
 
 /** A record read from disk, keeping only well formed entries for known
  *  questions, so a hand edit or an older shape never breaks a reader. */
@@ -240,7 +240,7 @@ function answerNote(a: FoundationAnswer, nameOf: (id: string) => string): string
   if (a.source === 'owner' || a.source === 'profile') return '';
   const day = new Date(a.at);
   const when = Number.isFinite(day.getTime()) ? `, ${day.getUTCDate()} ${day.toLocaleString('en', { month: 'short', timeZone: 'UTC' })}` : '';
-  return ` (learned by ${nameOf(a.by)}${when})`;
+  return a.source === 'taught' ? ` (taught to ${nameOf(a.by)} by the owner${when})` : ` (learned by ${nameOf(a.by)}${when})`;
 }
 
 const line = (n: number, id: FoundationId, rec: FoundationsRecord, nameOf: (id: string) => string): string => {
@@ -399,3 +399,10 @@ export function isSnoozed(snoozed: Partial<Record<string, string>> | undefined, 
 
 /** What the renderer reads of the record. */
 export type FoundationsView = Pick<FoundationsRecord, 'answers' | 'drafts' | 'snoozed' | 'hits'>;
+
+/** The one time "Company knowledge is always on" card is due: the owner had
+ *  turned the old switch off, has not read the card, and keeps documents of
+ *  their own in the store (the Company foundations copy is the app's). */
+export function knowledgeNoticeDue(enabled: boolean | undefined, seen: boolean | undefined, docs: ReadonlyArray<{ tags?: unknown }>): boolean {
+  return enabled === false && !seen && docs.some((d) => !isFoundationsDoc(d));
+}

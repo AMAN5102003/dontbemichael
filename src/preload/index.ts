@@ -406,7 +406,6 @@ export interface MemoryStatus {
 
 /** Enterprise Knowledge Graph — corpus status, one document, and a search hit. */
 export interface KnowledgeStatus {
-  enabled: boolean;
   root: string;
   docCount: number;
   chunkCount: number;

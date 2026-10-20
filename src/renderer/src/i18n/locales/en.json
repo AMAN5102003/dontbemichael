@@ -2750,7 +2750,8 @@
       "open": "Click a member for their week",
       "rowAria": "{{name}}: {{time}} of work, {{value}}",
       "cost": "Cost",
-      "planLegend": "Cost: each member's part of your plan"
+      "planLegend": "Cost: each member's part of your plan",
+      "rowAriaFoundations": "{{row}}, {{foundations}}"
     },
     "plan": {
       "yourPlan": "Claude plan",
@@ -3010,7 +3011,8 @@
       "failed": "Couldn't save, try again.",
       "saved": "Saved to Company foundations.",
       "failedDraft": "Couldn't ask {{name}} to draft it, try again.",
-      "failedLater": "Couldn't put this off, try again."
+      "failedLater": "Couldn't put this off, try again.",
+      "sentToMichael": "Sent to {{godName}} to add to Company foundations."
     }
   },
   "knowledgeNotice": {

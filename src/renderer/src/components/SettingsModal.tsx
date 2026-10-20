@@ -1597,19 +1597,22 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                         type="button"
                                         role="radio"
                                         aria-checked={sel}
+                                        // One tab stop, the picked one; arrows move and pick (the app's option rows).
+                                        tabIndex={sel ? 0 : -1}
                                         onClick={() => pickEmbeddingModel(id)}
-                                        style={{
-                                          borderRadius: 'var(--cth-r-md)',
-                                          flex: 1, textAlign: 'start', cursor: 'pointer', border: 'none', padding: '8px 10px',
-                                          display: 'flex', gap: 8, alignItems: 'flex-start',
-                                          // The app's picked pattern: indigo soft fill and ring, a radio dot.
-                                          background: sel ? 'var(--cth-indigo-soft)' : 'var(--cth-card)',
-                                          boxShadow: sel ? 'inset 0 0 0 1.5px var(--cth-indigo)' : 'inset 0 0 0 1px var(--cth-line-2)'
+                                        onKeyDown={(e) => {
+                                          if (['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft'].includes(e.key)) {
+                                            e.preventDefault();
+                                            const next = id === 'minilm' ? 'embeddinggemma' : 'minilm';
+                                            pickEmbeddingModel(next);
+                                            (e.currentTarget.parentElement?.querySelector(`[data-model="${next}"]`) as HTMLElement | null)?.focus();
+                                          }
                                         }}
+                                        data-model={id}
+                                        className={sel ? 'cth-askme-opt is-on' : 'cth-askme-opt'}
+                                        style={{ flex: 1, textAlign: 'start', border: 'none', fontFamily: 'var(--cth-font-ui)' }}
                                       >
-                                        <span aria-hidden="true" style={{ flex: 'none', marginTop: 3, width: 12, height: 12, borderRadius: '50%', boxShadow: `inset 0 0 0 1.5px ${sel ? 'var(--cth-indigo)' : 'var(--cth-ink-4)'}`, display: 'grid', placeItems: 'center' }}>
-                                          {sel && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cth-indigo)' }} />}
-                                        </span>
+                                        <span className="cth-askme-dot" aria-hidden="true" />
                                         <span>
                                           <span style={{ display: 'block', fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-900)' }}>{title}</span>
                                           <span style={{ display: 'block', fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)', marginTop: 2 }}>{detail}</span>

@@ -18,7 +18,7 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { privateRoot } from '../shared/agentPrivatePaths';
 import { writeFileAtomic } from './atomicFile';
 import {
-  FOUNDATION_CAP, FOUNDATION_QUESTIONS, cleanRecord, emptyRecord, isFoundationId, oneLine, questionsFor, renderFoundations,
+  FOUNDATION_CAP, FOUNDATION_QUESTIONS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, cleanRecord, emptyRecord, isFoundationId, isFoundationsDoc, oneLine, questionsFor, renderFoundations,
   type FoundationAnswer, type FoundationId, type FoundationJob, type FoundationSourceKind, type FoundationsRecord, type FoundationsView
 } from '../shared/foundations';
 
@@ -266,6 +266,11 @@ export class Foundations {
     if (!isFoundationId(id)) return `No company foundations question "${String(id ?? '')}". Use an id from your COMPANY FOUNDATIONS context, in square brackets after each question.`;
     const q = FOUNDATION_QUESTIONS[id].text;
     if (typeof p.gap === 'string') return this.gap(from, id, p.gap);
+    // A member answers and drafts only its own job's questions (Michael any).
+    const god = this.d.godId?.() ?? 'god';
+    if (this.d.jobsOf && from !== god && from !== 'god' && !questionsFor(this.d.jobsOf(from)).includes(id)) {
+      return `"${q}" is not one of your job's foundations questions. Send what you know to ${this.michaelName()} instead.`;
+    }
     if (typeof p.draft === 'string') return this.draft(from, id, p.draft);
     // One plain line: an answer never adds headings or lines to the context
     // every member carries.
@@ -293,11 +298,15 @@ export class Foundations {
       this.toMichael('Foundation answers differ', `Two answers to "${q}" (${id}) differ. Kept: "${had.text}", from ${this.nameOf(had.by)}. New, from ${this.nameOf(from)} (${this.describe(src)}): ${text}\n\nThe first stays until you decide. To replace it, send the right one to "foundations" with "source": {"confirmed": "<why>"}.`);
       return `A different answer to "${q}" is already recorded, so it stays and ${this.michaelName()} decides.`;
     }
-    const source: FoundationSourceKind = level === 'taught' ? 'owner' : level;
+    const source: FoundationSourceKind = level;
     const ref = typeof src.owner === 'string' ? src.owner : typeof src.file === 'string' ? src.file : undefined;
     this.save(this.withAnswer(rec, id, { text, by: from, source, at: this.iso(), ...(ref ? { ref } : {}) }, from));
     this.toProfile(id, text, level === 'owner');
     this.publishSoon();
+    // Answered without the owner's card: Michael closes the card he raised for it.
+    if (rec.hits[id] && level !== 'owner' && level !== 'michael') {
+      this.toMichael('Foundation answered', `"${q}" (${id}) is answered now, from ${this.nameOf(from)}: ${text}\n\nIf a foundation card for it is open, close it as done.`);
+    }
     return `Saved to the company foundations: "${q}". Every member who needs it sees it.`;
   }
 
@@ -393,4 +402,23 @@ export class Foundations {
     const r = this.read();
     return { answers: r.answers, drafts: r.drafts, snoozed: r.snoozed, hits: r.hits };
   }
+}
+
+/** What publishing the copy needs from company knowledge. */
+export interface CopyStore {
+  ingestText: (text: string, opts: { title?: string; tags?: string[] }) => { docId?: string } | unknown;
+  list: () => Array<{ id: string; tags?: unknown }>;
+  remove: (id: string) => unknown;
+}
+
+/** Publish the Company foundations copy: one copy in the store, which every
+ *  office shares, so our old copy and any other office's go and no business
+ *  reads another's answers. `changed` tells search by meaning. */
+export function publishCopy(store: CopyStore, text: string, changed?: () => void): string | undefined {
+  const r = store.ingestText(text, { title: FOUNDATIONS_TITLE, tags: [FOUNDATIONS_TAG] }) as { docId?: string } | undefined;
+  for (const d of store.list()) {
+    if (d.id !== r?.docId && isFoundationsDoc(d)) { try { store.remove(d.id); } catch { /* gone already */ } }
+  }
+  try { changed?.(); } catch { /* the next pass indexes it */ }
+  return r?.docId;
 }
