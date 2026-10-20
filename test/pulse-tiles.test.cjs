@@ -11,7 +11,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const loadTs = require('./load-ts.cjs');
 
-const { pulseTiles, tileActivity, PULSE_TILES } = loadTs('src/shared/pulseTiles.ts');
+const { pulseTiles, tileActivity, tileFigure, PULSE_TILES } = loadTs('src/shared/pulseTiles.ts');
 const { keptSafe } = loadTs('src/shared/pulseSafety.ts');
 
 const outcomes = (o = {}) => ['email', 'sent', 'task', 'check'].map((kind) => ({ kind, total: o[kind] ?? 0, by: [] }));
@@ -71,4 +71,17 @@ test('an opened chip shows its tile; an older snapshot with no learning is quiet
   const r = pulseTiles(span({ learning: false }), null, new Set(['held']));
   assert.ok(r.shown.includes('held'));
   assert.ok(r.quiet.includes('learned') && r.quiet.includes('questions'));
+});
+
+test('with Compare on, a quiet tile stays only when its bars show a change', () => {
+  // Value: protects=the owner's rule that a card shows when something changed (owner, 2026-10-20: a Web answers card showed 0 Yesterday and 0 Today); fails_when=the span before keeps a tile whose bars draw the same figure for both spans; why_new=yesterday's answer went through unchanged, so cleaned was 0 both days while the tile stayed; seam=none; no_claim=pixel layout
+  const answerYesterday = span({ safe: { webAnswers: { pass: 1, clean: 0, flagged: 0 } } });
+  assert.ok(pulseTiles(span(), answerYesterday, none).quiet.includes('webAnswers'), 'cleaned 0 and 0: no change, a chip');
+  assert.ok(pulseTiles(span(), span({ safe: { webAnswers: { pass: 0, clean: 1, flagged: 0 } } }), none).shown.includes('webAnswers'), 'cleaned 1 then 0: a change, a tile');
+  assert.ok(pulseTiles(span({ safe: { webAnswers: { pass: 2, clean: 0, flagged: 0 } } }), answerYesterday, none).shown.includes('webAnswers'), 'answers today always show');
+  // Questions to you draws its rate: too few requests both days draws nothing.
+  assert.ok(pulseTiles(span(), span({ questions: 2 }), none).quiet.includes('questions'));
+  assert.equal(tileFigure('webAnswers', answerYesterday), '0');
+  // A tile whose bars draw its activity still stays after a drop to zero.
+  assert.ok(pulseTiles(span(), span({ out: { sent: 4 } }), none).shown.includes('sent'));
 });

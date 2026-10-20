@@ -1311,7 +1311,8 @@ half written message survives the switch.
   in this order: emails organized, emails sent, tasks finished, scheduled checks, questions to
   the internet, web answers cleaned, messages held, steps blocked, what the team learned,
   questions to you, Spent, your time. Each keeps its own build. A tile shows when something
-  happened in it in the period, or in the span before while Compare is on: web answers count
+  happened in it in the period, or in the span before while Compare is on and its bars draw
+  a change (the same figure both spans is no change, so the tile folds): web answers count
   every answer checked, Questions to you the questions, Your time the questions or any work
   while the owner was away, every other tile its number. Spent always shows. Otherwise the tile
   folds into a **quiet chip**: a 26 px pill, `neutral-soft` fill, no border, a 14 px `ink-3`

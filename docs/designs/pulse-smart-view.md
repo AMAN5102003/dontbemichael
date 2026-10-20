@@ -21,8 +21,10 @@ Mockup: `~/.gstack/projects/agentvivekkumar-dontbemichael/designs/pulse-smart-ti
 ### Information architecture (Pass 1)
 
 - **1A, what counts as data.** A tile shows when its number is above zero in this period, or,
-  while Compare is on, in the span before. Otherwise it is a chip. A drop to zero therefore
-  stays a tile with its two bars; toggling Compare can bring tiles back.
+  while Compare is on, in the span before when its bars draw a change (owner, 2026-10-20:
+  "cards should show when there is some change"; a Web answers card drew 0 and 0 because
+  yesterday's one answer had nothing taken out). Otherwise it is a chip. A drop to zero
+  therefore stays a tile with its two bars; toggling Compare can bring tiles back.
 - **1B, Spent always shows**, in every period, with plan use on a Claude plan ($0.00 included).
 - **1C, Team at work folds the quiet.** Members with no working time in the period fold into
   one last row, "9 more were quiet", which opens to show their rows. A member with any working

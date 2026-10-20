@@ -4,8 +4,10 @@
  * docs/designs/pulse-smart-view.md, design 1A, 1B, 1E and eng D2).
  *
  *   tile ─ Spent ─────────────────────────────────────► shown (always, 1B)
- *        ─ something happened now, or in the span before
- *          while Compare is on ─────────────────────────► shown
+ *        ─ something happened now ──────────────────────► shown
+ *        ─ Compare on, something in the span before, and
+ *          the figures its bars draw differ ────────────► shown
+ *          (owner, 2026-10-20: "cards should show when there is some change")
  *        ─ opened from its chip this visit ─────────────► shown
  *        ─ otherwise ───────────────────────────────────► quiet (a chip)
  *
@@ -54,12 +56,29 @@ export function tileActivity(id: PulseTile, span: TileSpan): number {
   }
 }
 
+/** What a tile's Compare bars draw over one span, as a key two spans compare
+ *  by: for most tiles the same as its activity; Web answers draws the cleaned
+ *  answers, Questions to you its rate, Learned its three kinds, and Your time
+ *  the questions and the away share. */
+export function tileFigure(id: PulseTile, span: TileSpan): string {
+  const l = span.learning;
+  switch (id) {
+    case 'webAnswers': return String(span.keptSafe.webAnswers.clean);
+    case 'questions': return String(l?.per100 ?? null);
+    case 'learned': return l ? `${l.added.you}|${l.added.job}|${l.added.michael}` : '0|0|0';
+    case 'yourTime': return `${span.snapshot.yourTime.asks}|${span.snapshot.awayShare ?? null}`;
+    default: return String(tileActivity(id, span));
+  }
+}
+
 /** The tiles the grid shows and the ones that fold into chips, both in grid order. */
 export function pulseTiles(now: TileSpan, before: TileSpan | null, opened: ReadonlySet<string>): { shown: PulseTile[]; quiet: PulseTile[] } {
   const shown: PulseTile[] = [];
   const quiet: PulseTile[] = [];
   for (const id of PULSE_TILES) {
-    const has = tileActivity(id, now) > 0 || (before !== null && tileActivity(id, before) > 0) || opened.has(id);
+    // The span before keeps a quiet tile only when its bars would show a change.
+    const changed = before !== null && tileActivity(id, before) > 0 && tileFigure(id, before) !== tileFigure(id, now);
+    const has = tileActivity(id, now) > 0 || changed || opened.has(id);
     (has ? shown : quiet).push(id);
   }
   return { shown, quiet };
