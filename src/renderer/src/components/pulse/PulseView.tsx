@@ -491,15 +491,27 @@ export function PulseView() {
       // number at the top, what it means at the foot.
       yourTime: (
           <div style={{ ...tight, flexDirection: 'row', gap: 14 }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                 <div style={label}>{t('pulse.yourTime')}<InfoTip text={t('pulse.yourTimeTip')} /></div>
-                <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.yourTime.asks}</div>
-                <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{s.yourTime.medianWaitMs !== null ? t('pulse.questionsAnswered', { time: duration(s.yourTime.medianWaitMs, t) }) : t('pulse.questions')}</div>
-                {/* Questions to you, joined here (owner, 2026-10-20): the rate per 100
-                    requests, never under 20 requests (eng O2); with Compare, the span before's. */}
-                <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{rate !== null ? t('pulse.rateLine', { rate: rate.toFixed(1) }) : t('pulse.learning.tooFewRate')}</div>
-                {pl && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{pl.per100 !== null ? `${pairLabels[0]}: ${pl.per100.toFixed(1)}` : t('pulse.learning.tooFewBefore', { before: pairLabels[0] })}</div>}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                  <span style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.yourTime.asks}</span>
+                  <span style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.questions')}</span>
+                </div>
+              </div>
+              {/* Two small stats at the foot (owner, 2026-10-20): the typical wait and,
+                  joined from Questions to you, the rate per 100 requests ("…" under 20
+                  requests, eng O2); with Compare, the span before's rate under it. */}
+              <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ ...mono, fontSize: 15, fontWeight: 600, lineHeight: '18px' }}>{s.yourTime.medianWaitMs !== null ? duration(s.yourTime.medianWaitMs, t) : '…'}</span>
+                  <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.typicalWait')}</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <span style={{ ...mono, fontSize: 15, fontWeight: 600, lineHeight: '18px' }}>{rate !== null ? rate.toFixed(1) : '…'}</span>
+                  <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.per100Requests')}</span>
+                  {pl && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{`${pairLabels[0]}: ${pl.per100 !== null ? pl.per100.toFixed(1) : '…'}`}</span>}
+                </div>
               </div>
               {pv && pair(pv.yourTime.asks, s.yourTime.asks, t('pulse.yourTime'))}
             </div>

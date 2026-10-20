@@ -273,20 +273,23 @@ test('before advice, Pulse shows what the rules see so far under a bold line, as
 });
 
 
-test('Questions to you is part of Your time: the count, the typical answer time, then the rate line', () => {
+test('Questions to you is part of Your time: the count, then two small stats, the typical wait and the rate', () => {
   // Value: protects=the merge the owner chose (2026-10-20, eng review D1 A, D2 A); fails_when=the rate tile returns, Your time loses the rate or its too few line, Compare draws a second pair, or the wait reads as an average; why_new=the Questions to you tile was removed; seam=none; no_claim=pixel layout (live check in the app)
   const view = read('src/renderer/src/components/pulse/PulseView.tsx');
   assert.doesNotMatch(view, /\n      questions: \(/, 'no Questions to you tile');
   const yt = view.slice(view.indexOf('      yourTime: ('), view.indexOf('    // One member'));
-  assert.match(yt, /t\('pulse\.questionsAnswered'[\s\S]*\{rate !== null \? t\('pulse\.rateLine', \{ rate: rate\.toFixed\(1\) \}\) : t\('pulse\.learning\.tooFewRate'\)\}/, 'the rate line under the answer time, never a rate under 20 requests');
-  assert.match(yt, /\{pl && <div[^>]*>\{pl\.per100 !== null \? `\$\{pairLabels\[0\]\}: \$\{pl\.per100\.toFixed\(1\)\}` : t\('pulse\.learning\.tooFewBefore', \{ before: pairLabels\[0\] \}\)\}<\/div>\}/, 'with Compare the span before\'s rate, in words');
+  // Two small stats at the foot (owner, 2026-10-20): the typical wait and the rate, never a rate under 20 requests.
+  assert.match(yt, /\{s\.yourTime\.asks\}<\/span>\s*<span[^>]*>\{t\('pulse\.questions'\)\}<\/span>/, 'the count names what it counts');
+  assert.match(yt, /\{s\.yourTime\.medianWaitMs !== null \? duration\(s\.yourTime\.medianWaitMs, t\) : '…'\}<\/span>\s*<span[^>]*>\{t\('pulse\.typicalWait'\)\}/);
+  assert.match(yt, /\{rate !== null \? rate\.toFixed\(1\) : '…'\}<\/span>\s*<span[^>]*>\{t\('pulse\.per100Requests'\)\}/);
+  assert.match(yt, /\{pl && <span[^>]*>\{`\$\{pairLabels\[0\]\}: \$\{pl\.per100 !== null \? pl\.per100\.toFixed\(1\) : '…'\}`\}<\/span>\}/, 'with Compare, the span before\'s rate');
   assert.equal((yt.match(/\bpair\(/g) || []).length, 2, 'one pair on the count, one on the away share');
   const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse;
-  assert.equal(en.questionsAnswered, 'questions, typically answered in {{time}}', 'a median is not an average');
-  assert.equal(en.rateLine, '{{rate}} per 100 requests the team took');
+  assert.equal(en.typicalWait, 'typical wait', 'a median is not an average');
+  assert.equal(en.per100Requests, 'per 100 requests');
   for (const l of ['ar', 'zh-CN']) {
     const p = JSON.parse(read(`src/renderer/src/i18n/locales/${l}.json`)).pulse;
-    assert.ok(p.rateLine.includes('{{rate}}') && p.questionsAnswered.includes('{{time}}'), l);
+    assert.ok(p.typicalWait && p.per100Requests, l);
     assert.equal(p.quiet.name.questions, undefined, `${l}: no chip name for a tile that is gone`);
   }
 });

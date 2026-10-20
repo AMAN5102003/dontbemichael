@@ -2621,7 +2621,7 @@
     "resets": "{{day}} 重置",
     "runsOut": "约 {{day}} 用完",
     "yourTime": "你的时间",
-    "yourTimeTip": "团队向你提出的问题、等待你回答的时间，以及每 100 个团队请求中的提问数：团队学得越多，提问越少。",
+    "yourTimeTip": "团队向你提出的问题、等待你回答的通常时间，以及每 100 个团队请求中的提问数：团队学得越多，提问越少。请求少于 20 个时，比率显示为 …。",
     "questions": "个问题",
     "whileAway": "你不在时",
     "awayTip": "你 30 分钟没有使用这台电脑或电脑休眠时完成的工作。",
@@ -2710,8 +2710,6 @@
         "this-month": "本月新笔记"
       },
       "inAll": "共 {{notes}} 条笔记和 {{procedures}} 份书面工作方法",
-      "tooFewRate": "请求太少，暂时无法判断。",
-      "tooFewBefore": "{{before}}的请求太少，无法判断。",
       "open": "查看笔记",
       "none": "没有新笔记。",
       "removed": "之后已删除。",
@@ -2757,8 +2755,8 @@
       "memberTip": "该成员在本期按其工作份额分摊的套餐费用。",
       "ofPlan": "来自你的 {{plan}}（每月 {{monthly}}）"
     },
-    "questionsAnswered": "个问题，通常在 {{time}} 内回答",
-    "rateLine": "每 100 个团队请求中 {{rate}} 个",
+    "typicalWait": "通常等待",
+    "per100Requests": "每 100 个请求",
     "list": {
       "failed": "无法读取列表。",
       "retry": "重试"
