@@ -32,6 +32,10 @@ export interface HumanQA {
   picked?: number;
   /** Each question's answer, null where the owner left it unanswered. */
   partAnswers?: (string | null)[];
+  /** "report", or "foundation" for a Company foundations card. */
+  kind?: string;
+  /** A foundation card's question id (shared/foundations.ts). */
+  foundation?: string;
 }
 
 export interface HiveTask {

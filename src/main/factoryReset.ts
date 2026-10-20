@@ -48,13 +48,19 @@ export const PRIVATE_ENTRIES = [
   'research-pending.json',
   'research-pending-lost.json',
   'research-mined',
+  // The outbox journal: ids the router chose, until each file is archived.
+  'outbox-routing',
   // Pulse's held list: subjects and openings of held messages (2026-10-16).
   'held.jsonl',
   // Pulse's questions and answers lists and their archive (eng D3: a reset
   // erases both; nothing else deletes the archive).
   'checked.jsonl',
   'checked-archive',
-  'checked-backfill.json'
+  'checked-backfill.json',
+  // Company foundations: the record the app alone writes (office-foundations.md),
+  // and the ids of the owner's messages it takes as the owner's words.
+  'foundations.json',
+  'owner-said.jsonl'
 ] as const;
 
 /** The privacy and standing approval checks' own empty folders (index.ts). */

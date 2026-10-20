@@ -154,18 +154,6 @@
 **Priority:** P2
 **Depends on:** None
 
-### An owner's answer is never lost between the card and Michael
-
-**What:** Record the answer on the card and queue Michael's routing request in one main side step, or keep unsent routing requests and retry them in the same launch.
-
-**Why:** If the card patch lands but the message to Michael fails, the ask leaves Ask me and Michael never hears until a restart (the catch up runs once per launch).
-
-**Context:** From the second Codex adversarial review, 2026-10-16. The pattern predates this branch: `AskMeTab.tsx` sendAnswer patches then sends; `index.ts` catchUpOwnerAnswers is gated by ownerCatchUpDone.
-
-**Effort:** M (human) / S (CC)
-**Priority:** P2
-**Depends on:** None
-
 ### Pulse reads a card's whole history, not the period's slice
 
 **What:** Keep card lifecycle state (reopened, held time) per card as events arrive, instead of rebuilding it from the period's events only.
@@ -226,30 +214,6 @@
 **Priority:** P1
 **Depends on:** None
 
-### Tell Michael when a timed out restart worked after all
-
-**What:** When a restarted member's session starts after the 61 s confirm window already told Michael they were stuck, send him a short follow up that the restart went through.
-
-**Why:** Otherwise Michael may move work the member is already doing and keep an Ask me question about a member who is fine.
-
-**Context:** From the /ship fix review, 2026-10-16 (confidence 4). `hooks.ts` checkStuckRestarts and stuckProgress.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
-### Pulse buttons use PixelButton
-
-**What:** Draw Apply, Not now, Undo and Try again with PixelButton (sm) so they get the hover and the 45% disabled state of DESIGN.md 7.7.
-
-**Why:** Apply looks unchanged while it is busy.
-
-**Context:** From the /ship design review, 2026-10-16. `PulseView.tsx` btn().
-
-**Effort:** S (human) / S (CC)
-**Priority:** P3
-**Depends on:** None
-
 ### Fill in Pulse's earlier checks off the main process
 
 **What:** Run the one-time backfill of Pulse's questions and answers lists, and the parse of the 62 day list, off the main process (a worker, or rows in the telemetry database queried by time and way).
@@ -268,6 +232,32 @@
 
 **Effort:** S
 **Priority:** P4
+**Depends on:** None
+
+## Company foundations (deferred from the ship of mit/file-tab-no-bottom-bar, 2026-10-20)
+
+### Name a missing foundation's proof in Early look and Recommendations
+
+**What:** Once the kept as is evidence exists for a question, add a line to Early look and Recommendations such as "Answer who we sell to: Ryan's posts are kept as is 45% without it, 85% with", built from the same proof the member detail box shows.
+
+**Why:** The strip in Recommendations names the jobs whose work hit an empty answer, but not what answering it would win; the proof today is only in a member's detail box, one click away.
+
+**Context:** Deferred from plan: docs/designs/office-foundations.md (section 7, "Early look and Recommendations"), owner choice D2 at /ship, 2026-10-20. The proof is computed in `src/main/pulse.ts` foundations() and shown by `FoundationsBox` in `PulseView.tsx`; advice lines come from `src/shared/teamAdvice.ts`.
+
+**Effort:** S (human) / S (CC)
+**Priority:** P1
+**Depends on:** None
+
+### Read an edited document in again off the main thread
+
+**What:** Move `kg-core` reindex (and the index rewrite it does) to a worker or child process, or keep the index in one file per document, so a save's work is bounded to the edited document.
+
+**Why:** Every save of a document opened from Settings rewrites the whole `index.jsonl` synchronously on the main process; with a large store one save can stall routing and the window for a moment (Codex adversarial review).
+
+**Context:** From the Codex adversarial pass at /ship, 2026-10-20 (owner choice D11). Saves now wait 3 s of quiet before a read in (`knowledgeEdits.ts`), and the index is replaced whole by rename (`kg-core.cjs` writeAtomic). A copy kept from a broken `foundations.json` (`foundations.json.broken-*` in the private folder) is not yet erased by a factory reset.
+
+**Effort:** M (human) / S (CC)
+**Priority:** P2
 **Depends on:** None
 
 ## Terminal links (from the ship review of mit/named-links, 2026-10-13)
@@ -335,15 +325,6 @@
 **Why:** The router now keeps an agent's time no later than now, but the files it reads back are Michael's own, and a past time (a timezone slip) can sort a reply before your question or leave a done question open.
 
 **Effort:** S
-**Priority:** P2
-
-### Deliver an outbox message once across a crash
-
-**What:** The router delivers a message, then stamps and archives the agent's file. If the app dies in between, the file is routed again on restart under a new app id, so the recipient gets it twice. Move the file into a router owned pending area (or record the id the app chose) before the first delivery, and reuse that id on replay so the second copy replaces the first.
-
-**Why:** Found by the Codex adversarial review (ship, 2026-10-18). Agent written ids used to make a replay overwrite itself; the app now makes every id, so nothing dedupes a replay. Rare (a crash in a few milliseconds), but it doubles owner traffic and task notes when it happens.
-
-**Effort:** M
 **Priority:** P2
 
 ### Compare To do reminder times by the instant

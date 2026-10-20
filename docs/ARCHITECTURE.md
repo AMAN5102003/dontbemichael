@@ -35,7 +35,7 @@ Two data planes feed one renderer:
   sandboxed filesystem and git helpers.
 - **Hive / event plane.** `hive.ts` is the on-disk multi-agent layer; `hooks.ts` runs the hook
   server that provider bridges POST lifecycle payloads to (`cth-hook` for Claude Code, `agy-hook`
-  for Antigravity). `memory.ts` wraps the semantic memory CLI. The router delivers messages, drains
+  for Antigravity). `memory.ts` wraps the MemPalace CLI for search by meaning. The router delivers messages, drains
   provider outboxes, the GOD agent adjudicates, and idle/inbox wakeups keep workers draining mail.
 
 ## Project structure
@@ -49,7 +49,12 @@ src/
     hooks.ts                 hook server + provider hook shims (`cth-hook`, `agy-hook`); takes each frame's sender from its per start secret (HIVE_HOOK_SEAL, #61) and refuses frames without a valid one
     hookShell.ts             the shell Claude Code runs hooks and the status line in (bash, or PowerShell on Windows
                              without Git Bash), and each hook command written for it
-    memory.ts                semantic memory layer (CLI wrapper, degrade-to-noop)
+    memory.ts                search by meaning over company knowledge (MemPalace CLI wrapper, degrade-to-noop)
+    knowledge.ts / kg-core.cjs   company knowledge, the documents every member searches (docs/design/knowledge-graph.md);
+                             knowledgeEdits.ts reads a document in again when the owner saves it after Open in Settings
+    foundations.ts           Company foundations' one writer (docs/designs/office-foundations.md): the record in the
+                             private folder, the members' `foundations` route, the owner's card actions, and the copy
+                             it publishes into company knowledge
     config.ts                harness config persistence + home setup; Claude Code's ~/.claude.json (folder trust,
                              the first-run welcome, an approved API key), written to a copy and swapped in;
                              folder trust is keyed as Claude Code looks it up (forward slashes on Windows, claudeProjectKey);
@@ -125,7 +130,7 @@ src/
   shared/                    code both processes use
     buildFeatures.ts         switches for surfaces hidden in this build (git, IDE, temp workers, org trigger)
     agentProvider.ts         engine presets; BUILD_ENGINES is what setup offers (Claude Code today)
-    officePack.ts / officeRoles.ts / businessProfile.ts / teamPlan.ts   Office Pack schema, show roles, business profile, team plan
+    officePack.ts / officeRoles.ts / businessProfile.ts / teamPlan.ts   Office Pack schema, show roles and the department each member sits in (departmentOf), business profile, team plan
     agentDefinition.ts       each agent's levels and outward capabilities
     mailboxes.ts             mailbox and Capabilities types, providers, and mailAccess (the one mail rule,
                              Send only grants from another member's mailbox included: shared-mailboxes.md)
@@ -180,8 +185,11 @@ src/
                              shell network list everyone else's sandbox gets, Michael included
     teamPerformance.ts       Pulse's measures (docs/designs/team-performance.md); teamAdvice.ts its ways to save,
                              teamLearning.ts its Learning tiles, pulseSafety.ts its Kept safe tiles, pulseView.ts
-                             what the view receives; heldRecord.ts and checkedRecord.ts the rows of its held list
+                             what the view receives, pulseTiles.ts which tiles show and which fold into quiet chips
+                             (docs/designs/pulse-smart-view.md); heldRecord.ts and checkedRecord.ts the rows of its held list
                              and its privacy check lists (private/held.jsonl, private/checked.jsonl)
+    foundations.ts           Company foundations' questions per job, the record's shape, the document, each member's
+                             part, and Pulse's count (docs/designs/office-foundations.md)
     silentEngine.ts          the rules for a team member whose engine stops reporting to the app, and the card's
                              shape (branding/DESIGN.md 7.6b; the watch is main/silentWatch.ts)
     claudePlan.ts            the owner's Claude plan and its monthly price, for Pulse's costs on a plan
@@ -198,6 +206,8 @@ src/
                              Report cards (cleared with Got it); AskAnswerFields draws an ask's options and
                              several questions
     pulse/PulseView,         Pulse, the office's performance and cost view (branding/DESIGN.md 7.27)
+    FoundationCard,          a Company foundations question on Needs you (branding/DESIGN.md 7.27a)
+    KnowledgeDocList,        Settings > Memory & Knowledge: the company knowledge documents, each with Open
     GetMichaelReady,         setup's Ready step: the Claude Code and Claude account rows, and Use an API key;
                              EngineSetupCard puts the same rows on Ask me while Michael can't start
     MailProposalCards,       Ask me cards for emails waiting on approval (edit, Approve, Ask for changes, Don't send,
