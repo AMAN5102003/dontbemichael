@@ -4,11 +4,12 @@
 
 ## What's new in 0.2.4
 
-- **Company foundations:** one document of what each job needs to know about your business, filled by you and by what the team learns. A card on Needs you asks when work hits an empty answer.
+- **The team learns your business.** Company foundations is one document of what each job needs to know, filled by your answers and by what the team learns. When work hits an empty answer, one card on Needs you asks.
 - **See and open company knowledge.** Settings lists every document the team searches; open one in your own app, save it, and the team searches the new version.
-- **No switches for company knowledge or search by meaning.** Both are always on, and search by meaning follows your edits.
-- **Pulse shows only what has something to say,** and in your first two weeks shows what it sees so far.
-- **Windows reads scans and photos** with its own built in text recognition, and a lost answer to Michael is sent again in the same launch.
+- **Windows reads scans and photos,** like a Mac.
+- Company knowledge and search by meaning are always on, with no switches, and search by meaning follows your edits.
+- Pulse shows only what has something to say, and in your first two weeks shows what it sees so far.
+- A lost answer to Michael is sent again in the same launch.
 
 Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvivekkumar/dontbemichael/blob/main/docs/FEATURES.md)
 
