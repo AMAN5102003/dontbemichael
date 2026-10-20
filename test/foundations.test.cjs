@@ -311,6 +311,10 @@ test('the foundation card: evidence first, a labeled box with its hint as descri
   const ask = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(ask, /\[\.\.\.asks\.filter\(\(r\) => !foundationAsk\(r\.ask\)\), \.\.\.foundationRows, \.\.\.rowsOf\(openReportIndexes\)\]/, 'after the decisions, before reports (D10)');
   assert.match(read('src/renderer/src/shell/useNeedsYou.ts'), /shownQuestions\(t, merged\.foundations\)/, 'Not now leaves the count too');
+  assert.match(ask, /if \(ok\) setFoundationSaved\(true\)/, 'a saved answer says so in a polite line (states table)');
+  assert.match(ask, /role="status"[^\n]*foundations\.card\.saved/);
+  // D5: no card waiting opens the document itself, read only, else where it is listed.
+  assert.match(read('src/renderer/src/components/pulse/PulseView.tsx'), /d\.tags\.includes\('foundations'\)[\s\S]{0,200}window\.cth\.kgOpen\(doc\.id\)/);
 });
 
 test('Pulse: the strip in Recommendations, the count under the role, the detail box', () => {

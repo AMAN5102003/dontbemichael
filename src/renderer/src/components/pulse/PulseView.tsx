@@ -55,8 +55,16 @@ const pct = (v: number): string => `${Math.round(v * 100)}%`;
  *  in company knowledge (office-foundations.md, design D5). */
 function openFoundation(ids: readonly FoundationId[]): void {
   const task = getNeedsYouFeed().tasks.find((t) => (t.humanQA ?? []).some((e) => !e.a && !e.dismissedAt && ids.includes(foundationAsk(e) as FoundationId)));
-  if (task) useStore.getState().openNeedsYou({ taskId: task.id });
-  else window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Memory & Knowledge' } }));
+  if (task) { useStore.getState().openNeedsYou({ taskId: task.id }); return; }
+  // No card waiting: the document itself, read only, else where it is listed.
+  const settings = (): void => { window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Memory & Knowledge' } })); };
+  void window.cth.kgList()
+    .then((docs) => {
+      const doc = docs.find((d) => Array.isArray(d.tags) && d.tags.includes('foundations'));
+      if (!doc || !window.cth.kgOpen) { settings(); return; }
+      return window.cth.kgOpen(doc.id).then((r) => { if (!r?.ok) settings(); });
+    })
+    .catch(settings);
 }
 
 /** The small ring beside a foundations count: decorative, the text says it. */

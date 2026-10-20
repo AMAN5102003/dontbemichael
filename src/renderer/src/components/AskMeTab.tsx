@@ -107,6 +107,13 @@ export function AskMeTab() {
   const [answeredHere, setAnsweredHere] = useState<{ id: string; title: string; a: string; who?: string; whoId?: string }[]>([]);
   const [line] = useState(() => 1 + Math.floor(Math.random() * ALL_CLEAR_LINES));
   const rootRef = useRef<HTMLDivElement>(null);
+  // A foundation answer just saved: one polite line, as the card leaves (design states table).
+  const [foundationSaved, setFoundationSaved] = useState(false);
+  useEffect(() => {
+    if (!foundationSaved) return;
+    const timer = setTimeout(() => setFoundationSaved(false), 4000);
+    return () => clearTimeout(timer);
+  }, [foundationSaved]);
 
   // Opened from the pill, the strip or a "for you" chip: put focus in the
   // reply field of the asked for card, or the newest one (D10, D11).
@@ -260,6 +267,9 @@ export function AskMeTab() {
       <ScheduleRequestCards requests={scheduleRequests} refresh={refreshScheduleRequests} />
       <WorkStyleUpdateCards offers={offers} />
       <MailProposalCards proposals={proposals} refresh={refreshNeedsYou} />
+      {foundationSaved && (
+        <div role="status" style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)', padding: '0 2px' }}>{translate('foundations.card.saved')}</div>
+      )}
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
       {!engineCard && !onBreak && !researchNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
@@ -290,7 +300,7 @@ export function AskMeTab() {
               raiserId={raiser} raiserName={nameFor(raiser)}
               chipStyle={{ ...personChip, ...(fam ? { background: fam.l, boxShadow: `inset 0 0 0 1px ${fam.m}` } : {}) }}
               foundations={foundations}
-              onAnswer={(text) => sendAnswer(row, text)}
+              onAnswer={async (text) => { const ok = await sendAnswer(row, text); if (ok) setFoundationSaved(true); return ok; }}
             />
           );
         }

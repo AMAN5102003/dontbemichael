@@ -3006,7 +3006,8 @@
       "usedBy_one": "{{jobs}} uses this",
       "usedBy": "{{jobs}} use this",
       "weekly": "Asked weekly until answered",
-      "failed": "Couldn't save, try again."
+      "failed": "Couldn't save, try again.",
+      "saved": "Saved to Company foundations."
     }
   }
 }
