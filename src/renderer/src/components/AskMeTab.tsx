@@ -107,11 +107,12 @@ export function AskMeTab() {
   const [answeredHere, setAnsweredHere] = useState<{ id: string; title: string; a: string; who?: string; whoId?: string }[]>([]);
   const [line] = useState(() => 1 + Math.floor(Math.random() * ALL_CLEAR_LINES));
   const rootRef = useRef<HTMLDivElement>(null);
-  // A foundation answer just saved, or sent to Michael to add: one polite line, as the card leaves.
-  const [foundationSaved, setFoundationSaved] = useState<'saved' | 'michael' | null>(null);
+  // A foundation answer just saved, sent to Michael to add, or not written:
+  // one polite line, as the card leaves. `at` restarts the line for each save.
+  const [foundationSaved, setFoundationSaved] = useState<{ how: 'saved' | 'michael' | 'failed'; at: number } | null>(null);
   useEffect(() => {
     if (!foundationSaved) return;
-    const timer = setTimeout(() => setFoundationSaved(null), 4000);
+    const timer = setTimeout(() => setFoundationSaved(null), foundationSaved.how === 'failed' ? 10000 : 4000);
     return () => clearTimeout(timer);
   }, [foundationSaved]);
 
@@ -194,7 +195,9 @@ export function AskMeTab() {
     const shape = readAskShape(open);
     const text = override ?? answerFor(row, shape);
     if (!text || sending) return false;
-    let landed = false;
+    // Whether the card itself took the answer (FoundationCard writes the
+    // foundations then, even if a message after it failed).
+    let onCard = false;
     const pk = picks[row.key] ?? {};
     // Which option and which parts, recorded beside the answer (main keeps them
     // only with it: askMeRouting.ts mergeHumanQA).
@@ -226,6 +229,7 @@ export function AskMeTab() {
         ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA }, index)
         : { ok: false, landed: false };
       if (!result.ok || result.landed === false) throw new Error('task changed before answer could be saved');
+      onCard = true;
       updateNeedsYouTasks(() => next);
       // 2) The answer reaches Michael as a request about the card, which he
       //    closes with done once he has routed it, and goes into the memory
@@ -246,7 +250,6 @@ export function AskMeTab() {
       setAnswerPick(row.key, {});
       setAnsweredHere((list) => [{ id: row.key, title: task.title, a: text, who: nameFor(typeof task.assignee === 'string' ? task.assignee : undefined), whoId: typeof task.assignee === 'string' ? task.assignee : undefined }, ...list.filter((x) => x.id !== row.key)]);
       refreshNeedsYou();
-      landed = true;
     } catch {
       // Keep the draft so the owner can try again, and reload the board in
       // case the question changed or was withdrawn meanwhile.
@@ -254,7 +257,7 @@ export function AskMeTab() {
       refreshNeedsYou();
     }
     setSending(null);
-    return landed;
+    return onCard;
   };
 
   return (
@@ -269,7 +272,10 @@ export function AskMeTab() {
       <WorkStyleUpdateCards offers={offers} />
       <MailProposalCards proposals={proposals} refresh={refreshNeedsYou} />
       {/* Always mounted, so screen readers announce the line when it fills. */}
-      <div role="status" style={foundationSaved ? { fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)', padding: '0 2px' } : statusIdle}>{foundationSaved === 'saved' ? translate('foundations.card.saved') : foundationSaved === 'michael' ? translate('foundations.card.sentToMichael', { godName }) : ''}</div>
+      <div key={foundationSaved?.at} role={foundationSaved?.how === 'failed' ? 'alert' : 'status'} className={foundationSaved ? undefined : 'cth-sr-only'}
+        style={foundationSaved ? { fontSize: 12, lineHeight: '17px', color: foundationSaved.how === 'failed' ? 'var(--cth-coral-text)' : 'var(--cth-ink-3)', padding: '0 2px' } : undefined}>
+        {foundationSaved?.how === 'saved' ? translate('foundations.card.saved') : foundationSaved?.how === 'michael' ? translate('foundations.card.sentToMichael', { godName }) : foundationSaved?.how === 'failed' ? translate('foundations.card.failedGone', { godName }) : ''}
+      </div>
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
       {!engineCard && !onBreak && !researchNotice && !knowledgeNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
@@ -302,7 +308,7 @@ export function AskMeTab() {
               foundations={foundations}
               memberName={(mid) => agents.find((a) => a.id === mid)?.name}
               onAnswer={(text) => sendAnswer(row, text)}
-              onSaved={setFoundationSaved}
+              onSaved={(how) => setFoundationSaved({ how, at: Date.now() })}
             />
           );
         }
@@ -610,10 +616,6 @@ function KnowledgeNoticeCard() {
     </section>
   );
 }
-
-/** The saved line's live region while empty: out of the layout, still in the
- *  accessibility tree, so it is announced when its text arrives. */
-const statusIdle: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
 
 const reportTag: CSSProperties = {
   fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 'var(--cth-r-pill)',

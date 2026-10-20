@@ -5,7 +5,7 @@ import type { OwnerRequest } from '@shared/ownerRequests';
 import type { WorkStyleOffer } from '@shared/workStyleUpdates';
 import type { EngineSetupStatus } from '@shared/engineSetup';
 import { stopNeedsOwner, type OfficeBreakView } from '@shared/officeBreak';
-import { openQuestion, openQuestions, parseTasks, waitsOnHuman, type HiveTask } from '../components/hiveTasks';
+import { openQuestions, parseTasks, type HiveTask } from '../components/hiveTasks';
 import { openReportIndexes } from '@shared/askMeRouting';
 import { silentCards, type SilentEpisode } from '@shared/silentEngine';
 import { foundationAsk, isSnoozed, type FoundationsView } from '@shared/foundations';
@@ -139,7 +139,12 @@ export function shownQuestions(t: HiveTask, f: FoundationsView | null, now = Dat
 }
 
 let foundationReads = 0;
-function readFoundations(): void {
+let foundationsReadAt = 0;
+/** Main pushes every change (onFoundationsChanged), so the poll reads the
+ *  record at most once a minute, a safety net; other callers read at once. */
+function readFoundations(force = true): void {
+  if (!force && Date.now() - foundationsReadAt < 60_000) return;
+  foundationsReadAt = Date.now();
   const mine = ++foundationReads;
   void window.cth.foundationsGet?.()
     .then((v) => { if (mine === foundationReads) publish({ foundations: v ?? null }); })
@@ -160,7 +165,7 @@ function readTasks(): void {
   readOffers(false);
   readEngine(false);
   readNotices(false);
-  readFoundations();
+  readFoundations(false);
 }
 
 // The one time cards (Research's, and company knowledge's for an owner who
@@ -232,7 +237,7 @@ export function subscribeNeedsYou(listener: () => void): () => void {
     offStop = window.cth.onOfficeBreak?.((v) => publish({ stop: v ?? null })) ?? null;
     void window.cth.silentList?.().then((list) => publish({ silent: Array.isArray(list) ? list : [] })).catch(() => { /* keep the last value */ });
     offSilent = window.cth.onSilentChanged?.((list) => publish({ silent: list })) ?? null;
-    offFoundations = window.cth.onFoundationsChanged?.(readFoundations) ?? null;
+    offFoundations = window.cth.onFoundationsChanged?.(() => readFoundations()) ?? null;
   }
   return () => {
     listeners.delete(listener);
@@ -282,6 +287,7 @@ export function refreshNeedsYou(): void {
   readProposals();
   readOffers();
   readNotices();
+  readFoundations();
 }
 
 /** Show a local change at once (an answer just saved, a card dismissed); the
@@ -298,13 +304,16 @@ export function pillState(status: NeedsYouFeed['status'], count: number): 'blank
   return count > 0 ? 'hot' : 'quiet';
 }
 
-/** The newest open ask among these people, for a pod's "for you" chip (D11). */
-export function newestAskFor(memberIds: string[], tasks: HiveTask[]): string | undefined {
+/** The newest open ask among these people, for a pod's "for you" chip (D11):
+ *  only asks Needs you shows (shownQuestions), so the chip never opens it empty. */
+export function newestAskFor(memberIds: string[], tasks: HiveTask[], foundations: FoundationsView | null = null): string | undefined {
   const ids = new Set(memberIds);
   let best: { id: string; at: string } | undefined;
   for (const t of tasks) {
-    if (!t.assignee || !ids.has(t.assignee) || !waitsOnHuman(t)) continue;
-    const at = openQuestion(t)?.askedAt ?? t.createdAt;
+    if (!t.assignee || !ids.has(t.assignee)) continue;
+    const shown = shownQuestions(t, foundations);
+    if (!shown.length) continue;
+    const at = shown[0].askedAt ?? t.createdAt;
     if (!best || at > best.at) best = { id: t.id, at };
   }
   return best?.id;

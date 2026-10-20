@@ -40,7 +40,9 @@ const KEYWORDS: [RegExp, OfficeDepartment][] = [
   [/\b(financ|accountan|accounting|bookkeep|billing|payroll|cfo|controller)/i, 'finance'],
   [/\b(market|social|content|brand|seo|community)/i, 'marketing'],
   [/\b(hr\b|human resources|people|recruit|talent)/i, 'people'],
-  [/\b(it\b|engineer|security|developer|devops|systems)/i, 'it'],
+  // "IT" only in capitals: the word "it" in a role line is not a department.
+  [/\bIT\b/, 'it'],
+  [/\b(engineer|security|developer|devops|systems)/i, 'it'],
   [/\b(supply|inventory|shipping|logistic|quality|warehouse|procure|purchas)/i, 'operations']
 ];
 

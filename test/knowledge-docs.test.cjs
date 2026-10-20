@@ -243,3 +243,34 @@ test('a save that lands while one is being read in is read in right after it', a
   await first;
   assert.deepEqual(seen, ['v2', 'v3']);
 });
+
+test('read only copies go at launch, quit and reset; an editor\'s burst of saves is read in once it is quiet; the index is replaced whole', async (t) => {
+  // Value: protects=the office's text never outlives the run in the temp folder, autosave does not reindex every tick, a reader never sees half an index (pass 3 red team and performance reviews); fails_when=copies stay, each change reindexes at once, or the index is written in place; why_new=review findings; seam=none; no_claim=a copy an editor holds locked on Windows
+  const o = edits(t);
+  await o.e.open('found');
+  const copy = o.calls.opened.at(-1);
+  fs.mkdirSync(path.join(o.dir, 'company-knowledge-earlier'));
+  o.e.clearCopies();
+  assert.ok(!fs.existsSync(path.dirname(copy)), 'this run\'s copy is gone');
+  assert.ok(fs.existsSync(path.join(o.dir, 'company-knowledge-earlier')), 'an earlier run\'s only with all');
+  o.e.clearCopies(true);
+  assert.ok(!fs.existsSync(path.join(o.dir, 'company-knowledge-earlier')));
+  const src = read('src/main/index.ts');
+  assert.match(src, /knowledgeEdits\.clearCopies\(true\);\napp\.on\('will-quit', \(\) => \{ knowledgeEdits\.stopAll\(\); knowledgeEdits\.clearCopies\(\); \}\);/);
+  assert.match(src, /knowledgeEdits\.stopAll\(\);\n  knowledgeEdits\.clearCopies\(true\);\n  const failed = eraseOfficeData/);
+
+  const e = new KnowledgeEdits({
+    docFile: () => ({ path: o.file, meta: { title: 'Price list', tags: [] } }),
+    reindex: async (id) => { o.calls.reindexed.push(id); },
+    openPath: async () => '', tempDir: () => o.dir, changed: () => undefined, intervalMs: 20, settleMs: 150
+  });
+  t.after(() => e.stopAll());
+  await e.open('doc');
+  o.calls.reindexed.length = 0;
+  for (let i = 0; i < 4; i++) { fs.writeFileSync(o.file, `v${i + 2}`); await new Promise((r) => setTimeout(r, 40)); }
+  assert.equal(o.calls.reindexed.length, 0, 'not while the saves keep coming');
+  await new Promise((r) => setTimeout(r, 400));
+  assert.equal(o.calls.reindexed.length, 1, 'once, after the file is quiet');
+
+  assert.doesNotMatch(read('src/main/kg-core.cjs'), /fs\.writeFileSync\(idxPath/, 'the index is renamed into place');
+});

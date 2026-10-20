@@ -3012,7 +3012,9 @@
       "saved": "已保存到公司基础信息。",
       "failedDraft": "无法请 {{name}} 起草，请重试。",
       "failedLater": "无法暂缓，请重试。",
-      "sentToMichael": "已发给 {{godName}}，由其添加到公司基础信息。"
+      "sentToMichael": "已发给 {{godName}}，由其添加到公司基础信息。",
+      "failedGone": "无法把你的回答加入公司基础信息。请告诉 {{godName}}。",
+      "drafted": "草稿，编辑后保存"
     }
   },
   "knowledgeNotice": {

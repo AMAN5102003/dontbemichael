@@ -24,6 +24,14 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 // ─── Tunables ────────────────────────────────────────────────────────────────
+/** Replace a file whole: written beside it, then renamed over it, so a
+ *  reader (an agent's kg search) or a stop never sees half of it. */
+function writeAtomic(file, text) {
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try { fs.writeFileSync(tmp, text, 'utf8'); fs.renameSync(tmp, file); }
+  catch (e) { try { fs.rmSync(tmp, { force: true }); } catch { /* gone */ } throw e; }
+}
+
 const DEFAULT_CHUNK_SIZE = 1200; // chars per chunk (approx; broken on boundaries)
 const DEFAULT_CHUNK_OVERLAP = 150; // chars of overlap between adjacent chunks
 const MAX_INDEX_BYTES = 5 * 1024 * 1024; // per-doc text indexed before truncation
@@ -376,7 +384,7 @@ function removeDoc(kgRoot, docId) {
       if (!s) return false;
       try { return JSON.parse(s).docId !== docId; } catch { return false; }
     });
-    fs.writeFileSync(idxPath, kept.length ? kept.join('\n') + '\n' : '', 'utf8');
+    writeAtomic(idxPath, kept.length ? kept.join('\n') + '\n' : '', 'utf8');
   }
   return true;
 }
@@ -408,7 +416,7 @@ function reindex(kgRoot, docId, input = {}) {
     })
     : [];
   const lines = chunks.map((c, i) => JSON.stringify({ docId, title: meta.title, source: meta.source, modality: meta.modality, chunkIdx: i, text: c }));
-  fs.writeFileSync(idxPath, [...kept, ...lines].join('\n') + '\n', 'utf8');
+  writeAtomic(idxPath, [...kept, ...lines].join('\n') + '\n', 'utf8');
   const next = {
     ...meta, chunkCount: chunks.length, truncated, updatedAt: nowIso(),
     ...(typeof input.bytes === 'number' ? { bytes: input.bytes } : {}),

@@ -560,6 +560,9 @@ const knowledgeEdits = new KnowledgeEdits({
     try { liveWebContents()?.send('kg:changed', { id, ...(error ? { error } : {}) }); } catch { /* window gone */ }
   }
 });
+// Read only copies hold the office's text: none outlives the run that made it.
+knowledgeEdits.clearCopies(true);
+app.on('will-quit', () => { knowledgeEdits.stopAll(); knowledgeEdits.clearCopies(); });
 // Keeps each agent's memory index useful (owner, 2026-09-25): agents add notes
 // to memory/inbox.md and this turns them into itemised changes on Haiku, in
 // the background. It replaces the old whole-file condenser (reflect.ts).
@@ -731,16 +734,11 @@ function foundationsTeam(): { jobs: Record<string, FoundationJob[]>; office: Fou
     jobs[e.id] = job ? [job] : [];
   }
   const all = new Set(Object.values(jobs).flat());
-  const nameOf = (id: string): string => {
-    if (id === 'owner') return 'the owner';
-    return id === reg.godId || id === 'god' ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : (reg.agents?.[id]?.name ?? id);
-  };
-  return { jobs, office: FOUNDATION_JOBS.filter((j) => all.has(j)), nameOf, godId: reg.godId ?? null };
+  return { jobs, office: FOUNDATION_JOBS.filter((j) => all.has(j)), nameOf: (id) => foundationsNameOf(id, reg), godId: reg.godId ?? null };
 }
 /** A member's or Michael's name for the foundations, from the registry alone. */
-function foundationsNameOf(id: string): string {
+function foundationsNameOf(id: string, reg = hive.registry()): string {
   if (id === 'owner') return 'the owner';
-  const reg = hive.registry();
   return id === reg.godId || id === 'god' ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : (reg.agents?.[id]?.name ?? id);
 }
 /** Company foundations' one writer (main/foundations.ts). */
@@ -755,7 +753,8 @@ const foundations = new Foundations({
   nameOf: (id) => foundationsNameOf(id),
   godId: () => hive.registry().godId ?? null,
   profile: () => cleanCompanyProfile(readConfig().companyProfile),
-  setProfile: (patch) => { writeConfig({ companyProfile: { ...cleanCompanyProfile(readConfig().companyProfile), ...patch } }); },
+  // office.json too, as a Settings save does: an adopted office restores the profile from it.
+  setProfile: (patch) => { const next = writeConfig({ companyProfile: { ...cleanCompanyProfile(readConfig().companyProfile), ...patch } }); syncOfficeRecord(next); },
   ownerSaid: (id, recipient) => hive.ownerSaid(id, recipient),
   inOffice: (path, agentId) => {
     try { if (!statSync(path).isFile()) return false; } catch { return false; }
@@ -5569,8 +5568,7 @@ ipcMain.handle('research:off', () => ({ ok: true, returned: turnResearchOff() })
 // search them now.
 ipcMain.handle('kg:notice', () => {
   const cfg = readConfig();
-  if (cfg.knowledgeGraph?.enabled !== false || cfg.knowledgeOnNoticeSeen) return { notice: false };
-  try { return { notice: knowledgeNoticeDue(cfg.knowledgeGraph?.enabled, cfg.knowledgeOnNoticeSeen, knowledge.list()) }; } catch { return { notice: false }; }
+  try { return { notice: knowledgeNoticeDue(cfg.knowledgeGraph?.enabled, cfg.knowledgeOnNoticeSeen, () => knowledge.list()) }; } catch { return { notice: false }; }
 });
 ipcMain.handle('kg:noticeSeen', () => { writeConfig({ knowledgeOnNoticeSeen: true }); return { ok: true }; });
 /** The one time update card was read (Got it or Open Research settings). */
@@ -6535,6 +6533,8 @@ ipcMain.handle('app:resetAll', () => {
   const resetHome = readConfig().harnessHome;
   const userData = app.getPath('userData');
   const kgRoot = knowledge.root();
+  knowledgeEdits.stopAll();
+  knowledgeEdits.clearCopies(true);
   const failed = eraseOfficeData({
     home: resetHome ? expandTilde(resetHome) : null,
     userData,

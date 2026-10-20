@@ -18,6 +18,11 @@ import { useStore } from '@/store/store';
 import { Icon } from './Icon';
 
 export type Checks = Record<string, AskFileCheck>;
+
+/** Name lookups made in the last half minute, by names and who asks. */
+const NAMED_TTL_MS = 30_000;
+const NAMED_CACHE_MAX = 200;
+const namedCache = new Map<string, { at: number; v: Checks }>();
 type Who = { raisedBy?: string; assignee?: string };
 
 /** Main's check caps one call at 20 paths. */
@@ -266,6 +271,11 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
   }, [key, raisedBy, assignee, !given]);
 
   useEffect(() => {
+    // Needs you mounts every card again on each refresh: a lookup made a
+    // moment ago is used as it is (each one checks many paths).
+    const cacheKey = `${nameKey}\u0000${raisedBy ?? ''}\u0000${assignee ?? ''}`;
+    const hit = namedCache.get(cacheKey);
+    if (hit && Date.now() - hit.at < NAMED_TTL_MS) { setNamed(hit.v); return; }
     setNamed({});
     // A dev window whose main process predates the lookup has no askFileNames:
     // the names then stay plain text instead of taking the screen down.
@@ -273,7 +283,11 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
     if (!names.length || !lookup) return;
     let alive = true;
     void lookup(names, { raisedBy, assignee })
-      .then((v) => { if (alive) setNamed(v); })
+      .then((v) => {
+        namedCache.set(cacheKey, { at: Date.now(), v });
+        if (namedCache.size > NAMED_CACHE_MAX) namedCache.delete(namedCache.keys().next().value as string);
+        if (alive) setNamed(v);
+      })
       .catch(() => undefined);
     return () => { alive = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps

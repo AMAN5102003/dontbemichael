@@ -36,7 +36,7 @@ import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
 import { godNameNow } from '@/i18n';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
-import { getNeedsYouFeed } from '@/shell/useNeedsYou';
+import { getNeedsYouFeed, shownQuestions } from '@/shell/useNeedsYou';
 import { FOUNDATION_QUESTIONS, foundationAsk, isFoundationsDoc, type FoundationId, type FoundationsJobRow, type FoundationsMember } from '@shared/foundations';
 import { ADVICE_WINDOW_MS, EARLY_SCALE, REOPEN_MIN } from '@shared/teamAdvice';
 
@@ -59,7 +59,9 @@ const EARLY_REOPENS = Math.ceil(REOPEN_MIN * EARLY_SCALE);
 /** Open a foundation question's waiting card in Needs you, else the document
  *  in company knowledge (office-foundations.md, design D5). */
 function openFoundation(ids: readonly FoundationId[]): void {
-  const task = getNeedsYouFeed().tasks.find((t) => (t.humanQA ?? []).some((e) => !e.a && !e.dismissedAt && ids.includes(foundationAsk(e) as FoundationId)));
+  // Only a card Needs you shows (not one put off with Not now or answered another way).
+  const feed = getNeedsYouFeed();
+  const task = feed.tasks.find((t) => shownQuestions(t, feed.foundations).some((e) => ids.includes(foundationAsk(e) as FoundationId)));
   if (task) { useStore.getState().openNeedsYou({ taskId: task.id }); return; }
   // No card waiting: the document itself, read only, else where it is listed.
   const settings = (): void => { window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Memory & Knowledge' } })); };

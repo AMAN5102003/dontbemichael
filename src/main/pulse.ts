@@ -18,7 +18,7 @@ import {
   compareFrom, dayKey, keptAsIs, measuredSaving, MIN_DECISIONS, periodRange, planHeadroom, previousRange, pulseSnapshot,
   type AskFact, type DayRange, type Period, type PlanReading, type PulseSnapshot
 } from '../shared/teamPerformance';
-import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, type Advice, type Dismissal, type EarlyMode, type LadderModel, type MissionFact } from '../shared/teamAdvice';
+import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, EARLY_SCALE, type Advice, type Dismissal, type EarlyMode, type LadderModel, type MissionFact } from '../shared/teamAdvice';
 import { keptSafe, type KeptSafe } from '../shared/pulseSafety';
 import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan';
 import { countFromDay, learnedNotes, learning, type AddedNote, type LearnedNote, type NoteFact } from '../shared/teamLearning';
@@ -68,8 +68,6 @@ function windowMs(name: string): number {
   return /five_hour|5h/i.test(name) ? 5 * 3_600_000 : 7 * 86_400_000;
 }
 
-export { EARLY_SCALE } from '../shared/teamAdvice';
-import { EARLY_SCALE } from '../shared/teamAdvice';
 /** At most this many early lines, the most evidence first. */
 export const EARLY_MAX = 3;
 /** The early lines to show: the most evidence first, at most EARLY_MAX. */

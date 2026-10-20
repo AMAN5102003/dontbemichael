@@ -77,17 +77,27 @@ const PROFILE_LINKS: Array<{ id: FoundationId; read: (p: ProfileFacts) => string
   }
 ];
 
-/** The first month the text names, in the text's order ("July to June" is
- *  July). "may" counts only as "May", so the verb never reads as a month. */
+/** The first month the text names, in the text's order ("July to June" and
+ *  "Jul to Jun" are July; "calendar year" is January). "May" and "Mar" count
+ *  only capitalized, so the words "may" and "mar" never read as months. */
 export function firstMonth(text: string): number | null {
   let best: { at: number; month: number } | null = null;
-  MONTHS.forEach((m, i) => {
-    const re = m === 'may' ? /\bMay\b/ : new RegExp(`\\b${m}\\b`, 'i');
+  const take = (re: RegExp, month: number): void => {
     const hit = re.exec(text);
-    if (hit && (!best || hit.index < best.at)) best = { at: hit.index, month: i + 1 };
+    if (hit && (!best || hit.index < best.at)) best = { at: hit.index, month };
+  };
+  MONTHS.forEach((m, i) => {
+    const short = m === 'september' ? 'sept?' : m.slice(0, 3);
+    if (m === 'may') take(/\bMay\b/, 5);
+    else if (m === 'march') { take(/\bmarch\b/i, 3); take(/\bMar\b/, 3); }
+    else take(new RegExp(`\\b(${m}|${short})\\b`, 'i'), i + 1);
   });
+  take(/\bcalendar year\b/i, 1);
   return best ? (best as { month: number }).month : null;
 }
+
+/** What Michael is told when a question with a gap is answered off its card. */
+const CLOSE_CARD = 'If a foundation card for it is open, close it as done.';
 
 const same = (a: string, b: string): boolean => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -142,7 +152,10 @@ export class Foundations {
 
   /** The office's document as agents read it. */
   document(): string {
-    return renderFoundations(this.read(), this.d.jobs?.() ?? [], this.nameOf);
+    // Each name read once per document (a name is a registry read).
+    const names = new Map<string, string>();
+    const nameOf = (id: string): string => { let n = names.get(id); if (n === undefined) { n = this.nameOf(id); names.set(id, n); } return n; };
+    return renderFoundations(this.read(), this.d.jobs?.() ?? [], nameOf);
   }
 
   private nameOf = (id: string): string => (this.d.nameOf ? this.d.nameOf(id) : id);
@@ -176,6 +189,7 @@ export class Foundations {
     const p = this.d.profile?.() ?? {};
     const rec = this.read();
     let next = rec;
+    const filled: FoundationId[] = [];
     for (const link of PROFILE_LINKS) {
       const v = link.read(p);
       const a = next.answers[link.id];
@@ -185,6 +199,7 @@ export class Foundations {
       const asProfile = a ? (() => { const patch = link.write(a.text); return patch ? link.read(patch) : undefined; })() : undefined;
       if (v && (!a || (!same(a.text, v) && !(asProfile && same(asProfile, v))))) {
         next = this.withAnswer(next, link.id, { text: v, by: 'profile', source: 'profile', at: this.iso() }, null);
+        if (rec.hits[link.id]) filled.push(link.id);
       } else if (!v && a?.source === 'profile') {
         next = { ...next, answers: { ...next.answers } };
         delete next.answers[link.id];
@@ -192,6 +207,8 @@ export class Foundations {
       }
     }
     if (next !== rec) { this.save(next); this.publishSoon(); }
+    // The owner answered in the company profile: Michael closes its card.
+    for (const id of filled) this.toMichael('Foundation answered', `"${FOUNDATION_QUESTIONS[id].text}" (${id}) is answered now, from the company profile: ${next.answers[id]?.text ?? ''}\n\n${CLOSE_CARD}`);
   }
 
   /** Set an answer: drafts, snoozes and the gap notice for it go, and one
@@ -266,12 +283,14 @@ export class Foundations {
     if (!isFoundationId(id)) return `No company foundations question "${String(id ?? '')}". Use an id from your COMPANY FOUNDATIONS context, in square brackets after each question.`;
     const q = FOUNDATION_QUESTIONS[id].text;
     if (typeof p.gap === 'string') return this.gap(from, id, p.gap);
-    // A member answers and drafts only its own job's questions (Michael any).
+    // A draft comes only from the member the owner asked, or Michael (draft()).
+    if (typeof p.draft === 'string') return this.draft(from, id, p.draft);
+    // A member answers only its own job's questions (Michael any).
     const god = this.d.godId?.() ?? 'god';
-    if (this.d.jobsOf && from !== god && from !== 'god' && !questionsFor(this.d.jobsOf(from)).includes(id)) {
+    const isMichael = from === god || from === 'god';
+    if (this.d.jobsOf && !isMichael && !questionsFor(this.d.jobsOf(from)).includes(id)) {
       return `"${q}" is not one of your job's foundations questions. Send what you know to ${this.michaelName()} instead.`;
     }
-    if (typeof p.draft === 'string') return this.draft(from, id, p.draft);
     // One plain line: an answer never adds headings or lines to the context
     // every member carries.
     const text = typeof p.answer === 'string' ? oneLine(p.answer) : '';
@@ -303,10 +322,10 @@ export class Foundations {
     this.save(this.withAnswer(rec, id, { text, by: from, source, at: this.iso(), ...(ref ? { ref } : {}) }, from));
     this.toProfile(id, text, level === 'owner');
     this.publishSoon();
-    // Answered without the owner's card: Michael closes the card he raised for it.
-    if (rec.hits[id] && level !== 'owner' && level !== 'michael') {
-      this.toMichael('Foundation answered', `"${q}" (${id}) is answered now, from ${this.nameOf(from)}: ${text}\n\nIf a foundation card for it is open, close it as done.`);
-    }
+    // Answered without the owner's card: Michael closes the card he raised for
+    // it (told here when the answer is his own, else by a note).
+    if (rec.hits[id] && isMichael) return `Saved to the company foundations: "${q}". ${CLOSE_CARD}`;
+    if (rec.hits[id]) this.toMichael('Foundation answered', `"${q}" (${id}) is answered now, from ${this.nameOf(from)}: ${text}\n\n${CLOSE_CARD}`);
     return `Saved to the company foundations: "${q}". Every member who needs it sees it.`;
   }
 

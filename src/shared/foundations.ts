@@ -143,9 +143,11 @@ export function questionsFor(jobs: readonly FoundationJob[]): FoundationId[] {
 // ---- The record ---------------------------------------------------------------
 
 /** Where an answer came from. `owner`: the owner's own words (an Ask me
- *  answer, a message the app found in the hive log, or Settings); `profile`:
- *  the company profile; `file`: a file in the office folders; `michael`:
- *  outside text Michael checked and confirmed. */
+ *  answer, or Michael citing a message the owner sent him); `profile`: the
+ *  company profile; `file`: a file in the office folders; `michael`: outside
+ *  text Michael checked and confirmed; `taught`: a member citing an owner
+ *  message that reached it, which fills only an empty answer and Michael can
+ *  replace. */
 export type FoundationSourceKind = 'owner' | 'profile' | 'file' | 'michael' | 'taught';
 
 export interface FoundationAnswer {
@@ -403,6 +405,7 @@ export type FoundationsView = Pick<FoundationsRecord, 'answers' | 'drafts' | 'sn
 /** The one time "Company knowledge is always on" card is due: the owner had
  *  turned the old switch off, has not read the card, and keeps documents of
  *  their own in the store (the Company foundations copy is the app's). */
-export function knowledgeNoticeDue(enabled: boolean | undefined, seen: boolean | undefined, docs: ReadonlyArray<{ tags?: unknown }>): boolean {
-  return enabled === false && !seen && docs.some((d) => !isFoundationsDoc(d));
+export function knowledgeNoticeDue(enabled: boolean | undefined, seen: boolean | undefined, docs: ReadonlyArray<{ tags?: unknown }> | (() => ReadonlyArray<{ tags?: unknown }>)): boolean {
+  // The documents are read only when the rest says the notice could be due.
+  return enabled === false && !seen && (typeof docs === 'function' ? docs() : docs).some((d) => !isFoundationsDoc(d));
 }

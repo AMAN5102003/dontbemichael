@@ -57,8 +57,10 @@ export const PRIVATE_ENTRIES = [
   'checked.jsonl',
   'checked-archive',
   'checked-backfill.json',
-  // Company foundations: the record the app alone writes (office-foundations.md).
-  'foundations.json'
+  // Company foundations: the record the app alone writes (office-foundations.md),
+  // and the ids of the owner's messages it takes as the owner's words.
+  'foundations.json',
+  'owner-said.jsonl'
 ] as const;
 
 /** The privacy and standing approval checks' own empty folders (index.ts). */

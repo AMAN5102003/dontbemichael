@@ -1589,7 +1589,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   {([
                                     ['minilm', t('memoryPanel.modelFast'), t('memoryPanel.modelFastDetail')],
                                     ['embeddinggemma', t('memoryPanel.modelMultilingual'), t('memoryPanel.modelMultilingualDetail')]
-                                  ] as const).map(([id, title, detail]) => {
+                                  ] as const).map(([id, title, detail], i, all) => {
                                     const sel = embeddingModel === id;
                                     return (
                                       <button
@@ -1603,7 +1603,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                         onKeyDown={(e) => {
                                           if (['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft'].includes(e.key)) {
                                             e.preventDefault();
-                                            const next = id === 'minilm' ? 'embeddinggemma' : 'minilm';
+                                            const step = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1;
+                                            const next = all[(i + step + all.length) % all.length][0];
                                             pickEmbeddingModel(next);
                                             (e.currentTarget.parentElement?.querySelector(`[data-model="${next}"]`) as HTMLElement | null)?.focus();
                                           }

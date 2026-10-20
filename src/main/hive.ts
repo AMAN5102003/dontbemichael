@@ -25,7 +25,9 @@ import {
   RESEARCH_UNCHECKED_TOOL, NOT_SENT_SUBJECT_OUT, RESEARCH_ONLY_ASKERS, RESEARCH_NAME, RESEARCH_ROLE, isReservedName,
   SENT_AS_SUBJECT, sentAsBody, nameKey, researchText, cleanResearchName, RESEARCH_ONLY_SKILLS
 } from '../shared/research';
-import { FOUNDATION_CAP } from '../shared/foundations';
+import { FOUNDATION_CAP, foundationAsk } from '../shared/foundations';
+/** A card ask as foundationAsk reads it (the ledger's asks carry kind and foundation). */
+type FoundationAskShape = { kind?: unknown; foundation?: unknown };
 
 import { hookShell, shellCommand, type HookShell } from './hookShell';
 import { CLOSING_COMPLETE_RE } from '../shared/closingTime';
@@ -517,8 +519,12 @@ export interface SpawnInjection {
 }
 
 const HOP_CAP = 12;
-/** How much of the log's end ownerSaid reads (a cited owner message is recent). */
-const OWNER_SAID_SPAN = 8 * 1024 * 1024;
+/** The owner's sent message ids and who got each, in the private folder: a
+ *  member's shell can write the hive log, never this (Company foundations). */
+const OWNER_SAID_FILE = 'owner-said.jsonl';
+/** How much of its end ownerSaid reads: a cited owner message is recent, and
+ *  a line is under 200 bytes. */
+const OWNER_SAID_SPAN = 1024 * 1024;
 
 /** One outbox file's entry in the outbox journal (HiveManager.routingFile). */
 interface RoutingRecord { ino: number; birth: number; id: string; created_at: string; delivered: boolean }
@@ -807,36 +813,44 @@ export class HiveManager {
   /** Company foundations' writer (main/foundations.ts): what a member sends to
    *  `foundations`, answered with a reply or nothing. */
   private foundationsHandler: ((actor: string, payload: unknown) => string | null) | null = null;
-  /** True while send() routes a message the owner sent (see send). */
-  private sendingByOwner = false;
   onFoundations(handler: (actor: string, payload: unknown) => string | null): void { this.foundationsHandler = handler; }
 
-  /** Whether a message with this id is one the owner sent (logged byOwner,
-   *  never an app notice sent as 'human') and it reached `recipient` (Company
-   *  foundations checks a member's "the owner said"). Only the log's last
-   *  8 MB is read, since a cited message is recent, and by the id's mark. */
+  /** Whether a message with this id is one the owner sent (never an app
+   *  notice sent as 'human') and it reached `recipient` (Company foundations
+   *  checks "the owner said"). Read from the owner's private list, not the
+   *  hive log a member's shell can write; only its last 1 MB, by the id's mark. */
   ownerSaid(messageId: string, recipient: string): boolean {
-    const root = this.root();
-    if (!root || !messageId || messageId.length > 120 || !recipient) return false;
-    let text = '';
+    const home = this.getHome();
+    if (!home || !messageId || messageId.length > 120 || !recipient) return false;
+    let buf: Buffer;
     try {
-      const file = join(root, 'log.jsonl');
+      const file = join(privateRoot(home), OWNER_SAID_FILE);
       const size = statSync(file).size;
       const span = Math.min(size, OWNER_SAID_SPAN);
+      buf = Buffer.allocUnsafe(span);
       const fd = openSync(file, 'r');
-      try { const buf = Buffer.alloc(span); readSync(fd, buf, 0, span, size - span); text = buf.toString('utf8'); } finally { closeSync(fd); }
+      try { readSync(fd, buf, 0, span, size - span); } finally { closeSync(fd); }
     } catch { return false; }
-    const mark = `"id":${JSON.stringify(messageId)}`;
-    for (let at = text.indexOf(mark); at !== -1; at = text.indexOf(mark, at + mark.length)) {
-      const start = text.lastIndexOf('\n', at) + 1;
-      const end = text.indexOf('\n', at);
+    const mark = Buffer.from(`"id":${JSON.stringify(messageId)},`);
+    for (let at = buf.indexOf(mark); at !== -1; at = buf.indexOf(mark, at + mark.length)) {
+      const start = buf.lastIndexOf(10, at) + 1;
+      const end = buf.indexOf(10, at);
       try {
-        const e = JSON.parse(text.slice(start, end === -1 ? undefined : end)) as { kind?: unknown; from?: unknown; to?: unknown; id?: unknown; delivered?: unknown; byOwner?: unknown };
-        if (e.kind !== 'message' || e.from !== 'human' || e.id !== messageId || e.byOwner !== true) continue;
-        if (e.to === recipient || (Array.isArray(e.delivered) && e.delivered.includes(recipient))) return true;
+        const e = JSON.parse(buf.toString('utf8', start, end === -1 ? undefined : end)) as { id?: unknown; to?: unknown };
+        if (e.id === messageId && Array.isArray(e.to) && e.to.includes(recipient)) return true;
       } catch { /* a torn line */ }
     }
     return false;
+  }
+
+  /** Keep an owner message's id and who got it for ownerSaid (never its words). */
+  private recordOwnerSaid(id: string, to: string[]): void {
+    const home = this.getHome();
+    if (!home) return;
+    try {
+      mkdirSync(privateRoot(home), { recursive: true });
+      appendFileSync(join(privateRoot(home), OWNER_SAID_FILE), `${JSON.stringify({ id, to: [...new Set(to)], at: Date.now() })}\n`, 'utf8');
+    } catch { /* best effort: an uncounted message only sends its answer to Michael to check */ }
   }
 
   /** agentId → what it was last told about company knowledge, as of its
@@ -3242,19 +3256,18 @@ export class HiveManager {
 
   /** Inject a message directly (used by the orchestrator / UI / tests).
    *  `upkeep`: the app's own upkeep note (shared/upkeep.ts), stamped here by
-   *  the code that sends it, never read from a message's file or words. */
-  /** `byOwner`: the owner typed or clicked this (the window's sends as
-   *  'human'). The app's own notices go as 'human' too, so only this flag,
-   *  kept in the log, says the owner said it (Company foundations, ownerSaid). */
+   *  the code that sends it, never read from a message's file or words.
+   *  `byOwner`: the owner typed or clicked this (the window's sends as
+   *  'human'). The app's own notices go as 'human' too, so only this flag
+   *  says the owner said it (Company foundations, ownerSaid). */
   send(partial: Partial<HiveMessage>, from = 'system', upkeep?: UpkeepKind, byOwner = false): HiveMessage {
     const msg = this.normalize(partial, from);
-    this.sendingByOwner = byOwner && from === 'human';
-    try { this.routeMessage(msg, upkeep); } finally { this.sendingByOwner = false; }
+    this.routeMessage(msg, upkeep, byOwner && from === 'human');
     this.commit(`hive: msg ${msg.from}→${msg.to} (${msg.act})`);
     return msg;
   }
 
-  private routeMessage(msg: HiveMessage, upkeep?: UpkeepKind): void {
+  private routeMessage(msg: HiveMessage, upkeep?: UpkeepKind, byOwner = false): void {
     if (msg.hops > HOP_CAP) {
       // loop guard — drop a runaway message rather than let agents ping-pong.
       // There's no human queue to fall back on; the god agent owns conflicts,
@@ -3429,7 +3442,8 @@ export class HiveManager {
       }
     }
     if (held.length) this.holdForMichael(msg, held, godId);
-    this.appendLog({ kind: 'message', from: msg.from, to: msg.to, act: msg.act, subject: msg.subject, id: msg.id, delivered, ...(this.sendingByOwner ? { byOwner: true } : {}) });
+    this.appendLog({ kind: 'message', from: msg.from, to: msg.to, act: msg.act, subject: msg.subject, id: msg.id, delivered });
+    if (byOwner) this.recordOwnerSaid(msg.id, delivered);
     this.lastRouted = { id: msg.id, delivered };
     this.emitMessage(msg, targets);
     // Main-process observer (e.g. the closing-time controller watching for the
@@ -4120,21 +4134,24 @@ export class HiveManager {
 
   // — clearing a conversation safely (src/shared/safeClear.ts) —
 
-  /** Task cards assigned to an agent that aren't done. */
+  /** Task cards assigned to an agent that aren't done. A foundation card
+   *  waits on the owner, not the member's work, so it never holds a clear
+   *  (the answer reaches the member through its foundations section). */
   openCardsFor(id: string): number {
     const ledger = this.tasks() as { tasks?: HiveTask[] };
     const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
-    return tasks.filter((t) => t?.assignee === id && t.status !== 'done').length;
+    return tasks.filter((t) => t?.assignee === id && t.status !== 'done' && !(t.humanQA ?? []).some((e) => foundationAsk(e as FoundationAskShape))).length;
   }
 
-  /** Ask me questions an agent raised (or, unrecorded, on its card) still unanswered. */
+  /** Ask me questions an agent raised (or, unrecorded, on its card) still
+   *  unanswered; foundation questions left out, as in openCardsFor. */
   openQuestionsRaisedBy(id: string): number {
     const ledger = this.tasks() as { tasks?: HiveTask[] };
     const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
     let n = 0;
     for (const t of tasks) {
       // Every unanswered, unwithdrawn ask is open (askMeRouting.ts).
-      for (const i of openAskIndexes(t?.humanQA)) if ((t.humanQA![i].raisedBy ?? t.assignee) === id) n++;
+      for (const i of openAskIndexes(t?.humanQA)) if (!foundationAsk(t.humanQA![i] as FoundationAskShape) && (t.humanQA![i].raisedBy ?? t.assignee) === id) n++;
     }
     return n;
   }
@@ -4621,7 +4638,8 @@ export class HiveManager {
     this.atomicWriteJson(join(done, `${id}.json`), msg);
     this.ownerFlags(id, (f) => ({ ...f, deliveredAt: f.deliveredAt ?? Date.now(), notSentAt: undefined }));
     // The log is committed with the office: the owner's words stay out of it.
-    this.appendLog({ kind: 'message', from: 'human', to: godId, act: msg.act, subject: 'Owner question', id: msg.id, delivered: [godId], byOwner: true });
+    this.appendLog({ kind: 'message', from: 'human', to: godId, act: msg.act, subject: 'Owner question', id: msg.id, delivered: [godId] });
+    this.recordOwnerSaid(msg.id, [godId]);
     this.emitMessage(msg, [godId]);
     try { this.routedObserver?.(msg, [godId]); } catch { /* observer error */ }
     this.refreshOwnerRequests();

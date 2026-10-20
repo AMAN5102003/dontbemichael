@@ -8,7 +8,7 @@
  *   Company foundations ─► a read only copy, never watched: the app rewrites it.
  *   A file that is not a document (OPEN_EXTENSIONS) ─► its text, as a read only copy.
  */
-import { chmodSync, copyFileSync, mkdtempSync, readFileSync, unwatchFile, watchFile, type StatWatcher } from 'node:fs';
+import { chmodSync, copyFileSync, mkdtempSync, readFileSync, readdirSync, rmSync, unwatchFile, watchFile, type StatWatcher } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { OPEN_EXTENSIONS, extensionOf } from '../shared/askFiles';
@@ -28,7 +28,13 @@ export interface KnowledgeEditsDeps {
   /** A document was read in again (search by meaning and the list refresh). */
   changed: (id: string, error?: string) => void;
   intervalMs?: number;
+  /** Quiet time after the last change before a save is read in, so an
+   *  editor's autosave while the owner types reads in once. */
+  settleMs?: number;
 }
+
+/** Read only copies are made in folders named so, in the temp folder. */
+const COPY_PREFIX = 'company-knowledge-';
 
 /** At most this many opened documents are watched; the oldest stops first. */
 export const MAX_WATCHED = 25;
@@ -38,7 +44,9 @@ const hashOf = (path: string): string | null => {
 };
 
 export class KnowledgeEdits {
-  private watched = new Map<string, { path: string; hash: string | null; busy: boolean; again: boolean; listener: () => void; watcher: StatWatcher }>();
+  private watched = new Map<string, { path: string; hash: string | null; busy: boolean; again: boolean; timer?: ReturnType<typeof setTimeout>; listener: () => void; watcher: StatWatcher }>();
+  /** The read only copies' folders this run made (removed by clearCopies). */
+  private copies: string[] = [];
 
   constructor(private readonly d: KnowledgeEditsDeps) {}
 
@@ -58,7 +66,8 @@ export class KnowledgeEdits {
       const source = document ? f.path : this.d.textFile?.(id);
       if (!source) return { ok: false, error: 'missing' };
       // A fresh folder each time: a link planted at a fixed name can't redirect the copy.
-      const dir = mkdtempSync(join(this.d.tempDir(), 'company-knowledge-'));
+      const dir = mkdtempSync(join(this.d.tempDir(), COPY_PREFIX));
+      this.copies.push(dir);
       const copy = join(dir, `${(f.meta.title ?? id).replace(/[\\/:*?"<>|]/g, ' ').slice(0, 80)}.md`);
       copyFileSync(source, copy);
       try { chmodSync(copy, 0o444); } catch { /* best effort */ }
@@ -76,7 +85,15 @@ export class KnowledgeEdits {
     if (had?.path === path) return;
     if (had) this.stop(id);
     while (this.watched.size >= MAX_WATCHED) this.stop(this.watched.keys().next().value as string);
-    const entry = { path, hash: hashOf(path), busy: false, again: false, listener: () => { void this.check(id); }, watcher: undefined as unknown as StatWatcher };
+    const entry: { path: string; hash: string | null; busy: boolean; again: boolean; timer?: ReturnType<typeof setTimeout>; listener: () => void; watcher: StatWatcher } = {
+      path, hash: hashOf(path), busy: false, again: false, watcher: undefined as unknown as StatWatcher,
+      // Each change restarts the wait: the save is read in once the file is quiet.
+      listener: () => {
+        if (entry.timer) clearTimeout(entry.timer);
+        entry.timer = setTimeout(() => { entry.timer = undefined; void this.check(id); }, this.d.settleMs ?? 3000);
+        entry.timer.unref?.();
+      }
+    };
     entry.watcher = watchFile(path, { interval: this.d.intervalMs ?? 1500, persistent: false }, entry.listener);
     this.watched.set(id, entry);
   }
@@ -109,7 +126,24 @@ export class KnowledgeEdits {
     const e = this.watched.get(id);
     if (!e) return;
     unwatchFile(e.path, e.listener);
+    if (e.timer) clearTimeout(e.timer);
     this.watched.delete(id);
+  }
+
+  /** Remove the read only copies: this run's, and with `all`, any an earlier
+   *  run left (they hold the office's text; at launch, on quit and at a reset).
+   *  A copy still open in an editor that locks it (Windows) stays until next time. */
+  clearCopies(all = false): void {
+    const dirs = new Set(this.copies);
+    if (all) {
+      try {
+        const root = this.d.tempDir();
+        for (const n of readdirSync(root)) if (n.startsWith(COPY_PREFIX)) dirs.add(join(root, n));
+      } catch { /* no temp folder */ }
+    }
+    for (const dir of dirs) {
+      try { rmSync(dir, { recursive: true, force: true }); this.copies = this.copies.filter((d) => d !== dir); } catch { /* in use */ }
+    }
   }
 
   stopAll(): void {

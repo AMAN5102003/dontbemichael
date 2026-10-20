@@ -3012,7 +3012,9 @@
       "saved": "Saved to Company foundations.",
       "failedDraft": "Couldn't ask {{name}} to draft it, try again.",
       "failedLater": "Couldn't put this off, try again.",
-      "sentToMichael": "Sent to {{godName}} to add to Company foundations."
+      "sentToMichael": "Sent to {{godName}} to add to Company foundations.",
+      "failedGone": "Couldn't add your answer to Company foundations. Tell {{godName}}.",
+      "drafted": "a draft, edit and save"
     }
   },
   "knowledgeNotice": {

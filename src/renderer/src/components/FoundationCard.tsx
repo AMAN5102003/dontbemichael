@@ -37,10 +37,12 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
   /** The raiser chip in the member's department color (D11). */
   chipStyle: CSSProperties;
   foundations: FoundationsView | null;
-  /** Answer the card like any Ask me reply; resolves false when it did not land. */
+  /** Answer the card like any Ask me reply; resolves false when the card did not take it. */
   onAnswer: (text: string) => Promise<boolean>;
-  /** Where the answer went: written into the foundations, or to Michael to add. */
-  onSaved?: (how: 'saved' | 'michael') => void;
+  /** Where the answer went once the card took it (the card leaves the board,
+   *  so the board says it): written into the foundations, to Michael to add,
+   *  or neither. */
+  onSaved?: (how: 'saved' | 'michael' | 'failed') => void;
 }) {
   const { t, i18n } = useTranslation();
   const rtl = useRtl();
@@ -71,21 +73,21 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
     if (!text || busy) return;
     setBusy(true);
     setFailed(null);
-    try {
-      // The card first: the answer reaches Michael, who closes it.
-      if (!(await onAnswer(text))) throw new Error('card changed');
-      const r = await window.cth.foundationsAnswer(id, text).catch(() => null);
-      if (r?.ok) onSaved?.('saved');
-      else {
-        // Not written: Michael adds it, as he does any owner answer.
-        const sent = await window.cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${text}` }, 'human').catch(() => null);
-        if (!sent?.ok) throw new Error('not saved');
-        onSaved?.('michael');
-      }
-      refreshNeedsYou();
-    } catch {
+    // The card first: the answer reaches Michael, who closes it.
+    if (!(await onAnswer(text).catch(() => false))) {
       setFailed('save');
+      setBusy(false);
+      return;
     }
+    // The card took it and leaves the board: the board reports from here.
+    const r = await window.cth.foundationsAnswer(id, text).catch(() => null);
+    if (r?.ok) onSaved?.('saved');
+    else {
+      // Not written: Michael adds it, as he does any owner answer.
+      const sent = await window.cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${text}` }, 'human').catch(() => null);
+      onSaved?.(sent?.ok ? 'michael' : 'failed');
+    }
+    refreshNeedsYou();
     setBusy(false);
   };
   const draftIt = (): void => {
@@ -114,7 +116,7 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
       {/* A visible label, and the hint as its description (D12). */}
       <label htmlFor={`${hintId}-box`} style={{ display: 'flex', gap: 8, alignItems: 'baseline', fontSize: 11, fontWeight: 600, color: 'var(--cth-ink-3)', marginBottom: 4 }}>
         {t('foundations.card.yourAnswer')}
-        {asked?.text && filled && <span style={{ fontWeight: 500, color: 'var(--cth-indigo-text)' }}>{t('foundations.card.draftedBy', { name: askedName ?? drafter })}</span>}
+        {asked?.text && filled && <span style={{ fontWeight: 500, color: 'var(--cth-indigo-text)' }}>{askedName ? t('foundations.card.draftedBy', { name: askedName }) : t('foundations.card.drafted')}</span>}
       </label>
       <GrowingTextarea
         id={`${hintId}-box`}

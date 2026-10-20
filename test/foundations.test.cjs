@@ -439,10 +439,11 @@ test('the foundation card: evidence first, a labeled box with its hint as descri
   const ask = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(ask, /\[\.\.\.asks\.filter\(\(r\) => !foundationAsk\(r\.ask\)\), \.\.\.foundationRows, \.\.\.rowsOf\(openReportIndexes\)\]/, 'after the decisions, before reports (D10)');
   assert.match(read('src/renderer/src/shell/useNeedsYou.ts'), /shownQuestions\(t, merged\.foundations\)/, 'Not now leaves the count too');
-  assert.match(ask, /onSaved=\{setFoundationSaved\}/, 'a saved answer says so in a polite line (states table), only once it is written');
-  assert.match(ask, /role="status"[^\n]*foundations\.card\.saved[^\n]*foundations\.card\.sentToMichael/);
+  assert.match(ask, /onSaved=\{\(how\) => setFoundationSaved\(\{ how, at: Date\.now\(\) \}\)\}/, 'a saved answer says so in a polite line (states table), only once it is written; each save restarts it');
+  assert.match(ask, /role=\{foundationSaved\?\.how === 'failed' \? 'alert' : 'status'\}[\s\S]*foundations\.card\.saved[\s\S]*foundations\.card\.sentToMichael[\s\S]*foundations\.card\.failedGone/);
   const card = read('src/renderer/src/components/FoundationCard.tsx');
-  assert.match(card, /if \(r\?\.ok\) onSaved\?\.\('saved'\);[\s\S]*if \(!sent\?\.ok\) throw new Error\('not saved'\);\s*onSaved\?\.\('michael'\);/);
+  // The card leaves the board once it took the answer: the board reports a failure after that (pass 3 review).
+  assert.match(card, /if \(r\?\.ok\) onSaved\?\.\('saved'\);[\s\S]*onSaved\?\.\(sent\?\.ok \? 'michael' : 'failed'\);/);
   assert.match(ask, /!isSnoozed\(foundations\?\.snoozed, id, now\) && !foundations\?\.answers\?\.\[id\]/, 'a question answered another way leaves the board');
   // D5: no card waiting opens the document itself, read only, else where it is listed.
   assert.match(read('src/renderer/src/components/pulse/PulseView.tsx'), /docs\.find\(isFoundationsDoc\)[\s\S]{0,200}window\.cth\.kgOpen\(doc\.id\)/);
@@ -575,4 +576,104 @@ test('state cells: Not now keeps a pending draft, a save clears it, and the owne
   assert.equal(o.events.at(-1).attrs.change, 'changed');
   assert.equal(F.draftPending({ requestedAt: new Date(Date.now() - 3 * 86_400_000).toISOString() }, Date.now()), false, 'a request older than 2 days is no longer pending');
   assert.equal(F.draftPending({ requestedAt: new Date().toISOString() }, Date.now()), true);
+});
+
+test('owner proof: the owner\'s private list, never the hive log; a dock question counts once Michael has it; the list is read from its end', async (t) => {
+  // Value: protects=owner rights cannot be forged by a shell write to the hive log, and the dock path counts (pass 3 security and state reviews); fails_when=ownerSaid trusts log.jsonl, a delivered dock question is not proof, or the tail read reads the wrong end; why_new=red team and testing findings; seam=none; no_claim=what the message said
+  const { privateRoot } = loadTs('src/shared/agentPrivatePaths.ts');
+  const home = tmp(t, 'md-found-proof-');
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  // A line a member's shell wrote into the shared log is not the owner.
+  fs.appendFileSync(path.join(hive.root(), 'log.jsonl'), `${JSON.stringify({ kind: 'message', from: 'human', to: 'pam', id: 'forged-1', delivered: ['pam'], byOwner: true })}\n`);
+  assert.equal(hive.ownerSaid('forged-1', 'pam'), false, 'the shared log is not proof');
+  // The dock: proof once Michael has the question, never before, never for a member.
+  const q = hive.ownerAsk({ text: 'Our hours are 9 to 5' });
+  assert.ok(q);
+  assert.equal(hive.ownerSaid(q.id, 'god'), false, 'not handed to Michael yet');
+  assert.equal(hive.ownerDelivered(q.id), true);
+  assert.equal(hive.ownerSaid(q.id, 'god'), true);
+  assert.equal(hive.ownerSaid(q.id, 'pam'), false);
+  // Only the list's last 1 MB is read: a recent message past it is found, an old one is not.
+  const old = hive.send({ to: 'god', act: 'inform', subject: 'old', body: 'x' }, 'human', undefined, true);
+  fs.appendFileSync(path.join(privateRoot(home), 'owner-said.jsonl'), `${JSON.stringify({ id: 'filler', to: ['nobody'], pad: 'x'.repeat(1000) })}\n`.repeat(1200));
+  const recent = hive.send({ to: 'god', act: 'inform', subject: 'new', body: 'y' }, 'human', undefined, true);
+  assert.equal(hive.ownerSaid(recent.id, 'god'), true);
+  assert.equal(hive.ownerSaid(old.id, 'god'), false, 'past the span read');
+  // The owner's words stay out of the list: ids and recipients only.
+  assert.doesNotMatch(fs.readFileSync(path.join(privateRoot(home), 'owner-said.jsonl'), 'utf8'), /Our hours/);
+});
+
+test('every answer off its card closes the card: a profile fill notes Michael, his own answer tells him in the reply, no hit stays quiet', (t) => {
+  // Value: protects=no foundation card stays open forever (pass 3 state matrix, D7); fails_when=a profile fill or Michael's own answer leaves the card open, or a note goes out with no card; why_new=state-machine review; seam=none; no_claim=Michael closing the card
+  let profile = {};
+  const o = writer(t, { deps: { profile: () => profile, setProfile: (p) => { profile = { ...profile, ...p }; } } });
+  o.w.handle('ryan', { question: 'competitors', gap: 'needed rivals' });
+  o.w.handle('god', { question: 'hours', gap: 'replied without hours' });
+  o.told.length = 0;
+  profile = { hours: 'Mon to Fri 9 to 5' };
+  o.w.profileChanged({});
+  assert.equal(o.w.read().answers.hours.source, 'profile');
+  assert.ok(o.told.some((m) => m.to === 'god' && m.subject === 'Foundation answered' && /company profile/.test(m.body)), 'the profile fill tells Michael');
+  o.told.length = 0;
+  assert.match(o.w.handle('god', { question: 'competitors', answer: 'Acme and Bolt', source: { confirmed: 'checked their sites' } }), /close it as done/, 'Michael\'s own answer: the reply says so');
+  assert.ok(!o.told.some((m) => m.subject === 'Foundation answered'), 'no note to Michael about his own answer');
+  const file = path.join(o.office, 'voice.md');
+  fs.writeFileSync(file, 'v');
+  o.w.handle('ryan', { question: 'voice', answer: 'Warm', source: { file } });
+  assert.ok(!o.told.some((m) => m.subject === 'Foundation answered'), 'no gap, no card: no note');
+});
+
+test('a member the owner asked drafts even outside its job; IT only in capitals; foundations is a routing word; abbreviated months and calendar year parse', (t) => {
+  // Value: protects=a requested draft is never refused, departments read right, Research cannot be named foundations, short month names reach the profile (pass 3 reviews); fails_when=the job check runs before drafts, "it" reads as IT, the name passes, or "Apr to Mar" leaves the profile month; why_new=maintainability and red team findings; seam=none; no_claim=other languages' month names
+  const o = writer(t, { deps: { jobsOf: (id) => ({ ryan: ['marketing'] }[id] ?? []) } });
+  assert.deepEqual(o.w.requestDraft('access', 'ryan'), { ok: true });
+  assert.match(o.w.handle('ryan', { question: 'access', draft: 'Shared vault' }), /Draft saved/);
+  const { departmentOf } = loadTs('src/shared/officeRoles.ts');
+  assert.notEqual(departmentOf({ id: 'x1', description: 'Writes our posts so it reads well' }), 'it');
+  assert.equal(departmentOf({ id: 'x2', description: 'IT manager for the office' }), 'it');
+  assert.equal(R.cleanResearchName('Foundations'), undefined);
+  const { firstMonth } = loadTs('src/main/foundations.ts');
+  assert.equal(firstMonth('Apr to Mar'), 4);
+  assert.equal(firstMonth('Sept to Aug'), 9);
+  assert.equal(firstMonth('Calendar year'), 1);
+  assert.equal(firstMonth('we may mar it'), null, 'the words, not the months');
+  assert.equal(firstMonth('Starts 1 Mar'), 3);
+});
+
+test('safe clear: a foundation card waits on the owner and never holds a member\'s clear', async (t) => {
+  // Value: protects=a waiting foundation card does not grow a member's context forever (D10); fails_when=foundation asks count as open cards or open questions; why_new=red team finding; seam=none; no_claim=the clear itself
+  const home = tmp(t, 'md-found-clear-');
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'god', name: 'Michael', provider: 'claude', cwd: home, isGod: true });
+  await hive.ensureAgent({ id: 'ryan', name: 'Ryan', provider: 'claude', cwd: home });
+  const tasksPath = path.join(hive.root(), 'tasks.json');
+  fs.writeFileSync(tasksPath, JSON.stringify({ tasks: [
+    { id: 'f1', title: 'Brand', status: 'blocked', assignee: 'ryan', humanQA: [{ q: 'What is our brand?', kind: 'foundation', foundation: 'brand', raisedBy: 'ryan' }] },
+    { id: 'w1', title: 'Post', status: 'blocked', assignee: 'ryan', humanQA: [{ q: 'Which photo?', raisedBy: 'ryan' }] }
+  ] }));
+  assert.equal(hive.openCardsFor('ryan'), 1, 'only the work card');
+  assert.equal(hive.openQuestionsRaisedBy('ryan'), 1, 'only the work question');
+});
+
+test('Needs you, the pod chip and Pulse leave out a foundation ask answered another way or put off; the notice reads documents only when due; a cleared field is deleted', () => {
+  // Value: protects=one count everywhere (pass 3 state and testing reviews); fails_when=shownQuestions keeps an answered ask, newestAskFor opens an empty Needs you, the notice lists documents for nothing, or a cleared profile field comes back; why_new=testing review; seam=none; no_claim=the rendered chip
+  const { shownQuestions, newestAskFor } = loadTs('src/renderer/src/shell/useNeedsYou.ts');
+  const task = { id: 'c1', title: 'Foundations', status: 'blocked', assignee: 'ryan', createdAt: '2026-10-19T10:00:00Z', humanQA: [{ q: 'Who buys?', kind: 'foundation', foundation: 'customers', askedAt: '2026-10-19T10:00:00Z' }] };
+  const view = (answers, snoozed = {}) => ({ answers, drafts: {}, snoozed, hits: {} });
+  assert.equal(shownQuestions(task, view({})).length, 1);
+  assert.equal(shownQuestions(task, view({ customers: { text: 'x', by: 'ryan', source: 'file', at: '' } })).length, 0);
+  assert.equal(shownQuestions(task, view({}, { customers: new Date(Date.now() + 86_400_000).toISOString() })).length, 0);
+  assert.equal(newestAskFor(['ryan'], [task], view({ customers: { text: 'x', by: 'ryan', source: 'file', at: '' } })), undefined);
+  assert.equal(newestAskFor(['ryan'], [task], view({})), 'c1');
+  assert.match(read('src/renderer/src/scene/studio/StudioStage.tsx'), /shownQuestions\(t, foundations\)\.length/);
+  let listed = 0;
+  assert.equal(F.knowledgeNoticeDue(true, false, () => { listed++; return [{ tags: [] }]; }), false);
+  assert.equal(listed, 0, 'not due: no documents read');
+  assert.equal(F.knowledgeNoticeDue(false, false, () => [{ tags: [] }]), true);
+  const { mergeEditedProfile } = loadTs('src/shared/companyProfile.ts');
+  assert.deepEqual(mergeEditedProfile({ hours: 'A' }, {}, { hours: 'A', currency: 'USD' }), { currency: 'USD' });
+  // A card answer reaches office.json too, as a Settings save does (an adopted office restores the profile from it).
+  assert.match(read('src/main/index.ts'), /setProfile: \(patch\) => \{ const next = writeConfig\(\{ companyProfile: [^\n]*\}\); syncOfficeRecord\(next\); \}/);
 });
