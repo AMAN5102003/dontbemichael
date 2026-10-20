@@ -84,7 +84,10 @@ const PROFILE_LINKS: Array<{ id: FoundationId; read: (p: ProfileFacts) => string
  *  capitalized, so the words "may" and "mar" never read as months. */
 export function firstMonth(text: string): number | null {
   for (const m of text.matchAll(/\b(?:starts?|starting|begins?|beginning|from)\b/gi)) {
-    const after = text.slice(m.index + m[0].length, m.index + m[0].length + 24);
+    // To the end of its clause ("starts on the first business day of April").
+    const rest = text.slice(m.index + m[0].length);
+    const end = rest.search(/[.;\n]/);
+    const after = end === -1 ? rest : rest.slice(0, end);
     const month = earliestMonth(after);
     if (month) return month;
   }

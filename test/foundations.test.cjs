@@ -649,6 +649,8 @@ test('a member the owner asked drafts even outside its job; IT only in capitals;
   assert.equal(firstMonth('May is our close month; the year starts in July'), 7);
   assert.equal(firstMonth('Runs from October to September'), 10);
   assert.equal(firstMonth('July to June'), 7);
+  // Codex pass 2: the month may sit far into the clause.
+  assert.equal(firstMonth('Ends in March and starts on the first business day of April'), 4);
 });
 
 test('safe clear: a foundation card waits on the owner and never holds a member\'s clear', async (t) => {
@@ -683,6 +685,13 @@ test('Needs you, the pod chip and Pulse leave out a foundation ask answered anot
   assert.equal(F.knowledgeNoticeDue(false, false, () => [{ tags: [] }]), true);
   const { mergeEditedProfile } = loadTs('src/shared/companyProfile.ts');
   assert.deepEqual(mergeEditedProfile({ hours: 'A' }, {}, { hours: 'A', currency: 'USD' }), { currency: 'USD' });
+  // Codex pass 2: inside the address too, each page keeps the line it changed.
+  const merged = mergeEditedProfile(
+    { address: { city: 'Austin', postalCode: '78701' } },
+    { address: { city: 'Dallas', postalCode: '78701' } },
+    { address: { city: 'Austin', postalCode: '78702' } });
+  assert.equal(merged.address.city, 'Dallas');
+  assert.equal(merged.address.postalCode, '78702');
   // A card answer reaches office.json too, as a Settings save does (an adopted office restores the profile from it).
   assert.match(read('src/main/index.ts'), /setProfile: \(patch\) => \{ const next = writeConfig\(\{ companyProfile: [^\n]*\}\); syncOfficeRecord\(next\); \}/);
 });

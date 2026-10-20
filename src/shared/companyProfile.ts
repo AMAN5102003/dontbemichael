@@ -205,14 +205,22 @@ export function companyProfileContext(
  * and the financial year into the profile; review, 2026-10-20).
  */
 export function mergeEditedProfile(opened: CompanyProfile, edited: CompanyProfile, latest: CompanyProfile): CompanyProfile {
-  const out: Record<string, unknown> = { ...latest };
-  const keys = new Set([...Object.keys(opened), ...Object.keys(edited)]);
-  for (const k of keys) {
-    const was = (opened as Record<string, unknown>)[k];
-    const now = (edited as Record<string, unknown>)[k];
-    if (JSON.stringify(was) === JSON.stringify(now)) continue;
-    if (now === undefined) delete out[k];
-    else out[k] = now;
+  return cleanCompanyProfile(mergeEdits(opened, edited, latest));
+}
+
+const isPlain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** Field by field, inside nested parts too (the address, social links), so
+ *  two pages that changed different lines of the address both keep theirs. */
+function mergeEdits(opened: unknown, edited: unknown, latest: unknown): Record<string, unknown> {
+  const was = isPlain(opened) ? opened : {};
+  const now = isPlain(edited) ? edited : {};
+  const out: Record<string, unknown> = { ...(isPlain(latest) ? latest : {}) };
+  for (const k of new Set([...Object.keys(was), ...Object.keys(now)])) {
+    if (JSON.stringify(was[k]) === JSON.stringify(now[k])) continue;
+    if (now[k] === undefined) delete out[k];
+    else if (isPlain(now[k]) && isPlain(was[k])) out[k] = mergeEdits(was[k], now[k], out[k]);
+    else out[k] = now[k];
   }
-  return cleanCompanyProfile(out);
+  return out;
 }

@@ -4789,7 +4789,11 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   // harnessHome alone, and must not copy one office's team into another.
   if (touchesOffice(patch)) syncOfficeRecord(next);
   // The store moved (rootPath): index it for search by meaning now.
-  if (patch && typeof patch === 'object' && 'knowledgeGraph' in patch) memory.companyKnowledgeChanged();
+  if (patch && typeof patch === 'object' && 'knowledgeGraph' in patch) {
+    memory.companyKnowledgeChanged();
+    // Opened documents belong to the old store: a save there would be read into nothing.
+    knowledgeEdits.stopAll();
+  }
   // A new search language: the index was built with the other model, which
   // MemPalace refuses to search with, so it is built again (owner, 2026-10-19).
   if (patch && typeof patch === 'object' && 'embeddingModel' in patch && (next.embeddingModel ?? 'minilm') !== modelBefore) memory.modelChanged();

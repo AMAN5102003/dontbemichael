@@ -19,7 +19,8 @@ export interface KnowledgeEditsDeps {
   docFile: (id: string) => { path: string; meta: { title?: string; tags?: string[] } } | null;
   /** The document's extracted text, for a read only copy. */
   textFile?: (id: string) => string | null;
-  /** Read the document in again; throws a plain reason when it can't. */
+  /** Read the document in again; throws a plain reason when it can't, and
+   *  resolves null when the document is not in the store. */
   reindex: (id: string) => Promise<unknown>;
   /** Open a path in the owner's default app; '' when it opened, else the reason. */
   openPath: (path: string) => Promise<string>;
@@ -110,7 +111,7 @@ export class KnowledgeEdits {
     if (hash === e.hash) return;
     e.busy = true;
     try {
-      await this.d.reindex(id);
+      if ((await this.d.reindex(id)) === null) throw new Error('This document is no longer in company knowledge.');
       e.hash = hash;
       this.d.changed(id);
     } catch (err) {

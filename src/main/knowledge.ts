@@ -110,6 +110,9 @@ export class KnowledgeManager {
     const docs = existsSync(root) ? core.list(root) : [];
     const ids = new Set<string>();
     const versions: string[] = [];
+    // A file that could not be written or removed: the signature then changes
+    // on every pass, so the next pass tries again instead of calling it done.
+    let failed = false;
     for (const meta of docs) {
       const id = String(meta.id ?? '');
       if (!/^[A-Za-z0-9_-]+$/.test(id)) continue;
@@ -125,16 +128,16 @@ export class KnowledgeManager {
       if (!doc) continue;
       try {
         writeFileSync(file, `Title: ${meta.title ?? id}\nDocument id: ${id}\n\n${doc.text}\n`, 'utf8');
-      } catch { /* the next pass retries */ }
+      } catch { failed = true; }
     }
     let files: string[] = [];
     try { files = readdirSync(dir); } catch { /* none */ }
     for (const f of files) {
       if (f.endsWith('.md') && !ids.has(f.slice(0, -3))) {
-        try { rmSync(join(dir, f), { force: true }); } catch { /* next pass */ }
+        try { rmSync(join(dir, f), { force: true }); } catch { failed = true; }
       }
     }
-    return { dir, signature: versions.sort().join(',') };
+    return { dir, signature: versions.sort().join(',') + (failed ? `,retry@${Date.now()}` : '') };
   }
 
   /** What a running agent needs to search the store: whether it's on, the CLI,

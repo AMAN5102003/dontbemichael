@@ -97,6 +97,24 @@ test('a save that cannot be read says why and keeps watching', async (t) => {
   assert.equal(o.calls.reindexed.length, 2, 'tried again');
 });
 
+test('a save to a document no longer in the store says so and is tried again; a moved store stops the watchers; a failed mirror write retries', async (t) => {
+  // Value: protects=no edit is reported saved into nothing, and search by meaning does not stay stale after a disk error (Codex pass 2, D12); fails_when=a null reindex counts as success, watchers outlive a root change, or the signature advances after a failed write; why_new=Codex findings; seam=none; no_claim=the real MemPalace index
+  const o = edits(t);
+  const e = new KnowledgeEdits({
+    docFile: () => ({ path: o.file, meta: { title: 'Price list', tags: [] } }),
+    reindex: async () => null,
+    openPath: async () => '', tempDir: () => o.dir, changed: (id, error) => o.calls.changed.push({ id, error }), intervalMs: 60_000
+  });
+  t.after(() => e.stopAll());
+  await e.open('doc');
+  fs.writeFileSync(o.file, 'v9');
+  await e.check('doc');
+  assert.match(o.calls.changed.at(-1).error, /no longer in company knowledge/);
+  const src = read('src/main/index.ts');
+  assert.match(src, /'knowledgeGraph' in patch\) \{\n    memory\.companyKnowledgeChanged\(\);[\s\S]{0,140}knowledgeEdits\.stopAll\(\);/);
+  assert.match(read('src/main/knowledge.ts'), /catch \{ failed = true; \}[\s\S]*retry@\$\{Date\.now\(\)\}/);
+});
+
 test('Company foundations opens as a read only copy and is never watched', async (t) => {
   const o = edits(t);
   assert.deepEqual(await o.e.open('found'), { ok: true, readOnly: true });
