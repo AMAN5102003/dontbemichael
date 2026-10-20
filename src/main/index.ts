@@ -3569,36 +3569,29 @@ function createWindow(): BrowserWindow {
     return true;
   });
 
-  // The window persists its geometry (kv `window.bounds`). Skip while
-  // maximized/minimized so a restore doesn't save the fullscreen rect.
+  // The window keeps its smaller size (kv `window.bounds`) for when it is not
+  // filling the screen. Skip while maximized, minimized or full screen so a
+  // restore never saves the screen's own rect.
   {
+    const unsized = (): boolean => win.isDestroyed() || win.isMinimized() || win.isMaximized() || win.isFullScreen();
     const saveBounds = debounce(() => {
-      if (win.isDestroyed() || win.isMinimized() || win.isMaximized()) return;
+      if (unsized()) return;
       try { persist.setKv('window.bounds', win.getBounds()); } catch { /* DB best-effort */ }
     }, 400);
     win.on('resized', saveBounds);
     win.on('moved', saveBounds);
-    // Whether it was left filling the screen (kv `window.maximized`), so the
-    // next launch opens the same way.
-    const saveMaximized = () => {
-      if (win.isDestroyed() || win.isMinimized()) return;
-      try { persist.setKv('window.maximized', win.isMaximized()); } catch { /* DB best-effort */ }
-    };
-    win.on('maximize', saveMaximized);
-    win.on('unmaximize', saveMaximized);
     win.on('close', () => {
-      saveMaximized();
-      if (win.isDestroyed() || win.isMinimized() || win.isMaximized()) return;
+      if (unsized()) return;
       try { persist.setKv('window.bounds', win.getBounds()); } catch { /* DB best-effort */ }
     });
   }
 
-  // The office opens filling the screen (owner, 2026-10-03: it always came
-  // back at about 70%), unless the owner last left it at a smaller size.
-  let openMaximized = true;
-  try { openMaximized = persist.getKv('window.maximized') !== false; } catch { /* DB best-effort: fill the screen */ }
+  // Every launch opens filling the screen (owner, 2026-10-03 and 2026-10-20:
+  // it kept coming back smaller). It no longer follows how the last run was
+  // left: a dragged title bar, a display change or quitting from full screen
+  // all read as "not maximized", and that one moment stuck for every launch.
   win.once('ready-to-show', () => {
-    if (openMaximized) win.maximize();
+    win.maximize();
     win.show();
   });
 

@@ -2,9 +2,11 @@
 
 /**
  * The office window opens filling the screen (owner, 2026-10-03: "office when
- * restarted always launched like 70% of screen size"). It came back at the
- * 1440 by 900 default, or the last smaller size, because a maximized window
- * never saved anything.
+ * restarted always launched like 70% of screen size"; 2026-10-20: "stopped
+ * again to take the full available width and height on relaunch"). The first
+ * fix opened maximized unless the last run was left smaller, and one moment
+ * read as "not maximized" (a dragged title bar, a display change, quitting
+ * from full screen) then kept every later launch small.
  */
 
 const test = require('node:test');
@@ -15,13 +17,12 @@ const path = require('node:path');
 const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
 const win = main.slice(main.indexOf('function createWindow(): BrowserWindow {'));
 
-test('the window opens maximized unless the owner last left it smaller, and remembers which', () => {
-  // Value: protects=a restart fills the screen; fails_when=it opens at the default size, ignores a smaller size the owner chose, or stops saving the maximized state; why_new=new; seam=source pin
-  assert.match(win, /try \{ openMaximized = persist\.getKv\('window\.maximized'\) !== false; \}/, 'maximized unless saved as not');
-  assert.match(win, /win\.once\('ready-to-show', \(\) => \{\s*if \(openMaximized\) win\.maximize\(\);\s*win\.show\(\);/);
-  assert.match(win, /persist\.setKv\('window\.maximized', win\.isMaximized\(\)\)/);
-  assert.match(win, /win\.on\('maximize', saveMaximized\);\s*win\.on\('unmaximize', saveMaximized\);/);
-  assert.match(win, /win\.on\('close', \(\) => \{\s*saveMaximized\(\);/);
-  // The smaller size is still kept for when it is not maximized.
+test('every launch opens filling the screen, whatever the last run left; the smaller size is kept for un-maximizing', () => {
+  // Value: protects=a relaunch fills the screen; fails_when=a saved "not maximized" (or any saved state) decides the launch size again, or a maximized or full screen rect is saved as the smaller size; why_new=the owner saw it regress 2026-10-20 with window.maximized=false saved the day before; seam=source pin
+  assert.match(win, /win\.once\('ready-to-show', \(\) => \{\s*win\.maximize\(\);\s*win\.show\(\);/);
+  assert.doesNotMatch(win, /getKv\('window\.maximized'\)/, 'how the last run was left never decides the launch');
+  assert.doesNotMatch(win, /setKv\('window\.maximized'/);
+  // The smaller size is still kept, never the screen's own rect.
+  assert.match(win, /const unsized = \(\): boolean => win\.isDestroyed\(\) \|\| win\.isMinimized\(\) \|\| win\.isMaximized\(\) \|\| win\.isFullScreen\(\);/);
   assert.match(win, /persist\.setKv\('window\.bounds', win\.getBounds\(\)\)/);
 });
