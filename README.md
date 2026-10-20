@@ -39,10 +39,10 @@ own memory, working on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.2.3: the office clocks in, and Waiting cards come back.**
-> A card shows your team arriving as the office opens. A card waiting on a customer or supplier
-> gets a check back time, Michael follows up, and after two follow ups with no reply he asks you.
-> Pulse lists what the team learned, and you can run a scheduled job now. In 0.2.2, Pulse arrived.
+> **New in 0.2.4: Company foundations, and company knowledge you can open.**
+> One document holds what each job needs to know about your business; when work needs an empty
+> answer, a card asks you once. Settings lists every document your team searches, and you can open
+> and edit one in your own app. In 0.2.3, the office clocks in and Waiting cards come back.
 
 ## Contents
 

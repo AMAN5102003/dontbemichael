@@ -6,12 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
-## [Unreleased]
+## [0.2.4] (2026-10-20)
 
 ### Added
 
 - **Company foundations: one document of what each job needs to know about your business.** Every office now has a Company foundations document in company knowledge, with plain questions for each job, such as who we sell to, how we sound, or our financial year, and no product named anywhere. A question two jobs share has one answer. It starts with what the company profile already says (opening hours, financial year), and the two stay in step. When a team member's work needs an empty answer, a card on Needs you asks you for it, shows what the work did without it, and lets you save an answer, have that member draft one from what the office holds, or put it off for a week; it comes back weekly until answered. What you teach the team and what they find in the office's own files fills it too, each answer marked with who and when; anything from outside the office is checked by Michael first. Pulse shows the jobs whose work hit an empty answer, a "Foundations 2 of 6" count under each member on Team at work, and in a member's detail the missing questions and, once there is enough work, how much was kept as is without the answer and with it. (Agent behavior, four changes: every team member carries its job's part of the document, Michael all of it, Research none; a member whose work needs an empty answer does the work, adds one line saying what was missing, and reports it once; Michael raises one card per empty question the work hit, and a new weekly Foundations check on his schedule brings each still empty one back; members send what you teach them or what they find in the office's files to the document, filling only empty answers. After the ship review: only Michael can change an answer you wrote, and only by quoting a message you sent him yourself, never one of the app's own notices; a member quoting a message of yours fills only an empty answer, marked as taught to that member; a member answers and reports gaps only for its own job's questions; only the member you asked, or Michael, fills a draft; answers are kept to one plain line; when a question is answered another way, in the company profile, by a member or by Michael himself, Michael is told to close its card, and the pod's for you count and Pulse leave that card out; a waiting foundation card no longer stops the app from clearing a member's conversation. The app keeps the ids of the messages you send in its private folder, out of the team's reach, and only those count as your words.)
 - **See and open what's in company knowledge.** Settings, Memory & Knowledge lists every document your team searches, with its file and when it was added. Open opens it in your own app; save it there and the app reads it in again, so the team searches the new version. Company foundations opens as a read only copy, since the app keeps it up to date, and so does anything that is not a document, so Open never runs a program. If you had turned company knowledge off, a one time card in Needs you says it is always on now, with a link to the list.
+- **Windows reads scans and photos in company knowledge** with the text recognition built into Windows (contributed in #501).
 - **Pulse shows what it sees in your first two weeks.** Before recommendations can start, Pulse runs the same checks on the days so far and shows what they find, under a bold "What Pulse sees so far, not advice yet.": for example a scheduled check that has found nothing on 6 of 8 runs, or how much of a member's work you kept as is. These are facts with nothing to apply; on day 14 the recommendations take over.
 
 ### Changed
@@ -23,6 +24,11 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 
 - **A file an Ask me question names opens from its chip even without its ending.** A question that named a draft by its title, such as `First contact follow up draft 2026-10-19`, showed the name as plain text. The app now finds the file in the office's folders and shows the Open chip in its place. (Agent behavior: Michael names each file in an ask by its full path with its file ending, as he already did in your conversation and in reports.)
 - A message a team member sent is delivered once even if the app quits between delivering it and filing it away, and a schedule request is never filed twice.
+- An answer you give on Ask me reaches Michael in the same launch even if its first send was lost (contributed in #508).
+- Michael hears when a restart that timed out worked after all (contributed in #506).
+- Pulse starts filling in its earlier weeks when you open it (contributed in #504), and drops the saved cost totals of sessions that went quiet (contributed in #505).
+- The counts of refused hook messages are kept within a bound (contributed in #502).
+- Pulse's Apply, Not now, Undo and Try again use the app's own buttons (contributed in #497).
 
 ## [0.2.3] (2026-10-18)
 
