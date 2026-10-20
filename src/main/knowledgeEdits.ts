@@ -114,7 +114,7 @@ export class KnowledgeEdits {
       e.hash = hash;
       this.d.changed(id);
     } catch (err) {
-      e.hash = hash;
+      // Not marked read: the next save, even of the same bytes, tries again.
       this.d.changed(id, err instanceof Error ? err.message : String(err));
     } finally {
       e.busy = false;

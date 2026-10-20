@@ -13,7 +13,7 @@
  *     ├─ company profile kept in step (owner wins)
  *     └─ publish soon ─► the Company foundations copy in company knowledge
  */
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { privateRoot } from '../shared/agentPrivatePaths';
 import { writeFileAtomic } from './atomicFile';
@@ -77,10 +77,21 @@ const PROFILE_LINKS: Array<{ id: FoundationId; read: (p: ProfileFacts) => string
   }
 ];
 
-/** The first month the text names, in the text's order ("July to June" and
- *  "Jul to Jun" are July; "calendar year" is January). "May" and "Mar" count
- *  only capitalized, so the words "may" and "mar" never read as months. */
+/** The month a financial year answer starts in: the one after "starts",
+ *  "begins" or "from" ("ends in March, starts in April" is April), else the
+ *  first month the text names, in its order ("July to June" and "Jul to Jun"
+ *  are July; "calendar year" is January). "May" and "Mar" count only
+ *  capitalized, so the words "may" and "mar" never read as months. */
 export function firstMonth(text: string): number | null {
+  for (const m of text.matchAll(/\b(?:starts?|starting|begins?|beginning|from)\b/gi)) {
+    const after = text.slice(m.index + m[0].length, m.index + m[0].length + 24);
+    const month = earliestMonth(after);
+    if (month) return month;
+  }
+  return earliestMonth(text);
+}
+
+function earliestMonth(text: string): number | null {
   let best: { at: number; month: number } | null = null;
   const take = (re: RegExp, month: number): void => {
     const hit = re.exec(text);
@@ -136,7 +147,12 @@ export class Foundations {
     if (this.cache?.home === home) return this.cache.rec;
     const file = this.file()!;
     let rec = emptyRecord();
-    try { if (existsSync(file)) rec = cleanRecord(JSON.parse(readFileSync(file, 'utf8'))); } catch { /* a broken file reads as empty; the next write replaces it */ }
+    try { if (existsSync(file)) rec = cleanRecord(JSON.parse(readFileSync(file, 'utf8'))); } catch {
+      // A broken file reads as empty and the next write replaces it, so a copy
+      // is kept beside it first: the answers it held can still be put back.
+      try { copyFileSync(file, `${file}.broken-${new Date(this.now()).toISOString().replace(/[:.]/g, '-')}`); } catch { /* best effort */ }
+      console.error('[foundations] foundations.json could not be read; kept a copy beside it and started empty');
+    }
     this.cache = { home, rec };
     return rec;
   }

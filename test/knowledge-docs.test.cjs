@@ -92,6 +92,9 @@ test('a save that cannot be read says why and keeps watching', async (t) => {
   await o.e.check('doc');
   assert.match(o.calls.changed[0].error, /could not be opened/);
   assert.deepEqual(o.e.watching(), ['doc']);
+  // Codex pass 1: a failed read in is not marked done, so the same bytes are tried again.
+  await o.e.check('doc');
+  assert.equal(o.calls.reindexed.length, 2, 'tried again');
 });
 
 test('Company foundations opens as a read only copy and is never watched', async (t) => {

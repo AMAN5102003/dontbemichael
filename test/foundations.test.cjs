@@ -520,6 +520,10 @@ test('the copy in company knowledge: a failed publish is retried, an unchanged o
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, '{not json');
   assert.deepEqual(o.w.read().answers, {}, 'a broken record reads as empty');
+  // Codex pass 1: the broken file is kept beside it before the next write replaces it.
+  const kept = fs.readdirSync(path.dirname(file)).filter((n) => n.startsWith('foundations.json.broken-'));
+  assert.equal(kept.length, 1);
+  assert.equal(fs.readFileSync(path.join(path.dirname(file), kept[0]), 'utf8'), '{not json');
   assert.deepEqual(o.w.ownerAnswer('offer', 'Pizza and salads'), { ok: true });
   assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).answers.offer.text, 'Pizza and salads', 'the next write replaces the broken file');
 
@@ -640,6 +644,11 @@ test('a member the owner asked drafts even outside its job; IT only in capitals;
   assert.equal(firstMonth('Calendar year'), 1);
   assert.equal(firstMonth('we may mar it'), null, 'the words, not the months');
   assert.equal(firstMonth('Starts 1 Mar'), 3);
+  // Codex pass 1: the month after "starts", "begins" or "from" wins over one named earlier.
+  assert.equal(firstMonth('The year ends in March, so it starts in April'), 4);
+  assert.equal(firstMonth('May is our close month; the year starts in July'), 7);
+  assert.equal(firstMonth('Runs from October to September'), 10);
+  assert.equal(firstMonth('July to June'), 7);
 });
 
 test('safe clear: a foundation card waits on the owner and never holds a member\'s clear', async (t) => {
