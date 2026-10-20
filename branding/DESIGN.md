@@ -1913,13 +1913,18 @@ header ("Pulse" 18/24 600, the period select reading This week, the Compare swit
 often / It found nothing to do on 258 of 312 runs. Every 1h to every 2h., the hourly job the
 story's Kelly runs, a `green` soft "Saves about $3.90 a week" chip at API prices as the app shows it, and Not now
 with an `ink` Apply kept together on one line); the scene is Friday afternoon of the week whose
-plan use resets Mon, Nov 2, late enough for the app to show advice; then twelve tiles in §7.27's order, four to a row,
+plan use resets Mon, Nov 2, late enough for the app to show advice; at the top of Recommendations the Company foundations
+strip (§7.27) as a `card` row, "Foundations" in `ink-3` with its (i), then Finance 3/5 and Sales
+4/6, most hit first, each pill drawn, not a button (Finance's empty Financial year is the Setup
+card's question, §9.18); then twelve tiles in §7.27's order, four to a row,
 every one above zero so no quiet chip is drawn: emails organized, emails sent for you, tasks
 finished, scheduled checks, questions to the internet, web answers cleaned, messages held
 (`amber` soft, "See what was held" drawn, not a link), steps blocked by your settings, what
 the team learned, questions to you, Spent with plan use (a Claude Max 20x price; Spent is
 the plan's real cost for Monday to Friday afternoon by the app's own formula, §7.27) and your
-time; then Team at work with six rows, busiest first, the team average dashed, Busiest and
+time; then Team at work with six rows, busiest first, Oscar and Dwight each with the 12 px
+`indigo` ring and "Foundations 3 of 5" and "Foundations 4 of 6" in `ink-3` 11 px under the role
+(hidden with the roles on phones), the team average dashed, Busiest and
 Quiet callouts, hours and cost. Tokens as the board's picture (§9.13): a `card-2` frame,
 `r-2xl`, `shadow-lg`, padding 18; tiles `card`, `r-lg`, `shadow-sm` with a 1 px `line`,
 padding 12/14; numbers IBM Plex Mono 28/32 600 (24/28 on the last four); who did it bars in
@@ -1927,7 +1932,8 @@ each member's department `acc`. Its CSS is its own block with a `pl-` prefix: it
 board or file tab class. Coral is never used. Under the frame, three plain notes: Ways to
 save (each looks at the last 14 days, comes with the numbers behind it and changes nothing until you click Apply; Undo
 puts it back; on a Claude plan the saving is counted at pay per use prices and frees plan
-use; advice starts two weeks after Pulse starts recording), Compare (this
+use; advice starts two weeks after Pulse starts recording, and before that an Early look shows any
+patterns it already sees), Compare (this
 week beside last week, counted up to the same day, once there is a week before to compare), Real costs (on a Claude plan, what you pay
 for the plan split by each member's share of the work). The frame is one `role="img"` whose
 label carries every number and name in reading order; nothing in it can be clicked. As the app
@@ -2217,6 +2223,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-19 | Pulse, before two weeks: Early look insight cards take the one line's place when the advice rules already see something (§7.27). Company knowledge in Settings, Memory & Knowledge: no switch, a Documents list with Open, search by meaning inside the same block and no Semantic memory section (§7.26). Company foundations: the strip, the count and the member detail box on Pulse (§7.27), the foundation card and the one time Company knowledge is always on card on Needs you (§7.27a). A file named without its ending is a chip when the office's folders hold it (§7.8). |
 | 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
 | 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
+| 2026-10-20 | Web: Pulse (web) catches up with 0.2.4: the Company foundations strip at the top of Recommendations (Finance 3/5, Sales 4/6), Foundations counts under Oscar's and Dwight's roles on Team at work, and the Ways to save note says an Early look shows any patterns Pulse already sees before advice starts (§9.17). |
 | 2026-10-20 | Web: Setup foundations inset (§9.18), a second Setup inset after Then Michael gets ready: Then the team learns your business, with a read only foundation card (§7.27a) for Oscar's Financial year question, its buttons drawn, nothing clickable. |
 | 2026-10-20 | Web: privacy wording that holds on Windows: Pete does the team's web research and the rest of the team is told to ask Pete; the app turns off the web tools for everyone else, gives Pete questions only, and the trust layer checks what passes through it both ways; /security's first section is Who is given what; data kept on the computer (§9.15, §9.16). |
 | 2026-10-19 | Web: Pulse (web), a read only picture of Pulse after the file tabs with three notes (§9.17); the Ask Michael tile names picking Michael's choices with a click (§9.5); the board's Waiting note names Michael asking whether to keep waiting (§9.13); /security names the memory wall and Pulse's lists, and who is told when a message is held (§9.16); the file tabs picture shows the Pulse tab (§9.14). |
