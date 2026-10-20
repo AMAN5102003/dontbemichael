@@ -21,6 +21,7 @@ import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath }
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations } from './foundations';
+import { KnowledgeEdits } from './knowledgeEdits';
 import { FOUNDATION_JOBS, FOUNDATIONS_TITLE, jobOf, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
@@ -545,6 +546,17 @@ function meaningSearch(): { bin: string; palace: string } | undefined {
 }
 // Company knowledge: file-backed store + agent CLI (default ON).
 const knowledge = new KnowledgeManager();
+/** Documents the owner opened from Settings: a save is read in again (owner, 2026-10-19). */
+const knowledgeEdits = new KnowledgeEdits({
+  docFile: (id) => knowledge.docFile(id),
+  reindex: (id) => knowledge.reindex(id),
+  openPath: (p) => shell.openPath(p),
+  tempDir: () => app.getPath('temp'),
+  changed: (id, error) => {
+    if (!error) memory.companyKnowledgeChanged(); // search by meaning reads the new text
+    try { liveWebContents()?.send('kg:changed', { id, ...(error ? { error } : {}) }); } catch { /* window gone */ }
+  }
+});
 // Keeps each agent's memory index useful (owner, 2026-09-25): agents add notes
 // to memory/inbox.md and this turns them into itemised changes on Haiku, in
 // the background. It replaces the old whole-file condenser (reflect.ts).
@@ -6292,7 +6304,11 @@ ipcMain.handle('kg:search', (_evt, query: unknown, limit: unknown) => {
 });
 ipcMain.handle('kg:get', (_evt, id: unknown) =>
   (typeof id === 'string' && id ? knowledge.get(id) : null));
+// Open a document in the owner's own app; a save there is read in again.
+ipcMain.handle('kg:open', (_evt, id: unknown) =>
+  (typeof id === 'string' && id ? knowledgeEdits.open(id).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) })) : { ok: false as const, error: 'missing' }));
 ipcMain.handle('kg:remove', (_evt, id: unknown) => {
+  if (typeof id === 'string') knowledgeEdits.stop(id);
   const ok = typeof id === 'string' && id ? knowledge.remove(id) : false;
   if (ok) memory.companyKnowledgeChanged(); // drop it from search by meaning too
   return { ok };

@@ -23,6 +23,7 @@ import { plainReasonKey } from '@/store/plainReason';
 import { ALLOW_TEMP_WORKERS, SHOW_ORG_TRIGGER, COLLECT_USAGE_STATS, SHOW_VOICE, SHOW_SLACK, SHOW_MAILBOXES, SHOW_MCP_DEFAULTS, SHOW_SIMPLE_MODE_SWITCH, SHOW_ARABIC_TERMINAL_SWITCH, SHOW_LANGUAGE_PICKER } from '@shared/buildFeatures';
 import { WebhookSchemaEditor } from './triggers/WebhookSchemaEditor';
 import { InfoTip } from './InfoTip';
+import { KnowledgeDocList } from './KnowledgeDocList';
 import { PixelButton } from './PixelButton';
 import { SettingsHeroCard } from './SettingsHeroCard';
 import { CompanyProfileSettings } from './CompanyProfileSettings';
@@ -1656,6 +1657,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             {kgNote && <span style={{ fontSize: 12, color: 'var(--cth-mint)' }}>{kgNote}</span>}
                           </div>
                         )}
+                        {/* What agents search, and Open to read or edit it (owner, 2026-10-19). */}
+                        {kgEnabled && <KnowledgeDocList refreshKey={kgDocCount} />}
                       </div>
                     </>
                   )}

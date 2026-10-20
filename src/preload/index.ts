@@ -427,6 +427,8 @@ export interface KnowledgeDoc {
   addedAt: string;
   extractor: string;
   truncated: boolean;
+  /** When an edit the owner saved was last read in. */
+  updatedAt?: string;
 }
 export interface KnowledgeHit {
   docId: string;
@@ -1143,6 +1145,15 @@ const api = {
   kgGet: (id: string): Promise<{ meta: KnowledgeDoc; text: string } | null> =>
     ipcRenderer.invoke('kg:get', id),
   kgRemove: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('kg:remove', id),
+  /** Open a document in the owner's own app; a save there is read in again.
+   *  Company foundations opens as a read only copy. */
+  kgOpen: (id: string): Promise<{ ok: true; readOnly: boolean } | { ok: false; error: string }> => ipcRenderer.invoke('kg:open', id),
+  /** A document was read in again after a save, or could not be (`error`). */
+  onKgChanged: (cb: (e: { id: string; error?: string }) => void): (() => void) => {
+    const listener = (_e: unknown, payload: { id: string; error?: string }): void => cb(payload);
+    ipcRenderer.on('kg:changed', listener);
+    return () => ipcRenderer.removeListener('kg:changed', listener);
+  },
   /** Open an OS file picker and ingest the chosen artifacts in one round-trip. */
   kgAddFiles: (): Promise<KnowledgeIngestResult> => ipcRenderer.invoke('kg:addFiles'),
   /** Ingest explicit file paths (e.g. drag-and-drop). */

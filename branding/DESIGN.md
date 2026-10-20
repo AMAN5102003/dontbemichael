@@ -1242,6 +1242,14 @@ the Research member (an info icon says it stays the Research member whatever its
 string here takes the current name. Its engine offers Claude only, shown as plain text once on
 Claude.
 
+**Company knowledge documents** (Memory & Knowledge, owner 2026-10-19): under Add files, while
+company knowledge is on, a "Documents" label with its (i), then a list in one `line` framed box
+(scrolls past 300 px): each row the title in `ink-900` 13 px, under it the file name and "added
+19 Oct 2026" (or "updated ...") in `ink-500` 11.5 px, and Open (secondary, small) at the end. Open
+opens the store's copy in the owner's own app; a save there is read in again and a polite line
+says "Read in your changes to Price list." (or why it couldn't, as an alert). Company
+foundations carries a `neutral-soft` "Read only" tag with an (i) and opens as a read only copy.
+
 ---
 
 ### 7.27 Pulse (PulseView)

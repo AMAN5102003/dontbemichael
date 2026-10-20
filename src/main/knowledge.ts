@@ -10,7 +10,7 @@
  * existing spawn-injection flow.
  */
 import { app } from 'electron';
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readConfig } from './config';
 import { extractDocumentText, type DocExtraction } from './docText';
@@ -25,6 +25,8 @@ interface KgMeta {
   id: string; title: string; source: string; modality: string; mime: string | null;
   origExt: string; bytes: number; tags: string[]; caption: string | null;
   chunkCount: number; addedAt: string; extractor: string; truncated: boolean;
+  /** When the owner's edit was last read in (Settings, open and save). */
+  updatedAt?: string;
 }
 interface KgHit {
   docId: string; title: string; source: string; modality: string;
@@ -42,6 +44,9 @@ interface KgCore {
   list(root: string): KgMeta[];
   getDoc(root: string, docId: string): { meta: KgMeta; text: string } | null;
   removeDoc(root: string, docId: string): boolean;
+  reindex(root: string, docId: string, input: { text?: string; bytes?: number; extractor?: string }): KgMeta | null;
+  docFile(root: string, docId: string): { path: string; kind: 'original' | 'text'; meta: KgMeta } | null;
+  extractText(input: { srcPath?: string; modality?: string; title?: string; caption?: string | null; tags?: string[]; source?: string }): { text?: string; extractor?: string };
   stats(root: string): { docCount: number; chunkCount: number; byModality: Record<string, number> };
 }
 
@@ -188,5 +193,26 @@ export class KnowledgeManager {
 
   remove(docId: string): boolean {
     return core.removeDoc(this.root(), docId);
+  }
+
+  /** The file Settings opens for a document: its stored copy, else its text. */
+  docFile(docId: string): { path: string; kind: 'original' | 'text'; meta: KgMeta } | null {
+    return core.docFile(this.root(), docId);
+  }
+
+  /** Read a document again after the owner saved its stored copy: Word, Excel,
+   *  PowerPoint and PDF are converted as at ingest. A file that can't be read
+   *  keeps the old text and throws its plain reason. */
+  async reindex(docId: string): Promise<KgMeta | null> {
+    const f = this.docFile(docId);
+    if (!f) return null;
+    const bytes = (() => { try { return statSync(f.path).size; } catch { return undefined; } })();
+    if (f.kind === 'text') return core.reindex(this.root(), docId, { text: readFileSync(f.path, 'utf8'), bytes, extractor: 'inline@1' });
+    const ex = await this.readDocument(f.path);
+    if (ex.kind === 'unreadable') throw new Error(ex.reason);
+    if (ex.kind === 'text') return core.reindex(this.root(), docId, { text: ex.text, bytes, extractor: ex.extractor });
+    // Plain text, markdown and images are read by the store itself, as at ingest.
+    const own = core.extractText({ srcPath: f.path, modality: f.meta.modality, title: f.meta.title, caption: f.meta.caption, tags: f.meta.tags, source: f.meta.source });
+    return core.reindex(this.root(), docId, { text: own.text ?? '', bytes, ...(own.extractor ? { extractor: own.extractor } : {}) });
   }
 }

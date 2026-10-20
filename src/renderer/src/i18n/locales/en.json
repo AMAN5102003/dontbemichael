@@ -345,7 +345,20 @@
       "errUnknown": "something went wrong reading it",
       "errNotFound": "the file is no longer there",
       "errNoPermission": "this computer did not allow reading it",
-      "errIsFolder": "that is a folder, not a file"
+      "errIsFolder": "that is a folder, not a file",
+      "docs": {
+        "label": "Documents",
+        "tip": "What your team searches. Open one in your own app; when you save it there, agents search the new version.",
+        "open": "Open",
+        "openAria": "Open {{title}}",
+        "readOnly": "Read only",
+        "readOnlyTip": "The app keeps this document up to date from what you and the team answer, so it opens as a copy to read.",
+        "added": "added {{date}}",
+        "updated": "updated {{date}}",
+        "savedIn": "Read in your changes to {{title}}.",
+        "saveFailed": "Couldn't read your changes to {{title}}: {{reason}}",
+        "openFailed": "Couldn't open {{title}}."
+      }
     },
     "connections": {
       "slack": "Slack",
