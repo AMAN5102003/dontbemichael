@@ -141,3 +141,69 @@ function loadTsWithElectron() {
   require.cache[electron] = { id: electron, filename: electron, loaded: true, exports: { app: { getPath: () => os.tmpdir(), getAppPath: () => process.cwd(), isPackaged: false } } };
   return loadTs('src/main/knowledge.ts');
 }
+
+test('Open: an app that will not open is not watched, the oldest stops past the cap, a save mid read in is read once, and a deleted copy stops being watched', async (t) => {
+  // Value: protects=the watcher's limits: no watch without an open app, at most MAX_WATCHED pollers, one reindex per save, no polling of a gone file; fails_when=a failed open is watched,
+  //   the cap or its oldest first order goes, the busy guard goes (two reindexes rewrite index.jsonl together), or a deleted copy keeps polling; why_new=only the happy path and a
+  //   failing reindex are tested; seam=none; no_claim=fs.watchFile timing (check called directly; reindex and openPath stubbed)
+  const dir = tmp(t);
+  const files = {};
+  for (let i = 0; i <= MAX_WATCHED; i++) { files[`d${i}`] = path.join(dir, `d${i}.md`); fs.writeFileSync(files[`d${i}`], 'v1'); }
+  let openErr = 'No application knows how to open it.';
+  let release = null;
+  const gate = new Promise((r) => { release = r; });
+  const reindexed = [];
+  const e = new KnowledgeEdits({
+    docFile: (id) => (files[id] ? { path: files[id], meta: { title: id, tags: [] } } : null),
+    reindex: async (id) => { reindexed.push(id); if (id === 'd1') await gate; },
+    openPath: async () => openErr,
+    tempDir: () => dir,
+    changed: () => {},
+    intervalMs: 60_000
+  });
+  t.after(() => e.stopAll());
+  assert.deepEqual(await e.open('d0'), { ok: false, error: openErr });
+  assert.deepEqual(e.watching(), [], 'not opened: not watched');
+  openErr = '';
+  for (let i = 0; i <= MAX_WATCHED; i++) await e.open(`d${i}`);
+  await e.open('d3'); // opened again: still one watch
+  assert.equal(e.watching().length, MAX_WATCHED);
+  assert.ok(!e.watching().includes('d0'), 'the oldest stops first');
+  assert.ok(e.watching().includes(`d${MAX_WATCHED}`));
+
+  fs.writeFileSync(files.d1, 'v2');
+  const first = e.check('d1');
+  const second = e.check('d1'); // a poll while the first read in is running
+  release();
+  await Promise.all([first, second]);
+  await e.check('d1');
+  assert.deepEqual(reindexed, ['d1'], 'one save, one read in');
+
+  fs.rmSync(files.d2);
+  await e.check('d2');
+  assert.ok(!e.watching().includes('d2'), 'a gone copy stops being watched');
+  assert.deepEqual(reindexed, ['d1']);
+});
+
+test('a reindex of an emptied document keeps it findable by its title, and one whose record is broken is left alone', (t) => {
+  // Value: protects=kg reindex edges: empty text falls back to the title as at ingest, and a broken meta.json returns null before touching text.md or index.jsonl; fails_when=the title fallback
+  //   goes (the document drops out of search), or the index is rewritten before meta is read (its lines vanish); why_new=only a normal text edit is tested; seam=none; no_claim=the extractors for Word, PDF and images (text input only)
+  const dir = tmp(t);
+  const root = path.join(dir, 'kg');
+  const { docId } = kg.ingest(root, { text: 'Large pizza costs 14 dollars.', title: 'Price list' });
+  const other = kg.ingest(root, { text: 'Opening hours are noon to ten.', title: 'Hours' }).docId;
+  const meta = kg.reindex(root, docId, { text: '   ' });
+  assert.equal(meta.chunkCount, 1);
+  assert.equal(kg.search(root, 'pizza').length, 0, 'the old text is gone');
+  assert.equal(kg.search(root, 'price')[0]?.docId, docId, 'still found by its title');
+
+  const idx = fs.readFileSync(path.join(root, 'index.jsonl'), 'utf8');
+  const textFile = path.join(root, 'docs', other, 'text.md');
+  const text = fs.readFileSync(textFile, 'utf8');
+  fs.writeFileSync(path.join(root, 'docs', other, 'meta.json'), '{broken');
+  assert.equal(kg.reindex(root, other, { text: 'Closed on Mondays.' }), null);
+  assert.equal(fs.readFileSync(path.join(root, 'index.jsonl'), 'utf8'), idx, 'the index is untouched');
+  assert.equal(fs.readFileSync(textFile, 'utf8'), text, 'its text is untouched');
+  assert.equal(kg.docFile(root, other), null);
+  assert.equal(kg.reindex(root, '', { text: 'x' }), null);
+});

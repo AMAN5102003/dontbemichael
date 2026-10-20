@@ -66,12 +66,23 @@ const PROFILE_LINKS: Array<{ id: FoundationId; read: (p: ProfileFacts) => string
     id: 'fiscal_year',
     read: (p) => (typeof p.fiscalYearStartMonth === 'number' && p.fiscalYearStartMonth >= 1 && p.fiscalYearStartMonth <= 12 ? `Starts in ${monthName(p.fiscalYearStartMonth)}` : undefined),
     write: (text) => {
-      const words = text.toLowerCase();
-      const i = MONTHS.findIndex((m) => new RegExp(`\\b${m}\\b`).test(words));
-      return i >= 0 ? { fiscalYearStartMonth: i + 1 } : null;
+      const month = firstMonth(text);
+      return month ? { fiscalYearStartMonth: month } : null;
     }
   }
 ];
+
+/** The first month the text names, in the text's order ("July to June" is
+ *  July). "may" counts only as "May", so the verb never reads as a month. */
+export function firstMonth(text: string): number | null {
+  let best: { at: number; month: number } | null = null;
+  MONTHS.forEach((m, i) => {
+    const re = m === 'may' ? /\bMay\b/ : new RegExp(`\\b${m}\\b`, 'i');
+    const hit = re.exec(text);
+    if (hit && (!best || hit.index < best.at)) best = { at: hit.index, month: i + 1 };
+  });
+  return best ? (best as { month: number }).month : null;
+}
 
 const same = (a: string, b: string): boolean => a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
 
@@ -155,7 +166,10 @@ export class Foundations {
     for (const link of PROFILE_LINKS) {
       const v = link.read(p);
       const a = next.answers[link.id];
-      if (v && (!a || !same(a.text, v))) {
+      // In step when the answer says the same in the profile's own short form
+      // (a 300 character answer is a 200 character field; "July to June" is month 7).
+      const asProfile = a ? (() => { const patch = link.write(a.text); return patch ? link.read(patch) : undefined; })() : undefined;
+      if (v && (!a || (!same(a.text, v) && !(asProfile && same(asProfile, v))))) {
         next = this.withAnswer(next, link.id, { text: v, by: 'profile', source: 'profile', at: this.iso() }, null);
       } else if (!v && a?.source === 'profile') {
         next = { ...next, answers: { ...next.answers } };

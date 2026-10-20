@@ -328,3 +328,81 @@ test('Pulse: the strip in Recommendations, the count under the role, the detail 
     for (const text of [...Object.values(l.foundations.card), ...Object.values(l.pulse.foundations)]) assert.doesNotMatch(text, /[–—]| - /, `no dashes: ${text}`);
   }
 });
+
+/** A writer whose profile goes through the app's own profile cleaner, as main wires it. */
+function profileWriter(t) {
+  const CP = loadTs('src/shared/companyProfile.ts');
+  let stored = {};
+  const o = writer(t, { deps: {
+    profile: () => CP.cleanCompanyProfile(stored),
+    setProfile: (patch) => { stored = { ...CP.cleanCompanyProfile(stored), ...patch }; },
+    jobs: () => ['support', 'finance']
+  } });
+  return { ...o, stored: () => CP.cleanCompanyProfile(stored) };
+}
+
+test('the owner\'s hours answer is never cut to the profile\'s short form by the next profile sync', (t) => {
+  // Value: protects=the owner's answer always wins: a profile sync (launch seed or any Settings save) never rewrites the owner's own hours words; fails_when=an owner answer longer
+  //   than the 200 character profile field is replaced by its cut copy, marked as from the profile; why_new=existing tests use short answers and a stub profile with no 200 cap; seam=none;
+  //   no_claim=the Settings save path itself (profileChanged called directly; profile cleaner real, config store stubbed)
+  const o = profileWriter(t);
+  const hours = 'Mon to Fri 9 to 5. '.repeat(13).trim();
+  assert.ok(hours.length > 200 && hours.length <= F.FOUNDATION_CAP, 'longer than the profile field, within the cap');
+  const r = o.w.ownerAnswer('hours', hours);
+  o.w.profileChanged(); // what the next launch (seed) or a Settings save of the profile runs
+  if (r.ok) {
+    assert.equal(o.w.read().answers.hours.text, hours, 'the owner\'s words, whole');
+    assert.equal(o.w.read().answers.hours.source, 'owner');
+  } else {
+    assert.equal(r.error, 'too-long', 'or refused up front, never cut later');
+  }
+});
+
+test('an owner\'s financial year answer gives the profile its start month, not the first month of the calendar it names', (t) => {
+  // Value: protects=one set of facts: "July to June" keeps July as the start in the profile and in the answer after a sync; fails_when=the month is picked in calendar order (June),
+  //   and the next sync rewrites the owner's answer to the wrong start month; why_new=existing test names one month only; seam=none;
+  //   no_claim=free text month parsing beyond a start then end range (profile cleaner real, config store stubbed)
+  const o = profileWriter(t);
+  assert.deepEqual(o.w.ownerAnswer('fiscal_year', 'July to June'), { ok: true });
+  assert.equal(o.stored().fiscalYearStartMonth, 7, 'the year starts in July');
+  o.w.profileChanged();
+  const text = o.w.read().answers.fiscal_year.text;
+  assert.doesNotMatch(text, /^Starts in (?!July\b)/, `the answer keeps July as the start: ${text}`);
+});
+
+test('the copy in company knowledge: a failed publish is retried, an unchanged one is not sent again, and a broken record reads as empty', async (t) => {
+  // Value: protects=eng finding 5 (publish once per change, retry after a failure, replace the old copy) and a broken foundations.json never blocks the writer; fails_when=publishedText
+  //   is kept before a publish succeeds, a launch republishes an unchanged copy, the old id is not passed for replacement, or a broken file throws; why_new=only the first publish is tested; seam=none;
+  //   no_claim=knowledge.ingestText and remove themselves (publish stubbed; debounce timer bypassed with publishNow)
+  let fail = true;
+  const sent = [];
+  const o = writer(t, { deps: {
+    publish: (text, oldId) => { sent.push({ text, oldId }); if (fail) throw new Error('store busy'); return `doc${sent.length}`; },
+    publishDelayMs: 60_000
+  } });
+  const file = path.join(o.home, 'private', 'foundations.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '{not json');
+  assert.deepEqual(o.w.read().answers, {}, 'a broken record reads as empty');
+  assert.deepEqual(o.w.ownerAnswer('offer', 'Pizza and salads'), { ok: true });
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).answers.offer.text, 'Pizza and salads', 'the next write replaces the broken file');
+
+  o.w.publishNow();
+  assert.equal(sent.length, 1);
+  assert.equal(o.w.read().publishedId, undefined, 'a failed publish records nothing');
+  assert.equal(o.w.read().publishedText, undefined);
+  fail = false;
+  o.w.publishNow();
+  assert.equal(sent.length, 2, 'retried');
+  assert.equal(o.w.read().publishedId, 'doc2');
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).publishedText, o.w.document(), 'kept on disk for the next launch');
+  o.w.publishNow();
+  o.w.seed();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(sent.length, 2, 'unchanged: neither a publish nor a launch sends it again');
+  o.w.ownerAnswer('customers', 'Families nearby');
+  o.w.publishNow();
+  assert.equal(sent.length, 3);
+  assert.equal(sent[2].oldId, 'doc2', 'the new copy replaces the old one');
+  assert.match(sent[2].text, /Families nearby/);
+});
