@@ -8,6 +8,7 @@ import { stopNeedsOwner, type OfficeBreakView } from '@shared/officeBreak';
 import { openQuestion, openQuestions, parseTasks, waitsOnHuman, type HiveTask } from '../components/hiveTasks';
 import { openReportIndexes } from '@shared/askMeRouting';
 import { silentCards, type SilentEpisode } from '@shared/silentEngine';
+import { foundationAsk, isSnoozed, type FoundationsView } from '@shared/foundations';
 
 const POLL_MS = 5000;
 
@@ -48,9 +49,12 @@ export interface NeedsYouFeed {
   reports: number;
   /** The one time Research card after the update (issue #230, design D9): a report. */
   researchNotice: boolean;
+  /** Company foundations as the foundation cards read them (answers, drafts,
+   *  Not now); null until read or from an older main. */
+  foundations: FoundationsView | null;
 }
 
-let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], count: 0, reports: 0, researchNotice: false };
+let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], count: 0, reports: 0, researchNotice: false, foundations: null };
 // The offers need the team and the packs, which this module does not import;
 // the app hands it the reader at start (App.tsx).
 let offersSource: (() => Promise<WorkStyleOffer[]>) | null = null;
@@ -97,7 +101,7 @@ let taskReads = 0;
 let requestReads = 0;
 let ownerReads = 0;
 
-function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice'>>): void {
+function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice' | 'foundations'>>): void {
   // A poll that brings nothing new changes nothing, so nobody re-renders.
   const changed = (Object.keys(next) as Array<keyof typeof next>).some((k) => JSON.stringify(next[k]) !== JSON.stringify(feed[k]));
   if (!changed) return;
@@ -105,7 +109,7 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
   const merged = { ...feed, ...next };
   feed = {
     ...merged,
-    count: merged.tasks.reduce((n, t) => n + openQuestions(t).length, 0) + merged.requests.length + merged.offers.length + merged.proposals.length,
+    count: merged.tasks.reduce((n, t) => n + shownQuestions(t, merged.foundations).length, 0) + merged.requests.length + merged.offers.length + merged.proposals.length,
     reports: merged.tasks.reduce((n, t) => n + openReportIndexes(t.humanQA).length, 0) + (merged.researchNotice ? 1 : 0)
   };
   // One more while Michael cannot start for want of his engine (get-michael-ready.md),
@@ -126,6 +130,20 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
   }
 }
 
+/** A card's open questions the board shows: a foundation card the owner put
+ *  off with Not now stays out for its week (office-foundations.md, D2). */
+export function shownQuestions(t: HiveTask, f: FoundationsView | null, now = Date.now()): ReturnType<typeof openQuestions> {
+  return openQuestions(t).filter((e) => { const id = foundationAsk(e); return !id || !isSnoozed(f?.snoozed, id, now); });
+}
+
+let foundationReads = 0;
+function readFoundations(): void {
+  const mine = ++foundationReads;
+  void window.cth.foundationsGet?.()
+    .then((v) => { if (mine === foundationReads) publish({ foundations: v ?? null }); })
+    .catch(() => { /* keep the last value */ });
+}
+
 function readTasks(): void {
   if (typeof document !== 'undefined' && document.hidden) return;
   const mine = ++taskReads;
@@ -140,6 +158,7 @@ function readTasks(): void {
   readOffers(false);
   readEngine(false);
   readResearchNotice(false);
+  readFoundations();
 }
 
 // The Research card changes only on the update and when the owner reads it,
@@ -185,6 +204,7 @@ export function setupCardShown(f: Pick<NeedsYouFeed, 'engineSetup' | 'stop'>): b
 
 let offStop: (() => void) | null = null;
 let offSilent: (() => void) | null = null;
+let offFoundations: (() => void) | null = null;
 function readStop(): void {
   void window.cth.officeBreakView?.()
     .then((v) => publish({ stop: v ?? null }))
@@ -206,6 +226,7 @@ export function subscribeNeedsYou(listener: () => void): () => void {
     offStop = window.cth.onOfficeBreak?.((v) => publish({ stop: v ?? null })) ?? null;
     void window.cth.silentList?.().then((list) => publish({ silent: Array.isArray(list) ? list : [] })).catch(() => { /* keep the last value */ });
     offSilent = window.cth.onSilentChanged?.((list) => publish({ silent: list })) ?? null;
+    offFoundations = window.cth.onFoundationsChanged?.(readFoundations) ?? null;
   }
   return () => {
     listeners.delete(listener);
@@ -222,6 +243,8 @@ export function subscribeNeedsYou(listener: () => void): () => void {
       offStop = null;
       offSilent?.();
       offSilent = null;
+      offFoundations?.();
+      offFoundations = null;
     }
   };
 }

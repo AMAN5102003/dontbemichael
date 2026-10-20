@@ -36,6 +36,8 @@ import { Icon, type IconName } from '../Icon';
 import { useDialog } from '@/shell/useDialog';
 import { godNameNow } from '@/i18n';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
+import { getNeedsYouFeed } from '@/shell/useNeedsYou';
+import { FOUNDATION_QUESTIONS, foundationAsk, type FoundationId, type FoundationsJobRow, type FoundationsMember } from '@shared/foundations';
 
 const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
@@ -48,6 +50,85 @@ const AVG_DASH = 'repeating-linear-gradient(to bottom, var(--cth-ink-3) 0 3px, t
 const money = (v: number): string => `$${(Math.round(v * 100) / 100).toFixed(2)}`;
 const dollars = (v: number): string => `$${Math.round(v)}`;
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
+
+/** Open a foundation question's waiting card in Needs you, else the document
+ *  in company knowledge (office-foundations.md, design D5). */
+function openFoundation(ids: readonly FoundationId[]): void {
+  const task = getNeedsYouFeed().tasks.find((t) => (t.humanQA ?? []).some((e) => !e.a && !e.dismissedAt && ids.includes(foundationAsk(e) as FoundationId)));
+  if (task) useStore.getState().openNeedsYou({ taskId: task.id });
+  else window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Memory & Knowledge' } }));
+}
+
+/** The small ring beside a foundations count: decorative, the text says it. */
+function FoundationRing({ answered, total, size = 12 }: { answered: number; total: number; size?: number }) {
+  const share = total ? (answered / total) * 100 : 0;
+  return <span aria-hidden="true" style={{ width: size, height: size, borderRadius: '50%', flex: 'none', background: `conic-gradient(var(--cth-indigo) 0 ${share}%, var(--cth-line-2) ${share}% 100%)` }} />;
+}
+
+/** The Company foundations strip (design D3 to D5, D7): the jobs whose work
+ *  hit an empty question, the most hit first; each opens its questions. */
+function FoundationsStrip({ jobs }: { jobs: FoundationsJobRow[] }) {
+  const { t } = useTranslation();
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 12, color: 'var(--cth-ink-3)', display: 'inline-flex', gap: 6, alignItems: 'center' }}>{t('pulse.foundations.label')}<InfoTip text={t('pulse.foundations.tip')} /></span>
+      {jobs.map((j) => {
+        const job = t(`foundations.job.${j.job}`);
+        return (
+          <button key={j.job} type="button" onClick={() => openFoundation(j.waiting)}
+            aria-label={t('pulse.foundations.jobAria', { job, answered: j.answered, total: j.total })}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 30, padding: '0 12px', borderRadius: 'var(--cth-r-pill)', border: 'none', background: 'var(--cth-neutral-soft)', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink)' }}>
+            {job}
+            <b style={{ ...mono, fontWeight: 600 }}>{j.answered}/{j.total}</b>
+            <span aria-hidden="true" style={{ width: 42, height: 5, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-line-2)', overflow: 'hidden' }}>
+              <i style={{ display: 'block', height: '100%', width: `${j.total ? (j.answered / j.total) * 100 : 0}%`, background: 'var(--cth-indigo)' }} />
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Member detail's Foundations box (design D14): the count, the missing
+ *  questions the work hit (each opens its card), how many more no work needed,
+ *  and, once the evidence exists, kept as is without and with the answers. */
+function FoundationsBox({ f }: { f: FoundationsMember }) {
+  const { t } = useTranslation();
+  const short = (id: FoundationId): string => t(`foundations.short.${id}`, { defaultValue: FOUNDATION_QUESTIONS[id].short });
+  return (
+    <div style={{ background: 'var(--cth-card-2)', borderRadius: 'var(--cth-r-lg)', padding: '9px 11px', boxShadow: 'inset 0 0 0 1px var(--cth-line)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={label}>{t('pulse.foundations.label')}<InfoTip text={t('pulse.foundations.tip')} /></div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <FoundationRing answered={f.answered} total={f.total} size={14} />
+        <span style={{ ...mono, fontSize: 15, fontWeight: 600 }}>{t('pulse.foundations.of', { answered: f.answered, total: f.total })}</span>
+      </div>
+      {f.missing.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {f.missing.map((id) => (
+            <button key={id} type="button" onClick={() => openFoundation([id])}
+              style={{ height: 24, padding: '0 10px', borderRadius: 'var(--cth-r-pill)', border: 'none', background: 'var(--cth-indigo-soft)', color: 'var(--cth-indigo-text)', fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
+              {short(id)}
+            </button>
+          ))}
+        </div>
+      )}
+      {f.more > 0 && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t(f.missing.length ? 'pulse.foundations.more' : 'pulse.foundations.notNeeded', { count: f.more })}</div>}
+      {f.proof && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 2 }}>
+          {([['without', f.proof.without, 'var(--cth-ink-4)'], ['with', f.proof.with, 'var(--cth-green)']] as const).map(([k, v, color]) => (
+            <div key={k} style={{ display: 'grid', gridTemplateColumns: '120px minmax(0, 1fr) 40px', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--cth-ink-2)' }}>
+              <span>{t(`pulse.foundations.${k}`, { what: short(f.proof!.question) })}</span>
+              <span aria-hidden="true" style={{ height: 6, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)', overflow: 'hidden' }}><i style={{ display: 'block', height: '100%', width: `${v * 100}%`, background: color }} /></span>
+              <span style={{ ...mono, textAlign: 'end' }}>{pct(v)}</span>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.foundations.proofLine')}</div>
+        </div>
+      )}
+    </div>
+  );
+}
 function duration(ms: number, t: (k: string, o?: Record<string, unknown>) => string): string {
   const m = Math.round(ms / 60_000);
   if (m < 60) return t('pulse.minutes', { m });
@@ -306,6 +387,8 @@ export function PulseView() {
     const noAdvice = shownAdvice.length === 0 && applied.length === 0;
     // A main process older than this view sends no early lines.
     const early = view.early ?? [];
+    // The Company foundations strip (office-foundations.md); none from an older main.
+    const foundationJobs = view.foundations?.jobs ?? [];
     // Which of the 14 days before advice this is, counted from the first live day.
     const learnDay = view.liveSince ? Math.min(14, Math.max(1, Math.round((new Date(`${dayKey(Date.now())}T12:00:00`).getTime() - new Date(`${view.liveSince}T12:00:00`).getTime()) / 86_400_000) + 1)) : 1;
     // What shows and what folds (owner, 2026-10-19; pulse-smart-view.md, eng D2):
@@ -431,6 +514,7 @@ export function PulseView() {
       const quiet = chip?.kind === 'quiet';
       const color = m.agentId === godId ? 'var(--cth-indigo)' : colorOf(m.agentId, 0);
       const role = m.agentId === godId ? t('pulse.officeManager') : byId.get(m.agentId) ? roleOf(byId.get(m.agentId)!) : '';
+      const fm = view.foundations?.members[m.agentId];
       return (
         <div key={m.agentId} role="listitem"><button type="button" onClick={() => setDetail(m.agentId)}
           aria-label={t('pulse.work.rowAria', { name: nameOf(m.agentId), time: duration(m.busyMs, t), value: money(m.usd) })}
@@ -440,6 +524,12 @@ export function PulseView() {
             <span style={{ minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(m.agentId)}</span>
               <span style={{ display: 'block', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{role}</span>
+              {/* The foundations count under the role (D6); gone once all are answered (D9). */}
+              {fm && fm.answered < fm.total && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>
+                  <FoundationRing answered={fm.answered} total={fm.total} />{t('pulse.foundations.count', { answered: fm.answered, total: fm.total })}
+                </span>
+              )}
             </span>
           </span>
           <span style={{ position: 'relative', height: 14, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)' }}>
@@ -486,6 +576,8 @@ export function PulseView() {
                   </span>
                 )}
               </div>
+              {/* Company foundations, under the Early look header while it shows (D3). */}
+              {foundationJobs.length > 0 && <div style={{ padding: '6px 16px 4px' }}><FoundationsStrip jobs={foundationJobs} /></div>}
               <div style={{ ...grid(sugCols), padding: '4px 16px 16px' }}>
                 {early.map((a) => <EarlyCard key={a.id} a={a} name={nameOf(a.agentId)} sub={a.missionId ? jobOf(a.missionId) : (byId.get(a.agentId) ? roleOf(byId.get(a.agentId)!) : '')} text={earlyText(a)} />)}
                 {early.length < sugCols && (
@@ -493,7 +585,8 @@ export function PulseView() {
                 )}
               </div>
             </div>
-          ) : noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
+          ) : foundationJobs.length > 0 && <div style={{ ...card, padding: '12px 16px', marginBottom: 10 }}><FoundationsStrip jobs={foundationJobs} /></div>}
+          {!(noAdvice && early.length > 0) && noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{view.adviceFrom ? t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) }) : t('pulse.nothingToChange')}</div>}
           {(!noAdvice || savedShown) && <div style={grid(sugCols)}>
             {applied.map((x) => (
               <div key={`a-${x.appliedId}`} style={{ background: 'var(--cth-green-soft)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px color-mix(in srgb, var(--cth-green) 35%, transparent)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -1108,6 +1201,7 @@ function MemberDetail({ id, data, name, onClose, money }: { id: string; data: Pu
             {fact(t('pulse.whileAway'), m.awayShare !== null ? `${Math.round(m.awayShare * 100)}%` : '…', t('pulse.awayMine'), t('pulse.awayTip'))}
           </div>
         )}
+        {(() => { const f = data.foundations?.members[id]; return f && (f.answered < f.total || f.proof) ? <FoundationsBox f={f} /> : null; })()}
         <div>
           <div style={{ ...label, marginBottom: 6 }}>{t('pulse.fourWeeks')}</div>
           <div role="img" aria-label={trend.map((v) => money(v)).join(', ')} style={{ display: 'flex', gap: 6, alignItems: 'flex-end', height: 44 }}>

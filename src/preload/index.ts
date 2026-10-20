@@ -3,6 +3,7 @@ import type { HeldRow } from '../shared/heldRecord';
 import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
 import type { PulseView } from '../shared/pulseView';
+import type { FoundationsView } from '../shared/foundations';
 import type { ResearchConfig } from '../shared/research';
 import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
@@ -1400,6 +1401,21 @@ const api = {
   /** The owner ends a card: Done, marked "Closed by owner", never deleted. */
   hiveCloseTask: (id: string, reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:closeTask', id, reason),
+
+  // ─── Company foundations (docs/designs/office-foundations.md) ─────────────
+  /** The record as the foundation card reads it: answers, drafts, Not now and hits. */
+  foundationsGet: (): Promise<FoundationsView> => ipcRenderer.invoke('foundations:get'),
+  /** The owner's answer from a foundation card; it always wins. */
+  foundationsAnswer: (id: string, text: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('foundations:answer', id, text),
+  /** Have the member draft it: the draft comes back into the card. */
+  foundationsDraft: (id: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:draft', id, memberId),
+  /** Not now: out of Needs you for a week. */
+  foundationsSnooze: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:snooze', id),
+  onFoundationsChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('foundations:changed', listener);
+    return () => ipcRenderer.removeListener('foundations:changed', listener);
+  },
 
   // ─── Pulse (docs/designs/team-performance.md) ─────────────────────────────
   /** What the Pulse view shows for a period. */

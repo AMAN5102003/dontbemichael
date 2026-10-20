@@ -24,6 +24,7 @@ import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan
 import { countFromDay, learnedNotes, learning, type AddedNote, type LearnedNote, type NoteFact } from '../shared/teamLearning';
 import { parseHeld, type HeldRow } from '../shared/heldRecord';
 import { parseChecked, type CheckedList, type CheckedRow } from '../shared/checkedRecord';
+import { countFor, foundationsPulse, replayFoundations, type FoundationEvent, type FoundationJob, type FoundationsPulse } from '../shared/foundations';
 import type { TelemetryStore } from './telemetryStore';
 import type { TelemetryProcessor } from './telemetryProcessor';
 
@@ -52,6 +53,8 @@ export interface PulseDeps {
   /** private/checked.jsonl, the lists of what the check let through or stopped. */
   readChecked?: () => string | Promise<string>;
   now?: () => number;
+  /** Each member's job, for Company foundations (office-foundations.md). */
+  memberJobs?: () => Record<string, FoundationJob[]>;
 }
 
 export type { AppliedChange, PulseView } from '../shared/pulseView';
@@ -98,6 +101,50 @@ export class PulseService {
       if (!Number.isFinite(askedAt)) continue;
       const answeredAt = e.answeredAt ? Date.parse(e.answeredAt) : NaN;
       out.push({ raisedBy: e.raisedBy, askedAt, ...(Number.isFinite(answeredAt) ? { answeredAt } : {}) });
+    }
+    return out;
+  }
+
+  /**
+   * Company foundations from harness.db (eng finding 4): the strip, each
+   * member's count, and, once a member has enough work on both sides of the
+   * day its hit questions were answered, kept as is without and with them.
+   */
+  foundations(office: string): FoundationsPulse {
+    const db = this.d.db();
+    const jobs = this.d.memberJobs?.() ?? {};
+    if (!db) return { jobs: [], members: {} };
+    let rows: Array<{ agent_id: string | null; ts: number; attrs: string | null }> = [];
+    try { rows = db.prepare("SELECT agent_id, ts, attrs FROM telemetry_events WHERE office = ? AND kind = 'foundation' ORDER BY id").all(office) as typeof rows; } catch { return { jobs: [], members: {} }; }
+    const events: FoundationEvent[] = [];
+    for (const r of rows) {
+      try {
+        const a = r.attrs ? JSON.parse(r.attrs) as { q?: unknown; change?: unknown } : {};
+        if (typeof a.q === 'string' && (a.change === 'answered' || a.change === 'changed' || a.change === 'cleared' || a.change === 'hit')) events.push({ agentId: r.agent_id, ts: r.ts, q: a.q, change: a.change });
+      } catch { /* a broken row */ }
+    }
+    const state = replayFoundations(events);
+    const out = foundationsPulse(state, jobs);
+    // The proof (D14): the first of a member's hit questions answered splits its
+    // work in two; each side needs half the evidence advice needs.
+    const since = this.now() - 90 * 86_400_000;
+    const cards = this.d.processor.cards(office, since);
+    const decisions = this.d.processor.decisions(office, since);
+    const min = Math.ceil(10 * EARLY_SCALE);
+    for (const agentId of Object.keys(jobs)) {
+      let first: { q: FoundationEvent['q']; at: number } | null = null;
+      for (const [q, by] of state.hits) {
+        const at = state.answeredAt.get(q);
+        if (at !== undefined && by.has(agentId) && (!first || at < first.at)) first = { q, at };
+      }
+      if (!first) continue;
+      const at = first.at;
+      const before = keptAsIs(agentId, decisions.filter((d) => d.at < at), cards.filter((c) => (c.doneAt ?? 0) < at), min).share;
+      const after = keptAsIs(agentId, decisions.filter((d) => d.at >= at), cards.filter((c) => (c.doneAt ?? 0) >= at), min).share;
+      if (before === null || after === null) continue;
+      const proof = { without: before, with: after, question: first.q as never };
+      const c = countFor(new Set<string>(state.answeredAt.keys()), jobs[agentId]);
+      out.members[agentId] = out.members[agentId] ? { ...out.members[agentId], proof } : { answered: c.answered, total: c.total, missing: [], more: 0, proof };
     }
     return out;
   }
@@ -211,6 +258,7 @@ export class PulseService {
       trend: this.trend(office, ids, price),
       keptSafe: cur.keptSafe,
       learning: this.learning(office, range, before, asks),
+      foundations: this.foundations(office),
       plan,
       compare: prev ? { snapshot: prev.snapshot, keptSafe: prev.keptSafe } : null,
       compareReady,

@@ -56,7 +56,9 @@ export const PRIVATE_ENTRIES = [
   // erases both; nothing else deletes the archive).
   'checked.jsonl',
   'checked-archive',
-  'checked-backfill.json'
+  'checked-backfill.json',
+  // Company foundations: the record the app alone writes (office-foundations.md).
+  'foundations.json'
 ] as const;
 
 /** The privacy and standing approval checks' own empty folders (index.ts). */

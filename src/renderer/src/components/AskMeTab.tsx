@@ -25,6 +25,8 @@ import { ChoiceRows, PartLines } from './AskAnswerFields';
 import { refreshNeedsYou, setupCardShown, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useResearchName } from '@/shell/research';
+import { FoundationCard } from './FoundationCard';
+import { foundationAsk, isSnoozed } from '@shared/foundations';
 
 /**
  * ASK ME — first-class human feedback through the task system.
@@ -76,7 +78,7 @@ export function AskMeTab() {
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   // One shared read with the pill, the strip and the chips (D3, eng R4).
-  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice, silent } = useNeedsYou();
+  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice, silent, foundations } = useNeedsYou();
   // Members whose engine isn't reporting (issue #326): their cards keep All clear away.
   const silentShown = silentCards(silent).length > 0;
   // A sign in stop already asks the owner to sign in: one card (eng R3).
@@ -144,7 +146,12 @@ export function AskMeTab() {
   const rowsOf = (pick: typeof openAskIndexes): AskRow[] => tasks
     .flatMap((t) => pick(t.humanQA).map((index) => ({ key: `${t.id}#${index}`, task: t, index, ask: t.humanQA![index] })))
     .sort((a, b) => compareByNewestAsk(a.ask, b.ask));
-  const waiting: AskRow[] = [...rowsOf(openAskIndexes), ...rowsOf(openReportIndexes)];
+  // Company foundations cards come after the decisions (design D10); one the
+  // owner put off with Not now stays out for its week.
+  const asks = rowsOf(openAskIndexes);
+  const now = Date.now();
+  const foundationRows = asks.filter((r) => { const id = foundationAsk(r.ask); return !!id && !isSnoozed(foundations?.snoozed, id, now); });
+  const waiting: AskRow[] = [...asks.filter((r) => !foundationAsk(r.ask)), ...foundationRows, ...rowsOf(openReportIndexes)];
   const rowsRef = useRef<AskRow[]>(waiting);
   rowsRef.current = waiting;
   // A card with several open questions has a row for each: their labels add
@@ -174,11 +181,12 @@ export function AskMeTab() {
    * or Michael withdrew it meanwhile), nothing is sent or remembered and the
    * draft is kept.
    */
-  const sendAnswer = async (row: AskRow) => {
+  const sendAnswer = async (row: AskRow, override?: string): Promise<boolean> => {
     const { task, index, ask: open } = row;
     const shape = readAskShape(open);
-    const text = answerFor(row, shape);
-    if (!text || sending) return;
+    const text = override ?? answerFor(row, shape);
+    if (!text || sending) return false;
+    let landed = false;
     const pk = picks[row.key] ?? {};
     // Which option and which parts, recorded beside the answer (main keeps them
     // only with it: askMeRouting.ts mergeHumanQA).
@@ -230,6 +238,7 @@ export function AskMeTab() {
       setAnswerPick(row.key, {});
       setAnsweredHere((list) => [{ id: row.key, title: task.title, a: text, who: nameFor(typeof task.assignee === 'string' ? task.assignee : undefined), whoId: typeof task.assignee === 'string' ? task.assignee : undefined }, ...list.filter((x) => x.id !== row.key)]);
       refreshNeedsYou();
+      landed = true;
     } catch {
       // Keep the draft so the owner can try again, and reload the board in
       // case the question changed or was withdrawn meanwhile.
@@ -237,6 +246,7 @@ export function AskMeTab() {
       refreshNeedsYou();
     }
     setSending(null);
+    return landed;
   };
 
   return (
@@ -268,6 +278,22 @@ export function AskMeTab() {
       ))}
       {waiting.map((row, idx) => {
         const { task: t, ask: open } = row;
+        const foundationId = foundationAsk(open);
+        if (foundationId) {
+          // The member whose work hit it (D11), in its department color.
+          const raiser = open.raisedBy && open.raisedBy !== 'god' ? open.raisedBy : typeof t.assignee === 'string' ? t.assignee : undefined;
+          const member = raiser ? agents.find((a) => a.id === raiser) : undefined;
+          const fam = member && !member.isGod ? family(departmentOf(member), dark) : null;
+          return (
+            <FoundationCard
+              key={row.key} id={foundationId} rowKey={row.key} taskId={t.id} q={open.q} askedAt={open.askedAt}
+              raiserId={raiser} raiserName={nameFor(raiser)}
+              chipStyle={{ ...personChip, ...(fam ? { background: fam.l, boxShadow: `inset 0 0 0 1px ${fam.m}` } : {}) }}
+              foundations={foundations}
+              onAnswer={(text) => sendAnswer(row, text)}
+            />
+          );
+        }
         const stuck = dependentsTree(t.id, tasks);
         const owner = t.assignee ? agents.find((a) => a.id === t.assignee) : undefined;
         // Agents write tasks.json: a card's assignee may not be a string.

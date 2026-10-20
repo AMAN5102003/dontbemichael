@@ -20,6 +20,9 @@ import { PtyManager, type ProcessLaunch, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, isSafeCommandName, userShellPath } from './shellEnv';
 import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
+import { Foundations } from './foundations';
+import { FOUNDATION_JOBS, FOUNDATIONS_TITLE, jobOf, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
   claudeAuthStatusCommand, findClaudeFast, isEngineSetupPty, makeClaudeAuthReader, makeNoticeCoalescer, readEngineSetupStatus,
@@ -33,7 +36,7 @@ import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
   readConfig, damagedConfigCopy, writeConfig, setAgentTokenCap, resetConfig, onConfigWritten, ensureHarnessHome, ensureClaudePermissionsAccepted, approveClaudeApiKey,
-  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
+  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, FOUNDATIONS_CHECK_MISSION, type HarnessConfig, type ScheduledMission
 } from './config';
 import { terminalLaunches } from './terminalAtFolder';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileByName, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
@@ -492,7 +495,8 @@ const hookServer = new HookServer(
   companyProfileForAgents,
   (agentId) => booksReadRoleIds().has(agentId),
   memberPresent,
-  (signal) => onPlanSignal(signal)
+  (signal) => onPlanSignal(signal),
+  (agentId) => foundationsForAgent(agentId)
 );
 // Pulse's Kept safe: each step a setting stopped, by gate (proposal 3).
 hookServer.onRefused = (agentId, gate) => pulseTelemetry.record({ agentId: agentId ?? null, kind: 'refused', ts: Date.now(), attrs: { gate } });
@@ -696,6 +700,63 @@ ipcMain.handle('silent:checkAgain', (_evt, id: unknown) => { if (typeof id === '
 const pulseOffice = (): string | null => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; };
 const pulseTelemetry = new TelemetryStore(() => persist.database(), pulseOffice);
 const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTelemetry);
+
+/** Each roster member's job, for Company foundations (office-foundations.md):
+ *  read like its studio department; Michael, Research and assistants have none. */
+function foundationsMemberJobs(): Record<string, FoundationJob[]> {
+  const out: Record<string, FoundationJob[]> = {};
+  const reg = hive.registry();
+  const entries = (roster.read()?.agents ?? []).filter((e): e is DepartmentSource & { isGod?: boolean } => !!e && typeof e === 'object' && typeof (e as { id?: unknown }).id === 'string');
+  for (const e of entries) {
+    const meta = reg.agents?.[e.id];
+    if (e.isGod || e.id === RESEARCH_ID || meta?.isGod || meta?.isAssistant || meta?.isResearch || e.id === reg.godId) continue;
+    const job = jobOf(e);
+    out[e.id] = job ? [job] : [];
+  }
+  return out;
+}
+function foundationsOfficeJobs(): FoundationJob[] {
+  const jobs = new Set<FoundationJob>();
+  for (const list of Object.values(foundationsMemberJobs())) for (const j of list) jobs.add(j);
+  return FOUNDATION_JOBS.filter((j) => jobs.has(j));
+}
+function foundationsNameOf(id: string): string {
+  if (id === 'owner') return 'the owner';
+  const reg = hive.registry();
+  return id === reg.godId || id === 'god' ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : (reg.agents?.[id]?.name ?? id);
+}
+/** Company foundations' one writer (main/foundations.ts). */
+const foundations = new Foundations({
+  home: () => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; },
+  record: (ev) => pulseTelemetry.record(ev),
+  publish: (text, oldId) => {
+    if (!knowledge.active()) return undefined;
+    const r = knowledge.ingestText(text, { title: FOUNDATIONS_TITLE, tags: ['foundations'] }) as { docId?: string };
+    if (oldId && oldId !== r?.docId) { try { knowledge.remove(oldId); } catch { /* gone already */ } }
+    return r?.docId;
+  },
+  jobs: foundationsOfficeJobs,
+  nameOf: foundationsNameOf,
+  godId: () => hive.registry().godId ?? null,
+  profile: () => cleanCompanyProfile(readConfig().companyProfile),
+  setProfile: (patch) => { writeConfig({ companyProfile: { ...cleanCompanyProfile(readConfig().companyProfile), ...patch } }); },
+  ownerSaid: (id) => hive.ownerSaid(id),
+  inOffice: (path, agentId) => {
+    try { if (!statSync(path).isFile()) return false; } catch { return false; }
+    const cfg = readConfig();
+    const cwd = hive.registry().agents?.[agentId]?.cwd;
+    return [cfg.businessFolder, cfg.officeFolder, cwd].some((root) => typeof root === 'string' && !!root && isSameOrInside(expandTilde(root), path));
+  },
+  tell: (to, subject, body) => { if (hive.enabled()) hive.send({ to, act: 'inform', subject, body }, 'foundations'); },
+  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } }
+});
+/** What an agent carries of the foundations: its job's part, or all of it for
+ *  Michael. Research is left out by the hook itself. */
+function foundationsForAgent(agentId: string): string | null {
+  const reg = hive.registry();
+  if (agentId === reg.godId || reg.agents?.[agentId]?.isGod) return michaelFoundations(foundations.read(), foundationsOfficeJobs(), foundationsNameOf);
+  return sectionFor(foundations.read(), foundationsMemberJobs()[agentId] ?? [], foundationsNameOf);
+}
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
  *  ledger. The view refreshes when it lands. */
@@ -744,6 +805,7 @@ const pulse = new PulseService({
   processor: pulseProcessor,
   office: pulseOffice,
   members: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id, a]) => ({ id, isGod: !!a.isGod })),
+  memberJobs: foundationsMemberJobs,
   godId: () => hive.registry().godId ?? null,
   tasks: () => { const t = hive.tasks() as { tasks?: unknown }; return Array.isArray(t?.tasks) ? (t.tasks as never) : []; },
   missions: () => readConfig().missions ?? [],
@@ -1767,6 +1829,17 @@ function ensureDefaultMissions(): void {
     writeConfig({
       missions: has ? missions : [...missions, { ...HEARTBEAT_MISSION, lastFiredAt: Date.now() }],
       heartbeatSeeded: true
+    });
+  }
+
+  // The weekly Foundations check (office-foundations.md, eng D3), once.
+  const cfgF = readConfig();
+  if (!cfgF.foundationsCheckSeeded) {
+    const missions = cfgF.missions ?? [];
+    const has = missions.some((m) => m.id === FOUNDATIONS_CHECK_MISSION.id);
+    writeConfig({
+      missions: has ? missions : [...missions, { ...FOUNDATIONS_CHECK_MISSION, lastFiredAt: Date.now() }],
+      foundationsCheckSeeded: true
     });
   }
 
@@ -4712,6 +4785,8 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   // config per tick so it gates immediately; this is for the PROMPT, which is
   // built per spawn, so flipping the toggle reaches god the next time he starts.
   if (typeof patch?.orchestratorMaySpawn === 'boolean') hive.setOrchestratorMaySpawn(patch.orchestratorMaySpawn);
+  // The company profile and the foundations hold one set of facts (eng finding 6).
+  if (patch && typeof patch === 'object' && 'companyProfile' in patch) { try { foundations.profileChanged(); } catch (e) { console.error('[foundations] profile', e); } }
   if (!hiveWasEnabled && hive.enabled()) {
     console.log('[hive] harnessHome configured — bootstrapping hive services');
     try { bootstrapHiveServices(); } catch (e) { console.error('[hive] bootstrap after onboarding:', e); }
@@ -6647,6 +6722,12 @@ ipcMain.handle('pulse:learned', (_evt, from: unknown, to: unknown) => {
 // checked here. A record that can't be read rejects, so the list says so.
 ipcMain.handle('pulse:checked', (_evt, fromMs: unknown, toMs: unknown, way: unknown) =>
   (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) && (way === 'in' || way === 'out') ? pulse.checked(fromMs, toMs, way) : { rows: [], since: null }));
+// Company foundations (office-foundations.md): the foundation card reads the
+// record and writes the owner's answer, a draft request or Not now.
+ipcMain.handle('foundations:get', () => foundations.view());
+ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown) => foundations.ownerAnswer(id, text));
+ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
+ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
   // Opening Pulse starts the backfill too, not only the 30 s beat, so a first
   // look right after an update gets the past weeks (the view refreshes when
@@ -7808,6 +7889,8 @@ function bootstrapHiveServices(): void {
   // A business office gets the plain PROTOCOL.md and no COMMANDS.md.
   hive.setBusinessOffice(!!(readConfig().businessFolder || readConfig().officeFolder));
   hive.onScheduleRequest(receiveScheduleRequest);
+  hive.onFoundations((actor, payload) => foundations.handle(actor, payload));
+  try { foundations.seed(); } catch (e) { console.error('[foundations] seed', e); }
   hive.setTrustLayer(trustLayer);
   hive.setResearchEnabled(() => !!readConfig().research?.on);
   hive.setResearchName(() => readConfig().research?.name);

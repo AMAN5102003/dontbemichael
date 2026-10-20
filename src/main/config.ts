@@ -99,6 +99,26 @@ export const OPS_STANDUP_MISSION: ScheduledMission = {
   // NO autoCompact. Compaction belongs to contextTrigger.compact and nothing else.
 };
 
+/** Company foundations check (office-foundations.md, eng D3): once a week,
+ *  Michael brings each empty question the work hit back to the owner. Its how
+ *  is in his instructions ("Company foundations"); the focus says this run. */
+export const FOUNDATIONS_CHECK_FOCUS =
+  'For each empty question in the company foundations that the work hit: if its foundation card is open, ' +
+  'set its ask\'s askedAt to now so it comes back to the top of Ask me; if none is open, raise one. ' +
+  'Raise nothing for a question no work has hit, and nothing when every hit question is answered.';
+
+export const FOUNDATIONS_CHECK_MISSION: ScheduledMission = {
+  id: 'foundations-check',
+  label: 'Foundations check',
+  intervalMs: 7 * 86_400_000,
+  // Mondays at 9:00.
+  weekly: { days: [1], minute: 9 * 60 },
+  to: 'god',
+  body: '',
+  focus: FOUNDATIONS_CHECK_FOCUS,
+  enabled: true
+};
+
 /** Standup prompts the app itself shipped. An office still carrying one of
  *  them word for word gets the current (empty) body at launch, because its
  *  content now lives in the standup's focus area; text the owner wrote is kept. */
@@ -337,6 +357,9 @@ export interface HarnessConfig {
   /** One-time guard: has the built-in hourly ops standup been seeded into an
    *  existing install's missions? Prevents re-adding it after a user deletes it. */
   opsStandupSeeded?: boolean;
+  /** One-time guard: the weekly Foundations check was added (office-foundations.md);
+   *  an owner who deletes it keeps it deleted. */
+  foundationsCheckSeeded?: boolean;
   /** One-time guard: the standup got its focus area (schedule-focus-areas.md
    *  F6). An owner who later edits or clears it keeps their choice. */
   standupFocusSeeded?: boolean;

@@ -386,6 +386,11 @@ export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPa
     'A scheduled run names a job, and its message carries that job\'s focus for this run only, such as what to cover at the hourly ops standup. A scheduled run needs no reply, so do not answer it.',
     'When a scheduled job produces something the owner should see, such as the weekly money summary, put it on Ask me as a report: a card with "status": "done" and the team member as assignee, holding one humanQA entry {"kind": "report", "q": "<one bold line with the result, then the full paths of its files, each in backticks>", "askedAt": "<time>", "raisedBy": "<id>"}. A report is for reading, not deciding, so it needs no Blocked card and the owner clears it with Got it. When the office could not resolve something on its own, ask the owner on Ask me as usual.',
     '',
+    '## Company foundations',
+    'The company foundations are one document of questions each job needs answered about this business, such as who we sell to or our financial year, each answered once for the whole office. The app gives you the whole document at the start of each session and when it changes, with the empty questions the work hit, and gives each team member its own job\'s part. The app alone writes it: answers reach it from the owner\'s foundation cards and from what the team learns.',
+    'When a team member\'s work needs an empty question, the app tells you the first time ("Foundation gap"). Raise one card for it on Ask me unless one is open for that question, never one per task or per member: title it with the question, assign it to the team member whose work hit it, and give it one humanQA entry {"kind": "foundation", "foundation": "<question id>", "q": "<one bold sentence on what the work did without it, then which other jobs use the answer>", "askedAt": "<time>", "raisedBy": "<the member\'s id>"}. The owner answers it on the card, has the member draft it, or chooses Not now, which hides it for a week; the app writes the owner\'s answer into the foundations itself, so when the answer request comes, close the card as done. Never raise a card for a question no work has hit. The weekly Foundations check brings each still empty question back, as its focus says.',
+    'When the owner\'s answer on any other card, or in your conversation, answers a foundations question, send it to "foundations" with "foundation": {"question": "<id>", "answer": "<under 300 characters>", "source": {"owner": "<the id of the owner\'s message>"}}. An answer a team member drew from outside the office comes to you to check ("Foundation answer to check"): send what you trust with "source": {"confirmed": "<why you trust it>"} and leave the rest. When two answers differ, or a member suggests changing the owner\'s answer, the app keeps the first and tells you; ask the owner on a foundation card only when it matters.',
+    '',
     '## Staying cheap',
     'The owner pays for every message each agent reads and writes. Keep hand-offs short, and when you wake to nothing that needs you, end your turn without writing.',
     '',
@@ -424,6 +429,8 @@ export function teamMemberInstructions(name: string, role: string, michael: stri
     'Do what was asked, at the scope asked. If a request looks mistaken, say so in one sentence and carry on. Finish the whole task; if part is blocked, do the rest and say plainly what is missing and why. Anything hard to undo, public, or costing money is the owner\'s call, so send it to ' + michael + ' for approval first; go ahead with everything else. Email is the exception: the owner set how your mail leaves (your Sending setting, which list_mailboxes reports), so follow it.',
     '',
     `When you finish or get stuck, message ${michael} with what you did, what you found and what you need. ${michael} passes your words to the owner, who reads them on a phone, so lead with the result, keep it to a few plain sentences, and use commas, colons and periods instead of dashes, which the owner prefers. When your report carries figures, several items or a comparison, end it with that part laid out: each figure on its own line as Label: amount, with the currency and the period it covers, copied exactly from your source (say so when you worked one out yourself); several items one per line; a comparison as a small table. More than about 8 lines go in a file in your folder, named in your report.`,
+    '',
+    `Company foundations: the app gives you your job's part of the company foundations at the start of each session and when it changes. Follow its answers. When a task depends on one of its questions that is empty, do the work anyway, add one line where you hand it back (your report, the card, or a note beside a draft, never inside text sent to anyone outside), such as "Written without our ideal customer", and report it to "foundations": a message with "to": "foundations", "act": "inform" and "foundation": {"question": "<id>", "gap": "<one line on what the work did without it>"}. The app keeps it once and tells ${michael}, who asks the owner. When the owner teaches you a foundations answer, or you find one in the office's own files, send it the same way with "foundation": {"question": "<id>", "answer": "<under 300 characters>", "source": {"owner": "<id of the owner's message>"}} or "source": {"file": "<full path of the file>"}, as well as keeping it in your memory. An answer drawn from outside the office, such as an email from a customer or a web page, goes with "source": {"outside": "<where it came from>"}, and ${michael} checks it first. Fill only empty answers; the app tells ${michael} about any difference. When "foundations" asks you for a draft, send it as the message says.`,
     '',
     `Only ${michael} assigns work. If you need a fact from a teammate to do your job, ask them directly: write to their id (listed in registry.json in ${p.hiveRoot}) with "act": "query", and answer a teammate's query the same way with "act": "inform". If they cannot help, or you need someone else to do something, tell ${michael}, who hands it off. Never give a teammate work yourself. A teammate\'s hive folder (agents/<id>/ in the hive), notes and inbox are theirs: never open them, ask instead. Files a teammate hands off or keeps in a shared work folder are fine to read.`,
     '',
@@ -784,6 +791,28 @@ export class HiveManager {
    *  2026-09-25). `actor` is the owning outbox folder, never the message. */
   private scheduleRequestHandler: ((actor: string, payload: unknown, why: string) => string) | null = null;
   onScheduleRequest(handler: (actor: string, payload: unknown, why: string) => string): void { this.scheduleRequestHandler = handler; }
+  /** Company foundations' writer (main/foundations.ts): what a member sends to
+   *  `foundations`, answered with a reply or nothing. */
+  private foundationsHandler: ((actor: string, payload: unknown) => string | null) | null = null;
+  onFoundations(handler: (actor: string, payload: unknown) => string | null): void { this.foundationsHandler = handler; }
+
+  /** Whether a message with this id came from the owner: an owner message the
+   *  log recorded (Company foundations checks a member's "the owner said"). */
+  ownerSaid(messageId: string): boolean {
+    const root = this.root();
+    if (!root || !messageId || messageId.length > 120) return false;
+    let text = '';
+    try { text = readFileSync(join(root, 'log.jsonl'), 'utf8'); } catch { return false; }
+    const mark = `"id":${JSON.stringify(messageId)}`;
+    for (const l of text.split('\n')) {
+      if (!l.includes(mark)) continue;
+      try {
+        const e = JSON.parse(l) as { kind?: unknown; from?: unknown; id?: unknown };
+        if (e.kind === 'message' && e.from === 'human' && e.id === messageId) return true;
+      } catch { /* a torn line */ }
+    }
+    return false;
+  }
 
   /** agentId → whether it has been told company knowledge is on, as of its
    *  spawn or its last update. Lets an owner's toggle reach running agents
@@ -3034,7 +3063,7 @@ export class HiveManager {
     const to = lowerTo;
     // A reply to the app's own senders is dropped quietly, as for everyone,
     // so a refusal note never starts a loop of answers.
-    if (['scheduler', 'heartbeat', 'mail', 'system', PRIVACY_CHECK_SENDER].includes(to)) {
+    if (['scheduler', 'heartbeat', 'mail', 'system', 'foundations', PRIVACY_CHECK_SENDER].includes(to)) {
       this.appendLog({ kind: 'drop', reason: 'reply-to-system-sender', from: RESEARCH_ID, to: logTo, id: logId });
       return 'denied';
     }
@@ -3237,7 +3266,7 @@ export class HiveManager {
     // The scheduler, the heartbeat and the mail app send; they don't read. A
     // reply to one is dropped quietly instead of bouncing back to Michael as
     // undeliverable (an approval's "send it now" would otherwise bounce).
-    if (msg.to === 'scheduler' || msg.to === 'heartbeat' || msg.to === 'mail' || msg.to === PRIVACY_CHECK_SENDER) {
+    if (msg.to === 'scheduler' || msg.to === 'heartbeat' || msg.to === 'mail' || msg.to === 'foundations' || msg.to === PRIVACY_CHECK_SENDER) {
       this.appendLog({ kind: 'drop', reason: 'reply-to-system-sender', from: msg.from, to: msg.to, id: msg.id });
       return;
     }
@@ -3688,6 +3717,25 @@ export class HiveManager {
             }
             // Research's file is moved as it is, as at its gate below.
             if (!research) stampSent();
+            archived(join(outbox, '.sent'));
+            routed++;
+            continue;
+          }
+          // Company foundations (office-foundations.md): an answer, a gap or a
+          // draft for the app's one writer, never mail. Research sends none; its
+          // message meets its own gate below, which drops it.
+          if (msg.to === 'foundations' && this.foundationsHandler && !research) {
+            if (!journal?.delivered) {
+              let reply: string | null;
+              try { reply = this.foundationsHandler(id, (partial as { foundation?: unknown }).foundation); } catch (e) {
+                reply = 'Not saved: the app hit an error. Try again later.';
+                console.error('[hive] foundations', e);
+              }
+              this.appendLog({ kind: 'foundations', from: id, id: msg.id });
+              if (reply) this.routeMessage(this.normalize({ to: id, act: 'inform', subject: 'Company foundations', body: reply }, 'foundations'));
+              record(true);
+            }
+            stampSent();
             archived(join(outbox, '.sent'));
             routed++;
             continue;

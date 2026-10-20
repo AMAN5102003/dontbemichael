@@ -1382,6 +1382,41 @@ half written message survives the switch.
   760 to 1099, tiles 2 by 2; under 760, one
   column and Team at work with name, bar, hours and value. Coral is never used on Pulse. Every chart has an
   aria-label sentence; Apply and Undo announce in a polite live region.
+- **Company foundations** (docs/designs/office-foundations.md, design D3 to D9, D14). The strip
+  sits inside Recommendations, one row under the Early look header while it shows, else a
+  `card` row at the top of the section: "Foundations" in `ink-3` with its (i), then one pill per
+  job whose work hit an empty question, most hit first: `neutral-soft` pill, 30 px, the job
+  name, "1/6" in mono and a 42 px `indigo` bar on `line-2`. A pill is a button named "Marketing,
+  1 of 6 answered. Open its questions"; it opens that job's waiting foundation card in Needs
+  you, else Settings at Memory & Knowledge. A job leaves once every question its work hit is
+  answered; the strip goes with the last. On Team at work a member missing any foundation shows
+  a 12 px `indigo` ring and "Foundations 2 of 6" in `ink-3` 11 px under its role; nothing once
+  all are answered. Member detail adds a Foundations box in `card-2`: the ring and "1 of 6",
+  the missing questions the work hit as `indigo-soft` pills (each opens its card), "and 3 more
+  no work has needed yet", and, once both sides have enough work, two bars of work kept as is
+  without the first answer (`ink-4`) and with it (`green`).
+
+### 7.27a The foundation card (FoundationCard)
+
+A Company foundations question on Needs you (docs/designs/office-foundations.md, design D2,
+D8, D10 to D13), listed after the decision cards and before reports, always open:
+
+- **Title** the question in 14 px semibold ("Who we sell to (ideal customer)"); under it the
+  usual raiser chip in the member's department colors and "needs this, 2h ago" in `ink-3`.
+- **Evidence first**: Michael's one bold line on what the work did without it, as Ask me
+  markdown with file chips.
+- **Your answer**: a visible 11 px `ink-3` label, a multi line `cth-input` box (max 300
+  characters) and the hint as a line under it, linked as its description; the hint never sits
+  inside the box.
+- **Actions**: Save answer (primary), Have Ryan draft it (secondary), Not now as a quiet text
+  link at the line's end. At 320 px Save and Draft share a line and Not now wraps.
+- **Drafting**: a polite status line in `indigo-soft` ("Ryan is drafting an answer from what
+  the office holds."), Save disabled. The draft fills an empty box once, the label reading
+  "drafted by Ryan, edit and save" in `indigo-text`.
+- **Footer** above a `line` rule: "Sales and Marketing use this" and "Asked weekly until
+  answered", both `ink-3` 11 px.
+- A failed save keeps the typed answer and shows "Couldn't save, try again." in `coral-text`.
+  Not now hides the card for a week; the Needs you count leaves it out too.
 
 ## 8. The studio illustration [Both]
 
