@@ -8,7 +8,7 @@ import { askedAgo } from './askHeadline';
 import { useStore } from '@/store/store';
 import { useRtl } from '@/i18n/useDirection';
 import { isComposingKey } from '@shared/imeGuard';
-import { FOUNDATION_CAP, FOUNDATION_QUESTIONS, jobsAsking, type FoundationId, type FoundationsView } from '@shared/foundations';
+import { FOUNDATION_CAP, FOUNDATION_QUESTIONS, draftPending, jobsAsking, type FoundationId, type FoundationsView } from '@shared/foundations';
 import { refreshNeedsYou } from '@/shell/useNeedsYou';
 
 /**
@@ -17,10 +17,11 @@ import { refreshNeedsYou } from '@/shell/useNeedsYou';
  * hit it, Michael's one bold line on what the work did without it, then a
  * labeled answer box with Save answer, Have the member draft it, and Not now.
  *
- * Save writes the answer into the foundations first (the app's one writer),
- * then answers the card like any Ask me reply, so Michael closes it.
+ * Save answers the card like any Ask me reply first, so Michael closes it,
+ * then writes the answer into the foundations (the app's one writer); if that
+ * write fails, Michael is asked to add it, as he does any owner answer.
  */
-export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raiserName, chipStyle, foundations, onAnswer }: {
+export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raiserName, raiserIsMember = true, chipStyle, foundations, onAnswer }: {
   id: FoundationId;
   rowKey: string;
   taskId: string;
@@ -29,6 +30,8 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
   askedAt?: string;
   raiserId?: string;
   raiserName?: string;
+  /** Whether the raiser is on the team now: only then can it draft. */
+  raiserIsMember?: boolean;
   /** The raiser chip in the member's department color (D11). */
   chipStyle: CSSProperties;
   foundations: FoundationsView | null;
@@ -41,10 +44,12 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
   const draft = useStore((s) => s.answerDrafts[rowKey] ?? '');
   const setDraft = useStore((s) => s.setAnswerDraft);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  // Which action did not go through, so the line names it.
+  const [failed, setFailed] = useState<'save' | 'draft' | 'later' | null>(null);
   const asked = foundations?.drafts?.[id];
-  const drafting = !!asked && !asked.text;
-  const drafter = raiserName ?? raiserId ?? '';
+  // A request waits 2 days; after that the card offers to ask again.
+  const drafting = draftPending(asked, Date.now());
+  const drafter = raiserName ?? '';
   const [filled, setFilled] = useState(false);
   // The member's draft fills an empty box once (D8), labeled as theirs.
   useEffect(() => {
@@ -52,30 +57,36 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
   }, [asked?.text, draft, filled, rowKey, setDraft]);
   const question = t(`foundations.q.${id}`, { defaultValue: FOUNDATION_QUESTIONS[id].text });
   const jobs = jobsAsking(id).map((j) => t(`foundations.job.${j}`));
+  const jobList = ((): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(jobs); } catch { return jobs.join(', '); } })();
   const ago = askedAgo(askedAt, Date.now(), i18n.language, t('askMe.justNow'));
   const text = draft.trim();
 
   const save = async (): Promise<void> => {
-    if (!text || busy || drafting) return;
+    if (!text || busy) return;
     setBusy(true);
-    setFailed(false);
+    setFailed(null);
     try {
-      const r = await window.cth.foundationsAnswer(id, text);
-      if (!r?.ok) throw new Error(r?.error ?? 'not saved');
-      // The answer is in the foundations; the card's reply tells Michael.
+      // The card first: the answer reaches Michael, who closes it.
       if (!(await onAnswer(text))) throw new Error('card changed');
+      const r = await window.cth.foundationsAnswer(id, text).catch(() => null);
+      if (!r?.ok) {
+        // Not written: Michael adds it, as he does any owner answer.
+        await window.cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${text}` }, 'human').catch(() => undefined);
+      }
       refreshNeedsYou();
     } catch {
-      setFailed(true);
+      setFailed('save');
     }
     setBusy(false);
   };
   const draftIt = (): void => {
     if (!raiserId || busy) return;
-    void window.cth.foundationsDraft(id, raiserId).then(() => refreshNeedsYou()).catch(() => setFailed(true));
+    setFailed(null);
+    void window.cth.foundationsDraft(id, raiserId).then(() => refreshNeedsYou()).catch(() => setFailed('draft'));
   };
   const notNow = (): void => {
-    void window.cth.foundationsSnooze(id).then(() => refreshNeedsYou()).catch(() => setFailed(true));
+    setFailed(null);
+    void window.cth.foundationsSnooze(id).then(() => refreshNeedsYou()).catch(() => setFailed('later'));
   };
 
   return (
@@ -119,19 +130,19 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
       )}
       {/* At 320 px Save and Draft share a line and Not now wraps to its own (D13). */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
-        <PixelButton variant="primary" size="sm" disabled={!text || busy || drafting} onClick={() => void save()} style={{ height: 32 }}>
+        <PixelButton variant="primary" size="sm" disabled={!text || busy} onClick={() => void save()} style={{ height: 32 }}>
           {busy ? t('askMe.sending') : t('foundations.card.save')}
         </PixelButton>
-        {raiserId && !asked && (
+        {raiserId && raiserIsMember && drafter && !drafting && !asked?.text && (
           <PixelButton variant="secondary" size="sm" disabled={busy} onClick={draftIt} style={{ height: 32 }}>
             {t('foundations.card.draftBy', { name: drafter })}
           </PixelButton>
         )}
         <button type="button" onClick={notNow} style={{ ...quietLink, marginInlineStart: 'auto' }}>{t('foundations.card.notNow')}</button>
       </div>
-      {failed && <div role="alert" style={{ marginTop: 6, fontSize: 11, lineHeight: '15px', color: 'var(--cth-coral-text)' }}>{t('foundations.card.failed')}</div>}
+      {failed && <div role="alert" style={{ marginTop: 6, fontSize: 11, lineHeight: '15px', color: 'var(--cth-coral-text)' }}>{t(failed === 'save' ? 'foundations.card.failed' : failed === 'draft' ? 'foundations.card.failedDraft' : 'foundations.card.failedLater', { name: drafter })}</div>}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--cth-line)', fontSize: 11, color: 'var(--cth-ink-3)', flexWrap: 'wrap' }}>
-        <span>{t('foundations.card.usedBy', { count: jobs.length, jobs: jobs.join(', ') })}</span>
+        <span>{t('foundations.card.usedBy', { count: jobs.length, jobs: jobList })}</span>
         <span style={{ marginInlineStart: 'auto' }}>{t('foundations.card.weekly')}</span>
       </div>
     </section>

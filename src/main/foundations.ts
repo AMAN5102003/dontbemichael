@@ -18,8 +18,8 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { privateRoot } from '../shared/agentPrivatePaths';
 import { writeFileAtomic } from './atomicFile';
 import {
-  FOUNDATION_CAP, FOUNDATION_QUESTIONS, cleanRecord, emptyRecord, isFoundationId, renderFoundations,
-  type FoundationAnswer, type FoundationId, type FoundationJob, type FoundationSourceKind, type FoundationsRecord
+  FOUNDATION_CAP, FOUNDATION_QUESTIONS, cleanRecord, emptyRecord, isFoundationId, oneLine, questionsFor, renderFoundations,
+  type FoundationAnswer, type FoundationId, type FoundationJob, type FoundationSourceKind, type FoundationsRecord, type FoundationsView
 } from '../shared/foundations';
 
 /** The profile facts the foundations share (one set of facts, eng finding 6). */
@@ -40,8 +40,13 @@ export interface FoundationsDeps {
   godId?: () => string | null;
   profile?: () => ProfileFacts;
   setProfile?: (patch: ProfileFacts) => void;
-  /** Whether a message with this id came from the owner (the hive log). */
-  ownerSaid?: (messageId: string) => boolean;
+  /** Whether a message with this id came from the owner and reached this
+   *  member (the hive log). */
+  ownerSaid?: (messageId: string, recipient: string) => boolean;
+  /** A member's jobs: a gap counts only for its own job's questions. */
+  jobsOf?: (agentId: string) => FoundationJob[];
+  /** Whether a published copy is still in company knowledge. */
+  exists?: (docId: string) => boolean;
   /** Whether a path is a file inside the office folders this member can read. */
   inOffice?: (path: string, agentId: string) => boolean;
   /** An app message to a member or Michael, sent as `foundations`. */
@@ -95,8 +100,10 @@ export interface FoundationPayload {
   source?: unknown;
 }
 
-/** How sure the app is of an answer's source, strongest first. */
-type Level = 'owner' | 'michael' | 'file';
+/** How sure the app is of an answer's source, strongest first: the owner's
+ *  words through Michael, Michael's confirmation, the owner's words a member
+ *  was taught (fills only an empty answer), a file in the office folders. */
+type Level = 'owner' | 'michael' | 'taught' | 'file';
 
 export class Foundations {
   private cache: { home: string; rec: FoundationsRecord } | null = null;
@@ -154,18 +161,25 @@ export class Foundations {
     if (!file) return;
     if (!existsSync(file)) this.save(this.read());
     this.profileChanged();
-    if (this.read().publishedText !== this.document() || !this.read().publishedId) this.publishSoon(0);
+    const rec = this.read();
+    const gone = !!rec.publishedId && !!this.d.exists && !this.d.exists(rec.publishedId);
+    if (rec.publishedText !== this.document() || !rec.publishedId || gone) this.publishSoon(0);
   }
 
-  /** The company profile changed (Settings, or at launch): its answer wins
-   *  over a learned one, and a cleared field clears what it gave. */
-  profileChanged(): void {
+  /**
+   * The company profile changed. A Settings save passes the profile before
+   * it, and only the fields it changed reach the foundations, so a page opened
+   * before a newer answer never undoes it. At launch (no `before`), the
+   * profile fills or corrects only answers the owner did not write.
+   */
+  profileChanged(before?: ProfileFacts): void {
     const p = this.d.profile?.() ?? {};
     const rec = this.read();
     let next = rec;
     for (const link of PROFILE_LINKS) {
       const v = link.read(p);
       const a = next.answers[link.id];
+      if (before ? link.read(before) === v : a?.source === 'owner') continue;
       // In step when the answer says the same in the profile's own short form
       // (a 300 character answer is a 200 character field; "July to June" is month 7).
       const asProfile = a ? (() => { const patch = link.write(a.text); return patch ? link.read(patch) : undefined; })() : undefined;
@@ -212,7 +226,7 @@ export class Foundations {
   ownerAnswer(id: unknown, text: unknown): { ok: true } | { ok: false; error: 'unknown' | 'empty' | 'too-long' | 'no-office' } {
     if (!isFoundationId(id)) return { ok: false, error: 'unknown' };
     if (!this.file()) return { ok: false, error: 'no-office' };
-    const t = typeof text === 'string' ? text.trim() : '';
+    const t = typeof text === 'string' ? oneLine(text) : '';
     if (!t) return { ok: false, error: 'empty' };
     if (t.length > FOUNDATION_CAP) return { ok: false, error: 'too-long' };
     this.save(this.withAnswer(this.read(), id, { text: t, by: 'owner', source: 'owner', at: this.iso() }, null));
@@ -253,7 +267,9 @@ export class Foundations {
     const q = FOUNDATION_QUESTIONS[id].text;
     if (typeof p.gap === 'string') return this.gap(from, id, p.gap);
     if (typeof p.draft === 'string') return this.draft(from, id, p.draft);
-    const text = typeof p.answer === 'string' ? p.answer.trim() : '';
+    // One plain line: an answer never adds headings or lines to the context
+    // every member carries.
+    const text = typeof p.answer === 'string' ? oneLine(p.answer) : '';
     if (!text) return `Nothing saved for "${q}": send "answer", "gap" or "draft" in "foundation".`;
     if (text.length > FOUNDATION_CAP) return `Not saved: keep the answer to "${q}" under ${FOUNDATION_CAP} characters. For more, save it to a file in the office folders and answer with its full path.`;
     const src = (p.source && typeof p.source === 'object' ? p.source : {}) as Record<string, unknown>;
@@ -273,11 +289,11 @@ export class Foundations {
       this.toMichael('Foundation answer suggestion', `${this.nameOf(from)} suggests a different answer to "${q}" (${id}), which the owner answered: "${had.text}". Suggested, from ${this.describe(src)}: ${text}\n\nThe owner's answer stands; ask the owner if it should change.`);
       return `The owner's answer to "${q}" stands. Your suggestion went to ${this.michaelName()}.`;
     }
-    if (had && level === 'file') {
+    if (had && (level === 'file' || level === 'taught')) {
       this.toMichael('Foundation answers differ', `Two answers to "${q}" (${id}) differ. Kept: "${had.text}", from ${this.nameOf(had.by)}. New, from ${this.nameOf(from)} (${this.describe(src)}): ${text}\n\nThe first stays until you decide. To replace it, send the right one to "foundations" with "source": {"confirmed": "<why>"}.`);
       return `A different answer to "${q}" is already recorded, so it stays and ${this.michaelName()} decides.`;
     }
-    const source: FoundationSourceKind = level;
+    const source: FoundationSourceKind = level === 'taught' ? 'owner' : level;
     const ref = typeof src.owner === 'string' ? src.owner : typeof src.file === 'string' ? src.file : undefined;
     this.save(this.withAnswer(rec, id, { text, by: from, source, at: this.iso(), ...(ref ? { ref } : {}) }, from));
     this.toProfile(id, text, level === 'owner');
@@ -285,19 +301,21 @@ export class Foundations {
     return `Saved to the company foundations: "${q}". Every member who needs it sees it.`;
   }
 
-  /** How sure the app is of a source: an owner message it finds in the hive
-   *  log, Michael's confirmation, or a file in the office folders. */
+  /** How sure the app is of a source: an owner message the hive log shows
+   *  reaching the sender (owner rights only through Michael), Michael's
+   *  confirmation, or a file in the office folders. */
   private level(from: string, src: Record<string, unknown>): Level | null {
-    if (typeof src.owner === 'string' && src.owner && this.d.ownerSaid?.(src.owner)) return 'owner';
     const god = this.d.godId?.() ?? 'god';
-    if (typeof src.confirmed === 'string' && src.confirmed.trim() && (from === god || from === 'god')) return 'michael';
+    const isMichael = from === god || from === 'god';
+    if (typeof src.owner === 'string' && src.owner && this.d.ownerSaid?.(src.owner, from)) return isMichael ? 'owner' : 'taught';
+    if (typeof src.confirmed === 'string' && src.confirmed.trim() && isMichael) return 'michael';
     if (typeof src.file === 'string' && isAbsolute(src.file) && this.d.inOffice?.(src.file, from)) return 'file';
     return null;
   }
 
   private describe(src: Record<string, unknown>): string {
     if (typeof src.outside === 'string') return `outside text (${src.outside.slice(0, 120)})`;
-    if (typeof src.owner === 'string') return `a message said to be the owner's (${src.owner.slice(0, 60)}), not found in the log`;
+    if (typeof src.owner === 'string') return `a message said to be the owner's (${src.owner.slice(0, 60)}), which the log does not show reaching them`;
     if (typeof src.file === 'string') return `the file ${src.file.slice(0, 200)}`;
     if (typeof src.confirmed === 'string') return 'a confirmation only you can give';
     return 'no source';
@@ -309,9 +327,15 @@ export class Foundations {
     const rec = this.read();
     const answer = rec.answers[id];
     if (answer) return `"${FOUNDATION_QUESTIONS[id].text}" is answered: ${answer.text}`;
+    // A gap counts only for the member's own job (Michael's for any), so no
+    // member can fill Ask me with other jobs' questions.
+    const god = this.d.godId?.() ?? 'god';
+    if (this.d.jobsOf && from !== god && from !== 'god' && !questionsFor(this.d.jobsOf(from)).includes(id)) {
+      return `"${FOUNDATION_QUESTIONS[id].text}" is not one of your job's foundations questions. If your work needs it, tell ${this.michaelName()}.`;
+    }
     const at = this.iso();
     const was = rec.hits[id];
-    const line = evidence.trim().slice(0, 200);
+    const line = oneLine(evidence).slice(0, 200);
     const hit = { first: was?.first ?? at, last: at, count: (was?.count ?? 0) + 1, by: was?.by.includes(from) ? was.by : [...(was?.by ?? []), from], ...(line ? { evidence: line } : was?.evidence ? { evidence: was.evidence } : {}), told: true };
     this.save({ ...rec, hits: { ...rec.hits, [id]: hit } });
     this.event(from, id, 'hit');
@@ -323,11 +347,13 @@ export class Foundations {
 
   private draft(from: string, id: FoundationId, text: string): string {
     const rec = this.read();
-    const t = text.trim();
+    const t = oneLine(text);
     if (!t) return 'Nothing saved: the draft was empty.';
     if (t.length > FOUNDATION_CAP) return `Not saved: keep the draft under ${FOUNDATION_CAP} characters.`;
     const asked = rec.drafts[id];
-    if (!asked) return `No draft was asked for "${FOUNDATION_QUESTIONS[id].text}".`;
+    // Only the member the owner asked (or Michael) fills the card's draft.
+    const god = this.d.godId?.() ?? 'god';
+    if (!asked || (from !== asked.by && from !== god && from !== 'god')) return `No draft was asked of you for "${FOUNDATION_QUESTIONS[id].text}".`;
     this.save({ ...rec, drafts: { ...rec.drafts, [id]: { ...asked, by: from, text: t, at: this.iso() } } });
     return 'Draft saved. The owner sees it on the card.';
   }
@@ -354,15 +380,16 @@ export class Foundations {
     if (!this.d.publish || !this.file()) return;
     const rec = this.read();
     const text = this.document();
-    if (rec.publishedId && rec.publishedText === text) return;
+    const present = !rec.publishedId || !this.d.exists || this.d.exists(rec.publishedId);
+    if (rec.publishedId && rec.publishedText === text && present) return;
     try {
       const id = this.d.publish(text, rec.publishedId);
       if (id) this.save({ ...this.read(), publishedId: id, publishedText: text });
     } catch (e) { console.error('[foundations] publish', e); }
   }
 
-  /** The record for the renderer: answers, drafts and snoozes. */
-  view(): { answers: FoundationsRecord['answers']; drafts: FoundationsRecord['drafts']; snoozed: FoundationsRecord['snoozed']; hits: FoundationsRecord['hits'] } {
+  /** The record for the renderer: answers, drafts, snoozes and hits. */
+  view(): FoundationsView {
     const r = this.read();
     return { answers: r.answers, drafts: r.drafts, snoozed: r.snoozed, hits: r.hits };
   }

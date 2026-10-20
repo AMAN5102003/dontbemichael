@@ -161,7 +161,7 @@ test('a failed write is counted for its day and the day is reported; records kee
   assert.deepEqual([day.tasks, day.emails, day.awayPieces], [1, 2, 3], 'the owner was away for all of it');
 });
 
-const { PulseService } = loadTs('src/main/pulse.ts');
+const { PulseService, earliest } = loadTs('src/main/pulse.ts');
 
 function service(t, opts = {}) {
   const env = setup(t);
@@ -186,7 +186,9 @@ function service(t, opts = {}) {
     members: () => [{ id: 'toby', isGod: false }, { id: 'god', isGod: true }], godId: () => 'god', tasks: () => [],
     missions: () => missions, models: () => models, ladder: () => [], priceOf: () => undefined,
     applyMissions: (change) => { const next = change(missions); if (!next) return { ok: false, error: 'not found' }; missions = next; return { ok: true }; },
-    billing: () => opts.billing ?? 'account', plan: () => opts.plan ?? null, memory: () => ({ notes: [], procedures: {} }), now: env.clock.now
+    billing: () => opts.billing ?? 'account', plan: () => opts.plan ?? null, memory: () => ({ notes: [], procedures: {} }), now: env.clock.now,
+    ...(opts.memberJobs ? { memberJobs: opts.memberJobs } : {}),
+    ...(opts.foundationsAnswers ? { foundationsAnswers: opts.foundationsAnswers } : {})
   });
   return { ...env, svc, missions: () => missions, setMissions: (m) => { missions = m; } };
 }
@@ -592,4 +594,39 @@ test('note-added records come back by office with id and source, and the first o
   ]);
   const row = persist.database().prepare("SELECT attrs FROM telemetry_events WHERE kind = 'note-added' AND agent_id = 'pam' AND attrs IS NOT NULL").get();
   assert.deepEqual(Object.keys(JSON.parse(row.attrs)).sort(), ['id', 'source'], 'never the note itself');
+});
+
+test('the foundations proof splits a member\'s work at the first answered hit question, and the record decides what is answered', (t) => {
+  // Value: protects=D14 proof (half the evidence on each side) and that the record, not lossy events, says what is answered; fails_when=the split uses the wrong time, one side under the minimum still shows a proof, a broken row throws, or a lost answered event leaves a question missing; why_new=pulse.ts foundations() had only a source pin; seam=none; no_claim=on screen wording (pulse-view pins)
+  let answers = { customers: { at: new Date(2026, 9, 10, 9).toISOString() } };
+  const env = service(t, { days: 2, memberJobs: () => ({ toby: ['marketing'] }), foundationsAnswers: () => answers });
+  const t0 = new Date(2026, 9, 1, 9).getTime();
+  const tAnswer = new Date(2026, 9, 10, 9).getTime();
+  env.store.record({ agentId: 'toby', kind: 'foundation', ts: t0 + 1000, attrs: { q: 'customers', change: 'hit' } });
+  // The answered event is lost: only the record knows.
+  env.store.record({ agentId: 'toby', kind: 'foundation', ts: t0 + 2000, attrs: { q: 'voice', change: 'hit' } });
+  env.persist.database().prepare("INSERT INTO telemetry_events (office, agent_id, kind, ts, value, attrs) VALUES ('/office', 'toby', 'foundation', ?, NULL, '{broken')").run(t0 + 3000);
+  for (let i = 0; i < 5; i++) {
+    env.store.record({ agentId: 'toby', kind: 'mail-decision', ts: tAnswer - (i + 1) * 3600_000, attrs: { decision: i < 2 ? 'approve' : 'edit' } });
+    env.store.record({ agentId: 'toby', kind: 'mail-decision', ts: tAnswer + (i + 1) * 3600_000, attrs: { decision: i < 4 ? 'approve' : 'edit' } });
+  }
+  env.store.flush();
+  const f = env.svc.foundations('/office');
+  assert.equal(f.members.toby.proof.question, 'customers');
+  assert.equal(f.members.toby.proof.without, 0.4);
+  assert.equal(f.members.toby.proof.with, 0.8);
+  assert.deepEqual(f.members.toby.missing, ['voice'], 'customers answered per the record');
+  assert.deepEqual(f.jobs.map((j) => [j.job, j.waiting]), [['marketing', ['voice']]]);
+  // The record says customers is no longer answered: it is missing again, and no proof shows.
+  answers = {};
+  const g = env.svc.foundations('/office');
+  assert.deepEqual(g.members.toby.missing.sort(), ['customers', 'voice']);
+  assert.equal(g.members.toby.proof, undefined);
+});
+
+test('early lines: most evidence first, at most three', () => {
+  // Value: protects=earliest orders by evidence and caps at EARLY_MAX; fails_when=the sort or the cap changes; why_new=only one early line was ever tested; seam=none; no_claim=which rules produce lines
+  const a = (id, evidence) => ({ id, evidence });
+  const r = earliest([a('x', { runs: 5 }), a('y', { decisions: 9, reopens: 1 }), a('z', { runs: 7 }), a('w', { reopens: 2 })]);
+  assert.deepEqual(r.map((x) => x.id), ['y', 'z', 'x']);
 });

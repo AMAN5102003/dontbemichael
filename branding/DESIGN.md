@@ -1252,8 +1252,11 @@ foundations carries a `neutral-soft` "Read only" tag with an (i) and opens as a 
 Search by meaning sits inside the same Company knowledge block, under a `line` rule, with no
 switch: it runs whenever MemPalace is installed. Its row is "Search by meaning" with its (i) and,
 at the end, the status dot and Ready, Getting ready or Not set up; then the not installed card
-that opens Prerequisites, and the Search language pair (Fast, Multilingual) with an (i) saying a
-change indexes the documents again. There is no separate
+that opens Prerequisites, and the Search language pair (Fast, Multilingual) as a radio group with
+an (i) saying a change indexes the documents again: the picked one in `indigo-soft` with a 1.5 px
+`indigo` ring and a radio dot, the other on `card` with a `line-2` hairline; title 13 px, detail
+11 px `ink-500`. Open opens only document types (OPEN_EXTENSIONS) as themselves; anything else
+opens as its text, read only. There is no separate
 Semantic memory section; Michael's Memory tab searches the team's notes by exact words only.
 
 ---
@@ -1425,12 +1428,19 @@ D8, D10 to D13), listed after the decision cards and before reports, always open
 - **Actions**: Save answer (primary), Have Ryan draft it (secondary), Not now as a quiet text
   link at the line's end. At 320 px Save and Draft share a line and Not now wraps.
 - **Drafting**: a polite status line in `indigo-soft` ("Ryan is drafting an answer from what
-  the office holds."), Save disabled. The draft fills an empty box once, the label reading
-  "drafted by Ryan, edit and save" in `indigo-text`.
+  the office holds."). Save stays on, so the owner can always type their own answer (review,
+  2026-10-20); a request waits 2 days, then Have Ryan draft it shows again. The draft fills an
+  empty box once, the label reading "drafted by Ryan, edit and save" in `indigo-text`. Draft
+  it shows only while the member is on the team.
 - **Footer** above a `line` rule: "Sales and Marketing use this" and "Asked weekly until
   answered", both `ink-3` 11 px.
-- A failed save keeps the typed answer and shows "Couldn't save, try again." in `coral-text`.
-  Not now hides the card for a week; the Needs you count leaves it out too.
+- A failed action keeps the typed answer and names what failed in `coral-text`: "Couldn't
+  save, try again.", "Couldn't ask Ryan to draft it", "Couldn't put this off". A saved answer
+  shows "Saved to Company foundations." in a polite line at the top of the board. Not now
+  hides the card for a week; the Needs you count leaves it out too.
+- **Company knowledge is always on** card (one time, a report like the Research notice): for an
+  owner who had turned company knowledge off and has documents in it. Got it, and Open the list
+  (Settings, Memory & Knowledge).
 
 ## 8. The studio illustration [Both]
 

@@ -12,7 +12,7 @@
  * No product is named anywhere: a question asks what is true for this business.
  * No electron or node imports.
  */
-import { departmentOf, type DepartmentSource, type OfficeDepartment } from './officeRoles';
+import { departmentOf, type DepartmentSource } from './officeRoles';
 
 /** The jobs a section is written for: the office's departments, less the
  *  general team pod. */
@@ -86,6 +86,30 @@ export const JOB_QUESTIONS: Record<FoundationJob, FoundationId[]> = {
  *  characters), so the document stays a few dozen lines. */
 export const FOUNDATION_CAP = 300;
 
+/** The tag on the Company foundations copy in company knowledge. */
+export const FOUNDATIONS_TAG = 'foundations';
+
+/** Whether a company knowledge document is the Company foundations copy. */
+export function isFoundationsDoc(d: { tags?: unknown }): boolean {
+  return Array.isArray(d.tags) && d.tags.includes(FOUNDATIONS_TAG);
+}
+
+/** An answer as one plain line: whitespace and line breaks collapse, and
+ *  leading markdown marks go, so no answer can add a heading or a line to the
+ *  context every member carries. */
+export function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').replace(/^[#>*\-\s]+/, '').trim();
+}
+
+/** How long a draft request waits for its member before the card offers to
+ *  ask again (2 days). */
+export const DRAFT_WAIT_MS = 2 * 86_400_000;
+
+/** A draft asked for, not yet back, and still within its wait. */
+export function draftPending(d: { text?: string; requestedAt: string } | undefined, now: number): boolean {
+  return !!d && !d.text && now - Date.parse(d.requestedAt) < DRAFT_WAIT_MS;
+}
+
 export function isFoundationId(id: unknown): id is FoundationId {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(FOUNDATION_QUESTIONS, id);
 }
@@ -94,14 +118,11 @@ export function isFoundationJob(job: unknown): job is FoundationJob {
   return typeof job === 'string' && (FOUNDATION_JOBS as readonly string[]).includes(job);
 }
 
-/** The job a department works, or null for the general team pod. */
-export function jobOfDepartment(d: OfficeDepartment): FoundationJob | null {
-  return isFoundationJob(d) ? d : null;
-}
-
-/** A member's job, read like its studio department. */
+/** A member's job, read like its studio department; null for the general
+ *  team pod. */
 export function jobOf(a: DepartmentSource): FoundationJob | null {
-  return jobOfDepartment(departmentOf(a));
+  const d = departmentOf(a);
+  return isFoundationJob(d) ? d : null;
 }
 
 /** The jobs whose questions mention `id`. */
@@ -224,7 +245,7 @@ function answerNote(a: FoundationAnswer, nameOf: (id: string) => string): string
 
 const line = (n: number, id: FoundationId, rec: FoundationsRecord, nameOf: (id: string) => string): string => {
   const a = rec.answers[id];
-  return `${n}. ${FOUNDATION_QUESTIONS[id].text} [${id}]: ${a ? `${a.text}${answerNote(a, nameOf)}` : '<empty>'}`;
+  return `${n}. ${FOUNDATION_QUESTIONS[id].text} [${id}]: ${a ? `${oneLine(a.text)}${answerNote(a, nameOf)}` : '<empty>'}`;
 };
 
 /** The whole document, a section per job the office has (every job when it

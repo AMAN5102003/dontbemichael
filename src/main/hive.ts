@@ -25,6 +25,7 @@ import {
   RESEARCH_UNCHECKED_TOOL, NOT_SENT_SUBJECT_OUT, RESEARCH_ONLY_ASKERS, RESEARCH_NAME, RESEARCH_ROLE, isReservedName,
   SENT_AS_SUBJECT, sentAsBody, nameKey, researchText, cleanResearchName, RESEARCH_ONLY_SKILLS
 } from '../shared/research';
+import { FOUNDATION_CAP } from '../shared/foundations';
 
 import { hookShell, shellCommand, type HookShell } from './hookShell';
 import { CLOSING_COMPLETE_RE } from '../shared/closingTime';
@@ -309,7 +310,8 @@ function knowledgeSignature(active: boolean, meaning?: MeaningSearch): string {
   return active ? `on|${meaning ? `${meaning.bin}|${meaning.palace}|${meaning.model ?? ''}` : ''}` : 'off';
 }
 
-/** What a running agent is told when the owner turns company knowledge off. */
+/** What a running agent is told when company knowledge no longer holds any
+ *  document (members are pointed at it only while it holds one). */
 export const COMPANY_KNOWLEDGE_OFF =
   'COMPANY KNOWLEDGE: the company knowledge store is empty now, so there is nothing to search in it until the owner adds a document.';
 
@@ -398,7 +400,7 @@ export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPa
     '## Company foundations',
     'The company foundations are one document of questions each job needs answered about this business, such as who we sell to or our financial year, each answered once for the whole office. The app gives you the whole document at the start of each session and when it changes, with the empty questions the work hit, and gives each team member its own job\'s part. The app alone writes it: answers reach it from the owner\'s foundation cards and from what the team learns.',
     'When a team member\'s work needs an empty question, the app tells you the first time ("Foundation gap"). Raise one card for it on Ask me unless one is open for that question, never one per task or per member: title it with the question, assign it to the team member whose work hit it, and give it one humanQA entry {"kind": "foundation", "foundation": "<question id>", "q": "<one bold sentence on what the work did without it, then which other jobs use the answer>", "askedAt": "<time>", "raisedBy": "<the member\'s id>"}. The owner answers it on the card, has the member draft it, or chooses Not now, which hides it for a week; the app writes the owner\'s answer into the foundations itself, so when the answer request comes, close the card as done. Never raise a card for a question no work has hit. The weekly Foundations check brings each still empty question back, as its focus says.',
-    'When the owner\'s answer on any other card, or in your conversation, answers a foundations question, send it to "foundations" with "foundation": {"question": "<id>", "answer": "<under 300 characters>", "source": {"owner": "<the id of the owner\'s message>"}}. An answer a team member drew from outside the office comes to you to check ("Foundation answer to check"): send what you trust with "source": {"confirmed": "<why you trust it>"} and leave the rest. When two answers differ, or a member suggests changing the owner\'s answer, the app keeps the first and tells you; ask the owner on a foundation card only when it matters.',
+    'When the owner\'s answer on any other card, or in your conversation, answers a foundations question, send it to "foundations" with "foundation": {"question": "<id>", "answer": "<under ' + FOUNDATION_CAP + ' characters>", "source": {"owner": "<the id of the owner\'s message>"}}. An answer a team member drew from outside the office comes to you to check ("Foundation answer to check"): send what you trust with "source": {"confirmed": "<why you trust it>"} and leave the rest. When two answers differ, or a member suggests changing the owner\'s answer, the app keeps the first and tells you; ask the owner on a foundation card only when it matters.',
     '',
     '## Staying cheap',
     'The owner pays for every message each agent reads and writes. Keep hand-offs short, and when you wake to nothing that needs you, end your turn without writing.',
@@ -439,7 +441,7 @@ export function teamMemberInstructions(name: string, role: string, michael: stri
     '',
     `When you finish or get stuck, message ${michael} with what you did, what you found and what you need. ${michael} passes your words to the owner, who reads them on a phone, so lead with the result, keep it to a few plain sentences, and use commas, colons and periods instead of dashes, which the owner prefers. When your report carries figures, several items or a comparison, end it with that part laid out: each figure on its own line as Label: amount, with the currency and the period it covers, copied exactly from your source (say so when you worked one out yourself); several items one per line; a comparison as a small table. More than about 8 lines go in a file in your folder, named in your report.`,
     '',
-    `Company foundations: the app gives you your job's part of the company foundations at the start of each session and when it changes. Follow its answers. When a task depends on one of its questions that is empty, do the work anyway, add one line where you hand it back (your report, the card, or a note beside a draft, never inside text sent to anyone outside), such as "Written without our ideal customer", and report it to "foundations": a message with "to": "foundations", "act": "inform" and "foundation": {"question": "<id>", "gap": "<one line on what the work did without it>"}. The app keeps it once and tells ${michael}, who asks the owner. When the owner teaches you a foundations answer, or you find one in the office's own files, send it the same way with "foundation": {"question": "<id>", "answer": "<under 300 characters>", "source": {"owner": "<id of the owner's message>"}} or "source": {"file": "<full path of the file>"}, as well as keeping it in your memory. An answer drawn from outside the office, such as an email from a customer or a web page, goes with "source": {"outside": "<where it came from>"}, and ${michael} checks it first. Fill only empty answers; the app tells ${michael} about any difference. When "foundations" asks you for a draft, send it as the message says.`,
+    `Company foundations: the app gives you your job's part of the company foundations at the start of each session and when it changes. Follow its answers. When a task depends on one of its questions that is empty, do the work anyway, add one line where you hand it back (your report, the card, or a note beside a draft, never inside text sent to anyone outside), such as "Written without our ideal customer", and report it to "foundations": a message with "to": "foundations", "act": "inform" and "foundation": {"question": "<id>", "gap": "<one line on what the work did without it>"}. The app keeps it once and tells ${michael}, who asks the owner. When the owner teaches you a foundations answer, or you find one in the office's own files, send it the same way with "foundation": {"question": "<id>", "answer": "<under ${FOUNDATION_CAP} characters>", "source": {"owner": "<id of the owner's message>"}} or "source": {"file": "<full path of the file>"}, as well as keeping it in your memory. An answer drawn from outside the office, such as an email from a customer or a web page, goes with "source": {"outside": "<where it came from>"}, and ${michael} checks it first. Fill only empty answers; the app tells ${michael} about any difference. When "foundations" asks you for a draft, send it as the message says.`,
     '',
     `Only ${michael} assigns work. If you need a fact from a teammate to do your job, ask them directly: write to their id (listed in registry.json in ${p.hiveRoot}) with "act": "query", and answer a teammate's query the same way with "act": "inform". If they cannot help, or you need someone else to do something, tell ${michael}, who hands it off. Never give a teammate work yourself. A teammate\'s hive folder (agents/<id>/ in the hive), notes and inbox are theirs: never open them, ask instead. Files a teammate hands off or keeps in a shared work folder are fine to read.`,
     '',
@@ -516,14 +518,14 @@ export interface SpawnInjection {
 
 const HOP_CAP = 12;
 
+/** One outbox file's entry in the outbox journal (HiveManager.routingFile). */
+interface RoutingRecord { ino: number; birth: number; id: string; created_at: string; delivered: boolean }
+
 /** A id an agent put in its own outbox is UNTRUSTED: it becomes a file name in
  *  `deliver()` and is typed into another agent's terminal by the wake nudge, so a
  *  value holding `/`, `\`, `..`, control characters or newlines could escape the
  *  hive or inject keystrokes. Only accept the shape the harness itself mints
  *  (`stamp() + '-' + shortRand()`); anything else gets a fresh generated id. */
-/** One outbox file's entry in the outbox journal (HiveManager.routingFile). */
-interface RoutingRecord { ino: number; birth: number; id: string; created_at: string; delivered: boolean }
-
 function isSafeMessageId(id: unknown): id is string {
   return typeof id === 'string' && /^[\w.-]+$/.test(id) && id !== '.' && id !== '..';
 }
@@ -805,27 +807,32 @@ export class HiveManager {
   private foundationsHandler: ((actor: string, payload: unknown) => string | null) | null = null;
   onFoundations(handler: (actor: string, payload: unknown) => string | null): void { this.foundationsHandler = handler; }
 
-  /** Whether a message with this id came from the owner: an owner message the
-   *  log recorded (Company foundations checks a member's "the owner said"). */
-  ownerSaid(messageId: string): boolean {
+  /** Whether a message with this id came from the owner and reached
+   *  `recipient`: an owner message the log recorded as delivered to it (Company
+   *  foundations checks a member's "the owner said"). The log is scanned by
+   *  the id's mark only, never split whole. */
+  ownerSaid(messageId: string, recipient: string): boolean {
     const root = this.root();
-    if (!root || !messageId || messageId.length > 120) return false;
+    if (!root || !messageId || messageId.length > 120 || !recipient) return false;
     let text = '';
     try { text = readFileSync(join(root, 'log.jsonl'), 'utf8'); } catch { return false; }
     const mark = `"id":${JSON.stringify(messageId)}`;
-    for (const l of text.split('\n')) {
-      if (!l.includes(mark)) continue;
+    for (let at = text.indexOf(mark); at !== -1; at = text.indexOf(mark, at + mark.length)) {
+      const start = text.lastIndexOf('\n', at) + 1;
+      const end = text.indexOf('\n', at);
       try {
-        const e = JSON.parse(l) as { kind?: unknown; from?: unknown; id?: unknown };
-        if (e.kind === 'message' && e.from === 'human' && e.id === messageId) return true;
+        const e = JSON.parse(text.slice(start, end === -1 ? undefined : end)) as { kind?: unknown; from?: unknown; to?: unknown; id?: unknown; delivered?: unknown };
+        if (e.kind !== 'message' || e.from !== 'human' || e.id !== messageId) continue;
+        if (e.to === recipient || (Array.isArray(e.delivered) && e.delivered.includes(recipient))) return true;
       } catch { /* a torn line */ }
     }
     return false;
   }
 
-  /** agentId → whether it has been told company knowledge is on, as of its
-   *  spawn or its last update. Lets an owner's toggle reach running agents
-   *  without a restart (knowledgeUpdate). */
+  /** agentId → what it was last told about company knowledge, as of its
+   *  spawn or its last update: on or off (on while the store holds a
+   *  document), and how it searches by meaning (knowledgeSignature), so a
+   *  change reaches running agents without a restart (knowledgeUpdate). */
   private knowledgeTold = new Map<string, string>();
   /** Per agent: the members whose hive folders its Read rules hid when it
    *  started (AgentFolderPolicy.walledMembers). The hook refuses a search over
@@ -3495,10 +3502,6 @@ export class HiveManager {
    *  that keeps writing broken files is not woken into a loop. */
   static readonly QUARANTINE_NOTICE_GAP_MS = 10 * 60_000;
 
-  /** Move an outbox file into its .sent archive. A name already archived gets a
-   *  unique prefix instead of replacing the earlier message (rename overwrites),
-   *  and a file that cannot be moved at all is removed, so it is never routed
-   *  again on the next tick. */
   /** The outbox journal (Codex review, ship 2026-10-18): the id and time the
    *  app chose for a member's outbox file, kept until the file is archived. A
    *  pass that died after delivering it delivers it again under the same id,
@@ -3548,6 +3551,10 @@ export class HiveManager {
     } catch { /* next pass */ }
   }
 
+  /** Move an outbox file into its .sent archive. A name already archived gets a
+   *  unique prefix instead of replacing the earlier message (rename overwrites),
+   *  and a file that cannot be moved at all is removed, so it is never routed
+   *  again on the next tick. */
   private archiveOutboxFile(fromPath: string, destDir: string, f: string): void {
     const dest = join(destDir, f);
     try {
@@ -3733,11 +3740,14 @@ export class HiveManager {
           }
           // Company foundations (office-foundations.md): an answer, a gap or a
           // draft for the app's one writer, never mail. Research sends none; its
-          // message meets its own gate below, which drops it.
-          if (msg.to === 'foundations' && this.foundationsHandler && !research) {
+          // message meets its own gate below, which drops it. A plain reply to
+          // `foundations` carries no payload and is dropped quietly below, as
+          // replies to the scheduler are, so nothing bounces back and forth.
+          const foundation = (partial as { foundation?: unknown }).foundation;
+          if (msg.to === 'foundations' && foundation !== undefined && this.foundationsHandler && !research) {
             if (!journal?.delivered) {
               let reply: string | null;
-              try { reply = this.foundationsHandler(id, (partial as { foundation?: unknown }).foundation); } catch (e) {
+              try { reply = this.foundationsHandler(id, foundation); } catch (e) {
                 reply = 'Not saved: the app hit an error. Try again later.';
                 console.error('[hive] foundations', e);
               }

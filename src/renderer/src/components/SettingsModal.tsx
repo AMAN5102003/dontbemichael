@@ -257,7 +257,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   // ─── v0.3.4 redesign: settings that were onboarding-trapped or UI-less ────
   const cfgX = config as HarnessConfig & {
     strongKeepalive?: boolean; audience?: string; autoMode?: boolean;
-    defaultModel?: string; maxTurns?: number; semanticMemory?: boolean;
+    defaultModel?: string; maxTurns?: number;
   };
   /**
    * ONE SAVE BUTTON.
@@ -1584,8 +1584,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             {/* Search language: a benefit framed choice, not a model codename. */}
                             {memStatus?.available && (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('memoryPanel.searchLanguage')}<InfoTip text={t('settings.memory.meaning.languageTip')} /></span>
-                                <div style={{ display: 'flex', gap: 8 }}>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>{t('memoryPanel.searchLanguage')}<InfoTip text={t('settings.memory.meaning.languageTip')} /></span>
+                                <div role="radiogroup" aria-label={t('memoryPanel.searchLanguage')} style={{ display: 'flex', gap: 8 }}>
                                   {([
                                     ['minilm', t('memoryPanel.modelFast'), t('memoryPanel.modelFastDetail')],
                                     ['embeddinggemma', t('memoryPanel.modelMultilingual'), t('memoryPanel.modelMultilingualDetail')]
@@ -1595,17 +1595,25 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                       <button
                                         key={id}
                                         type="button"
+                                        role="radio"
+                                        aria-checked={sel}
                                         onClick={() => pickEmbeddingModel(id)}
                                         style={{
                                           borderRadius: 'var(--cth-r-md)',
-                                          flex: 1, textAlign: 'left', cursor: 'pointer', border: 'none', padding: '8px 8px',
-                                          background: sel ? 'var(--cth-lemon-light)' : 'var(--cth-cream-100)',
+                                          flex: 1, textAlign: 'start', cursor: 'pointer', border: 'none', padding: '8px 10px',
+                                          display: 'flex', gap: 8, alignItems: 'flex-start',
+                                          // The app's picked pattern: indigo soft fill and ring, a radio dot.
+                                          background: sel ? 'var(--cth-indigo-soft)' : 'var(--cth-card)',
                                           boxShadow: sel ? 'inset 0 0 0 1.5px var(--cth-indigo)' : 'inset 0 0 0 1px var(--cth-line-2)'
                                         }}
-                                        aria-pressed={sel}
                                       >
-                                        <div style={{ fontSize: 14, color: 'var(--cth-ink-900)' }}>{sel ? '◉ ' : '○ '}{title}</div>
-                                        <div style={{ fontSize: 14, color: 'var(--cth-ink-500)', marginTop: 4 }}>{detail}</div>
+                                        <span aria-hidden="true" style={{ flex: 'none', marginTop: 3, width: 12, height: 12, borderRadius: '50%', boxShadow: `inset 0 0 0 1.5px ${sel ? 'var(--cth-indigo)' : 'var(--cth-ink-4)'}`, display: 'grid', placeItems: 'center' }}>
+                                          {sel && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--cth-indigo)' }} />}
+                                        </span>
+                                        <span>
+                                          <span style={{ display: 'block', fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-900)' }}>{title}</span>
+                                          <span style={{ display: 'block', fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)', marginTop: 2 }}>{detail}</span>
+                                        </span>
                                       </button>
                                     );
                                   })}

@@ -14,10 +14,9 @@ export interface Seatable { id: string; character?: string; description?: string
 
 const ROLES = OFFICE_ROLES as Record<string, { role: string }>;
 
-/** The department a team member sits in (src/shared/officeRoles.ts). */
-export function departmentOf(a: Seatable): DepartmentName {
-  return sharedDepartmentOf(a);
-}
+/** The department a team member sits in (src/shared/officeRoles.ts); the
+ *  shared names are the studio's department names. */
+export const departmentOf = sharedDepartmentOf as (a: Seatable) => DepartmentName;
 
 /** A short job title for a card or a panel header: the hired job card's role,
  *  else the character's usual job, else the first phrase of the role line (a

@@ -949,6 +949,8 @@ export class HookServer {
       if (fresh || delivered.text !== text) {
         this.deliveredFoundationsByAgent.set(agentId, { sessionId, text });
         if (text) foundations = text;
+        // Silence would leave the old section alive in the model's context.
+        else if (!fresh && delivered?.text) foundations = 'COMPANY FOUNDATIONS. Your job no longer has a company foundations section; the answers given earlier no longer apply to your work.';
       }
     }
 

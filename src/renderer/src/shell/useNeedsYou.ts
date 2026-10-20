@@ -49,12 +49,14 @@ export interface NeedsYouFeed {
   reports: number;
   /** The one time Research card after the update (issue #230, design D9): a report. */
   researchNotice: boolean;
+  /** The one time card for an owner who had company knowledge off (a report). */
+  knowledgeNotice: boolean;
   /** Company foundations as the foundation cards read them (answers, drafts,
    *  Not now); null until read or from an older main. */
   foundations: FoundationsView | null;
 }
 
-let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], count: 0, reports: 0, researchNotice: false, foundations: null };
+let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], count: 0, reports: 0, researchNotice: false, knowledgeNotice: false, foundations: null };
 // The offers need the team and the packs, which this module does not import;
 // the app hands it the reader at start (App.tsx).
 let offersSource: (() => Promise<WorkStyleOffer[]>) | null = null;
@@ -101,7 +103,7 @@ let taskReads = 0;
 let requestReads = 0;
 let ownerReads = 0;
 
-function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice' | 'foundations'>>): void {
+function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice' | 'knowledgeNotice' | 'foundations'>>): void {
   // A poll that brings nothing new changes nothing, so nobody re-renders.
   const changed = (Object.keys(next) as Array<keyof typeof next>).some((k) => JSON.stringify(next[k]) !== JSON.stringify(feed[k]));
   if (!changed) return;
@@ -110,7 +112,7 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
   feed = {
     ...merged,
     count: merged.tasks.reduce((n, t) => n + shownQuestions(t, merged.foundations).length, 0) + merged.requests.length + merged.offers.length + merged.proposals.length,
-    reports: merged.tasks.reduce((n, t) => n + openReportIndexes(t.humanQA).length, 0) + (merged.researchNotice ? 1 : 0)
+    reports: merged.tasks.reduce((n, t) => n + openReportIndexes(t.humanQA).length, 0) + (merged.researchNotice ? 1 : 0) + (merged.knowledgeNotice ? 1 : 0)
   };
   // One more while Michael cannot start for want of his engine (get-michael-ready.md),
   // unless a sign in stop already says so: one problem, one card (eng R3).
@@ -169,6 +171,9 @@ function readResearchNotice(force = true): void {
   researchReadAt = Date.now();
   void window.cth.researchStatus?.()
     .then((s) => publish({ researchNotice: !!s?.notice }))
+    .catch(() => { /* keep the last value */ });
+  void window.cth.kgNotice?.()
+    .then((s) => publish({ knowledgeNotice: !!s?.notice }))
     .catch(() => { /* keep the last value */ });
 }
 

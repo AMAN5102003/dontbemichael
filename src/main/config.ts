@@ -220,7 +220,8 @@ export interface CircuitBreakerConfig {
  *  2026-09-25); `enabled` still gates everything (no env injected, no prompt
  *  line, no palace indexing when off). See docs/design/knowledge-graph.md. */
 export interface KnowledgeGraphConfig {
-  /** Master switch. Default true (DEFAULT_CONFIG); the owner can turn it off in Settings. */
+  /** The old switch. Company knowledge has no switch since 2026-10-19 (owner);
+   *  an office whose owner had set this false is told once (knowledgeOnNoticeSeen). */
   enabled?: boolean;
   /** Override the store location. Unset = <userData>/knowledge. */
   rootPath?: string;
@@ -342,8 +343,6 @@ export interface HarnessConfig {
   /** One-time guard: the old QuickBooks and "Your Claude account" choices were
    *  carried over to the connector list (owner, 2026-10-02, D9). */
   connectorsMigrated?: boolean;
-  /** Enable semantic memory (MemPalace CLI). No-op if mempalace isn't installed. */
-  semanticMemory: boolean;
   /** Embedding model for the palace: lightweight 'minilm' or multilingual 'embeddinggemma'. */
   embeddingModel: 'minilm' | 'embeddinggemma';
   /** Recurring auto-dispatch missions handled by the scheduler. */
@@ -374,6 +373,9 @@ export interface HarnessConfig {
    *  when it became the company knowledge store (2026-09-25). An owner who
    *  turns it off afterwards keeps it off. */
   knowledgeOnSeeded?: boolean;
+  /** The one time card telling an owner who had company knowledge off that it
+   *  has no switch now and its documents are searchable was read. */
+  knowledgeOnNoticeSeen?: boolean;
   /** One-time guard for the built-in heartbeat mission (mirrors opsStandupSeeded
    *  so a user who deletes the heartbeat doesn't get it re-added every boot). */
   heartbeatSeeded?: boolean;
@@ -566,7 +568,6 @@ const DEFAULTS: HarnessConfig = {
   workerIdleTimeoutMinutes: 20,
   integrations: [],
   defaultWorkerTokenCap: 0, // 0 = unlimited (human directive: NO per-worker cap)
-  semanticMemory: true,
   embeddingModel: 'minilm',
   missions: [OPS_STANDUP_MISSION],
   notifications: false,

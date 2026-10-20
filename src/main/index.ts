@@ -22,7 +22,7 @@ import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, FOUNDATIONS_TITLE, jobOf, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, isFoundationsDoc, jobOf, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -540,7 +540,7 @@ function companyProfileForAgents(): string | null {
 }
 
 /** MemPalace, for agents to search company knowledge by meaning: only when it's
- *  installed and on, and company knowledge is on. */
+ *  installed and company knowledge holds a document. */
 function meaningSearch(): { bin: string; palace: string; model: string } | undefined {
   const bin = memory.bin();
   const palace = memory.palacePath();
@@ -551,6 +551,7 @@ const knowledge = new KnowledgeManager();
 /** Documents the owner opened from Settings: a save is read in again (owner, 2026-10-19). */
 const knowledgeEdits = new KnowledgeEdits({
   docFile: (id) => knowledge.docFile(id),
+  textFile: (id) => knowledge.textFile(id),
   reindex: (id) => knowledge.reindex(id),
   openPath: (p) => shell.openPath(p),
   tempDir: () => app.getPath('temp'),
@@ -717,43 +718,49 @@ const pulseProcessor = new TelemetryProcessor(() => persist.database(), pulseTel
 
 /** Each roster member's job, for Company foundations (office-foundations.md):
  *  read like its studio department; Michael, Research and assistants have none. */
-function foundationsMemberJobs(): Record<string, FoundationJob[]> {
-  const out: Record<string, FoundationJob[]> = {};
+/** The team as Company foundations reads it, from one read of the registry
+ *  and the roster (the hook asks on every prompt): each member's job (read
+ *  like its studio department; Michael, Research and assistants have none),
+ *  the jobs the office has, and names. */
+function foundationsTeam(): { jobs: Record<string, FoundationJob[]>; office: FoundationJob[]; nameOf: (id: string) => string; godId: string | null } {
   const reg = hive.registry();
+  const jobs: Record<string, FoundationJob[]> = {};
   const entries = (roster.read()?.agents ?? []).filter((e): e is DepartmentSource & { isGod?: boolean } => !!e && typeof e === 'object' && typeof (e as { id?: unknown }).id === 'string');
   for (const e of entries) {
     const meta = reg.agents?.[e.id];
     if (e.isGod || e.id === RESEARCH_ID || meta?.isGod || meta?.isAssistant || meta?.isResearch || e.id === reg.godId) continue;
     const job = jobOf(e);
-    out[e.id] = job ? [job] : [];
+    jobs[e.id] = job ? [job] : [];
   }
-  return out;
-}
-function foundationsOfficeJobs(): FoundationJob[] {
-  const jobs = new Set<FoundationJob>();
-  for (const list of Object.values(foundationsMemberJobs())) for (const j of list) jobs.add(j);
-  return FOUNDATION_JOBS.filter((j) => jobs.has(j));
-}
-function foundationsNameOf(id: string): string {
-  if (id === 'owner') return 'the owner';
-  const reg = hive.registry();
-  return id === reg.godId || id === 'god' ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : (reg.agents?.[id]?.name ?? id);
+  const all = new Set(Object.values(jobs).flat());
+  const nameOf = (id: string): string => {
+    if (id === 'owner') return 'the owner';
+    return id === reg.godId || id === 'god' ? resolveGodName(reg.agents?.[reg.godId ?? 'god']?.name) : (reg.agents?.[id]?.name ?? id);
+  };
+  return { jobs, office: FOUNDATION_JOBS.filter((j) => all.has(j)), nameOf, godId: reg.godId ?? null };
 }
 /** Company foundations' one writer (main/foundations.ts). */
 const foundations = new Foundations({
   home: () => { const h = readConfig().harnessHome; return h ? expandTilde(h) : null; },
   record: (ev) => pulseTelemetry.record(ev),
-  publish: (text, oldId) => {
-    const r = knowledge.ingestText(text, { title: FOUNDATIONS_TITLE, tags: ['foundations'] }) as { docId?: string };
-    if (oldId && oldId !== r?.docId) { try { knowledge.remove(oldId); } catch { /* gone already */ } }
+  publish: (text) => {
+    const r = knowledge.ingestText(text, { title: FOUNDATIONS_TITLE, tags: [FOUNDATIONS_TAG] }) as { docId?: string };
+    // One copy in the store, which every office shares: our old copy and any
+    // other office's go, so no business reads another's answers.
+    for (const d of knowledge.list()) {
+      if (d.id !== r?.docId && isFoundationsDoc(d)) { try { knowledge.remove(d.id); } catch { /* gone already */ } }
+    }
+    memory.companyKnowledgeChanged(); // search by meaning reads the new copy
     return r?.docId;
   },
-  jobs: foundationsOfficeJobs,
-  nameOf: foundationsNameOf,
+  exists: (id) => !!knowledge.get(id),
+  jobs: () => foundationsTeam().office,
+  jobsOf: (id) => foundationsTeam().jobs[id] ?? [],
+  nameOf: (id) => foundationsTeam().nameOf(id),
   godId: () => hive.registry().godId ?? null,
   profile: () => cleanCompanyProfile(readConfig().companyProfile),
   setProfile: (patch) => { writeConfig({ companyProfile: { ...cleanCompanyProfile(readConfig().companyProfile), ...patch } }); },
-  ownerSaid: (id) => hive.ownerSaid(id),
+  ownerSaid: (id, recipient) => hive.ownerSaid(id, recipient),
   inOffice: (path, agentId) => {
     try { if (!statSync(path).isFile()) return false; } catch { return false; }
     const cfg = readConfig();
@@ -766,9 +773,9 @@ const foundations = new Foundations({
 /** What an agent carries of the foundations: its job's part, or all of it for
  *  Michael. Research is left out by the hook itself. */
 function foundationsForAgent(agentId: string): string | null {
-  const reg = hive.registry();
-  if (agentId === reg.godId || reg.agents?.[agentId]?.isGod) return michaelFoundations(foundations.read(), foundationsOfficeJobs(), foundationsNameOf);
-  return sectionFor(foundations.read(), foundationsMemberJobs()[agentId] ?? [], foundationsNameOf);
+  const team = foundationsTeam();
+  if (agentId === team.godId || agentId === 'god') return michaelFoundations(foundations.read(), team.office, team.nameOf);
+  return sectionFor(foundations.read(), team.jobs[agentId] ?? [], team.nameOf);
 }
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
@@ -818,7 +825,8 @@ const pulse = new PulseService({
   processor: pulseProcessor,
   office: pulseOffice,
   members: () => Object.entries(hive.registry().agents).filter(([, a]) => !a.archived && !a.isAssistant).map(([id, a]) => ({ id, isGod: !!a.isGod })),
-  memberJobs: foundationsMemberJobs,
+  memberJobs: () => foundationsTeam().jobs,
+  foundationsAnswers: () => foundations.read().answers,
   godId: () => hive.registry().godId ?? null,
   tasks: () => { const t = hive.tasks() as { tasks?: unknown }; return Array.isArray(t?.tasks) ? (t.tasks as never) : []; },
   missions: () => readConfig().missions ?? [],
@@ -4778,13 +4786,14 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   const hiveWasEnabled = hive.enabled();
   const wasOnboarded = readConfig().onboardingComplete;
   const modelBefore = readConfig().embeddingModel ?? 'minilm';
+  const profileBefore = cleanCompanyProfile(readConfig().companyProfile);
   const next = writeConfig(patch);
   // The office describes itself in <home>/office.json, so a reinstall finds it
   // by folder rather than by the business name typed into setup. Only a save
   // that changes the office's own fields writes it: switching offices changes
   // harnessHome alone, and must not copy one office's team into another.
   if (touchesOffice(patch)) syncOfficeRecord(next);
-  // Company knowledge just turned on: index it for search by meaning now.
+  // The store moved (rootPath): index it for search by meaning now.
   if (patch && typeof patch === 'object' && 'knowledgeGraph' in patch) memory.companyKnowledgeChanged();
   // A new search language: the index was built with the other model, which
   // MemPalace refuses to search with, so it is built again (owner, 2026-10-19).
@@ -4803,7 +4812,7 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   // built per spawn, so flipping the toggle reaches god the next time he starts.
   if (typeof patch?.orchestratorMaySpawn === 'boolean') hive.setOrchestratorMaySpawn(patch.orchestratorMaySpawn);
   // The company profile and the foundations hold one set of facts (eng finding 6).
-  if (patch && typeof patch === 'object' && 'companyProfile' in patch) { try { foundations.profileChanged(); } catch (e) { console.error('[foundations] profile', e); } }
+  if (patch && typeof patch === 'object' && 'companyProfile' in patch) { try { foundations.profileChanged(profileBefore); } catch (e) { console.error('[foundations] profile', e); } }
   if (!hiveWasEnabled && hive.enabled()) {
     console.log('[hive] harnessHome configured — bootstrapping hive services');
     try { bootstrapHiveServices(); } catch (e) { console.error('[hive] bootstrap after onboarding:', e); }
@@ -5038,11 +5047,9 @@ ipcMain.handle('fs:askFileNames', async (_evt, names: unknown, who: unknown) => 
   if (!Array.isArray(names)) return {};
   const roots = await resolveAskFileRoots(askFileRoots(who));
   const out: Record<string, { verdict: 'open' | 'reveal' | 'missing'; tab: boolean; path: string }> = {};
-  for (const n of names.slice(0, MAX_NAMES)) {
-    if (!askFilePathOk(n) || n in out) continue;
-    const found = await askFileByName(n, roots);
-    if (found) out[n] = found;
-  }
+  const wanted = [...new Set(names.slice(0, MAX_NAMES).filter((n): n is string => askFilePathOk(n)))];
+  const found = await Promise.all(wanted.map((n) => askFileByName(n, roots)));
+  wanted.forEach((n, i) => { const f = found[i]; if (f) out[n] = f; });
   return out;
 });
 
@@ -5562,6 +5569,15 @@ function turnResearchOff(): number {
 }
 ipcMain.handle('research:off', () => ({ ok: true, returned: turnResearchOff() }));
 /** The one time update card was read (Got it or Open Research settings). */
+// Company knowledge has no switch (owner, 2026-10-19): an owner who had turned
+// it off, with documents of their own in it, is told once that the team can
+// search them now.
+ipcMain.handle('kg:notice', () => {
+  const cfg = readConfig();
+  if (cfg.knowledgeGraph?.enabled !== false || cfg.knowledgeOnNoticeSeen) return { notice: false };
+  try { return { notice: knowledge.list().some((d) => !isFoundationsDoc(d)) }; } catch { return { notice: false }; }
+});
+ipcMain.handle('kg:noticeSeen', () => { writeConfig({ knowledgeOnNoticeSeen: true }); return { ok: true }; });
 ipcMain.handle('research:noticeSeen', () => {
   const cfg = readConfig();
   if (cfg.research?.notice) writeConfig({ research: { ...cfg.research, notice: false } });
@@ -6288,10 +6304,6 @@ ipcMain.handle('tools:status', (): ToolStatus[] => {
 // the mine loop that boot's start() had to skip — otherwise the pill reads
 // "getting ready" until the app is restarted.
 ipcMain.handle('hive:memoryStatus', () => memory.refresh());
-ipcMain.handle('hive:searchMemory', (_evt, query: unknown, wing: unknown) => {
-  if (typeof query !== 'string' || !query.trim()) return { ok: false, output: '', error: 'empty query' };
-  return memory.search(query, { wing: typeof wing === 'string' ? wing : undefined });
-});
 ipcMain.handle('hive:memoryWakeUp', (_evt, wing: unknown) =>
   memory.wakeUp(typeof wing === 'string' ? wing : undefined));
 ipcMain.handle('hive:mineNow', () => { memory.mineNow(); return { ok: true }; });

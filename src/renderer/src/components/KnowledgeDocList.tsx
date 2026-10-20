@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { InfoTip } from './InfoTip';
 import type { KnowledgeDoc } from '../../../preload';
+import { isFoundationsDoc } from '@shared/foundations';
 
 /**
  * The documents in company knowledge (owner, 2026-10-19: "super limited
@@ -37,7 +38,7 @@ export function KnowledgeDocList({ refreshKey }: { refreshKey: number }) {
     const r = await window.cth.kgOpen?.(d.id).catch(() => null);
     if (!r || !r.ok) setNote({ text: t('settings.memory.docs.openFailed', { title: d.title }), bad: true });
   };
-  const readOnly = (d: KnowledgeDoc): boolean => Array.isArray(d.tags) && d.tags.includes('foundations');
+  const readOnly = (d: KnowledgeDoc): boolean => isFoundationsDoc(d);
 
   return (
     <div style={{ marginTop: 12 }}>

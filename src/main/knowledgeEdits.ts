@@ -6,14 +6,19 @@
  *   Settings ─ Open ─► open(id) ─► the stored copy in the default app
  *                                   └─ watched: a save with new content ─► reindex ─► changed()
  *   Company foundations ─► a read only copy, never watched: the app rewrites it.
+ *   A file that is not a document (OPEN_EXTENSIONS) ─► its text, as a read only copy.
  */
-import { chmodSync, copyFileSync, mkdirSync, readFileSync, unwatchFile, watchFile, type StatWatcher } from 'node:fs';
+import { chmodSync, copyFileSync, mkdtempSync, readFileSync, unwatchFile, watchFile, type StatWatcher } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import { OPEN_EXTENSIONS, extensionOf } from '../shared/askFiles';
+import { isFoundationsDoc } from '../shared/foundations';
 
 export interface KnowledgeEditsDeps {
   /** The file to open for a document, and its tags. */
   docFile: (id: string) => { path: string; meta: { title?: string; tags?: string[] } } | null;
+  /** The document's extracted text, for a read only copy. */
+  textFile?: (id: string) => string | null;
   /** Read the document in again; throws a plain reason when it can't. */
   reindex: (id: string) => Promise<unknown>;
   /** Open a path in the owner's default app; '' when it opened, else the reason. */
@@ -33,25 +38,29 @@ const hashOf = (path: string): string | null => {
 };
 
 export class KnowledgeEdits {
-  private watched = new Map<string, { path: string; hash: string | null; busy: boolean; listener: () => void; watcher: StatWatcher }>();
+  private watched = new Map<string, { path: string; hash: string | null; busy: boolean; again: boolean; listener: () => void; watcher: StatWatcher }>();
 
   constructor(private readonly d: KnowledgeEditsDeps) {}
 
   /** The Company foundations copy is the app's own (office-foundations.md):
    *  the owner reads it; editing it comes in a later release. */
   static readOnly(meta: { tags?: string[] }): boolean {
-    return Array.isArray(meta.tags) && meta.tags.includes('foundations');
+    return isFoundationsDoc(meta);
   }
 
   async open(id: string): Promise<{ ok: true; readOnly: boolean } | { ok: false; error: string }> {
     const f = this.d.docFile(id);
     if (!f) return { ok: false, error: 'missing' };
-    if (KnowledgeEdits.readOnly(f.meta)) {
-      const dir = join(this.d.tempDir(), 'company-knowledge');
-      mkdirSync(dir, { recursive: true });
+    // Only a document type opens as itself; anything else (an app, a script, a
+    // launcher) opens as its text, read only, so Open never runs a file.
+    const document = OPEN_EXTENSIONS.has(extensionOf(f.path));
+    if (KnowledgeEdits.readOnly(f.meta) || !document) {
+      const source = document ? f.path : this.d.textFile?.(id);
+      if (!source) return { ok: false, error: 'missing' };
+      // A fresh folder each time: a link planted at a fixed name can't redirect the copy.
+      const dir = mkdtempSync(join(this.d.tempDir(), 'company-knowledge-'));
       const copy = join(dir, `${(f.meta.title ?? id).replace(/[\\/:*?"<>|]/g, ' ').slice(0, 80)}.md`);
-      try { chmodSync(copy, 0o644); } catch { /* not there yet */ }
-      copyFileSync(f.path, copy);
+      copyFileSync(source, copy);
       try { chmodSync(copy, 0o444); } catch { /* best effort */ }
       const err = await this.d.openPath(copy);
       return err ? { ok: false, error: err } : { ok: true, readOnly: true };
@@ -67,7 +76,7 @@ export class KnowledgeEdits {
     if (had?.path === path) return;
     if (had) this.stop(id);
     while (this.watched.size >= MAX_WATCHED) this.stop(this.watched.keys().next().value as string);
-    const entry = { path, hash: hashOf(path), busy: false, listener: () => { void this.check(id); }, watcher: undefined as unknown as StatWatcher };
+    const entry = { path, hash: hashOf(path), busy: false, again: false, listener: () => { void this.check(id); }, watcher: undefined as unknown as StatWatcher };
     entry.watcher = watchFile(path, { interval: this.d.intervalMs ?? 1500, persistent: false }, entry.listener);
     this.watched.set(id, entry);
   }
@@ -76,7 +85,9 @@ export class KnowledgeEdits {
    *  the file, or our own write) are not. */
   async check(id: string): Promise<void> {
     const e = this.watched.get(id);
-    if (!e || e.busy) return;
+    if (!e) return;
+    // A save while one is being read in is read in right after it.
+    if (e.busy) { e.again = true; return; }
     const hash = hashOf(e.path);
     if (hash === null) { this.stop(id); return; }
     if (hash === e.hash) return;
@@ -91,6 +102,7 @@ export class KnowledgeEdits {
     } finally {
       e.busy = false;
     }
+    if (e.again) { e.again = false; await this.check(id); }
   }
 
   stop(id: string): void {

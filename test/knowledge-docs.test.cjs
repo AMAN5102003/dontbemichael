@@ -51,9 +51,14 @@ function edits(t, over = {}) {
   const dir = tmp(t);
   const file = path.join(dir, 'original.md');
   fs.writeFileSync(file, 'v1');
+  const appFile = path.join(dir, 'original.command');
+  fs.writeFileSync(appFile, 'echo hi');
+  const textFile = path.join(dir, 'text.md');
+  fs.writeFileSync(textFile, 'echo hi');
   const calls = { opened: [], reindexed: [], changed: [] };
   const e = new KnowledgeEdits({
-    docFile: (id) => (id === 'doc' ? { path: file, meta: { title: 'Price list', tags: [] } } : id === 'found' ? { path: file, meta: { title: 'Company foundations', tags: ['foundations'] } } : null),
+    docFile: (id) => (id === 'doc' ? { path: file, meta: { title: 'Price list', tags: [] } } : id === 'found' ? { path: file, meta: { title: 'Company foundations', tags: ['foundations'] } } : id === 'app' ? { path: appFile, meta: { title: 'Setup', tags: [] } } : null),
+    textFile: (id) => (id === 'app' ? textFile : null),
     reindex: async (id) => { calls.reindexed.push(id); if (over.fail) throw new Error('The file could not be opened.'); },
     openPath: async (p) => { calls.opened.push(p); return ''; },
     tempDir: () => dir,
@@ -206,4 +211,35 @@ test('a reindex of an emptied document keeps it findable by its title, and one w
   assert.equal(fs.readFileSync(textFile, 'utf8'), text, 'its text is untouched');
   assert.equal(kg.docFile(root, other), null);
   assert.equal(kg.reindex(root, '', { text: 'x' }), null);
+});
+
+test('Open never runs a file: a type that is not a document opens as its text, read only, in a fresh folder each time', async (t) => {
+  // Value: protects=the Open allowlist and the fresh temp folder (security review 2026-10-20); fails_when=a .command or app opens as itself, or the read only copy goes to a fixed path a link could redirect; why_new=review findings; seam=none; no_claim=what the OS does with the copy
+  const o = edits(t);
+  assert.deepEqual(await o.e.open('app'), { ok: true, readOnly: true });
+  const first = o.calls.opened.at(-1);
+  assert.equal(path.extname(first), '.md');
+  assert.equal(fs.readFileSync(first, 'utf8'), 'echo hi');
+  assert.deepEqual(o.e.watching(), [], 'not watched');
+  await o.e.open('found');
+  await o.e.open('found');
+  const [a, b] = o.calls.opened.slice(-2);
+  assert.notEqual(path.dirname(a), path.dirname(b), 'a fresh folder each time');
+});
+
+test('a save that lands while one is being read in is read in right after it', async (t) => {
+  // Value: protects=no lost update while a read in runs (testing and state reviews); fails_when=check returns while busy and nothing reruns it; why_new=review findings 2026-10-20; seam=none; no_claim=the file watcher's own timing
+  const o = edits(t);
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const seen = [];
+  o.e.d.reindex = async () => { seen.push(fs.readFileSync(o.file, 'utf8')); if (seen.length === 1) await gate; };
+  await o.e.open('doc');
+  fs.writeFileSync(o.file, 'v2');
+  const first = o.e.check('doc');
+  fs.writeFileSync(o.file, 'v3');
+  await o.e.check('doc');
+  release();
+  await first;
+  assert.deepEqual(seen, ['v2', 'v3']);
 });

@@ -2586,7 +2586,7 @@
       "keptFew": "Only {{kept}} of {{decisions}} pieces of {{name}}'s work kept as is so far.",
       "reopened": "You reopened {{reopens}} of {{name}}'s cards so far.",
       "pill": "Early look",
-      "dayOf": "Day {{n}} of 14",
+      "dayOf": "Day {{n}} of {{days}}",
       "ofRuns": "of {{n}} runs",
       "of": "of {{n}}",
       "capNothing": "found nothing to do so far",
@@ -2923,7 +2923,8 @@
       "notNeeded": "{{count}} empty, no work has needed them yet",
       "without": "Without {{what}}",
       "with": "With it",
-      "proofLine": "Work kept as is, before and after the answer."
+      "proofLine": "Work kept as is, before and after the answer.",
+      "openQuestion": "Open the {{what}} question"
     }
   },
   "foundations": {
@@ -3007,7 +3008,14 @@
       "usedBy": "{{jobs}} use this",
       "weekly": "Asked weekly until answered",
       "failed": "Couldn't save, try again.",
-      "saved": "Saved to Company foundations."
+      "saved": "Saved to Company foundations.",
+      "failedDraft": "Couldn't ask {{name}} to draft it, try again.",
+      "failedLater": "Couldn't put this off, try again."
     }
+  },
+  "knowledgeNotice": {
+    "title": "Company knowledge is always on",
+    "body": "You had turned company knowledge off. It has no switch now, so your team can search the documents in it. Open the list to remove any you would rather they not read.",
+    "open": "Open the list"
   }
 }

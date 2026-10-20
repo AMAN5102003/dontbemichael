@@ -337,7 +337,6 @@ export interface HarnessConfig {
   connectorsOn?: { [key: string]: boolean };
   /** Connector keys the owner has seen in Settings. */
   connectorsSeen?: string[];
-  semanticMemory: boolean;
   embeddingModel: 'minilm' | 'embeddinggemma';
   missions?: ScheduledMission[];
   opsStandupSeeded?: boolean;
@@ -1016,6 +1015,9 @@ const api = {
   researchPrepare: (): Promise<{ ok: true; cwd: string } | { ok: false }> => ipcRenderer.invoke('research:prepare'),
   researchOff: (): Promise<{ ok: boolean; returned: number }> => ipcRenderer.invoke('research:off'),
   researchNoticeSeen: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('research:noticeSeen'),
+  /** Company knowledge has no switch now: whether this owner, who had turned it off, is still to be told. */
+  kgNotice: (): Promise<{ notice: boolean }> => ipcRenderer.invoke('kg:notice'),
+  kgNoticeSeen: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('kg:noticeSeen'),
   /** Agents whose connectors changed since they started (missed pushes). */
   connectorsPendingRestarts: (): Promise<string[]> => ipcRenderer.invoke('connectors:pendingRestarts'),
   /** An agent's connectors changed since it started: restart it when idle. */
@@ -1127,8 +1129,6 @@ const api = {
   /** Show a skill's folder in the OS file manager. */
   skillsReveal: (path: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('skills:reveal', path),
-  searchMemory: (query: string, wing?: string): Promise<{ ok: boolean; output: string; error?: string }> =>
-    ipcRenderer.invoke('hive:searchMemory', query, wing),
   memoryWakeUp: (wing?: string): Promise<{ ok: boolean; output: string; error?: string }> =>
     ipcRenderer.invoke('hive:memoryWakeUp', wing),
   mineNow: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('hive:mineNow'),

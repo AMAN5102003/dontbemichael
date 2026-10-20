@@ -15,7 +15,7 @@
 import type Database from 'better-sqlite3';
 import type { ScheduledMission } from '../shared/missions';
 import {
-  compareFrom, dayKey, keptAsIs, measuredSaving, periodRange, planHeadroom, previousRange, pulseSnapshot,
+  compareFrom, dayKey, keptAsIs, measuredSaving, MIN_DECISIONS, periodRange, planHeadroom, previousRange, pulseSnapshot,
   type AskFact, type DayRange, type Period, type PlanReading, type PulseSnapshot
 } from '../shared/teamPerformance';
 import { adviceFor, visibleAdvice, ADVICE_WINDOW_MS, type Advice, type Dismissal, type EarlyMode, type LadderModel, type MissionFact } from '../shared/teamAdvice';
@@ -55,6 +55,9 @@ export interface PulseDeps {
   now?: () => number;
   /** Each member's job, for Company foundations (office-foundations.md). */
   memberJobs?: () => Record<string, FoundationJob[]>;
+  /** The foundations record's answers: what is answered now, whatever the
+   *  events say (an event can be lost or pruned). */
+  foundationsAnswers?: () => Partial<Record<string, { at: string }>>;
 }
 
 export type { AppliedChange, PulseView } from '../shared/pulseView';
@@ -124,20 +127,32 @@ export class PulseService {
       } catch { /* a broken row */ }
     }
     const state = replayFoundations(events);
+    // The record says what is answered now; the events say when and who hit it.
+    const answers = this.d.foundationsAnswers?.();
+    if (answers) {
+      for (const q of [...state.answeredAt.keys()]) if (!answers[q]) state.answeredAt.delete(q);
+      for (const [q, a] of Object.entries(answers)) {
+        const at = a ? Date.parse(a.at) : NaN;
+        if (!state.answeredAt.has(q as never) && Number.isFinite(at)) state.answeredAt.set(q as never, at);
+      }
+    }
     const out = foundationsPulse(state, jobs);
     // The proof (D14): the first of a member's hit questions answered splits its
     // work in two; each side needs half the evidence advice needs.
+    const firsts = new Map<string, { q: FoundationEvent['q']; at: number }>();
+    for (const agentId of Object.keys(jobs)) {
+      for (const [q, by] of state.hits) {
+        const at = state.answeredAt.get(q);
+        const was = firsts.get(agentId);
+        if (at !== undefined && by.has(agentId) && (!was || at < was.at)) firsts.set(agentId, { q, at });
+      }
+    }
+    if (!firsts.size) return out;
     const since = this.now() - 90 * 86_400_000;
     const cards = this.d.processor.cards(office, since);
     const decisions = this.d.processor.decisions(office, since);
-    const min = Math.ceil(10 * EARLY_SCALE);
-    for (const agentId of Object.keys(jobs)) {
-      let first: { q: FoundationEvent['q']; at: number } | null = null;
-      for (const [q, by] of state.hits) {
-        const at = state.answeredAt.get(q);
-        if (at !== undefined && by.has(agentId) && (!first || at < first.at)) first = { q, at };
-      }
-      if (!first) continue;
+    const min = Math.ceil(MIN_DECISIONS * EARLY_SCALE);
+    for (const [agentId, first] of firsts) {
       const at = first.at;
       const before = keptAsIs(agentId, decisions.filter((d) => d.at < at), cards.filter((c) => (c.doneAt ?? 0) < at), min).share;
       const after = keptAsIs(agentId, decisions.filter((d) => d.at >= at), cards.filter((c) => (c.doneAt ?? 0) >= at), min).share;
@@ -178,7 +193,7 @@ export class PulseService {
       .map((m) => ({ id: m.id, to: m.to === 'god' && godId ? godId : m.to, label: m.label, intervalMs: m.intervalMs, timed: !!(m.times?.length || m.weekly) }));
     const members = this.d.models().map((m) => {
       const mine = days.filter((x) => x.agentId === m.agentId);
-      const kept = keptAsIs(m.agentId, decisions, cards, early ? Math.ceil(10 * early.scale) : undefined);
+      const kept = keptAsIs(m.agentId, decisions, cards, early ? Math.ceil(MIN_DECISIONS * early.scale) : undefined);
       return {
         agentId: m.agentId, provider: m.provider, model: m.model, isGod: m.agentId === godId,
         pieces: mine.reduce((s, x) => s + x.emails + x.sent + x.tasks + x.checks, 0),

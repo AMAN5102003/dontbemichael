@@ -37,7 +37,8 @@ import { useDialog } from '@/shell/useDialog';
 import { godNameNow } from '@/i18n';
 import { useBackdropClose } from '@/hooks/useBackdropClose';
 import { getNeedsYouFeed } from '@/shell/useNeedsYou';
-import { FOUNDATION_QUESTIONS, foundationAsk, type FoundationId, type FoundationsJobRow, type FoundationsMember } from '@shared/foundations';
+import { FOUNDATION_QUESTIONS, foundationAsk, isFoundationsDoc, type FoundationId, type FoundationsJobRow, type FoundationsMember } from '@shared/foundations';
+import { ADVICE_WINDOW_MS } from '@shared/teamAdvice';
 
 const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
@@ -50,6 +51,10 @@ const AVG_DASH = 'repeating-linear-gradient(to bottom, var(--cth-ink-3) 0 3px, t
 const money = (v: number): string => `$${(Math.round(v * 100) / 100).toFixed(2)}`;
 const dollars = (v: number): string => `$${Math.round(v)}`;
 const pct = (v: number): string => `${Math.round(v * 100)}%`;
+/** Days before advice starts (the advice window). */
+const ADVICE_DAYS = Math.round(ADVICE_WINDOW_MS / 86_400_000);
+/** Reopened cards an early line names: the reopen rule's 3, at early half evidence. */
+const EARLY_REOPENS = 2;
 
 /** Open a foundation question's waiting card in Needs you, else the document
  *  in company knowledge (office-foundations.md, design D5). */
@@ -60,7 +65,7 @@ function openFoundation(ids: readonly FoundationId[]): void {
   const settings = (): void => { window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Memory & Knowledge' } })); };
   void window.cth.kgList()
     .then((docs) => {
-      const doc = docs.find((d) => Array.isArray(d.tags) && d.tags.includes('foundations'));
+      const doc = docs.find(isFoundationsDoc);
       if (!doc || !window.cth.kgOpen) { settings(); return; }
       return window.cth.kgOpen(doc.id).then((r) => { if (!r?.ok) settings(); });
     })
@@ -83,7 +88,7 @@ function FoundationsStrip({ jobs }: { jobs: FoundationsJobRow[] }) {
       {jobs.map((j) => {
         const job = t(`foundations.job.${j.job}`);
         return (
-          <button key={j.job} type="button" onClick={() => openFoundation(j.waiting)}
+          <button key={j.job} type="button" className="cth-foundation-pill" onClick={() => openFoundation(j.waiting)}
             aria-label={t('pulse.foundations.jobAria', { job, answered: j.answered, total: j.total })}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8, height: 30, padding: '0 12px', borderRadius: 'var(--cth-r-pill)', border: 'none', background: 'var(--cth-neutral-soft)', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink)' }}>
             {job}
@@ -114,7 +119,7 @@ function FoundationsBox({ f }: { f: FoundationsMember }) {
       {f.missing.length > 0 && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {f.missing.map((id) => (
-            <button key={id} type="button" onClick={() => openFoundation([id])}
+            <button key={id} type="button" className="cth-foundation-pill" onClick={() => openFoundation([id])} aria-label={t('pulse.foundations.openQuestion', { what: short(id) })}
               style={{ height: 24, padding: '0 10px', borderRadius: 'var(--cth-r-pill)', border: 'none', background: 'var(--cth-indigo-soft)', color: 'var(--cth-indigo-text)', fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, fontWeight: 600, cursor: 'pointer' }}>
               {short(id)}
             </button>
@@ -124,6 +129,7 @@ function FoundationsBox({ f }: { f: FoundationsMember }) {
       {f.more > 0 && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t(f.missing.length ? 'pulse.foundations.more' : 'pulse.foundations.notNeeded', { count: f.more })}</div>}
       {f.proof && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 2 }}>
+          <div style={{ ...label, gap: 4 }}>{t('pulse.keptAsIs')}<InfoTip text={t('pulse.foundations.proofLine')} /></div>
           {([['without', f.proof.without, 'var(--cth-ink-4)'], ['with', f.proof.with, 'var(--cth-green)']] as const).map(([k, v, color]) => (
             <div key={k} style={{ display: 'grid', gridTemplateColumns: '120px minmax(0, 1fr) 40px', gap: 8, alignItems: 'center', fontSize: 11, color: 'var(--cth-ink-2)' }}>
               <span>{t(`pulse.foundations.${k}`, { what: short(f.proof!.question) })}</span>
@@ -131,7 +137,6 @@ function FoundationsBox({ f }: { f: FoundationsMember }) {
               <span style={{ ...mono, textAlign: 'end' }}>{pct(v)}</span>
             </div>
           ))}
-          <div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.foundations.proofLine')}</div>
         </div>
       )}
     </div>
@@ -295,7 +300,7 @@ export function PulseView() {
       case 'run-less': return t('pulse.early.runLess', { name, job: jobOf(a.missionId), nothing: e.nothing, runs: e.runs });
       case 'run-more': return t('pulse.early.runMore', { name, job: jobOf(a.missionId), didWork: e.didWork, runs: e.runs });
       case 'cheaper-model': return t('pulse.early.kept', { name, kept: e.kept, decisions: e.decisions });
-      default: return e.reopens && e.reopens >= 2 ? t('pulse.early.reopened', { name, reopens: e.reopens }) : t('pulse.early.keptFew', { name, kept: e.kept ?? 0, decisions: e.decisions });
+      default: return e.reopens && e.reopens >= EARLY_REOPENS ? t('pulse.early.reopened', { name, reopens: e.reopens }) : t('pulse.early.keptFew', { name, kept: e.kept ?? 0, decisions: e.decisions });
     }
   };
 
@@ -398,7 +403,7 @@ export function PulseView() {
     // The Company foundations strip (office-foundations.md); none from an older main.
     const foundationJobs = view.foundations?.jobs ?? [];
     // Which of the 14 days before advice this is, counted from the first live day.
-    const learnDay = view.liveSince ? Math.min(14, Math.max(1, Math.round((new Date(`${dayKey(Date.now())}T12:00:00`).getTime() - new Date(`${view.liveSince}T12:00:00`).getTime()) / 86_400_000) + 1)) : 1;
+    const learnDay = view.liveSince ? Math.min(ADVICE_DAYS, Math.max(1, Math.round((new Date(`${dayKey(Date.now())}T12:00:00`).getTime() - new Date(`${view.liveSince}T12:00:00`).getTime()) / 86_400_000) + 1)) : 1;
     // What shows and what folds (owner, 2026-10-19; pulse-smart-view.md, eng D2):
     // one grid in today's order, then a chip for each quiet tile.
     const tilesNow = pulseTiles({ snapshot: s, keptSafe: safe, learning: cur }, pv && pk ? { snapshot: pv, keptSafe: pk, learning: pl } : null, opened);
@@ -525,7 +530,7 @@ export function PulseView() {
       const fm = view.foundations?.members[m.agentId];
       return (
         <div key={m.agentId} role="listitem"><button type="button" onClick={() => setDetail(m.agentId)}
-          aria-label={t('pulse.work.rowAria', { name: nameOf(m.agentId), time: duration(m.busyMs, t), value: money(m.usd) })}
+          aria-label={t('pulse.work.rowAria', { name: nameOf(m.agentId), time: duration(m.busyMs, t), value: money(m.usd) }) + (fm && fm.answered < fm.total ? `, ${t('pulse.foundations.count', { answered: fm.answered, total: fm.total })}` : '')}
           style={{ ...workGrid, width: '100%', minHeight: 44, border: 'none', borderTop: '1px solid var(--cth-line)', background: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'var(--cth-font-ui)', color: 'var(--cth-ink)', padding: 0 }}>
           <span style={{ display: 'flex', gap: 10, alignItems: 'center', minWidth: 0, opacity: quiet ? 0.7 : 1 }}>
             <span style={{ borderRadius: '50%', boxShadow: `0 0 0 1.5px ${color}`, display: 'inline-flex', flex: 'none' }}><AgentAvatar id={m.agentId} name={nameOf(m.agentId)} size={24} /></span>
@@ -569,16 +574,16 @@ export function PulseView() {
           {noAdvice && early.length > 0 ? (
             <div style={{ ...card, overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '14px 16px', background: 'linear-gradient(90deg, var(--cth-indigo-soft), transparent 70%)' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 22, padding: '0 9px', borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-indigo-soft)', color: 'var(--cth-indigo-text)', fontSize: 11, fontWeight: 700 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, height: 22, padding: '0 9px', borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-indigo-soft)', color: 'var(--cth-indigo-text)', fontSize: 11, fontWeight: 600 }}>
                   <Icon name="sparkle" size={0.75} />{t('pulse.early.pill')}
                 </span>
-                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--cth-ink)' }}>{t('pulse.early.title')}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cth-ink)' }}>{t('pulse.early.title')}</span>
                 <span style={{ flex: 1 }} />
                 {view.adviceFrom && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 11, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>
-                    {t('pulse.early.dayOf', { n: learnDay })}
-                    <span role="img" aria-label={t('pulse.early.dayOf', { n: learnDay })} style={{ width: 120, height: 6, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)', overflow: 'hidden' }}>
-                      <i style={{ display: 'block', height: '100%', width: `${(learnDay / 14) * 100}%`, background: 'var(--cth-indigo)', borderRadius: 'var(--cth-r-pill)' }} />
+                    {t('pulse.early.dayOf', { n: learnDay, days: ADVICE_DAYS })}
+                    <span aria-hidden="true" style={{ width: 120, height: 6, borderRadius: 'var(--cth-r-pill)', background: 'var(--cth-neutral-soft)', overflow: 'hidden' }}>
+                      <i style={{ display: 'block', height: '100%', width: `${(learnDay / ADVICE_DAYS) * 100}%`, background: 'var(--cth-indigo)', borderRadius: 'var(--cth-r-pill)' }} />
                     </span>
                     {t('pulse.adviceFrom', { day: fmtDay(view.adviceFrom) })}
                   </span>
@@ -685,7 +690,8 @@ export function PulseView() {
                   <div role="listitem">
                     <button type="button" aria-expanded={quietRowsOpen} onClick={() => setQuietRowsOpen((v) => !v)}
                       style={{ display: 'flex', gap: 6, alignItems: 'center', width: '100%', minHeight: 36, border: 'none', borderTop: busyRows.length > 0 ? '1px solid var(--cth-line)' : 'none', background: 'none', cursor: 'pointer', textAlign: 'start', fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-3)', padding: 0 }}>
-                      <span aria-hidden style={{ display: 'inline-block', transition: 'transform var(--cth-dur-fast) var(--cth-ease)', transform: quietRowsOpen ? 'rotate(90deg)' : 'none' }}>›</span>
+                      <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round"
+                        style={{ transition: 'transform var(--cth-dur-fast) var(--cth-ease)', transform: quietRowsOpen ? 'rotate(180deg)' : 'none' }}><path d="M6 9l6 6 6-6" /></svg>
                       {t(busyRows.length > 0 ? (idleRows.length === 1 ? 'pulse.work.quietMoreOne' : 'pulse.work.quietMore') : (idleRows.length === 1 ? 'pulse.work.quietAllOne' : 'pulse.work.quietAll'), { n: idleRows.length })}
                     </button>
                   </div>
@@ -768,7 +774,7 @@ function EarlyCard({ a, name, sub, text }: { a: Advice; name: string; sub: strin
     ? { big: e.nothing, of: t('pulse.early.ofRuns', { n: n(e.runs) }), cap: t('pulse.early.capNothing'), split: [e.nothing ?? 0, (e.runs ?? 0) - (e.nothing ?? 0)] as const, first: 'var(--cth-ink-4)', second: 'var(--cth-green)' }
     : a.kind === 'run-more'
     ? { big: e.didWork, of: t('pulse.early.ofRuns', { n: n(e.runs) }), cap: t('pulse.early.capWork'), split: [e.didWork ?? 0, (e.runs ?? 0) - (e.didWork ?? 0)] as const, first: 'var(--cth-green)', second: 'var(--cth-ink-4)' }
-    : a.kind === 'stronger-model' && (e.reopens ?? 0) >= 2
+    : a.kind === 'stronger-model' && (e.reopens ?? 0) >= EARLY_REOPENS
     ? { big: e.reopens, of: '', cap: t('pulse.early.capReopened'), split: null, first: '', second: '' }
     : { big: e.kept ?? 0, of: t('pulse.early.of', { n: n(e.decisions) }), cap: t('pulse.early.capKept'), split: [e.kept ?? 0, (e.decisions ?? 0) - (e.kept ?? 0)] as const, first: 'var(--cth-green)', second: 'var(--cth-ink-4)' };
   return (

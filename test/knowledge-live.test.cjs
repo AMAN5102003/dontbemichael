@@ -56,8 +56,9 @@ test('the search tool finds the store from --root, with no KG_ROOT set', () => {
   assert.match(r.stdout, /Refund/);
 });
 
-test('a member is told again when search by meaning turns on or its language changes, with the model on the command', async () => {
+test('a member is told again when search by meaning turns on or its language changes, with the model on the command', async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-kg-live-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const hive = new HiveManager(() => home);
   const meaning = { bin: '/bin/mempalace', palace: '/Palace', model: 'minilm' };
   await hive.ensureAgent({ id: 'oscar', name: 'Oscar', provider: 'claude', cwd: home }, { knowledgeGraph: true, kgCliPath: '/App/kg.cjs', meaningSearch: meaning });
@@ -70,9 +71,10 @@ test('a member is told again when search by meaning turns on or its language cha
   assert.doesNotMatch(off, /mempalace/, 'search by meaning off: the line without it');
 });
 
-test('a language change clears the index so the next pass builds it with the new model', () => {
+test('a language change clears the index so the next pass builds it with the new model', (t) => {
   const { MemoryManager } = loadTs('src/main/memory.ts');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-palace-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const palace = path.join(home, 'palace');
   fs.mkdirSync(palace);
   fs.writeFileSync(path.join(palace, 'mempalace_embedder.json'), '{}');

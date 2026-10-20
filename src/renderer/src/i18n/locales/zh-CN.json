@@ -2586,7 +2586,7 @@
       "keptFew": "{{name}} 的工作目前 {{decisions}} 件中只有 {{kept}} 件原样保留。",
       "reopened": "你目前重新打开了 {{name}} 的 {{reopens}} 张卡片。",
       "pill": "初步观察",
-      "dayOf": "第 {{n}} 天，共 14 天",
+      "dayOf": "第 {{n}} 天，共 {{days}} 天",
       "ofRuns": "共 {{n}} 次运行",
       "of": "共 {{n}} 件",
       "capNothing": "目前没有可做的事",
@@ -2923,7 +2923,8 @@
       "notNeeded": "{{count}} 个空白，尚无工作用到",
       "without": "没有{{what}}时",
       "with": "有了之后",
-      "proofLine": "原样采用的工作，回答之前与之后。"
+      "proofLine": "原样采用的工作，回答之前与之后。",
+      "openQuestion": "打开“{{what}}”问题"
     }
   },
   "foundations": {
@@ -3007,7 +3008,14 @@
       "usedBy": "{{jobs}} 会用到",
       "weekly": "每周询问，直到回答",
       "failed": "无法保存，请重试。",
-      "saved": "已保存到公司基础信息。"
+      "saved": "已保存到公司基础信息。",
+      "failedDraft": "无法请 {{name}} 起草，请重试。",
+      "failedLater": "无法暂缓，请重试。"
     }
+  },
+  "knowledgeNotice": {
+    "title": "公司知识始终开启",
+    "body": "你之前关闭了公司知识。它现在没有开关，所以你的团队可以搜索其中的文档。打开列表，移除你不希望他们阅读的文档。",
+    "open": "打开列表"
   }
 }

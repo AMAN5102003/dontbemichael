@@ -59,12 +59,6 @@ export interface KnowledgeStatus {
 }
 
 export class KnowledgeManager {
-  /** Company knowledge is always on (owner, 2026-10-19: no switch). Kept as
-   *  a method so callers read one place. */
-  active(): boolean {
-    return true;
-  }
-
   /** Whether the store holds any document: members are pointed at it only
    *  then, so nobody spends a step searching an empty store. */
   hasDocuments(): boolean {
@@ -93,10 +87,9 @@ export class KnowledgeManager {
       : join(app.getAppPath(), 'src', 'main', 'kg-core.cjs');
   }
 
-  /** Env merged into each agent's spawn so its `kg` CLI hits this store. Empty
-   *  when company knowledge is off, so nothing is injected then. */
+  /** Env merged into each agent's spawn so its `kg` CLI hits this store.
+   *  Company knowledge is always on (owner, 2026-10-19: no switch). */
   env(): Record<string, string> {
-    if (!this.active()) return {};
     return { KG_ROOT: this.root(), KG_CLI: this.cliPath(), KG_CORE: this.corePath() };
   }
 
@@ -107,11 +100,11 @@ export class KnowledgeManager {
    * and id on top so every search result says which document to `get`.
    * Brought up to date here (missing files written, removed documents' files
    * deleted); MemoryManager indexes the folder into the palace's "company"
-   * section. Null when company knowledge is off. `signature` changes whenever
-   * the set of documents does, so an unchanged store isn't indexed again.
+   * section. Null when its folder can't be made. `signature` changes whenever
+   * a document is added, removed or edited, so an unchanged store isn't
+   * indexed again.
    */
   meaningMirror(): { dir: string; signature: string } | null {
-    if (!this.active()) return null;
     const root = this.root();
     const dir = join(root, 'meaning');
     try { mkdirSync(dir, { recursive: true }); } catch { return null; }
@@ -153,9 +146,9 @@ export class KnowledgeManager {
   }
 
   status(): KnowledgeStatus {
-    const enabled = this.active();
+    const enabled = true;
     const root = this.root();
-    const s = enabled && existsSync(root)
+    const s = existsSync(root)
       ? core.stats(root)
       : { docCount: 0, chunkCount: 0, byModality: {} };
     return { enabled, root, docCount: s.docCount, chunkCount: s.chunkCount, byModality: s.byModality };
@@ -207,6 +200,13 @@ export class KnowledgeManager {
 
   remove(docId: string): boolean {
     return core.removeDoc(this.root(), docId);
+  }
+
+  /** A document's extracted text file, or null for an unknown id. */
+  textFile(docId: string): string | null {
+    if (!/^[A-Za-z0-9_-]+$/.test(docId)) return null;
+    const file = join(this.root(), 'docs', docId, 'text.md');
+    return existsSync(file) ? file : null;
   }
 
   /** The file Settings opens for a document: its stored copy, else its text. */

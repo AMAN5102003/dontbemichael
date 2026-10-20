@@ -257,8 +257,8 @@ test('before advice, Pulse shows what the rules see so far under a bold line, as
   assert.equal(en.pulse.early.title, 'What Pulse sees so far, not advice yet.');
   assert.match(view, /const early = view\.early \?\? \[\];/, 'an older main sends no early lines');
   assert.match(view, /\{noAdvice && early\.length > 0 \? \(/, 'insight cards replace the bare line (design A, owner 2026-10-19)');
-  assert.match(view, /<Icon name="sparkle" size=\{0\.75\} \/>\{t\('pulse\.early\.pill'\)\}[\s\S]{0,120}fontWeight: 700[^}]*\}\}>\{t\('pulse\.early\.title'\)\}/, 'the Early look pill and the bold line');
-  assert.match(view, /t\('pulse\.early\.dayOf', \{ n: learnDay \}\)/, 'the countdown to advice');
+  assert.match(view, /<Icon name="sparkle" size=\{0\.75\} \/>\{t\('pulse\.early\.pill'\)\}[\s\S]{0,120}fontWeight: 600[^}]*\}\}>\{t\('pulse\.early\.title'\)\}/, 'the Early look pill and the title (600, DESIGN.md 4.1)');
+  assert.match(view, /t\('pulse\.early\.dayOf', \{ n: learnDay, days: ADVICE_DAYS \}\)/, 'the countdown to advice');
   const block = view.slice(view.indexOf('Before advice: what the advice rules see so far'), view.indexOf("noAdvice && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)'"));
   const cardFn = view.slice(view.indexOf('function EarlyCard('), view.indexOf('/** A Kept safe tile'));
   for (const part of [block, cardFn]) assert.doesNotMatch(part, /PixelButton|pulse\.apply|pulse\.notNow|savesAbout|<button/, 'facts only, nothing to apply');

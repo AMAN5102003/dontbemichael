@@ -451,13 +451,6 @@ export class MemoryManager {
     });
   }
 
-  /** Search by meaning (company knowledge only). Returns the CLI's text output. */
-  search(query: string, opts: { wing?: string; results?: number } = {}): Promise<{ ok: boolean; output: string; error?: string }> {
-    const args = ['search', query, '--results', String(opts.results ?? 5)];
-    if (opts.wing) args.push('--wing', opts.wing);
-    return this.runCli(args, 'search');
-  }
-
   /** Session-start digest (~600-900 tokens). */
   wakeUp(wing?: string): Promise<{ ok: boolean; output: string; error?: string }> {
     const args = ['wake-up'];

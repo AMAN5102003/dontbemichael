@@ -78,7 +78,7 @@ export function AskMeTab() {
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   // One shared read with the pill, the strip and the chips (D3, eng R4).
-  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice, silent, foundations } = useNeedsYou();
+  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice, knowledgeNotice, silent, foundations } = useNeedsYou();
   // Members whose engine isn't reporting (issue #326): their cards keep All clear away.
   const silentShown = silentCards(silent).length > 0;
   // A sign in stop already asks the owner to sign in: one card (eng R3).
@@ -267,12 +267,11 @@ export function AskMeTab() {
       <ScheduleRequestCards requests={scheduleRequests} refresh={refreshScheduleRequests} />
       <WorkStyleUpdateCards offers={offers} />
       <MailProposalCards proposals={proposals} refresh={refreshNeedsYou} />
-      {foundationSaved && (
-        <div role="status" style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)', padding: '0 2px' }}>{translate('foundations.card.saved')}</div>
-      )}
+      {/* Always mounted, so screen readers announce the line when it fills. */}
+      <div role="status" style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)', padding: '0 2px', display: foundationSaved ? undefined : 'contents' }}>{foundationSaved ? translate('foundations.card.saved') : ''}</div>
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
-      {!engineCard && !onBreak && !researchNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
+      {!engineCard && !onBreak && !researchNotice && !knowledgeNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
         <div style={{ padding: '4px 2px 2px' }}>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)' }}>{translate('shell.allClear')}</div>
           <div style={{ marginTop: 4, fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink-3)' }}>{translate(`shell.allClearLine${line}`, { godName })}</div>
@@ -297,7 +296,7 @@ export function AskMeTab() {
           return (
             <FoundationCard
               key={row.key} id={foundationId} rowKey={row.key} taskId={t.id} q={open.q} askedAt={open.askedAt}
-              raiserId={raiser} raiserName={nameFor(raiser)}
+              raiserId={raiser} raiserName={nameFor(raiser)} raiserIsMember={!!member}
               chipStyle={{ ...personChip, ...(fam ? { background: fam.l, boxShadow: `inset 0 0 0 1px ${fam.m}` } : {}) }}
               foundations={foundations}
               onAnswer={async (text) => { const ok = await sendAnswer(row, text); if (ok) setFoundationSaved(true); return ok; }}
@@ -534,6 +533,7 @@ export function AskMeTab() {
       })}
       {/* A report, after the questions like every Report card (DESIGN.md 7.8). */}
       {researchNotice && <ResearchNoticeCard />}
+      {knowledgeNotice && <KnowledgeNoticeCard />}
     </div>
   );
 }
@@ -580,6 +580,29 @@ function ResearchNoticeCard() {
           seen();
           window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Research & privacy' } }));
         }}>{t('research.noticeOpen')}</PixelButton>
+      </div>
+    </section>
+  );
+}
+
+/** The one time card for an owner who had company knowledge off (owner,
+ *  2026-10-19: no switch now): a report, cleared by either button. */
+function KnowledgeNoticeCard() {
+  const { t } = useTranslation();
+  const seen = (): void => { void window.cth.kgNoticeSeen?.().then(() => refreshNeedsYou()).catch(() => undefined); };
+  return (
+    <section aria-label={t('knowledgeNotice.title')} style={card}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--cth-ink)' }}>{t('knowledgeNotice.title')}</span>
+        <span style={reportTag}>{t('askMe.report')}</span>
+      </div>
+      <p style={{ margin: '8px 0 12px', fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)' }}>{t('knowledgeNotice.body')}</p>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <PixelButton variant="secondary" size="sm" onClick={seen}>{t('askMe.gotIt')}</PixelButton>
+        <PixelButton variant="primary" size="sm" onClick={() => {
+          seen();
+          window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Memory & Knowledge' } }));
+        }}>{t('knowledgeNotice.open')}</PixelButton>
       </div>
     </section>
   );

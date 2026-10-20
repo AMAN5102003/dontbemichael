@@ -484,13 +484,6 @@ export type AskFileRead =
   | { ok: false; error: 'not found' | 'too large' | 'unreadable' };
 
 /**
- * Read a file an Ask me question or a reply names, for its tab. The same check
- * as Open runs first (`askFileVerdict`: inside the office or a team member's
- * folder, canonical path, no link leaving it), and only kinds a tab can show
- * are read: text up to 2 MB, images up to 10 MB, through the root-confined
- * readers. Anything outside the folders reads as not found, like the chip.
- */
-/**
  * A file named without its ending, such as `First contact follow up draft
  * 2026-10-19` for the `.md` in the Sales folder (owner, 2026-10-19): each
  * ending in NAME_ENDINGS is tried in turn, through the same folder check as
@@ -502,13 +495,19 @@ export async function askFileByName(
   roots: readonly AskFileRoot[]
 ): Promise<{ verdict: AskFileVerdict; path: string; tab: boolean } | null> {
   if (!isNameSpan(name)) return null;
-  for (const ext of NAME_ENDINGS) {
-    const v = await askFileVerdict(`${name.trim()}.${ext}`, roots);
-    if (v.verdict !== 'missing') return { verdict: v.verdict, path: v.path, tab: v.tab };
-  }
-  return null;
+  // Every ending is checked at once; the first in NAME_ENDINGS order wins.
+  const all = await Promise.all(NAME_ENDINGS.map((ext) => askFileVerdict(`${name.trim()}.${ext}`, roots)));
+  const v = all.find((x) => x.verdict !== 'missing');
+  return v ? { verdict: v.verdict, path: v.path, tab: v.tab } : null;
 }
 
+/**
+ * Read a file an Ask me question or a reply names, for its tab. The same check
+ * as Open runs first (`askFileVerdict`: inside the office or a team member's
+ * folder, canonical path, no link leaving it), and only kinds a tab can show
+ * are read: text up to 2 MB, images up to 10 MB, through the root-confined
+ * readers. Anything outside the folders reads as not found, like the chip.
+ */
 export async function readAskFile(pathText: string, roots: readonly string[] | readonly AskFileRoot[]): Promise<AskFileRead> {
   const v = await askFileVerdict(pathText, roots);
   if (v.verdict === 'missing' || !v.tab || !v.real) return { ok: false, error: 'not found' };
