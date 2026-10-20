@@ -11,6 +11,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 ### Fixed
 
 - **The office opens filling the screen on every launch again.** It came back at a smaller size once a single moment had read as not filling the screen (a dragged title bar, a display change, or quitting from full screen). Now every launch fills the screen; un-maximizing still goes back to your last smaller size.
+- **Pulse's lists of questions and answers open each one that went as written.** A question or answer that went unchanged showed as one cut off line you could not open. Click it to read the whole text as it went, with Show the whole answer for a long one.
 
 ## [0.2.4] (2026-10-20)
 

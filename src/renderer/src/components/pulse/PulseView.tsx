@@ -1058,6 +1058,10 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
   const { data, failed, retry } = useListRows<CheckedList>(() => window.cth.pulseChecked(fromMs, toMs, way).then((r) => (r && Array.isArray(r.rows) ? r : { rows: [], since: null })), [from, to, way]);
   const [foldOpen, setFoldOpen] = useState(false);
   const [whole, setWhole] = useState<Set<number>>(new Set());
+  // Folded rows the owner opened to read (owner, 2026-10-20: "see answer does
+  // not show anything useful like what was it").
+  const [openRows, setOpenRows] = useState<Set<number>>(new Set());
+  const toggle = (set: (f: (s: Set<number>) => Set<number>) => void, k: number): void => set((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const when = whenOf(i18n.language);
   const rows = data?.rows ?? [];
   // Each changed row's word comparison, once per list read, not on every
@@ -1110,7 +1114,7 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
     return <>
       {long && !open && <div style={capStyle}>{t('pulse.checked.removed')}</div>}
       <div dir="auto" style={textStyle}><Marked parts={parts} context={!open} /></div>
-      {long && <button type="button" aria-expanded={open} onClick={() => setWhole((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; })} style={linkBtn}>
+      {long && <button type="button" aria-expanded={open} onClick={() => toggle(setWhole, k)} style={linkBtn}>
         {open ? t('pulse.checked.showLess') : t(way === 'in' ? 'pulse.checked.showWholeQuestion' : 'pulse.checked.showWholeAnswer', { n: joinText(r.wrote).length.toLocaleString(i18n.language) })}
       </button>}
     </>;
@@ -1156,15 +1160,34 @@ function CheckedDetail({ way, from, to, period, research, counts, heldCount, onC
           <button type="button" aria-expanded={foldOpen} onClick={() => setFoldOpen((o) => !o)} style={{ ...linkBtn, fontWeight: 400 }}>
             {foldOpen ? '▾ ' : '▸ '}<b>{way === 'in' ? t('pulse.checked.q.fold', { count: rest.length }) : t('pulse.checked.a.fold', { count: rest.length })}</b>
           </button>
-          {foldOpen && rest.map((r, k) => (
-            <div key={`p-${r.at}-${k}`} role="listitem" style={{ fontSize: 12, color: 'var(--cth-ink-2)', padding: '7px 2px', boxShadow: 'inset 0 -1px 0 var(--cth-line)', display: 'flex', gap: 10 }}>
-              <span dir="auto" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
-                <b>{way === 'in' ? (r.from === 'human' ? t('pulse.checked.q.who.you') : r.from === 'system' ? t('pulse.checked.q.who.app') : r.fromName ?? r.from) : (['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to)}:</b>{' '}
-                {r.wrote.subject || r.wrote.body.split('\n')[0]}
-              </span>
-              <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
-            </div>
-          ))}
+          {foldOpen && rest.map((r, k) => {
+            // Each folded row opens to the whole text as it went (it went unchanged).
+            const opened = openRows.has(k);
+            const text = r.wrote.body;
+            const wk = -1 - k;
+            const long = text.length > 600;
+            const all = !long || whole.has(wk);
+            return (
+              <div key={`p-${r.at}-${k}`} role="listitem" style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '7px 2px', boxShadow: 'inset 0 -1px 0 var(--cth-line)' }}>
+                <button type="button" aria-expanded={opened} onClick={() => toggle(setOpenRows, k)}
+                  style={{ display: 'flex', gap: 10, alignItems: 'baseline', width: '100%', border: 'none', background: 'none', padding: 0, cursor: 'pointer', fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)', textAlign: 'start' }}>
+                  <span dir="auto" style={opened ? { minWidth: 0, overflowWrap: 'anywhere' } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                    {opened ? '▾ ' : '▸ '}<b>{way === 'in' ? (r.from === 'human' ? t('pulse.checked.q.who.you') : r.from === 'system' ? t('pulse.checked.q.who.app') : r.fromName ?? r.from) : (['god', 'michael', 'human'].includes(r.to) ? godNameNow() : r.toName ?? r.to)}:</b>{' '}
+                    {r.wrote.subject || text.split('\n')[0]}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+                </button>
+                {opened && <>
+                  <div dir="auto" style={textStyle}>{all ? text : `${text.slice(0, 600)}…`}</div>
+                  {long && <button type="button" aria-expanded={all} onClick={() => toggle(setWhole, wk)} style={linkBtn}>
+                    {all ? t('pulse.checked.showLess') : t(way === 'in' ? 'pulse.checked.showWholeQuestion' : 'pulse.checked.showWholeAnswer', { n: text.length.toLocaleString(i18n.language) })}
+                  </button>}
+                  {r.cut && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{t('pulse.checked.cut')}</div>}
+                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>{next(r)}</div>
+                </>}
+              </div>
+            );
+          })}
         </>}
         {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>
           {beforeKept ? before() : t('pulse.checked.earlier', { count: earlier })}
