@@ -493,11 +493,9 @@ export function PulseView() {
           <div style={{ ...tight, flexDirection: 'row', gap: 14 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minWidth: 0, justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                <div style={label}>{t('pulse.yourTime')}<InfoTip text={t('pulse.yourTimeTip')} /></div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                  <span style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.yourTime.asks}</span>
-                  <span style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.questions')}</span>
-                </div>
+                {/* Named for what it counts (owner, 2026-10-20: "Your time, 10 questions" made no sense). */}
+                <div style={label}>{t('pulse.questionsToYou')}<InfoTip text={t('pulse.yourTimeTip')} /></div>
+                <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.yourTime.asks}</div>
               </div>
               {/* Two small stats at the foot (owner, 2026-10-20): the typical wait and,
                   joined from Questions to you, the rate per 100 requests ("…" under 20
@@ -513,7 +511,7 @@ export function PulseView() {
                   {pl && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{`${pairLabels[0]}: ${pl.per100 !== null ? pl.per100.toFixed(1) : '…'}`}</span>}
                 </div>
               </div>
-              {pv && pair(pv.yourTime.asks, s.yourTime.asks, t('pulse.yourTime'))}
+              {pv && pair(pv.yourTime.asks, s.yourTime.asks, t('pulse.questionsToYou'))}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, flex: 1, minWidth: 0, paddingInlineStart: 14, boxShadow: 'inset 1px 0 0 var(--cth-line)', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

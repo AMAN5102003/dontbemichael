@@ -279,7 +279,8 @@ test('Questions to you is part of Your time: the count, then two small stats, th
   assert.doesNotMatch(view, /\n      questions: \(/, 'no Questions to you tile');
   const yt = view.slice(view.indexOf('      yourTime: ('), view.indexOf('    // One member'));
   // Two small stats at the foot (owner, 2026-10-20): the typical wait and the rate, never a rate under 20 requests.
-  assert.match(yt, /\{s\.yourTime\.asks\}<\/span>\s*<span[^>]*>\{t\('pulse\.questions'\)\}<\/span>/, 'the count names what it counts');
+  assert.match(yt, /<div style=\{label\}>\{t\('pulse\.questionsToYou'\)\}<InfoTip text=\{t\('pulse\.yourTimeTip'\)\} \/><\/div>\s*<div[^>]*>\{s\.yourTime\.asks\}<\/div>/, 'the column is named for what it counts (owner, 2026-10-20)');
+  assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.questionsToYou, 'Questions to you');
   assert.match(yt, /\{s\.yourTime\.medianWaitMs !== null \? duration\(s\.yourTime\.medianWaitMs, t\) : '…'\}<\/span>\s*<span[^>]*>\{t\('pulse\.typicalWait'\)\}/);
   assert.match(yt, /\{rate !== null \? rate\.toFixed\(1\) : '…'\}<\/span>\s*<span[^>]*>\{t\('pulse\.per100Requests'\)\}/);
   assert.match(yt, /\{pl && <span[^>]*>\{`\$\{pairLabels\[0\]\}: \$\{pl\.per100 !== null \? pl\.per100\.toFixed\(1\) : '…'\}`\}<\/span>\}/, 'with Compare, the span before\'s rate');

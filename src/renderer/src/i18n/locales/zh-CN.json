@@ -2622,7 +2622,7 @@
     "runsOut": "约 {{day}} 用完",
     "yourTime": "你的时间",
     "yourTimeTip": "团队向你提出的问题、等待你回答的通常时间，以及每 100 个团队请求中的提问数：团队学得越多，提问越少。请求少于 20 个时，比率显示为 …。",
-    "questions": "个问题",
+    "questionsToYou": "向你提问",
     "whileAway": "你不在时",
     "awayTip": "你 30 分钟没有使用这台电脑或电脑休眠时完成的工作。",
     "awayLine": "的工作在那时完成",
@@ -2904,7 +2904,7 @@
         "rules": "被阻止的步骤",
         "learned": "新笔记",
         "spent": "支出",
-        "yourTime": "你的时间"
+        "yourTime": "向你提问"
       }
     },
     "foundations": {

@@ -1365,8 +1365,8 @@ half written message survives the switch.
   plan use at the foot as a full width 8 px bar with its percent and reset day, on a Claude
   plan only, turning `amber` with a soft "Runs out around …" when the pace says so; who spent
   what is Team at work's job), and Your time with While you were away past a hairline (the
-  number at the top, what it means at the foot). Your time's column: the questions as the mono
-  number with "questions" beside it, and at the foot two small stats side by side, a mono 15 px
+  number at the top, what it means at the foot). Its left column, labelled "Questions to you": the questions as the mono
+  number, and at the foot two small stats side by side, a mono 15 px
   value over an 11 px `ink-3` caption: the median wait ("typical wait") and the questions per
   100 requests the team took ("…" under 20 requests; with Compare, "Yesterday: 3.1" under it).
   Compare keeps one pair of bars, on the count (owner, 2026-10-20).
