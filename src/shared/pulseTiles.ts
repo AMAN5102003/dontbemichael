@@ -13,8 +13,9 @@
  *
  * "Something happened" is the tile's big number above zero, except where a
  * tile carries two numbers (eng D2): web answers count every answer checked,
- * Questions to you counts the questions, and Your time counts the questions or
- * any work done while the owner was away.
+ * and Your time counts the questions or
+ * any work done while the owner was away (its rate of questions per 100
+ * requests is a line in it).
  *
  * No electron, node or React imports: the renderer and the tests share it.
  */
@@ -23,7 +24,8 @@ import { REFUSAL_GATES, type KeptSafe, type RefusalGate } from './pulseSafety';
 import type { LearningSpan } from './teamLearning';
 
 /** Every top tile, in the order the grid and the chip row use (design 1E). */
-export const PULSE_TILES = ['email', 'sent', 'task', 'check', 'toInternet', 'webAnswers', 'held', 'rules', 'learned', 'questions', 'spent', 'yourTime'] as const;
+// Questions to you joined Your time (owner, 2026-10-20): both counted the same asks.
+export const PULSE_TILES = ['email', 'sent', 'task', 'check', 'toInternet', 'webAnswers', 'held', 'rules', 'learned', 'spent', 'yourTime'] as const;
 export type PulseTile = (typeof PULSE_TILES)[number];
 
 /** One span's figures: the period, or the span before with Compare. */
@@ -50,23 +52,21 @@ export function tileActivity(id: PulseTile, span: TileSpan): number {
     // Only the gates the view can name, as its tile counts them.
     case 'rules': return (Object.entries(k.rules) as Array<[RefusalGate, number]>).filter(([g]) => REFUSAL_GATES.includes(g)).reduce((n, [, x]) => n + (Number(x) || 0), 0);
     case 'learned': return l ? l.added.you + l.added.job + l.added.michael : 0;
-    case 'questions': return l ? l.asks : 0;
     case 'spent': return 1;
     case 'yourTime': return s.yourTime.asks + (s.awayShare !== null && s.awayShare > 0 ? 1 : 0);
   }
 }
 
-/** What a tile's Compare bars draw over one span, as a key two spans compare
- *  by: for most tiles the same as its activity; Web answers draws the cleaned
- *  answers, Questions to you its rate, Learned its three kinds, and Your time
- *  the questions and the away share. */
+/** What a tile's Compare bars and lines draw over one span, as a key two
+ *  spans compare by: for most tiles the same as its activity; Web answers
+ *  draws the cleaned answers, Learned its three kinds, and Your time the
+ *  questions, their rate per 100 requests and the away share. */
 export function tileFigure(id: PulseTile, span: TileSpan): string {
   const l = span.learning;
   switch (id) {
     case 'webAnswers': return String(span.keptSafe.webAnswers.clean);
-    case 'questions': return String(l?.per100 ?? null);
     case 'learned': return l ? `${l.added.you}|${l.added.job}|${l.added.michael}` : '0|0|0';
-    case 'yourTime': return `${span.snapshot.yourTime.asks}|${span.snapshot.awayShare ?? null}`;
+    case 'yourTime': return `${span.snapshot.yourTime.asks}|${l?.per100 ?? null}|${span.snapshot.awayShare ?? null}`;
     default: return String(tileActivity(id, span));
   }
 }

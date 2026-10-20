@@ -11,6 +11,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 ### Fixed
 
 - **The office opens filling the screen on every launch again.** It came back at a smaller size once a single moment had read as not filling the screen (a dragged title bar, a display change, or quitting from full screen). Now every launch fills the screen; un-maximizing still goes back to your last smaller size.
+- **Pulse's Questions to you is part of Your time.** Both counted the same questions you were asked. Your time now shows how many, how long they typically waited for your answer, and how many per 100 requests the team took, with the period before's rate under it when Compare is on. The wait was labelled "on average"; it is the typical (middle) wait, and now says so.
 - **With Compare on, a Pulse card from the span before shows only when its bars show a change.** A web answers card showed 0 Yesterday and 0 Today because yesterday had an answer with nothing to take out; such a card is now a quiet chip.
 - **Pulse's lists of questions and answers open each one that went as written.** A question or answer that went unchanged showed as one cut off line you could not open. Click it to read the whole text as it went, with Show the whole answer for a long one.
 

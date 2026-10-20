@@ -44,7 +44,7 @@ const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
 const KIND_ICON: Record<WorkKind, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock' };
 /** A quiet tile's chip: its short name and icon (pulse-smart-view.md 5A). Spent never folds. */
-const QUIET_ICON: Record<PulseTile, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock', toInternet: 'shield', webAnswers: 'search', held: 'pause', rules: 'lock', learned: 'book', questions: 'help', spent: 'ledger', yourTime: 'bell' };
+const QUIET_ICON: Record<PulseTile, IconName> = { email: 'mail', sent: 'send', task: 'check', check: 'clock', toInternet: 'shield', webAnswers: 'search', held: 'pause', rules: 'lock', learned: 'book', spent: 'ledger', yourTime: 'bell' };
 
 /** The team average mark: a dashed line drawn as a gradient. */
 const AVG_DASH = 'repeating-linear-gradient(to bottom, var(--cth-ink-3) 0 3px, transparent 3px 6px)';
@@ -452,19 +452,6 @@ export function PulseView() {
             <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.inAll', { notes: learn.notes.toLocaleString(i18n.language), procedures: learn.procedures })}</div>
           </div>
       ),
-      questions: (
-          <div style={tight}>
-            <TileTitle icon="help" title={t('pulse.learning.questions')} sub={t('pulse.learning.questionsSub')} />
-            <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{rate !== null ? rate.toFixed(1) : '…'}</div>
-            <div style={{ fontSize: 11, color: 'var(--cth-ink-2)', lineHeight: '15px' }}>
-              {rate === null ? t('pulse.learning.tooFewRate') : t('pulse.learning.counts', { asks: cur.asks, turns: cur.turns.toLocaleString(i18n.language) })}
-            </div>
-            {/* A span under 20 requests draws no bar and reads "…" (eng O2). */}
-            {pl && (pl.per100 !== null || rate !== null) && pair(pl.per100, rate, t('pulse.learning.questionsSub'), 'var(--cth-ink-2)', (v) => v.toFixed(1))}
-            {/* The earlier bar's "…" says why (pulse compare v2). */}
-            {pl && pl.per100 === null && rate !== null && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{t('pulse.learning.tooFewBefore', { before: pairLabels[0] })}</div>}
-          </div>
-      ),
       // One total (owner, 2026-10-15): who spent what is Team at work's job.
       // Plan use sits at the foot of the same tile, as a bar, so the tile
       // is filled top to bottom like its neighbours.
@@ -509,6 +496,10 @@ export function PulseView() {
                 <div style={label}>{t('pulse.yourTime')}<InfoTip text={t('pulse.yourTimeTip')} /></div>
                 <div style={{ ...mono, fontSize: 24, fontWeight: 600, lineHeight: '26px' }}>{s.yourTime.asks}</div>
                 <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{s.yourTime.medianWaitMs !== null ? t('pulse.questionsAnswered', { time: duration(s.yourTime.medianWaitMs, t) }) : t('pulse.questions')}</div>
+                {/* Questions to you, joined here (owner, 2026-10-20): the rate per 100
+                    requests, never under 20 requests (eng O2); with Compare, the span before's. */}
+                <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{rate !== null ? t('pulse.rateLine', { rate: rate.toFixed(1) }) : t('pulse.learning.tooFewRate')}</div>
+                {pl && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', lineHeight: '15px' }}>{pl.per100 !== null ? `${pairLabels[0]}: ${pl.per100.toFixed(1)}` : t('pulse.learning.tooFewBefore', { before: pairLabels[0] })}</div>}
               </div>
               {pv && pair(pv.yourTime.asks, s.yourTime.asks, t('pulse.yourTime'))}
             </div>

@@ -38,7 +38,8 @@ Mockup: `~/.gstack/projects/agentvivekkumar-dontbemichael/designs/pulse-smart-ti
 - **1E, one grid, one chip row.** Every tile with data flows into one grid under "What got
   done", in today's order: emails organized, emails sent, tasks finished, scheduled checks,
   questions to the internet, web answers cleaned, messages held, steps blocked, what the team
-  learned, questions to you, Spent, your time. The Kept safe and row-of-four tiles keep their
+  learned, Spent, your time (Questions to you joined Your time, owner 2026-10-20: both counted
+  the same questions; eng review D1 A). The Kept safe and row-of-four tiles keep their
   own builds. One chip row follows the grid, above Team at work, in the same order.
 
 ```
