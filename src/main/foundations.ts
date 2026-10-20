@@ -5,7 +5,7 @@
  * route `foundations`; the owner through the foundation card.
  *
  *   member ─(answer + source | gap | draft)─► handle()
- *     ├─ source checked: an owner message in the hive log, or a file in the
+ *     ├─ source checked: an owner message the app kept as sent to the sender, or a file in the
  *     │  office folders; Michael's confirmation; anything else goes to Michael
  *     ├─ fill only empty, owner wins, cap, a clash goes to Michael
  *     ├─ a gap kept once per question, the first one told to Michael
@@ -41,7 +41,7 @@ export interface FoundationsDeps {
   profile?: () => ProfileFacts;
   setProfile?: (patch: ProfileFacts) => void;
   /** Whether a message with this id came from the owner and reached this
-   *  member (the hive log). */
+   *  member (the owner's private list, never the shared hive log). */
   ownerSaid?: (messageId: string, recipient: string) => boolean;
   /** A member's jobs: a gap counts only for its own job's questions. */
   jobsOf?: (agentId: string) => FoundationJob[];
@@ -348,7 +348,7 @@ export class Foundations {
     return `Saved to the company foundations: "${q}". Every member who needs it sees it.`;
   }
 
-  /** How sure the app is of a source: an owner message the hive log shows
+  /** How sure the app is of a source: an owner message the app's list shows
    *  reaching the sender (owner rights only through Michael), Michael's
    *  confirmation, or a file in the office folders. */
   private level(from: string, src: Record<string, unknown>): Level | null {
@@ -362,7 +362,7 @@ export class Foundations {
 
   private describe(src: Record<string, unknown>): string {
     if (typeof src.outside === 'string') return `outside text (${src.outside.slice(0, 120)})`;
-    if (typeof src.owner === 'string') return `a message said to be the owner's (${src.owner.slice(0, 60)}), which the log does not show reaching them`;
+    if (typeof src.owner === 'string') return `a message said to be the owner's (${src.owner.slice(0, 60)}), which the app has no record of reaching them`;
     if (typeof src.file === 'string') return `the file ${src.file.slice(0, 200)}`;
     if (typeof src.confirmed === 'string') return 'a confirmation only you can give';
     return 'no source';
