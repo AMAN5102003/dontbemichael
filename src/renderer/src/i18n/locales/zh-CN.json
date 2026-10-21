@@ -1577,6 +1577,7 @@
   "integrations": {
     "errLabel": "请给它一个名称。",
     "errId": "无法从该名称派生出有效的 ID。",
+    "errIdTaken": "另一个集成已在使用这个 ID，所以没有覆盖它。请修改名称，然后再保存。",
     "errBaseUrl": "必须填写基础 URL。",
     "errBaseUrlFormat": "基础 URL 必须是 https://（或用于本地目标的 http://127.0.0.1 / localhost）。",
     "errHeader": "请求头名称必须是 1 至 64 个字符，只能使用字母 A 至 Z、数字 0 至 9 或连字符。",

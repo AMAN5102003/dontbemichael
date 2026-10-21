@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { authTypeNeedsSecret as needsSecret } from '@shared/integrations';
+import { authTypeNeedsSecret as needsSecret, INTEGRATION_ID_TAKEN } from '@shared/integrations';
 import { PixelButton } from './PixelButton';
 import {
   integrationsClient,
@@ -171,8 +171,13 @@ export function IntegrationsRegistry() {
     setBusy(true); setErr('');
     try {
       const secret = draft.secret.trim().length > 0 ? draft.secret : undefined;
-      const res = await integrationsClient.save(recordFromDraft(draft, Date.now()), secret);
-      if (!res.ok) { setErr(res.error || tr('integrations.couldNotSave')); return; }
+      const res = await integrationsClient.save(recordFromDraft(draft, Date.now()), secret, { isNew: draft.isNew });
+      if (!res.ok) {
+        // Taken since this form loaded (another window, or a list not loaded yet):
+        // reload it, so a changed label picks a free id.
+        if (res.error === INTEGRATION_ID_TAKEN) { await refresh(); setErr(tr('integrations.errIdTaken')); return; }
+        setErr(res.error || tr('integrations.couldNotSave')); return;
+      }
       await refresh();
       flash(draft.isNew ? tr('integrations.added') : tr('integrations.updated'));
       goList();

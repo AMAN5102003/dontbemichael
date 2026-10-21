@@ -4678,7 +4678,10 @@ ipcMain.handle('terminal:openAtFolder', async (_evt, cwd: unknown) => {
 // returned over IPC. `list` redacts secretRef to a `hasSecret` boolean.
 ipcMain.handle('integrations:list', () => integrations.listRecordsRedacted());
 ipcMain.handle('integrations:templates', () => INTEGRATION_TEMPLATES);
-ipcMain.handle('integrations:upsert', (_evt, record: unknown) => integrations.upsertRecord(record));
+// The form says whether this is a new integration: a new one never replaces
+// one already registered under its id (upsertRecord).
+ipcMain.handle('integrations:upsert', (_evt, record: unknown, opts: unknown) =>
+  integrations.upsertRecord(record, { isNew: (opts as { isNew?: unknown } | null | undefined)?.isNew === true }));
 ipcMain.handle('integrations:canStoreSecrets', () =>
   integrations.canStoreSecrets() ? { ok: true as const } : { ok: false as const, error: cannotStoreReason() });
 ipcMain.handle('integrations:setSecret', (_evt, payload: unknown) => {
