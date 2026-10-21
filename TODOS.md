@@ -16,15 +16,6 @@
 
 ## Research agent (deferred from the third ship of mit/named-links, 2026-10-13)
 
-### A checked message for Pete is never dropped when delivery fails
-
-**What:** `queueForResearch()` in `src/main/hive.ts` removes the message's row from `research-pending.json` before `deliverToResearch()` and the commit succeed, and a delivery error is only logged. Keep the row until delivery succeeds, requeue it on failure, and tell Michael when it can't be delivered.
-
-**Why:** Found by the Codex adversarial review of the mit/named-links ship (2026-10-14). A disk or git error drops an owner or app message for Pete with no trace, and the record that would have recovered it is already gone.
-
-**Effort:** S
-**Priority:** P2
-
 ### Catch money amounts in the privacy check's pattern recheck
 
 **What:** Add a pattern for money amounts to the recheck in `src/shared/dataClasses.ts`: digits with a currency mark or code before or after them (Rs, INR, ₹, $, USD, €, £ and the like, with the groupings people write, such as `1,35,000` or `2,000.50`). Today the only money pattern is the card number check.
