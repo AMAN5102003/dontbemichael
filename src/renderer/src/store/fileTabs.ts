@@ -20,7 +20,7 @@ export interface FileTab {
   openedAt: number;
 }
 
-export type FixedView = 'office' | 'tasks' | 'graph';
+export type FixedView = 'office' | 'tasks' | 'pulse' | 'graph';
 
 export interface FileTabState {
   fileTabs: FileTab[];

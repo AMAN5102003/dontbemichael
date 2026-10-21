@@ -110,7 +110,8 @@ test('the tab shows the memory first and one search box below it', () => {
   const tab = src.slice(src.indexOf('function MemoryTab('), src.indexOf('const srOnly'));
   assert.ok(tab.indexOf('<MemoryNotes') > 0 && tab.indexOf('<MemoryNotes') < tab.indexOf("memoryNotes.searchTitle')}</h3>"), 'notes before search');
   assert.equal((tab.match(/<input/g) || []).length, 1, 'one search box');
-  assert.match(tab, /role="radiogroup"/);
+  // Exact words only: search by meaning covers company knowledge, in Settings (owner, 2026-10-19).
+  assert.doesNotMatch(tab, /role="radiogroup"/);
   assert.match(tab, /aria-pressed=\{showFile\}/, 'Show the file toggles the raw text');
   assert.match(tab, /<MarkdownPreview source=\{detail\.index\} variant="card" \/>/, 'free-form memory falls back to markdown');
 });
@@ -158,6 +159,21 @@ test('every slug the app writes can be read back', () => {
     assert.equal(isProcedureSlug(slug), true, `${name} -> ${slug}`);
     assert.deepEqual(procedurePointer(`${name.trim()}: steps in memory/procedures/${slug}.md`)?.slug, slug);
   }
+});
+
+test('procedures named with no Latin letters each keep their own file', () => {
+  const { procedureSlug, applyOps } = loadTs('src/shared/memoryIndex.ts');
+  const names = ['每周财务汇总', '库存盘点', 'إغلاق نهاية اليوم', 'साप्ताहिक रिपोर्ट'];
+  const slugs = names.map(procedureSlug);
+  assert.equal(new Set(slugs).size, names.length, slugs.join(', '));
+  for (const [i, slug] of slugs.entries()) {
+    assert.equal(isProcedureSlug(slug), true, slug);
+    assert.equal(procedureSlug(` ${names[i]} `), slug, 'the same name always gives the same file');
+  }
+  const ops = names.map((name, i) => ({ op: 'procedure', name, steps: `1. step ${i}`, source: 'task' }));
+  const r = applyOps([], ops, '2026-10-12');
+  assert.equal(r.entries.length, names.length, 'one pointer each, none replaced');
+  assert.deepEqual(r.entries.map((e) => procedurePointer(e.text)?.slug), slugs);
 });
 
 test('a name with letters NFKD turns uppercase still gives a readable slug', () => {

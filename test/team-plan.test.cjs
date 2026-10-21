@@ -159,3 +159,14 @@ test('an imported pack agent without a Work style gets one from its card fields,
 test('team colours cycle, with Michael\'s lemon last', () => {
   assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map(teamAccent), ['mint', 'sky', 'coral', 'lilac', 'peach', 'lemon', 'mint']);
 });
+
+test('Michael hears who did not start, by name, and that the app tries again', () => {
+  const { didNotStartNote } = loadTs('src/shared/teamPlan.ts');
+  assert.deepEqual(didNotStartNote(['Pam'], false), {
+    subject: 'Pam did not start',
+    body: 'Pam did not start when the office opened and is not on the floor. The app tries again the next time the office opens. Tell the owner who is missing.'
+  });
+  const two = didNotStartNote(['Pam', 'Jim', 'Oscar'], true);
+  assert.equal(two.subject, 'Team members did not start');
+  assert.match(two.body, /^Pam, Jim and Oscar did not start again on this launch and are not on the floor\./);
+});

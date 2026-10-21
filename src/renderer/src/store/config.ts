@@ -1,5 +1,7 @@
 // Mirrors src/main/config.ts. Kept as a renderer-side type-only module
 // so we don't have to reach into the preload package to type-check.
+import type { ResearchConfig } from '@shared/research';
+import type { DataClassId, DataClassSetting } from '@shared/dataClasses';
 import type { ClaudeConnectorsState } from '@shared/claudeConnectors';
 import type { MailboxRecord, AgentCapabilities } from '@shared/mailboxes';
 import type { CompanyProfile } from '@shared/companyProfile';
@@ -84,6 +86,11 @@ export interface HarnessConfig {
   businessTeam?: Array<{ agentId: string; folder: string }>;
   /** Set once the onboarding team has been started, so it is started once. */
   businessTeamStarted?: boolean;
+  /** Research, the one team member on the internet (shared/research.ts). */
+  research?: ResearchConfig;
+  /** The owner's data classes that differ from the seeded defaults
+   *  (shared/dataClasses.ts): what the team may send to Research. */
+  dataClasses?: Partial<Record<DataClassId, DataClassSetting>>;
   /** Team members that failed their first start, tried again (and only they)
    *  on each later launch until they start. */
   businessTeamRetry?: string[];
@@ -113,6 +120,8 @@ export interface HarnessConfig {
   godProvider?: AgentProvider;
   /** How Claude Code signs in: the owner's Claude account, or an Anthropic API key (mirrors src/main/config.ts). */
   claudeAuth?: 'account' | 'apiKey';
+  /** The owner's monthly Claude plan price in USD; unset uses the detected plan's (mirrors src/main/config.ts). */
+  planPriceMonthly?: number;
   godModel?: string;
   /** Per-server consent for the default MCP bundle, keyed by catalog id (mirrors
    *  src/main/config.ts; seeded from MCP_CATALOG). */
@@ -132,7 +141,6 @@ export interface HarnessConfig {
   connectorsOn?: { [key: string]: boolean };
   /** Connector keys the owner has seen in Settings. */
   connectorsSeen?: string[];
-  semanticMemory: boolean;
   embeddingModel: 'minilm' | 'embeddinggemma';
   missions?: ScheduledMission[];
   opsStandupSeeded?: boolean;
@@ -288,7 +296,8 @@ export type { CatalogModel, ModelCatalog } from '@shared/modelCatalogPayload';
  *  - kimi: managed Kimi Code aliases accepted by `kimi --model <alias>`.
  *  - custom: no presets at all; the command field is the whole interface.
  */
-const BAKED: ModelCatalog = modelCatalog;
+// The JSON import types `tier` as a plain string; the parser's ModelTier is the contract.
+const BAKED: ModelCatalog = modelCatalog as ModelCatalog;
 
 /** The catalog the pickers actually read. Starts as the baked copy and is
  *  replaced, per provider, when the remote copy arrives from main. `let`, not

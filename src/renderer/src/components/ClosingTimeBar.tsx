@@ -19,6 +19,9 @@ export interface ClosingTimeState {
   confirmed?: string[];
   waiting?: string[];
   excused?: string[];
+  /** Team members whose engine isn't reporting: their mail is held, so they
+   *  can't hear closing time and are not waited on. */
+  notReporting?: string[];
   godId?: string;
   godLive?: boolean;
   /** The app reopens itself once closed (a Claude Code update). */
@@ -62,6 +65,7 @@ export function ClosingTimeBar({ closing, onCancel, onForceQuit, onRetry }: Clos
   const error = c?.phase === 'error';
   const done = c?.phase === 'complete';
   const waiting = c?.waiting?.length ?? 0;
+  const silent = c?.notReporting?.length ?? 0;
   const pct = c && c.total > 0 ? Math.min(100, Math.round((c.acked / c.total) * 100)) : done ? 100 : 0;
   const force = async () => { setBusy(true); onForceQuit(); };
 
@@ -84,7 +88,8 @@ export function ClosingTimeBar({ closing, onCancel, onForceQuit, onRetry }: Clos
     }}>
       {/* Who is still working, above the bar so it opens upward from it. */}
       {open && c && !error && (
-        <div style={{ padding: '6px 16px 2px', maxHeight: 300, overflowY: 'auto', borderBottom: '1px solid var(--cth-line)' }}>
+        // The list below is the one scroller; a second one here showed two scrollbars (owner, 2026-10-11).
+        <div style={{ padding: '6px 16px 2px', borderBottom: '1px solid var(--cth-line)' }}>
           {c.phase === 'timeout' && c.godLive !== false && (
             <div style={{ fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink-2)', padding: '6px 0' }}>{t('quit.slow')}</div>
           )}
@@ -106,13 +111,22 @@ export function ClosingTimeBar({ closing, onCancel, onForceQuit, onRetry }: Clos
             <span role="status" aria-live="polite" style={{ fontSize: 12.5, color: error ? 'var(--cth-coral-text)' : 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{status}</span>
           </div>
           {!error && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, minHeight: 28 }}>
               <span style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--cth-line)', overflow: 'hidden' }}>
                 <span style={{ display: 'block', height: '100%', width: `${pct}%`, borderRadius: 2, background: done ? 'var(--cth-green)' : 'var(--cth-indigo)', transition: 'width 600ms var(--cth-ease)' }} />
               </span>
-              {c && !done && waiting > 0 && (
-                <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} style={linkBtn}>
-                  {open ? t('closingBar.hideWho') : (waiting === 1 ? t('closingBar.left', { count: waiting }) : t('closingBar.leftPlural', { count: waiting }))}
+              {c && !done && (waiting > 0 || silent > 0) && (
+                <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} style={hitBtn}>
+                  <span style={linkBtn}>
+                  {open ? t('closingBar.hideWho')
+                    : waiting > 0 ? (waiting === 1 ? t('closingBar.left', { count: waiting }) : t('closingBar.leftPlural', { count: waiting }))
+                    : t('closingBar.notReporting', { count: silent })}
+                  {/* The list opens upward from the bar: the chevron points up to open it, down to close it. */}
+                  <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"
+                    style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms var(--cth-ease)' }}>
+                    <path d="M6 15l6-6 6 6" />
+                  </svg>
+                  </span>
                 </button>
               )}
             </div>
@@ -140,9 +154,17 @@ export function ClosingTimeBar({ closing, onCancel, onForceQuit, onRetry }: Clos
   );
 }
 
+// A soft pill with a chevron, so the count reads as something that opens
+// (owner, 2026-10-11: plain indigo text did not look clickable).
 const linkBtn: CSSProperties = {
-  flexShrink: 0, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer',
+  flexShrink: 0, border: 'none', background: 'var(--cth-indigo-soft)', padding: '0 8px 0 10px', height: 24, borderRadius: 'var(--cth-r-pill)', cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center', gap: 4,
   fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-indigo-text)'
+};
+// The 28 px target (DESIGN.md 12) around the 24 px pill, like the composer's count.
+const hitBtn: CSSProperties = {
+  flexShrink: 0, height: 28, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+  display: 'inline-flex', alignItems: 'center'
 };
 
 /**
@@ -157,7 +179,7 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
   const { t } = useTranslation();
   // Only the agents on the list: the store changes on every burst of terminal
   // output from any agent, and the dialog need not re-render for the others.
-  const listed = new Set([...(closing.waiting ?? []), ...(closing.excused ?? []), ...(closing.confirmed ?? []), closing.godId ?? '']);
+  const listed = new Set([...(closing.waiting ?? []), ...(closing.notReporting ?? []), ...(closing.excused ?? []), ...(closing.confirmed ?? []), closing.godId ?? '']);
   const agents = useStore(useShallow((s) => s.agents.filter((a) => listed.has(a.id))));
   const godName = useResolvedGodName();
   const [now, setNow] = useState(() => Date.now());
@@ -190,6 +212,7 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
   if (!godId) return null;
   const waiting = closing.waiting ?? [];
   const excused = closing.excused ?? [];
+  const notReporting = closing.notReporting ?? [];
   const confirmed = closing.confirmed ?? [];
   const byId = (id: string): Agent | undefined => agents.find((a) => a.id === id);
   const nameOf = (id: string): string => (id === godId ? godName : byId(id)?.name ?? id);
@@ -227,7 +250,7 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
   // Michael's terminal ended: nobody can finish the close (review, owner 2026-09-29).
   const godGone = closing.godLive === false;
   return (
-    <div ref={listRef} className="cth-closing-list" tabIndex={-1} role="list" aria-label={t('closingTime.listLabel')} style={{ maxHeight: 360, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+    <div ref={listRef} className="cth-closing-list" tabIndex={-1} role="list" aria-label={t('closingTime.listLabel')} style={{ maxHeight: 300, overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
       {waiting.map((id) => {
         const d = doing(byId(id));
         return (
@@ -254,6 +277,11 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
           </div>
         );
       })}
+      {notReporting.map((id) => (
+        <div key={id} role="listitem" style={row}>
+          <span style={{ fontWeight: 600 }}>{nameOf(id)}</span> <span style={hint}>{t('closingTime.notReporting')}</span>
+        </div>
+      ))}
       {excused.map((id) => (
         <div key={id} role="listitem" style={row}>
           <span style={{ fontWeight: 600 }}>{nameOf(id)}</span> <span style={hint}>{t('closingTime.excused')}</span>

@@ -18,7 +18,7 @@ const path = require('node:path');
 const { zipSync, strToU8 } = require('fflate');
 const loadTs = require('./load-ts.cjs');
 
-const { extractDocumentText } = loadTs('src/main/docText.ts');
+const { extractDocumentText, MAX_PDF_PAGES } = loadTs('src/main/docText.ts');
 const kg = require('../src/main/kg-core.cjs');
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-text-'));
@@ -49,6 +49,26 @@ function docx(name, bodyParas, extra = {}) {
 const A = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"';
 const slideXml = (...lines) =>
   `<?xml version="1.0"?><p:sld ${A}><p:txBody>${lines.map((l) => `<a:p><a:r><a:t>${l}</a:t></a:r></a:p>`).join('')}</p:txBody></p:sld>`;
+
+/** A PDF with one line of text on each page. */
+function pdfPages(name, lines) {
+  const objs = ['<< /Type /Catalog /Pages 2 0 R >>', '', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>'];
+  const kids = [];
+  for (const line of lines) {
+    const stream = `BT /F1 12 Tf 72 720 Td (${line}) Tj ET`;
+    objs.push(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents ${objs.length} 0 R /Resources << /Font << /F1 3 0 R >> >> >>`);
+    kids.push(`${objs.length} 0 R`);
+  }
+  objs[1] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`;
+  let out = '%PDF-1.4\n';
+  const offsets = [];
+  objs.forEach((o, i) => { offsets.push(out.length); out += `${i + 1} 0 obj\n${o}\nendobj\n`; });
+  const xref = out.length;
+  out += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return write(name, Buffer.from(out, 'latin1'));
+}
 
 function pdf(name, contentStream) {
   const objs = [
@@ -105,7 +125,7 @@ test('Word: footnotes and letterhead headers are searchable too, after the body'
 
 // ─── PowerPoint ──────────────────────────────────────────────────────────────
 
-test('PowerPoint: slides in numeric order (2 before 10), then speaker notes', async () => {
+test('PowerPoint: files without a presentation manifest retain numeric order, then speaker notes', async () => {
   const r = await extractDocumentText(zip('deck.pptx', {
     'ppt/slides/slide10.xml': slideXml('Ten'),
     'ppt/slides/slide2.xml': slideXml('Two'),
@@ -114,6 +134,89 @@ test('PowerPoint: slides in numeric order (2 before 10), then speaker notes', as
   }));
   assert.equal(r.kind, 'text');
   assert.equal(r.text, 'Slide 1\nSummer menu\nLaunching June 1\n\nSlide 2\nTwo\n\nSlide 10\nTen\n\nSpeaker notes\nMention the patio');
+});
+
+const P = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+const SLIDE_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide';
+
+function presentation(ids) {
+  return `<p:presentation ${P}><p:sldIdLst>${ids.map((id, i) => `<p:sldId id="${256 + i}" r:id="${id}"/>`).join('')}</p:sldIdLst></p:presentation>`;
+}
+
+test('PowerPoint: reordered slides follow the manifest and use their displayed slide numbers', async () => {
+  const r = await extractDocumentText(zip('reordered.pptx', {
+    'ppt/presentation.xml': presentation(['intro', 'account', 'activate']),
+    'ppt/_rels/presentation.xml.rels': `<Relationships>
+      <Relationship Id="account" Type="${SLIDE_REL}" Target="slides/slide1.xml"/>
+      <Relationship Id="activate" Type="${SLIDE_REL}" Target="slides/slide10.xml"/>
+      <Relationship Id="intro" Type="${SLIDE_REL}" Target="slides/slide2.xml"/></Relationships>`,
+    'ppt/slides/slide1.xml': slideXml('Create an account'),
+    'ppt/slides/slide2.xml': slideXml('Choose a plan'),
+    'ppt/slides/slide10.xml': slideXml('Pay and activate'),
+    'ppt/slides/slide3.xml': slideXml('Unused slide must not be included')
+  }));
+  assert.equal(r.kind, 'text');
+  assert.equal(r.text, 'Slide 1\nChoose a plan\n\nSlide 2\nCreate an account\n\nSlide 3\nPay and activate');
+});
+
+test('PowerPoint: relationship targets resolve as package paths and blank slides keep their position', async () => {
+  const r = await extractDocumentText(zip('slide-paths.pptx', {
+    'ppt/presentation.xml': presentation(['blank', 'second', 'third']),
+    'ppt/_rels/presentation.xml.rels': `<Relationships>
+      <Relationship Id="blank" Type="${SLIDE_REL}" Target="slides/slide9.xml"/>
+      <Relationship Id="second" Type="${SLIDE_REL}" Target="/ppt/slides/slide7.xml"/>
+      <Relationship Id="third" Type="${SLIDE_REL}" Target="slides/../slides/step&amp;summary.xml"/></Relationships>`,
+    'ppt/slides/slide9.xml': `<p:sld ${A}/>`,
+    'ppt/slides/slide7.xml': slideXml('Second slide'),
+    'ppt/slides/step&summary.xml': slideXml('Third slide')
+  }));
+  assert.equal(r.kind, 'text');
+  assert.equal(r.text, 'Slide 2\nSecond slide\n\nSlide 3\nThird slide');
+});
+
+test('PowerPoint: a slide listed 20,000 times is extracted only once', async () => {
+  const text = 'Repeated slide content. '.repeat(50).trim();
+  const r = await extractDocumentText(zip('repeated-slide.pptx', {
+    'ppt/presentation.xml': presentation(Array(20000).fill('first')),
+    'ppt/_rels/presentation.xml.rels': `<Relationships>
+      <Relationship Id="first" Type="${SLIDE_REL}" Target="slides/slide1.xml"/></Relationships>`,
+    'ppt/slides/slide1.xml': slideXml(text)
+  }));
+  assert.equal(r.kind, 'text');
+  assert.equal(r.text.length, `Slide 1\n${text}`.length, 'repeated references must not amplify the output');
+  assert.equal(r.text, `Slide 1\n${text}`);
+});
+
+test('PowerPoint: duplicate slide parts keep their first position even through different relationships', async () => {
+  const r = await extractDocumentText(zip('duplicate-targets.pptx', {
+    'ppt/presentation.xml': presentation(['blank', 'first', 'alias', 'blank', 'last']),
+    'ppt/_rels/presentation.xml.rels': `<Relationships>
+      <Relationship Id="blank" Type="${SLIDE_REL}" Target="slides/slide9.xml"/>
+      <Relationship Id="first" Type="${SLIDE_REL}" Target="slides/slide1.xml"/>
+      <Relationship Id="alias" Type="${SLIDE_REL}" Target="/ppt/slides/../slides/slide1.xml"/>
+      <Relationship Id="last" Type="${SLIDE_REL}" Target="slides/slide2.xml"/></Relationships>`,
+    'ppt/slides/slide9.xml': `<p:sld ${A}/>`,
+    'ppt/slides/slide1.xml': slideXml('Read once'),
+    'ppt/slides/slide2.xml': slideXml('Last slide')
+  }));
+  assert.equal(r.kind, 'text');
+  assert.equal(r.text, 'Slide 2\nRead once\n\nSlide 5\nLast slide');
+});
+
+test('PowerPoint: a broken slide reference is refused rather than guessed from filenames', async () => {
+  for (const rels of [
+    '<Relationships/>',
+    `<Relationships><Relationship Id="first" Type="${SLIDE_REL}" Target="slides/missing.xml"/></Relationships>`,
+    `<Relationships><Relationship Id="first" Type="${SLIDE_REL}" Target="slides/slide1.xml" TargetMode="External"/></Relationships>`
+  ]) {
+    const r = await extractDocumentText(zip('broken-slides.pptx', {
+      'ppt/presentation.xml': presentation(['first']),
+      'ppt/_rels/presentation.xml.rels': rels,
+      'ppt/slides/slide1.xml': slideXml('Do not guess this is the first slide')
+    }));
+    assert.equal(r.kind, 'unreadable');
+    assert.match(r.reason, /damaged or missing parts/);
+  }
 });
 
 test('PowerPoint: a deck of pictures is refused with a reason, not stored empty', async () => {
@@ -157,6 +260,26 @@ test('Excel: every sheet by name, columns kept aligned, all cell kinds read', as
   );
 });
 
+test('Excel: a workbook whose tags carry a namespace prefix (Open XML SDK, ClosedXML) is read like one from Excel', async () => {
+  // Excel writes SpreadsheetML as the default namespace (<row>). Microsoft's
+  // Open XML SDK and ClosedXML, behind many business systems' exports, write
+  // the same elements with a prefix (<x:row>). Both are valid Office Open XML.
+  const S = 'xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"';
+  const r = await extractDocumentText(zip('clients.xlsx', {
+    'xl/workbook.xml': `<x:workbook ${S} xmlns:r="r"><x:sheets>
+      <x:sheet name="Clients" sheetId="1" r:id="R1" /></x:sheets></x:workbook>`,
+    'xl/_rels/workbook.xml.rels': `<Relationships>
+      <Relationship Type="worksheet" Target="/xl/worksheets/sheet1.xml" Id="R1" /></Relationships>`,
+    'xl/sharedStrings.xml': `<x:sst ${S}><x:si><x:t>Client</x:t></x:si><x:si><x:t xml:space="preserve">Phone</x:t></x:si></x:sst>`,
+    'xl/worksheets/sheet1.xml': `<x:worksheet ${S}><x:sheetData>
+      <x:row r="1"><x:c r="A1" t="s"><x:v>0</x:v></x:c><x:c r="C1" t="s"><x:v>1</x:v></x:c></x:row>
+      <x:row r="2"><x:c r="A2" t="inlineStr"><x:is><x:t>Northside Bakery</x:t></x:is></x:c><x:c r="B2" s="1" /><x:c r="C2"><x:v>5550142</x:v></x:c></x:row>
+      </x:sheetData></x:worksheet>`
+  }));
+  assert.equal(r.kind, 'text');
+  assert.equal(r.text, 'Sheet: Clients\nClient\t\tPhone\nNorthside Bakery\t\t5550142');
+});
+
 // ─── PDF ─────────────────────────────────────────────────────────────────────
 
 test('PDF: text is read with the bundled reader — no pdftotext needed', async () => {
@@ -164,6 +287,18 @@ test('PDF: text is read with the bundled reader — no pdftotext needed', async 
   assert.equal(r.kind, 'text');
   assert.equal(r.text, 'Catering deposit is 50 percent.');
   assert.equal(r.extractor, 'pdfjs@1');
+});
+
+test('PDF: pages are read in order, and a very long one only up to the page limit', async () => {
+  // Value: protects=a huge PDF is read up to MAX_PDF_PAGES with a note, never every page at once; fails_when=readPdf reads past the limit or drops the note; why_new=TODOS "Parse documents off the main thread" (page limit); seam=none
+  const short = await extractDocumentText(pdfPages('menu.pdf', ['Soup', 'Salad']));
+  assert.equal(short.text, 'Page 1\nSoup\n\nPage 2\nSalad');
+  const lines = Array.from({ length: MAX_PDF_PAGES + 1 }, (_, i) => `Line ${i + 1}`);
+  const long = await extractDocumentText(pdfPages('manual.pdf', lines));
+  assert.equal(long.kind, 'text');
+  assert.match(long.text, new RegExp(`Page ${MAX_PDF_PAGES}\\nLine ${MAX_PDF_PAGES}\\n`));
+  assert.doesNotMatch(long.text, new RegExp(`Line ${MAX_PDF_PAGES + 1}`));
+  assert.match(long.text, new RegExp(`\\[Only the first ${MAX_PDF_PAGES} pages of this PDF were read\\.\\]$`));
 });
 
 test('PDF: a scan with no text layer is refused with a reason an owner understands', async () => {

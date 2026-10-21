@@ -366,6 +366,32 @@ test('a damaged approvals file is not replaced with a new empty store', (t) => {
   assert.equal(fs.existsSync(`${file}.tmp`), false, 'no replacement temp file is left behind');
 });
 
+test('list_mailboxes ignores malformed saved send records instead of crashing', async (t) => {
+  // Value: protects=a damaged send record cannot break every mail tool for its member; fails_when=coerceStore accepts a non-date sentAt or malformed thread fields; why_new=list_mailboxes formats sentAt with toISOString; seam=none
+  const { call, dir } = setup(t);
+  fs.writeFileSync(path.join(dir, 'mail-proposals.json'), JSON.stringify({
+    proposals: [],
+    standing: [],
+    paused: {},
+    sends: [
+      { agentId: 'dwight', mailbox: 'ceo', messageId: '<good@x.com>', references: [], to: 'lead@client.com', subject: 'Intro', sentAt: 1_000 },
+      { agentId: 'dwight', mailbox: 'ceo', messageId: '<bad-date@x.com>', references: [], to: 'lead@client.com', subject: 'Intro', sentAt: 'yesterday' },
+      { agentId: 'dwight', mailbox: 'ceo', messageId: '<out-of-range-date@x.com>', references: [], to: 'lead@client.com', subject: 'Intro', sentAt: 1e20 },
+      { agentId: 'dwight', mailbox: 'ceo', messageId: '<bad-thread@x.com>', references: '<good@x.com>', to: 'lead@client.com', subject: 'Re: Intro', sentAt: 2_000 }
+    ]
+  }), 'utf8');
+
+  const listed = await call('dwight', 'list_mailboxes', {});
+  assert.equal(listed.status, 200);
+  const grant = listed.body.mailboxes.find((m) => m.mailbox === 'ceo');
+  assert.deepEqual(grant.your_recent_sends, [{
+    message_id: '<good@x.com>',
+    to: 'lead@client.com',
+    subject: 'Intro',
+    sent_at: new Date(1_000).toISOString()
+  }]);
+});
+
 test('ending a grant withdraws its emails and revokes its standing approvals in one message; Draft only withdraws', async (t) => {
   // Value: protects=no dead errands and no silently revived trust (D13, OV6); fails_when=cancel or revoke is skipped, or one message per rule; why_new=no grant lifecycle existed; seam=none
   const { call, approvals, admin, out, cfg } = setup(t, office('approval'));
@@ -430,6 +456,74 @@ test('Michael hears of a pause once, after five minutes, across a restart; a res
   const main = read('src/main/index.ts');
   assert.match(main, /try \{ noticePausedGrants\(\); \} catch/);
   assert.match(main, /if \(!g \|\| !memberPresent\(agentId\)\) continue;/, 'a grant of someone off the team is nobody\'s news');
+});
+
+test('a damaged saved pause notice starts its wait again, and Michael still hears once', (t) => {
+  // Value: protects=a hand edited or damaged pause entry cannot silence the notice forever or set it off at once (D10, EV1); fails_when=coerceStore keeps an entry whose since is not a past finite number or whose told is not a boolean; why_new=paused entries were cast without a check; seam=none
+  const key = 'dwight\u0000ceo';
+  const start = 1_000_000;
+  const damaged = {
+    'since is text': { since: 'yesterday', told: false },
+    'since is missing': { told: false },
+    'since is null': { since: null, told: false },
+    'since is far in the future': { since: 9e15, told: false },
+    'told is text': { since: start - PAUSE_NOTICE_MS, told: 'false' },
+    'told is missing': { since: start - PAUSE_NOTICE_MS },
+    'entry is a boolean': true,
+    'entry is text': 'paused',
+    'entry is null': null,
+    'entry is a list': [start, false]
+  };
+  for (const [name, entry] of Object.entries(damaged)) {
+    const { approvals, dir, tick } = setup(t, office(), { now: start });
+    const file = path.join(dir, 'mail-proposals.json');
+    fs.writeFileSync(file, JSON.stringify({ proposals: [], standing: [], sends: [], paused: { [key]: entry } }), 'utf8');
+    assert.deepEqual(approvals.pausedDue([key]), [], `${name}: nothing at once`);
+    tick(PAUSE_NOTICE_MS - 1);
+    assert.deepEqual(approvals.pausedDue([key]), [], `${name}: not before the wait is over`);
+    tick(1);
+    assert.deepEqual(approvals.pausedDue([key]), [key], `${name}: told after exactly PAUSE_NOTICE_MS`);
+    assert.deepEqual(approvals.pausedDue([key]), [], `${name}: told once`);
+    tick(PAUSE_NOTICE_MS);
+    assert.deepEqual(approvals.pausedDue([key]), [], `${name}: still once`);
+    assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')).paused[key], { since: start, told: true }, `${name}: the file is repaired`);
+  }
+});
+
+test('a saved pause notice whose time reads as infinite starts its wait again', (t) => {
+  // Value: protects=a time that JSON text turns into Infinity (1e999) cannot fire the notice at once or silence it forever (D10, EV1); fails_when=coerceStore stops requiring a finite since; why_new=JSON.stringify writes Infinity as null, so only raw JSON text reaches this; seam=none
+  const key = 'dwight\u0000ceo';
+  const start = 1_000_000;
+  // Written as raw text: JSON.parse reads these as Infinity and -Infinity.
+  const raws = { 'since is 1e999': '1e999', 'since is -1e999': '-1e999' };
+  for (const [name, literal] of Object.entries(raws)) {
+    const { approvals, dir, tick } = setup(t, office(), { now: start });
+    fs.writeFileSync(path.join(dir, 'mail-proposals.json'), `{"proposals":[],"standing":[],"sends":[],"paused":{${JSON.stringify(key)}:{"since":${literal},"told":false}}}`, 'utf8');
+    assert.deepEqual(approvals.pausedDue([key]), [], `${name}: nothing at once`);
+    tick(PAUSE_NOTICE_MS - 1);
+    assert.deepEqual(approvals.pausedDue([key]), [], `${name}: not before the wait is over`);
+    tick(1);
+    assert.deepEqual(approvals.pausedDue([key]), [key], `${name}: told after exactly PAUSE_NOTICE_MS`);
+    assert.deepEqual(approvals.pausedDue([key]), [], `${name}: told once`);
+  }
+});
+
+test('a damaged pause notice does not disturb the good ones beside it', (t) => {
+  // Value: protects=only the damaged entry is dropped (D10); fails_when=coerceStore drops or rewrites a valid entry; why_new=paused entries were cast without a check; seam=none
+  const { approvals, dir } = setup(t, office(), { now: 1_000_000 });
+  const told = 'dwight\u0000ceo';
+  const waiting = 'pam\u0000ceo';
+  const damaged = 'kelly\u0000ceo';
+  fs.writeFileSync(path.join(dir, 'mail-proposals.json'), JSON.stringify({
+    proposals: [], standing: [], sends: [],
+    paused: {
+      [told]: { since: 1, told: true },
+      [waiting]: { since: 1_000_000 - PAUSE_NOTICE_MS, told: false },
+      [damaged]: { since: 'yesterday', told: false }
+    }
+  }), 'utf8');
+  assert.deepEqual(approvals.pausedDue([told, waiting, damaged]), [waiting], 'the told one stays quiet, the due one is told, the damaged one waits');
+  assert.deepEqual(approvals.pausedDue([told, waiting, damaged]), [], 'nothing repeats');
 });
 
 test('setters: a grant survives email off and moves, owning the mailbox replaces it, and removing the mailbox ends it', (t) => {

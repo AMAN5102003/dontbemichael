@@ -35,6 +35,10 @@ export interface AtomicFileOps {
  *  Elsewhere these errors are permanent, and the wait would only freeze the
  *  main process, so only Windows retries. */
 const BUSY = new Set(['EPERM', 'EBUSY', 'EACCES']);
+/** True when a rename that threw `e` on `platform` is worth trying again (see BUSY). */
+export function isHeldRename(e: unknown, platform: NodeJS.Platform = process.platform): boolean {
+  return platform === 'win32' && BUSY.has((e as NodeJS.ErrnoException | undefined)?.code ?? '');
+}
 /** Block this thread for `ms` (a held file, a git index lock). */
 export function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -42,7 +46,7 @@ export function sleepSync(ms: number): void {
 
 /** Waits before each retry of a held rename: about 1.3 s in all, at most once
  *  per save (docs/designs/windows-11-installer.md, E2). */
-const RENAME_RETRY_MS = [100, 300, 900];
+export const RENAME_RETRY_MS = [100, 300, 900];
 
 const defaultOps: AtomicFileOps = {
   openSync,
@@ -63,8 +67,7 @@ function renameWithRetry(from: string, to: string, ops: AtomicFileOps): void {
       ops.renameSync(from, to);
       return;
     } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code ?? '';
-      if (ops.platform !== 'win32' || !BUSY.has(code) || attempt >= RENAME_RETRY_MS.length) throw e;
+      if (!isHeldRename(e, ops.platform) || attempt >= RENAME_RETRY_MS.length) throw e;
       ops.sleepSync(RENAME_RETRY_MS[attempt]);
     }
   }

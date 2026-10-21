@@ -235,8 +235,8 @@ one directly: they go to Michael first (§8.6).
 ### 3.4 Departments [Both]
 
 Pods, avatars and illustration faces use a pastel family per department. Each family has
-`l` (lit screen, lightest face), `m` (main face), `d` (shaded face) and `acc` (glow,
-department icon, tag rule).
+`l` (lightest face), `m` (main face), `d` (shaded face) and `acc` (glow, the tint of a
+working glass monitor, department icon and plate, tag rule).
 
 **Avatars.** A person is drawn as their character's signature prop on a circle of their
 department's `l` (the light `l` in dark theme too, with an `m` edge), so a prop reads the
@@ -244,7 +244,9 @@ same in both themes: Michael's World's Best Boss mug (on ink in both themes), Pa
 palette, Erin's balloon, Dwight's beet, Jim's tuna can, Stanley's pretzel, Phyllis's
 knitting, Andy's banjo, Ryan's rocket, Oscar's calculator, Angela's cat, Kevin's chili
 pot, Toby's island palm, Kelly's phone, Nick's router, Sadiq's lock, Creed's sprout,
-Meredith's party hat, Darryl's music note (owner, 2026-10-03: the letter added nothing).
+Meredith's party hat, Darryl's music note (owner, 2026-10-03: the letter added nothing),
+and Pete's magnifier over a globe for the Research member, its own face that no hire takes
+(owner, third ship D4).
 Someone with no known character keeps their initial. One component draws them all
 (`PersonAvatar`, `scene/office/props.tsx`).
 
@@ -267,7 +269,8 @@ monitor with code, operations box, team sparkle. They sit in the department tab 
 
 **Dark derivation.** In dark mode each family is derived from its `m` value in HLS:
 `l` = L .36 S .34, `m` = L .28 S .30, `d` = L .22 S .28, `acc` = L .70 S .80 of `acc`.
-Lit screens keep the light `l` value in both themes, so a working screen glows in the dark.
+Monitors are glass in both themes (§8.3): a working screen takes `acc`, with a softer halo
+in the dark.
 
 The role to department mapping is data, not art: it lives next to `OFFICE_ROLES`
 (`src/shared/officeRoles.ts`) when the app migrates (§17).
@@ -279,7 +282,7 @@ treatment (§8.5).
 
 | Status (store) | Pill label | Pill colors | Pod treatment |
 |---|---|---|---|
-| `working` | Working | `blue` text on `blue` soft | Screen lit (`l`), floor glow in `acc` |
+| `working` | Working | `blue` text on `blue` soft | Glass screen tinted in `acc` with scrolling lines (§8.3), floor glow in `acc` |
 | `thinking` | Thinking | `violet` text on soft | Three dot bubble over the monitor |
 | `waiting` (at a prompt, not busy) | Waiting | `ink-3` on `neutral-soft` | Screen on, no glow |
 | `blocked` on the owner | Needs you | white on `coral-strong` | Coral beacon above the pod, pulsing |
@@ -351,6 +354,7 @@ Rules:
 | `t-view` | 20 / 26 | 600 | View title on the stage ("Office", "Tasks") |
 | `t-panel` | 15 / 20 | 600 | Right column heading, person name in the panel header |
 | `t-ui` | 13 / 18 | 400 to 600 | Base UI: tabs, buttons, inputs, body |
+| `t-read` | 14 / 22 | 400 | Long text boxes in a wide panel only (what a person handles, their work style), and the wide 1:1's questions and replies (§7.19) |
 | `t-body` | 12 / 16.5 | 400 | Card body text, Michael's questions, descriptions |
 | `t-meta` | 11 / 15 | 400 to 600 | Captions, chips, meta lines, hints |
 | `t-micro` | 10 / 13 | 600 | Uppercase micro labels, status pills, badges |
@@ -390,7 +394,7 @@ One window, four regions. Nothing else is permanent.
 | Top bar (56): lockup, view tabs, clock, version, icons, Needs  |
 +---------------------------------------------+-----------------+
 | Stage (fills)                               | Right column    |
-|   Office / Tasks / Who talks to whom        | (380, resizable)|
+|   Office / Tasks / Who talks to whom        | (420, resizable)|
 |                                             |                 |
 | Bottom bar (50, floats 24 above the edge)   |                 |
 +---------------------------------------------+-----------------+
@@ -399,15 +403,15 @@ One window, four regions. Nothing else is permanent.
 | Region | Size | Holds |
 |---|---|---|
 | Top bar | 56 px, ground `chrome` under `card` at 70% | §7.1 |
-| Stage | Fills | The current view (§7.2): Office (studio, §8), Tasks (§7.20), Who talks to whom (§7.22) |
-| Right column | 380 px default, 340 min, 520 max, drag to resize (SidebarSplitter, double click resets; its grip shows only on hover) | Closed by default: while nothing waits and nobody is open the column is not there and the office takes the window (`bleed` 0, no splitter). Otherwise the Needs you board, the selected person's panel or Michael's panel (§7.6). Work tab widens it to 480. It has no ground of its own (owner, 2026-09-30: a panel behind cards is a layer too many): the Needs you heading and cards, and the person and Michael panels (cards themselves), sit straight on the stage, which runs on underneath (`StudioStage` `bleed`); the scene still fits the space left of it |
+| Stage | Fills | The current view (§7.2): Office (studio, §8), Tasks (§7.20), Pulse (§7.27), Who talks to whom (§7.22) |
+| Right column | 420 px default, 320 min, 1200 max and never closer than 360 px to the window's left edge, drag to resize (SidebarSplitter, double click resets to 420; its grip shows only on hover); a person's or Michael's panel can also open wide in the center (§7.6) | Closed by default: while nothing waits and nobody is open the column is not there and the office takes the window (`bleed` 0, no splitter). Otherwise the Needs you board, the selected person's panel or Michael's panel (§7.6). Work tab widens it to 480. It has no ground of its own (owner, 2026-09-30: a panel behind cards is a layer too many): the Needs you heading and cards, and the person and Michael panels (cards themselves), sit straight on the stage, which runs on underneath (`StudioStage` `bleed`); the scene still fits the space left of it |
 | Bottom bar | 50 px tall, floats 24 px left, 22 px right and 26 px above the stage's bottom edge | Talk to Michael composer, next job chip and Hire (§7.19) |
 
 Rules:
 
 - **No bottom strip of agent cards, no left floor, no permanent Command Center.** People
   live on the stage.
-- Minimum window 1280 × 800: the studio scales down to fit the stage beside a 340 px
+- Minimum window 1280 × 800: the studio scales down to fit the stage beside a 320 px
   right column. Below 1100 px of stage width the platform scales, never crops.
 - Focus mode (full screen terminal) keeps its v1 behavior with v2 styling. Hidden in this
   build (`SHOW_FOCUS_MODE`, owner, 2026-10-01): no button opens it and a saved preference
@@ -452,10 +456,12 @@ The v1 "no radius" rule is retired.
 
 ### 6.3 Borders
 
-Hairlines only: 1 px. The exceptions are the 2.5 px top rule on mailbox tags (§7.18), the
-3 px coral left rule on Ask me cards (§7.8), and the 1.5 px coral ring and 700 title and
+Hairlines only: 1 px. The exceptions are the 2.5 px top rule on mailbox tags (§7.18) and
+the 1.5 px coral ring and 700 title and
 button of the Danger zone card in Settings, General, which is loud on purpose because
-Reset deletes the office (owner, 2026-10-02).
+Reset deletes the office (owner, 2026-10-02). Edit agent's Danger zone (§7.26) is the one
+other card with that coral tint and ring, because Delete removes a team member for good
+(owner, 2026-10-14; blessed at ship review, 2026-10-16).
 
 ---
 
@@ -475,7 +481,7 @@ has no layer, so the update badge's cards keep competing at 400.
 
 ### 7.2 View tabs (TopBar)
 
-Office, Tasks, Who talks to whom, then any **file tabs** (docs/designs/open-file-tab.md).
+Office, Tasks, Pulse (§7.27), Who talks to whom, then any **file tabs** (docs/designs/open-file-tab.md).
 Tab: `t-ui` 500, `ink-2`, padding 7 × 13, `r-md`.
 Active: `ink` fill, white text (dark mode: `ink` fill `#ECEAF4`, text `#14131C`). No tab
 carries a count: the Needs you button (§7.5) is the one coral number, what is waiting on
@@ -491,7 +497,8 @@ its real path; opening it again selects it; at most 5, a sixth closes the one op
 longest ago. They shrink to fit (down to about 72 px), and the fixed tabs, the clock and
 Needs you never move. Never saved: the app restarts on the last fixed view. Closing the
 selected tab selects the file tab to its left, or the view the owner came from. The right
-column stays beside a file tab, so an Ask me card is answered while its file is read.
+column stays beside a file tab, so an Ask me card is answered while its file is read. A
+file tab has no bottom bar (owner, 2026-10-16); it stays mounted, hidden, as on Pulse.
 
 The file view: a `card` header with the name (14 / 600), its place in office words
 ("Office / IT", or a team member's name and folder; `ink-3`, full path as tooltip), and
@@ -505,7 +512,10 @@ re-reads the file within a second of a change while shown, keeping the scroll.
 ### 7.3 Clock pill
 
 Pill, `card` fill, `line` border, padding 6 × 12. Green live dot (7 px with a 3 px
-`green` soft halo), mono time in `ink` 600, "Office open" in `ink-2`, a chevron. Click
+`green` soft halo), mono time in `ink` 600, "Office open" in `ink-2`, a chevron. While the
+office opens (§7.24) the dot is `indigo` with the slow pulse and the words are "Opening" and
+a mono "5 of 12" (no count before any team exists), on every view; it goes back to "Office
+open" when everyone is in or at the one minute cap (design review 1A, 2026-10-18). Click
 opens a menu: **Office schedule** (opens Michael's Office schedule tab), **Closing time**
 (starts the closing time flow). Office hours are not a setting in the app (packs carry
 `officeHours`, which only starter jobs and the Tasks view's "hasn't moved this" read), so the
@@ -534,7 +544,8 @@ opens the board.
 ### 7.6 Right column
 
 Four states, one region (docs/designs/needs-you-empty-state.md). The column shows on the
-Office view only: Tasks and Who talks to whom take the whole window (owner, 2026-10-03). It
+Office view only: Tasks, Pulse (§7.27) and Who talks to whom take the whole window (owner,
+2026-10-03). It
 stays mounted there, hidden, so a person's terminal and a half written reply survive the
 switch; anything that opens it (the Needs you pill, a "?" or "for you" badge, a person, the
 next job chip) goes back to the Office first.
@@ -566,6 +577,85 @@ team to restore. It never opens the column or counts toward Needs you.
 
 Closing a person's or Michael's panel returns to the board while anything waits, and
 collapses the column when nothing does.
+
+**Wide panel** (design review 2026-10-16). A button beside close on a person's and
+Michael's panel, and in Edit agent's header (`expand`, then `minimize`; tooltip and label
+"Open wide" / "Back to the side"), moves the panel to the center of the window: 10% in
+from each side, 12 px under the top bar and above the bottom edge, at every window size.
+The choice is remembered on this computer and applies to every panel that can open wide;
+it is never set by the window's size. The Needs you board and Ask me cards never go wide.
+The column keeps its slot, so the office does not reflow, and dims under the top bar
+(`--cth-backdrop`), so the coral pill stays bright and live; only one thing holds the center,
+whichever the owner opened last, this or the wide 1:1 (§7.19), the other back to the side for now
+(the Needs you board and a panel at the side sit beside the wide 1:1 instead); the office and the bottom bar
+are out of reach (inert) and a click on the dimming does nothing. Inside, text is at most
+720 px across and centered; the Work tab's terminal fills the panel. Edit agent lays over
+the wide panel in two columns: the short fields (300 to 360 px) and the work style (up
+to 720 px), titled "Edit {name}" with a 28 px avatar and the role, long boxes in `t-read`.
+Leaving Edit with unsaved changes, by any way out (close, Cancel, Esc, the pill or strip,
+another person, a menu item), asks "Discard changes to {name}?" with Keep editing as the
+default. Esc: a field with text is left first, then the panel goes back to the side, then
+the column closes. The move takes 320 ms (`dur-slow`, transform only), the dimming fades
+in over 200 ms; reduced motion switches at once. In Arabic it mirrors.
+
+### 7.6a Office stops (OfficeBreakNotice)
+
+When Claude cannot work, the office says why on one card at the top of Needs you
+and in a chip in the top bar that opens Needs you. Nothing types into a Claude
+terminal until it is back; schedules run as configured and their jobs wait in
+the inboxes. One state, three reasons (docs/designs/office-stopped-account.md):
+
+| Reason | When | Look | Card |
+|---|---|---|---|
+| Plan limit | The Claude plan reached its usage limit | Quiet: `amber` soft card and chip, not counted. It ends on its own. | "The office is on a break", then when work starts again |
+| Out of credit | The Anthropic account has no credit (`billing_error`) | An owner to do: a plain Ask me card (§7.8, no side rule), counted in the Needs you button; `coral` chip "Office stopped" | "Your Anthropic account is out of credit." Primary Add credit (the `external` icon, spoken "opens in your browser") opens the Anthropic billing page; secondary Try again |
+| Sign in | The login expired, or the API key stopped working (`authentication_failed`) | As out of credit | Account: "Your Claude account needs you to sign in again." with Sign in. API key: "The Anthropic API key stopped working." with Change key. Both open the Get Michael ready rows. |
+
+Title "The office stopped" (the plan limit keeps "The office is on a break"),
+one reason line (`role="status"`), then the buttons; the explanation is behind
+the info icon. The card sits first in Needs you. While a sign in stop is on, the
+Get Michael ready card (§7.25) is not shown, so one problem is one card.
+
+States after the owner acts: Checking (the buttons go; a small spinner and
+"Checking that work can start"), Still out ("Still out of credit. Credit can
+take a few minutes to show." with the buttons back), Done (the card and chip
+go). Out of credit and an expired account login also check on their own every
+15 minutes; a key that stopped working waits for Change key. Resuming only sends
+the next message: nothing restarts, except the Claude terminals after a new key.
+
+### 7.6b Not reporting (SilentEngineCards)
+
+A team member whose AI engine stopped reporting to the app (issue #326; design review
+2026-10-16; approved picture `silent-engine-v2.html`). Its reports are how the app follows
+its work and checks its folders and tools, so the owner hears, plainly, and can act in one
+click. A plain Ask me card (§7.8: no side rule, no "from" line) at the top of Needs you,
+under an Office stops card when one shows, counted in the Needs you button.
+
+- **Words.** Title "{name} isn't reporting to the app"; one line "{name} is still working.
+  The app can't check {name}'s folder and tool limits."; a time line in `t-meta` `ink-3`
+  ("Last checked in {n} min ago." or "Hasn't checked in since {name} started, {n} min
+  ago."). Why it matters is behind the info icon. Names only, never he or she, in every
+  language.
+- **One card per engine, version and kind** (never checked in, or went quiet mid work);
+  Research has a card of its own. Members silenced together ("Kelly, Dwight and Oscar
+  aren't reporting to the app") share one card and one count; a member who reports again
+  drops off the list.
+- **States.** Not reporting (Restart {name}); Restarting or Checking (a spinner, no
+  buttons); a restart didn't help, or the version is known never to report: the engine and
+  version named, with Change engine (opens Edit {name}, the engine open) and Keep working
+  unchecked; Paused, where nothing else guards the files (Windows, Gemini anywhere, and
+  Research): Restart and Keep working unchecked, or Change engine and Keep working unchecked
+  after a failed restart; Done closes it with "{name} is reporting again". Research's card
+  offers Restart only: it is never kept working unchecked (owner, 2026-10-17).
+- **Michael.** When Michael isn't reporting, the office's own card, built like The office
+  stopped (§7.6a) with an "The office" kicker, sits first: "Michael is still working, but
+  can't pass on mail or work right now." with Restart Michael. Never restarted on its own.
+- **Elsewhere.** An amber `Not reporting` tag (`amber-soft`, `amber-text`) replaces the
+  member's status pill on its pod and panel header; one amber line above the panel's tabs
+  ("The app can't see {name}'s work right now. The Work tab still shows it live."), or,
+  when the owner kept it working unchecked, "{name} works unchecked on {engine}, by your
+  choice." with Check again. One desktop notice in Michael's name when a card first
+  appears, only with notifications on.
 
 ### 7.7 Buttons
 
@@ -608,24 +698,71 @@ stands on its own.
   eight lines, then scrolls; owner, 2026-10-01: a longer answer was hard to write;
   placeholder "Your answer, or done if you handled it") and a primary "Reply"; "Holding up N tasks" folded under it; and
   a footer with "See full context" (the ask's full background and history; owner,
-  2026-10-01: it is context, not a task) and "N earlier answers". Cmd or Ctrl+Enter sends; Enter
+  2026-10-01: it is context, not a task) and "N earlier answers". The footer shows only
+  when the card holds more than the question: a background, a result, or other
+  questions and answers (owner, 2026-10-12: it opened to a repeat of the question). Cmd or Ctrl+Enter sends; Enter
   respects IME composition.
+- Options and several questions (owner, 2026-10-15; `docs/designs/ask-me-options.md`).
+  An ask whose entry carries `options` is a choice; one with `parts` is several questions,
+  each maybe with its own `options`. Anything the app can't read shows the plain card
+  above. Picking never sends: the box is full width under the options, and Reply sits
+  on its own row, end aligned, 8 px below it, its label following the pick ("Reply with
+  option 1", "Reply with option 1 and note", "Reply to 2 of 5"). Nothing starts picked.
+  - Option row (a radio group): `card` fill, 1 px `line-2` ring, `r-md`, padding 8 × 10,
+    gap 9; a 16 px radio dot (1.5 px `line-input` ring); the option number at 11 / 600
+    `ink-3`, then the label at 12.5 / 18 `ink` as card markdown. Rows 6 px apart, 10 px
+    above the box. Hover: `card-2` fill, `line-input` ring. Picked: `indigo-soft` fill,
+    1.5 px `indigo` ring, dot filled `indigo` (8 px). Focus: 2 px `indigo` ring. Arrows
+    move and pick, Space picks, clicking the picked row unpicks it.
+  - Recommended tag: pill, `green-soft` fill, `green-text`, 10.5 / 600, 18 px tall, at
+    the row's end. Text "Recommended".
+  - Question line: the number at 11 / 600 `ink-3` in a 20 px column, end aligned; the
+    question at 12.5 / 18; a part's options as choice chips (26 px pill, `card` fill,
+    1 px `line-2` ring, 11.5 px `ink`, 5 px apart; pressed like a picked row, the
+    Recommended tag inside at 16 px and 10 px); then its field, `.cth-input` at 30 px.
+    Parts 10 px apart. Any part may be left blank; Reply settles the whole ask and the
+    blank ones go to the team member through Michael.
+  - Placeholders: "Or write your own answer", "Add a note (optional)" once an option is
+    picked, and "Anything else (optional)" under several questions.
 - "Holding up N tasks", when tasks wait on the answer, opens to their titles in `ink-2`
   (a status dot each, up to 6, then "+N more").
 - Files the question names (owner, 2026-10-04 and 2026-10-10; `docs/designs/open-file-tab.md`)
   are chips in place of their path, inside the text: a code span with a known file
   ending, a full path in plain text (`/`, `~/`, a drive letter), or a Markdown link to a
-  full path. Chip: `neutral-soft` fill, `r-sm`, 24 px tall, padding 0 8, gap 6; a 14 px
+  full path. A code span that names a file without its ending becomes a chip only when a file
+  of that name is found in the office's folders (owner, 2026-10-19); otherwise it stays text.
+  Chip: `neutral-soft` fill, `r-sm`, 24 px tall, padding 0 8, gap 6; a 14 px
   `file`, `sheet` or `image` icon in `ink-3`; the file name without folder or extension
   (12 / 500 `ink`, ellipsis at 200 px, the full path as its tooltip); then the action in
   `indigo-text` 600: "Open" for a file the office can show (it opens as a file tab, §7.2)
   or a document inside the office folders (its own app), "Show in Finder" ("Show in
-  folder" on Windows) for anything else. The whole chip is one button; hover
+  folder" on Windows and Linux) for anything else. The whole chip is one button
+  with this action. Right-clicking it opens a small context menu with that same
+  action and "Copy path", which copies the checked full path through the app's
+  clipboard bridge. The menu uses `card`, `line`, `r-lg`, `shadow-lg` and
+  `neutral-soft` for hover, opens outside clipping cards, and stays inside the
+  window. While the chip has focus, Shift+F10 or the context menu key opens the
+  menu. There is no separate visible actions button. Keyboard users can choose
+  an action and dismiss the menu with Escape; focus returns to the chip. Copy
+  shows "Copied" only after success, or a short
+  retry message on failure. Loading and Not found chips have no actions. Hover
   `indigo-soft`, focus ring 2 px `indigo`. The action cell is as wide as its longer label
   from the start, so nothing jumps when the check lands; if the check fails it offers
   Show in Finder. A file that is gone, or outside every office folder, is a chip with no
   fill, a `line` ring, all `ink-3` and "Not found": text, not a button. Folded cards show
   nothing. Task detail and Michael's replies (§7.19) use the same chips.
+- Links in agent text (owner, 2026-10-11; `docs/designs/named-links.md`) are named, on
+  every card-mode surface (Ask me, Michael's replies, Task detail, memory notes, Work
+  styles, profile); file tabs and the IDE show links as written. A pasted URL shows the
+  app it opens ("HubSpot", "QuickBooks", "Google Sheets"), else the site without `www.`,
+  or the address for email; a link the agent wrote as words keeps them. The link is
+  `indigo-text` 500, underline 1 px at 2 px offset (2 px on hover), then a 12 px
+  `external` icon (`mail` for email) 3 px after it, glued to the last word; the full
+  URL is its tooltip; focus ring 2 px `indigo`, 2 px offset. Hidden after the name for
+  screen readers: "opens in your browser" or "opens your email app". When the words
+  name a known app or a web address the link does not go to, the real site follows in
+  `ink-3`: "HubSpot (hubspot-login.example)". Hosts are what the browser reaches
+  (lowercase, punycode for a look-alike letter).
 - Optional secondary actions Michael attached (for a broken mailbox: "Open Mailboxes").
 - **Mail approval cards** (MailProposalCards, docs/designs/send-on-approval.md): "{name}
   wants to send an email" with the avatar; From, To and Cc as `t-meta` lines; editable
@@ -639,6 +776,10 @@ stands on its own.
   the questions. Same frame, file rows and reply; a secondary "Got it" clears it and sends
   Michael nothing. Reports never turn the Needs you pill coral or hold the column open:
   with only reports waiting the quiet pill reads "Reports: N" and opens the board.
+- **Research card** (issue #230, once, updated offices only): the same Report card, "Your team no
+  longer uses the internet", "This keeps your private data in. One team member, Pete, can look
+  things up for them, after a privacy check. Pete is off until you turn them on.", Got it and Open
+  Research & privacy (primary, opens Settings on Research & privacy); either clears it for good.
 
 ### 7.9 Schedule request card (ScheduleRequestCards)
 
@@ -717,7 +858,8 @@ The card floating by each pod on the stage.
 - `r-xl`, padding 12 × 10 × 0 × 9, `card` at 96%, `line` border, `shadow-md`.
 - Department tab on the top edge, offset −9 px: the department icon (§3.4, 10 px, `acc`)
   and uppercase `t-micro` in a `card` chip with an `m` border and `r-sm`. Beside it: the sticky count (§7.16) and the for you badge
-  (§7.15).
+  (§7.15). The pod itself also names the department, on its plate in front of the chairs
+  (§8.3), so a pod showing only its quiet chip (§7.14a) still says what it does.
 - Row: 24 px avatar, name (12.5 → `t-ui` 600), role (`t-micro` 400 `ink-3`, not
   uppercase), status pill top right.
 - Caption: `t-meta`, `ink-2`, one line, ellipsis. The live action, else the first words of
@@ -776,15 +918,16 @@ was a distraction). There is no chip: the name plate on his glass is the way in.
 or focusing it opens the full hub card just under the plate and lights the plate's rim in
 `indigo`; a click selects him, which keeps the card open.
 
-The hub card: 196 px wide, `r-2xl`, `shadow-hub`.
+The hub card: 212 px wide (so the five board labels never touch), `r-2xl`, `shadow-hub`.
 
 - Top: 26 px avatar (Michael's mug on ink, §3.4), name, "Office Manager", status pill, caption.
 - Stats strip (`card-2`): three columns, mono 16 px 600 numbers: **delegated** (today's
   hive messages from Michael with act `request`), **to you** (open Ask me cards), **kept**
   (tasks assigned to Michael himself). Labels `t-micro` 400 `ink-3`. "to you" in `coral`
   text when above zero.
-- Task board strip: To do, Doing, Blocked, Done with 6 px square keys (`ink-4`, `blue`,
-  `coral`, `green`) and mono counts. Click opens Tasks.
+- Task board strip: To do, Doing, Waiting, Blocked, Done, the Tasks view's columns and words,
+  with 6 px square keys (`ink-4`, `blue`, `amber`, `coral`, `green`) and mono counts. Click
+  opens Tasks.
 - Context meter: label, 5 px bar with the indigo gradient (§3.8), mono percent.
 
 ### 7.18 Mailbox tag
@@ -799,7 +942,9 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
 
 - **Talk to Michael composer** (MessageQueueComposer for Michael; owner, 2026-09-30: "Brief
   Michael" was unclear): 400 px, 50 px tall,
-  `card`, `line-2` border, `r-2xl`, `shadow-lg`. Attach button (34 × 34, `neutral-soft`,
+  `card`, `line-2` border, `r-2xl`, `shadow-lg`. When Michael's conversation has saved history, a
+  conversation button first (34 × 34, `neutral-soft`, `r-md`, a chevron: up to open, down while the
+  dock is open, with an `ink` fill) opens or closes the dock. Attach button (34 × 34, `neutral-soft`,
   `r-md`), a message box with placeholder "Talk to Michael…", primary button "Send" with
   an arrow. The box grows with the text up to 140 px, then scrolls; the composer grows
   upward from the bar's bottom edge with its buttons on the bottom row, and the chips
@@ -814,7 +959,13 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   words on §3.5 meanings: Sent and Waiting on X `ink-3`, Michael has it `blue`, Answered
   `green`, Later than he said `amber` with Nudge, Waiting for you `coral-text`, Couldn't
   finish `ink-2` with Ask again). Michael's replies sit left on `card` with a `line` ring,
-  markdown at 12.5 / 18, first sentence bold, 4 lines then More, files as §7.8 chips (notes too);
+  markdown at 12.5 / 18, first sentence bold. A longer reply is the answer first, then lists
+  (markers `ink-3`), small tables or short paragraphs under bold labels (paragraphs 0.6em apart). Tables
+  fill the bubble, rows split by a `line` rule, headers 11 px 600 `ink-3`, amount columns mono 12 px with
+  tabular figures; a table too wide scrolls sideways in its own box, which takes Tab (focus ring `indigo`)
+  and is labelled "Table". A long reply folds at 8 lines of height (notes 6) with a 24 px fade into the
+  bubble, then More. Reply shows under Michael's question back and under his latest answer to an
+  answered question. Files as §7.8 chips (notes too);
   terminal notes are muted (`card-2`, "From Michael's notes"); a refusal with no reason
   reads "No reason given". Bubble tails and the quote bar use logical corners and edges,
   so they mirror in Arabic. Empty: one line and two example chips. The dock slides 180 ms
@@ -823,6 +974,18 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   `coral-strong` (`on-coral` text) while Michael waits on the owner. The dock
   opens only on the owner's action and closes on ✕, Esc, or a floor click with nothing
   typed. A known slash command still types straight into Michael's terminal.
+  **Wide 1:1** (design review 2026-10-17): Open wide beside ✕ (the wide panel's button, §7.6)
+  moves the conversation and the message box to the center, one card with the box at the bottom
+  (its ring only, `indigo` on focus), the office dimmed and out of reach, the box's slot kept in
+  the bar. It never covers the right column (owner, 2026-10-17: a question on Needs you may be what
+  you ask Michael): with the column open it fills the office's width, 24 px from the office's
+  edge and 12 px from the column, and the column stays bright and live; with the column closed it
+  takes the wide panel's frame. Its own choice, remembered on this computer,
+  changed only by that button. Text at most 720 px across, `t-read` 14 / 22, owner bubbles at
+  most 560 px; nothing folds; tables as wide as their columns, 24 px apart, headers 12 px,
+  amounts 13 px mono. Esc goes back to the side for now, a second Esc closes. The move is the
+  wide panel's 320 ms transform; reduced motion switches at once. The box keeps its text, files
+  and reply target and takes focus at the end of the text.
 - **Next job chip**: calendar icon, "Next:" `ink-2`, mono time 600, job and person.
   `card`, `line`, `r-lg`, 40 px tall. Click opens Office schedule.
 - **Hire**, pushed right: secondary "Hire" with a plus (opens the hire wizard). No pack
@@ -832,12 +995,30 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
 ### 7.20 Tasks view (TasksKanban)
 
 - Header on the stage: "Tasks" `t-view`, count chips (To do, Doing, Waiting, Blocked in
-  coral soft, Done in green soft), right aligned lock icon plus "New work goes through Michael"
-  (`t-meta`, `ink-3`). No add button; the board is read only.
+  coral soft, Done in green soft; each chip is clickable with `aria-pressed` to filter the
+  board to that status, clicking again resets to all columns), right aligned lock icon plus
+  "New work goes through Michael" (`t-meta`, `ink-3`). No add button; the board is read only.
+- Find a card (issue 158): one row above the columns, a search field (`cth-input`, 30 px,
+  up to 260 px, placeholder "Search tasks") matching title, description, result, id,
+  waiting on, or the team member's name; a team member select ("Everyone", "Unassigned",
+  or a specific member, `line-input` boundary, 30 px). While either is set, a quiet Clear
+  (28 px target, `ink-2`) and a count indicator ("Showing X of Y tasks", mono count) follow
+  them, each column counts only matching cards, and Done unfolds in full.
 - Five columns on a `floor` tinted ground, `r-xl`, 16 px gaps: To do, Doing, Waiting
   (`amber` key, yellow), Blocked, Done. Column head: key dot, name `t-ui` 600, mono count. Blocked
-  column tinted `coral` soft. A Waiting card shows an `amber` soft chip "Waiting on {who}"
-  (card-lifecycle.md section 8).
+  column tinted `coral` soft. An empty column shows "Nothing here", or "No tasks match your
+  search or filters" when search or filters are active. A Waiting card shows an `amber` soft
+  chip "Waiting on {who}" (card-lifecycle.md section 8).
+- Order (owner, 2026-10-17): To do, Doing, Waiting and Blocked read earliest Next first; cards
+  with no Next time come after the dated ones; at the same time the higher priority first, then
+  the order made. A time already passed is earliest. Done reads newest first. Search and the
+  member filter keep the same order.
+- Time groups (owner, 2026-10-17): each open lane is cut by the card's Next time, in the
+  viewer's local calendar, with a heading where the group changes (11.5 px 600 `ink-3`,
+  Overdue in `coral-text`): Overdue, Today, Tomorrow, This month, This quarter (the rest of the
+  current quarter; in October to December it reads Later this year), Next quarter, Later this
+  year, Next year, Later (two years or more), No date. Groups run earliest to latest; an empty
+  group shows no heading, and a lane with no dated card shows none at all. Done has no groups.
 - Task card: `card`, `line`, `r-lg`, padding 12. Mono id (`#112`, `ink-3`), title `t-ui` 600
   up to 2 lines, assignee avatar plus name. Waiting on the owner: a 18 px coral "?"
   circle top right. Done: a small green check, text in `ink-2`. Hover shows the dismiss
@@ -856,14 +1037,21 @@ Centered overlay over the stage (never over the right column), 528 px wide, `r-2
   `t-panel` under them at full width, cleaned like an Ask me title (§7.8) (owner,
   2026-10-01: side by side, a long id squeezed the title).
 - Four fields in a row with uppercase micro labels: STATUS (select, `coral` text when
-  Blocked; it offers To do, Doing and Done, and shows Blocked or Waiting only as the card's
+  Blocked; it offers To do, Doing and Done (a Done card offers only To do: choosing it opens a full
+  width row under the facts with a "Why reopen it?" `cth-input` box, primary Reopen and secondary
+  Cancel, and the reason reaches Michael; card-lifecycle.md section 10), and shows Blocked or Waiting only as the card's
   current state, since only Michael sets them; a Waiting card reads "Waiting on {who}"
   under it, `amber` text), ASSIGNEE (person chip), PRIORITY (5 dots,
   filled `ink`), CREATED (mono).
-- NOTES: the card's `description`, else the `notes` agents keep on it (owner, 2026-10-01:
-  the dialog read only `description`, so it was empty on every card); Michael is told to
-  keep them to what the work is and where it stands. No section when a card has none.
-  QUESTIONS (the Q and A trail; an open question sits
+- DESCRIPTION: the card's `description` when a request gave it one; no section otherwise.
+  Cards carry no running notes (owner, 2026-10-11: agents used them as diaries; an agent's
+  activity lives in its conversation and the office log). A To do card with a one off
+  step at a set time shows "Next: Mon, 12 Oct, 8:00 AM" (`nextAt`, local time), on the
+  card under the assignee and in the detail, with the year when it is not this year
+  ("Next: Mon, 4 Jan 2027, 9:00 AM").
+  QUESTIONS (the Q and A trail, newest first like Ask me, each question's top row saying
+  how long ago it was asked, "5d ago", 11 px `ink-3` as on Ask me cards, nothing when the
+  time is missing; an open question sits
   in a coral soft box with a "Waiting for you" pill; answered ones are plain), DEPENDENCIES
   (rows with a link icon, mono id, title, "waits on this").
 - Footer: secondary "Assign" with the hint "Sends it to Michael to hand out"; secondary
@@ -901,7 +1089,8 @@ Centered overlay over the stage (never over the right column), 528 px wide, `r-2
 - Closing time is not a dialog (owner, 2026-09-30): quitting with people at work starts it
   at once, and a closing bar takes the bottom bar's place: `card`, `r-xl`, `shadow-lg`, the
   moon mark, "Closing time" and the counter strip ("5 / 8 workers confirmed"), a progress
-  line, "3 still working" opening the rows (Remind, Close without them), "Cancel and go back
+  line, "3 still working" as a 24 px `indigo-soft` pill with a chevron (up to open, down while open)
+  inside a 28 px target, opening the rows (Remind, Close without them; one scroller, 300 px), "Cancel and go back
   to work", and "Force quit now", which asks once because unsaved work is lost.
 - A person who has gone home at closing time (confirmed, or closed without) is gone from the
   floor (owner, 2026-10-03; `docs/designs/closing-floor.md`): their desk goes dark and they
@@ -919,8 +1108,25 @@ Centered overlay over the stage (never over the right column), 528 px wide, `r-2
 ### 7.24 Empty and starting states
 
 - **Starting**: the office opens dark and the lights come up as people clock in (§8.12).
-  Before any team member exists, a small card over the studio says Michael is clocking in,
-  with a slow `indigo` pulse.
+  A card over Michael's pod says so (owner, 2026-10-17; design review 2026-10-18, the owner
+  found the white card easy to miss among the name chips). It is the one colored card on the
+  floor: `indigo-soft` fill, a 1.5 px `indigo` ring plus `shadow-lg`, `r-xl`, padding 14 × 16,
+  min(300 px, stage width less 32); the floor stays clickable under it
+  (`components/OpeningCard.tsx`). Rows: the 12 px `indigo` dot with the slow pulse, "Clocking
+  in" at `t-view` 600, the mono count ("5 of 12 in", `t-ui`, `ink-2`) at the end; a 4 px bar
+  (`indigo` on `indigo` 20%, `role=progressbar`); "Still coming: Toby, Ryan, Oscar and 4 more"
+  (`t-body`, `ink-2`, roster order). When the last person is in it turns `green-soft` with a
+  `green` ring and a check, "Everyone's in", the full bar, for 2 s, then fades in 300 ms. If
+  anyone is still out at the one minute cap it turns `amber-soft` with an `amber` ring and a
+  still dot: "11 of 12 in" and "Toby hasn't clocked in." (or "Toby and 2 more haven't clocked
+  in.") for 4 s, then fades; Needs you's not reporting card carries it from there when the app
+  sees that engine running without reporting. The opening runs from launch, or a Restore team,
+  until that first end (never before the automatic restore has had its chance), and then it is
+  over for the session: a hire or Research turned on later clocks in on their own desk only,
+  with no card and no pill change. Before any team member exists, Michael's own start uses the
+  same card ("Michael is clocking in", no count, bar or names). A screen reader hears the
+  opening once ("Office opening, 5 of 12 in") and its end once, never each count. The clock
+  pill agrees (§7.3).
 - **No team yet**: the platform with Michael's pod only, a centered card "Your office is
   empty" and a primary "Hire" button.
 - **Needs you empty**: there is no empty board. With nothing waiting the column is closed
@@ -952,7 +1158,10 @@ Full window, no app chrome.
   Calendar" with a dashed `line-2` border, "nothing to connect" `ink-3`), and a mono
   "Works in Harbor & Pine/Finance" line with a "change" link. Unchecked rows at 55%.
   Footer: "N picked, M to connect" and Back (secondary), Next (primary). The footer sticks
-  to the window's bottom edge, so Next stays in reach on a long step.
+  to the window's bottom edge, so Next stays in reach on a long step. Last in the list, one
+  unchecked row for Research (issue #230): Pete's own character, its current name, "Looks things up on the
+  internet for the team, and sees no office data.", a "uses the internet" chip in the "always on"
+  style; picked, it starts with the team.
 - **Ready step** (Get Michael ready, docs/designs/get-michael-ready.md): heading with an
   info icon, then two quiet rows in one `line` card, a 26 px tinted icon each: Claude Code
   (Checking, Installing with a moving `indigo` bar, Installed `green`, or a `coral-text`
@@ -972,6 +1181,12 @@ Full window, no app chrome.
   dashed outline with a "Name, not picked" tag on its back corner, clear of the pods in
   front of it.
 
+### 7.25a The crash screen (ErrorBoundary)
+
+When a screen throws, the window shows one centered line in `t-ui` 600, "Something went
+wrong on this screen.", and a primary Reload button under it, on the page background, instead
+of a blank window. Nothing else: no stack, no codes (they go to the log).
+
 ### 7.26 Settings and the hire wizard
 
 Keep every section, control and save rule from v1 (see the functional map in
@@ -985,7 +1200,10 @@ someone already hired, in one column, laid exactly over the person's panel it ed
 box and radius, kept in step on resize; with no panel, 640 wide, full height, on the right,
 left in RTL): Name, Role,
 What they handle, Work style (it takes the height left over), then a folded "Engine" line
-that names the provider and model and opens to change them. No section headings; field
+that names the provider and model and opens to change them. Under the engine, for anyone
+who can be deleted (never Michael, his assistant or Pete), the Danger zone: one coral
+tinted row, r-xl corners and the 1.5 px coral ring of §6.3, its name with an info icon and
+the destructive Delete button. No section headings; field
 labels only, with explanations behind info icons. The character is chosen once, in the hire wizard, and a
 person's color is their department's, set by the job; Edit agent offers neither.
 
@@ -1004,7 +1222,235 @@ name (14px, 600), status in words (connected, an underlined "Sign in at claude.a
 "Removed from your Claude account" chip with Clear, sorted first), then the owner's switch. A
 failed read is one line with the time of the last good read and Try again.
 
+**Research & privacy** (Settings, after Connections; `docs/designs/research-agent-privacy.md`,
+owner 2026-10-13). Only Pete, the Research team member, uses the internet; this section turns him on
+and sets what the team may send him. Pete first: a `sectionHead` "Research" with an info icon, then
+one row whose state line is `role="status"`: grey dot "Off. Pete can't look things up for your team."
+with Turn on; a 12 px `indigo` spinner and "Hiring Pete…" or "Turning off Pete…" with no
+button; green dot "On. Pete looks things up for the team." with Turn off; coral dot "Pete
+couldn't start." with Try again. Turn on and Turn off act at once, never at Save. Turn off with asks
+waiting shows one line under the row, "N asks are waiting. They go back to the sender.", with Cancel
+(focused; Esc cancels without closing Settings) and Turn off (primary). On Windows one `ink-3` line
+under the row: "On Windows, Pete can still reach your office files." with an info icon. Then a
+hairline and "What your team may send to Pete" with an info icon and the computed count ("4
+allowed, 8 private"); while Pete is off, "Used when Pete is on." in `ink-3`. Twelve 40 px rows
+in a fixed order, never re-sorted: the class name, an info icon with its examples, and the Sending
+style segmented control [Allowed, Private] (a radio group named by the class); Passwords and keys
+shows a 12 px lock and "Always private" instead. The classes save with the footer Save. When a team
+member runs on another engine, one `ink-3` line under the classes names them ("Kelly run on another
+engine, so these rules don't reach them yet.") with an info icon. The send heading is a sentence
+(`t-ui` 600, `ink-2`), not a caps label. The section shows in every office (owner, ship 2 D16).
+Pete's Access tab shows one `ink-3` line (no
+mailboxes, connectors or schedules) and a link here. Every message to Pete passes his trust
+layer: a sender whose question was cleaned gets "Sent to Pete as" from Privacy check in its
+Messages, showing what Pete was asked. Pete is the default name: in Edit agent the owner may rename
+the Research member (an info icon says it stays the Research member whatever its name), and every
+string here takes the current name. Its engine offers Claude only, shown as plain text once on
+Claude.
+
+**Company knowledge documents** (Memory & Knowledge, owner 2026-10-19): company knowledge has no
+switch; its title carries an (i). Under Add files, a "Documents" label with its (i), then a list in one `line` framed box
+(scrolls past 300 px): each row the title in `ink-900` 13 px, under it the file name and "added
+19 Oct 2026" (or "updated ...") in `ink-500` 11.5 px, and Open (secondary, small) at the end. Open
+opens the store's copy in the owner's own app; a save there is read in again and a polite line
+says "Read in your changes to Price list." (or why it couldn't, as an alert). Company
+foundations carries a `neutral-soft` "Read only" tag with an (i) and opens as a read only copy.
+Search by meaning sits inside the same Company knowledge block, under a `line` rule, with no
+switch: it runs whenever MemPalace is installed. Its row is "Search by meaning" with its (i) and,
+at the end, the status dot and Ready, Getting ready or Not set up; then the not installed card
+that opens Prerequisites, and the Search language pair (Fast, Multilingual) as a radio group with
+an (i) saying a change indexes the documents again, drawn with the app's option rows
+(`cth-askme-opt`: hover, focus ring, `indigo-soft` picked with a radio dot; arrows move and
+pick); title 13 px, detail 11 px `ink-500`. Open opens only document types (OPEN_EXTENSIONS) as themselves; anything else
+opens as its text, read only. There is no separate
+Semantic memory section; Michael's Memory tab searches the team's notes by exact words only.
+
 ---
+
+### 7.27 Pulse (PulseView)
+
+The office's performance and cost as pictures (docs/designs/team-performance.md; approved
+mockups `pulse-final.html` and, for the top area and Team at work, `pulse-v3.html`, owner
+2026-10-15). A fixed view tab between Tasks and Who talks to whom. It takes
+the whole window: no right column and no bottom bar (owner, 2026-10-15). Opening Needs you
+or a person goes back to the office, as from Tasks; the bottom bar stays mounted, hidden, so a
+half written message survives the switch.
+
+- Header: "Pulse" `t-view`, a period select (Today, This week, This month; weeks start
+  Monday; remembered), then **Compare** (owner, 2026-10-16): the app's switch (§7.12, green
+  when on) reading "Compare", spoken "Compare with yesterday / last week / last month", with an
+  (i): "Both bars count the same days so far." Remembered. While the span before starts before
+  the first live recorded day, it keeps the owner's position, greyed and not clickable, and its
+  (i) says "Too few to compare yet. This month can compare from 1 December." Then "Collecting
+  since" in `t-meta` `ink-3`. A first start reads the eight
+  weeks before it from the office log, members' sessions and the cost ledger, so Pulse never
+  starts at zero; recommendations still count from live recording.
+- **Recommendations** first (owner, 2026-10-15): up to three recommendation cards in `amber` soft with a 1 px `amber`
+  border at 40%, never a left stripe (that stays Ask me's); avatar, title 13/600, evidence 12
+  in `amber` text, primary Apply, secondary Not now, and a `green` soft "Saves about $N a
+  week" chip. An applied card turns `green` soft with "Applied." and Undo. Beside them, once a
+  change was applied, Saved by your changes: "Measuring" with the first result date for 7
+  days, then mono dollars in `green` text; before any change it is not there. With nothing to
+  recommend, no card: one short `t-meta` `ink-3` line under the header, "Nothing to change
+  this week", or before two full weeks of work "Advice from Thu, Oct 29" (owner, 2026-10-19).
+  Before two full weeks, when the advice rules already see something (owner, 2026-10-19,
+  design A, mockup `pulse-early-patterns-20261019/early-patterns-variants.html`), insight
+  cards take that line's place: one `card` whose header is lit with an `indigo-soft`
+  gradient, holding an `indigo-soft` "Early look" pill with the sparkle icon, the bold 14 px
+  "What Pulse sees so far, not advice yet." and, at the end, the countdown ("Day 5 of 14", a
+  120 px `indigo` bar, "Advice from Thu, Oct 29"). Below, up to three `card-2` cells in the
+  recommendations grid: avatar, name and job (or role), the count in mono 26 px with "of 76
+  runs" in `t-meta`, an 8 px bar of the two sides (`ink-4` found nothing, `green` found work
+  or kept), and what it means ("found nothing to do so far"). A free cell reads "More patterns
+  show here as your team works." in a dashed frame. No buttons; a model fact names no model;
+  each cell is spoken as its full sentence.
+  The header's (i) then gives the start date and why, in business words (never "records"): a
+  few unusually busy or quiet days alone could lead to the wrong advice.
+- **What got done**: four tiles (emails organized, emails sent for you, tasks finished,
+  scheduled checks), each a line icon (mail, send, check, clock, 18 px `ink-2` on a `card-2`
+  square), a mono 28 px number, a label, and a who did it bar: members of one department take
+  its `acc`, then `m`, then `d`, with a 2 px gap and a named legend.
+- **Only tiles with something to say** (owner, 2026-10-19; docs/designs/pulse-smart-view.md):
+  the What got done, Kept safe and row of four tiles flow into one grid under "What got done",
+  in this order: emails organized, emails sent, tasks finished, scheduled checks, questions to
+  the internet, web answers cleaned, messages held, steps blocked, what the team learned,
+  questions to you, Spent, your time. Each keeps its own build. A tile shows when something
+  happened in it in the period, or in the span before while Compare is on: web answers count
+  every answer checked, Questions to you the questions, Your time the questions or any work
+  while the owner was away, every other tile its number. Spent always shows. Otherwise the tile
+  folds into a **quiet chip**: a 26 px pill, `neutral-soft` fill, no border, a 14 px `ink-3`
+  line icon, the name in `t-meta` `ink-2` and the count in mono `ink-3`; on hover the `card`
+  fill and a `line-2` hairline. Chips sit in one wrapping row under the grid, in its order.
+  A chip is a button ("Emails sent: 0 today. Show tile."): it puts the tile back in its place,
+  moves focus to it and reads it in a polite line; opened tiles stay until the period changes
+  or the owner leaves Pulse. A tile or chip that moves fades and slides in over 150 ms on
+  `--cth-ease`; reduced motion snaps. The grid keeps 4, 2 or 1 columns; fewer tiles leave the
+  end of the last row empty.
+- **Kept safe**, with no header (owner, 2026-10-15): four tiles of the same build (line icons
+  shield, search, pause, lock), in the What got done grid. Each names its number in a few words,
+  and its own (i) says how (owner, 2026-10-18: fields only): "questions to the internet" (As
+  written, Private parts removed, Stopped; the (i): each question is checked for private details
+  before it goes out), "web answers cleaned" with "of N" (Cleaned, Already clean, Flagged to
+  Michael; the (i): hidden instructions to AI agents are taken out before the team reads them),
+  "messages held" (`amber` soft while above zero; the (i): the message waits instead of going out
+  unchecked), and "steps blocked by your settings" by gate (Unconfirmed sender, Connector off,
+  Outside the sandbox, Internet, not research, and the rest). A tile's bar and legend show only
+  once one of its parts is above zero. A held message is never counted as protection. Above zero, the held tile carries "See what was held"
+  (12/600, `amber` text), which opens a list in the member detail's frame (owner, 2026-10-16):
+  per held message a `card-2` row in the owner's words (owner, 2026-10-16): a 13/600 headline
+  saying what was not sent ("Pete's notes were not added to the team's shared knowledge",
+  "Pam's question to Pete was not sent") with the time at the end, the subject in quotes and
+  the start of the message (two lines at most; none for Pete's notes or the app's own
+  reminder), one `amber` sentence on why with the check's own report behind an (i), and one
+  `ink-3` sentence on what happens next and whether the owner needs to do anything. When the
+  count is above the rows, one line says how many more have no details. A read that fails says
+  "Couldn't read the list." with Try again.
+  The questions tile carries "See each question" and the answers tile "See each answer" (12/600,
+  `indigo` text, when the count is above zero), each opening a list in the same frame (owner,
+  2026-10-16; mockup `checked-lists-v2.html`): under the title one count line for the period with
+  an (i) on what the marks mean; changed, stopped and flagged rows first, each a `card-2` row with a
+  13/600 sentence headline ("Pam's question to Pete had private parts taken out", "Pete's answer to
+  Pam had web instructions taken out and was flagged to Michael") and the time at the end; the
+  text with removed words struck through (`ink-3` on `neutral-soft`) and the other side's words on
+  `green-soft`, or, when over 40% of what went out is new or there are more than 4 changes, the two
+  texts under 10/600 caps captions; long texts show the changes with about 80 characters around
+  them and "Show the whole answer"; hidden characters show as "[12 hidden characters]"; "Taken
+  out" kinds as `green-soft` pills, "Needed" and "Flagged to Michael" as `amber-soft` pills; one
+  `ink-3` sentence on who was told and whether the owner needs to act. Rows sent as written fold
+  into one line ("17 sent as written") that opens one line items between hairlines. The
+  questions list points to the held list when the period has holds. Every text is plain,
+  `dir="auto"`; marks carry hidden "taken out:" and "sent instead:" for screen readers.
+- **The four tiles after Kept safe** (owner, 2026-10-15), in the same grid, each only as big as what it
+  shows, 12/14 px padding: What the team learned (the period's new notes as one mono 24 px number, a bar and legend by
+  source: `green` your answers, `ink-4` on the job, `indigo` Michael; under it the notes and
+  written ways of working held in all), Questions to you per 100 requests in the period (one
+  number with its counts; under 20 requests, too few to tell), both following the period
+  select (owner, 2026-10-15), Spent with plan use (a mono 24 px total with what it is beneath at the top;
+  plan use at the foot as a full width 8 px bar with its percent and reset day, on a Claude
+  plan only, turning `amber` with a soft "Runs out around …" when the pace says so; who spent
+  what is Team at work's job), and Your time with While you were away past a hairline (the
+  number at the top, what it means at the foot).
+  Each tile spreads its content top to bottom so none holds an empty foot. On a Claude plan with a known price
+  (Settings > Agents, else the plan found in the owner's Claude account), every dollar on
+  Pulse is a member's part of the plan's real cost for the days so far in the period, split by
+  their share of the work (their pay per use value); the line under Spent reads "of your
+  Claude Max 20x ($200 a month)" and the pay per use figure sits behind its (i). On an API key
+  the dollars are what was spent; on a plan with no known price, pay per use with a pointer
+  to Settings. Team at work's column then reads Cost, not Value. Two columns under 1100 px,
+  one under 760.
+- **Team at work** last, in place of the member tiles (owner, 2026-10-15): one card with a
+  headline (the two busiest members' share of working time, who was quiet, who cost the most
+  for the least work), then a row per member on the team, Michael included, busiest first:
+  avatar ringed in department `acc`, name and role, a working time bar in that `acc` with the
+  team average as a dashed mark, hours and cost (no day strip, per hour or Knows column,
+  owner 2026-10-15). Callouts sit on the bar's end: Busiest, "Nx the
+  team" (twice the average or more), Quiet (some working time, under a quarter of it), and `amber` soft "Costly
+  for its work" (twice the usual value per hour, with ten minutes of work and three peers at
+  least). Members with no working time fold into one last row, "9 more were quiet" in `ink-3`
+  with a chevron, a disclosure button that opens their rows (owner, 2026-10-19); the headline
+  names only members with some time. With nobody working, the headline reads "Nobody has
+  worked yet today" (this week, this month) above the folded row. A row opens the member
+  detail, an overlay like Task detail (§7.21): six facts in `card-2` boxes and a four week
+  value bar.
+- **Compare** (owner, 2026-10-16): with the switch on, every top tile shows two small bars
+  under its total, the span before and this one, named Yesterday and Today, Last week and This
+  week, Last month and This month. The span before runs up to the same day: all of yesterday;
+  last week's Monday to the same weekday; last month's 1st to the same date, capped at its last
+  day. The earlier bar is muted (`ink-4`, or the series color at 45%) with a 1 px `ink-3`
+  outline; this one is `ink-2` or the series color; the value sits above each in mono 10 px.
+  Bars take the place of who did it and of Kept safe's breakdown while Compare is on. A span
+  with too few requests for a rate draws no bar and reads "…". Team at work shows the period
+  only. With Compare off, no tile compares.
+- Layout by the window's width: 1100 px and wider, 4 a row and every Team at work column;
+  760 to 1099, tiles 2 by 2; under 760, one
+  column and Team at work with name, bar, hours and value. Coral is never used on Pulse. Every chart has an
+  aria-label sentence; Apply and Undo announce in a polite live region.
+- **Company foundations** (docs/designs/office-foundations.md, design D3 to D9, D14). The strip
+  sits inside Recommendations, one row under the Early look header while it shows, else a
+  `card` row at the top of the section: "Foundations" in `ink-3` with its (i), then one pill per
+  job whose work hit an empty question, most hit first: `neutral-soft` pill, 30 px, the job
+  name, "1/6" in mono and a 42 px `indigo` bar on `line-2`. A pill is a button named "Marketing,
+  1 of 6 answered. Open its questions"; it opens that job's waiting foundation card in Needs
+  you, else the Company foundations document as a read only copy in the owner's own app
+  (Settings at Memory & Knowledge when it can't open). A job leaves once every question its work hit is
+  answered; the strip goes with the last. On Team at work a member missing any foundation shows
+  a 12 px `indigo` ring and "Foundations 2 of 6" in `ink-3` 11 px under its role; nothing once
+  all are answered. Member detail adds a Foundations box in `card-2`: the ring and "1 of 6",
+  the missing questions the work hit as `indigo-soft` pills (each opens its card), "and 3 more
+  no work has needed yet", and, once both sides have enough work, two bars of work kept as is
+  without the first answer (`ink-4`) and with it (`green`).
+
+### 7.27a The foundation card (FoundationCard)
+
+A Company foundations question on Needs you (docs/designs/office-foundations.md, design D2,
+D8, D10 to D13), listed after the decision cards and before reports, always open:
+
+- **Title** the question in 14 px semibold ("Who we sell to (ideal customer)"); under it the
+  usual raiser chip in the member's department colors and "needs this, 2h ago" in `ink-3`.
+- **Evidence first**: Michael's one bold line on what the work did without it, as Ask me
+  markdown with file chips.
+- **Your answer**: a visible 11 px `ink-3` label, a multi line `cth-input` box (max 300
+  characters) and the hint as a line under it, linked as its description; the hint never sits
+  inside the box.
+- **Actions**: Save answer (primary), Have Ryan draft it (secondary), Not now as a quiet text
+  link at the line's end. At 320 px Save and Draft share a line and Not now wraps.
+- **Drafting**: a polite status line in `indigo-soft` ("Ryan is drafting an answer from what
+  the office holds."). Save stays on, so the owner can always type their own answer (review,
+  2026-10-20); a request waits 2 days, then Have Ryan draft it shows again. The draft fills an
+  empty box once, the label reading "drafted by Ryan, edit and save" in `indigo-text`. Draft
+  it shows only while the member is on the team.
+- **Footer** above a `line` rule: "Sales and Marketing use this" and "Asked weekly until
+  answered", both `ink-3` 11 px.
+- A failed action keeps the typed answer and names what failed in `coral-text`: "Couldn't
+  save, try again.", "Couldn't ask Ryan to draft it", "Couldn't put this off". A saved answer
+  shows "Saved to Company foundations." in a polite line at the top of the board (or "Sent to
+  Michael to add to Company foundations." when the write fell back to him), only once it is
+  saved. The draft label names who filled it. A card whose question was answered another way
+  leaves the board. Not now
+  hides the card for a week; the Needs you count leaves it out too.
+- **Company knowledge is always on** card (one time, a report like the Research notice): for an
+  owner who had turned company knowledge off and has documents in it. Got it, and Open the list
+  (Settings, Memory & Knowledge).
 
 ## 8. The studio illustration [Both]
 
@@ -1032,16 +1478,32 @@ light (§3.8) and a faint dot grid masked to the edges.
 
 ### 8.3 Pods
 
-A department pod is a desk block, a monitor on a stand, a chair, a keyboard, and a small
-plant or mug, all in the department family (§3.4) on a paper pad slab. Each desk carries
+A department pod is a desk block, a glass monitor on a stand, a chair, a keyboard, and a
+small plant or mug, all in the department family (§3.4) on a paper pad slab. Each desk carries
 its person's prop (§3.4) at the front left corner, and Michael's desk his mug. Open floor
 holds three potted plants and a water cooler (`DECOR` in StudioArt), on spots clear of
 every ring slot, the mailbox row and Michael's office. A pod holds one to
 four desks (§8.9). The monitor screen is the status surface:
 
-- Lit: `l` fill with a soft inner light and a floor glow ellipse in `acc` at 42% core,
-  14% edge (dark 62% and 22%).
-- Off: `#5E5A74` (dark `#23212F`).
+- Glass (owner, 2026-10-15; `docs/designs/office-floor-plates-glass.md`): every monitor,
+  Michael's included, is a frameless slab 0.02 deep (faces `rgba(220,228,246,.35)`,
+  `rgba(226,234,250,.2)`, `rgba(200,210,236,.35)`), no bezel and no white edge; the pane
+  fills it. Before, a thick dark frame read as an old monitor.
+- Idle: a clear pane, `rgba(226,234,250,.38)`, with a soft white reflection
+  (`rgba(255,255,255,.55)`) across its left side.
+- At work: the glass takes the color it shows at about 13% (`acc`, `violet` while
+  thinking or compacting, `coral` when asking for help), its lines scroll while working,
+  looping, thinking or compacting, and a floor glow ellipse in `acc` at 42% core, 14% edge
+  (dark 62% and 22%). In dark theme the screen halo is 25%.
+
+**Department plate** (owner, 2026-10-15): owners who don't know the show see only
+names, so each pod says what it does. A plate lies on the pad in the floor's plane (the
+plane of Michael's name plate), right in front of the front chairs: its center 0.1 grid
+past the chair backs (0.53 past their desks). The pad grows only by what it needs: deeper
+at the front by `max(0, plate + 0.12 - half depth)`, and wider when the word is longer
+than a one person pad. White at 92% (dark `#24222F`), 9 px tall, 0.7 px `acc` border, `r`
+2.2; the department name (`studio.dept`, "HR" for people) in Sora 700 at 5.8 px, capitals
+spaced 0.5 for Latin words and unspaced for scripts that join, such as Arabic.
 
 ### 8.4 Michael's glass pod
 
@@ -1053,9 +1515,10 @@ that glows green while he works; it always ends before the glass's corner (owner
 2026-09-30: an "M" badge said nothing; a door plate says whose office it is). It sits at the center of the platform. The glass is taller
 than a desk (72) so his walls carry his numbers:
 
-- Left wall: the task board. To do, Doing, Blocked, Done read left to right, each column's
-  count in mono inside the board's top (never on its edge) in the column color, up to four
-  stickies under it. Stickies pop
+- Left wall: the task board. To do, Doing, Waiting (`amber`), Blocked, Done read left to
+  right, as the Tasks view does, so the wall adds up to it (owner, 2026-10-18); five columns
+  fill the board the way four did. Each column's count in mono inside the board's top (never
+  on its edge) in the column color, up to four stickies under it. Stickies pop
   on; Doing breathes; his marker writes under the columns while he works.
 - Right wall, above the monitors: a lit sign (ink, indigo rim) with three mono numbers and
   glyphs: handed out today, waiting on you (coral when above zero), kept; his context gauge
@@ -1072,7 +1535,7 @@ As §3.5. In addition:
 - **Needs you beacon**: a coral sphere on a thin pole above the pod with a ring that scales
   from .6 to 1.5 and fades, every 1.8 s. Only for status `blocked` on the owner.
 - **Thinking**: a white bubble with three `violet` dots over the monitor.
-- **Idle**: the pod desaturated; screen off.
+- **Idle**: the pod desaturated; the screen clear glass (§8.3).
 
 ### 8.6 Paths and tokens
 
@@ -1124,6 +1587,18 @@ signature opener (once a day). A bit that belongs to someone on the show says wh
 each side (Michael lands "that's what she said", Andy went to Cornell), and the partner is
 picked to fit; a break-room line never names its own speaker (owner, 2026-10-03). A
 conversation ends early if either person gets work.
+
+**Pete.** The Research member takes part like everyone else, in his own character (owner,
+2026-10-13). His lines come from his season 9 story, written in his voice: Andy calls him
+Plop, he is the New Jim with nothing in common with Jim, he recites Die Hard for Erin, Poor
+Richard's after work, Kelly's old customer service desk, and the office sizing up the new
+guys. No line says "Pete", since the owner may rename him. The one exception to the deck:
+**his first day welcome.** After the owner turns Research on, the first conversation that
+can be one of Pete's is, with someone in another pod, under the same pod rules. It plays
+once per turn on, kept per office; once played, a restart or a restore does not replay it
+(an office with no record of it yet, such as one that had Research on before it existed,
+plays it once), turning him on again does, and demo or lab banter never uses it up. Idle talk, his included, does not
+run in the compact grid (§8.9).
 
 The first line or conversation comes 8 to 15 s after the office opens, then every 15 to
 30 s. A single line is visible 8 s. Never from a pod with someone at work, and never from
@@ -1243,7 +1718,8 @@ across from 481 to 979 px, one column at 480 px and under (owner, 2026-10-09). A
 `ink` 20 px icon on a 36 px `neutral-soft` square, a `w-h3` title and one or two lines in
 `ink-2`. The Ask Michael tile adds decorative status pills (§7.13 colors: Sent idle, Michael
 has it working, Waiting on someone `amber-soft` with `amber-text`, Answered done), hidden
-from screen readers; its text carries the meaning.
+from screen readers; its text carries the meaning. Its last line also says that when Michael
+offers choices you pick one and press Reply, and his pick is tagged (§7.8; owner, 2026-10-19).
 
 ### 9.6 Footer
 
@@ -1306,6 +1782,203 @@ installed for you if it's missing" and "Sign in with your Claude plan, or an Ant
 key"), and an `ink-3` line under them. No buttons: nothing in it can be clicked. One row at
 980 px and up; under that the text stacks beside the avatar.
 
+### 9.13 Task board (web)
+
+A home page section right after the refund story's Sending block (§9.11) and before the
+"Everything else" tiles: eyebrow "The board", heading "See every job, and who it's waiting
+on.", and a read only picture of the Tasks view (§7.20) in the story's cast. A `card-2`
+frame, `r-2xl`, `shadow-lg`, padding 18: the header ("Tasks" 18/24 600, count chips To do,
+Doing, Waiting, Blocked in `coral` soft, Done in `green` soft, a lock icon and "New work goes
+through Michael" in `t-meta` `ink-3`), then five columns in the app's order on a tinted
+`floor` ground, Blocked tinted `coral` soft, with 6 px square keys (`ink-4`, `blue`, `amber`,
+`coral`, `green`). Task cards as §7.20: mono id, title, assignee avatar and name. A Waiting
+card carries an `amber` soft "Waiting on {who}" chip, one on a customer and one on a
+teammate; the Blocked card is the story's refund (Northwind Cafe, Invoice #4471) with the
+18 px coral "?" and a `coral` soft "Waiting for you" chip; Done cards show a green check and
+the first line of Michael's result (`ink-2`, 11/15), then "N more". Under the frame, three
+plain notes keyed like the columns: Waiting says who it waits on, and that when someone
+outside the office doesn't reply after two follow ups, Michael asks you whether to keep waiting
+(owner, 2026-10-19); Blocked always
+waits on you; Done shows what came of it. The frame is one `role="img"` with a full text label;
+nothing in it can be clicked. Five columns at 980 px and up. Under that the board leads with
+what an owner checks first (owner, 2026-10-12): Blocked and Waiting side by side, Done across
+both columns with its cards two across, then To do and Doing as count rows without cards;
+under 480 px everything stacks in that order. The board never scrolls sideways.
+
+### 9.14 File tabs (web)
+
+A home page section right after the task board (§9.13) and before the "Everything else"
+tiles: eyebrow "Files", heading "Read the file he means, beside his question.", a lead that
+names only what opens in a tab (CSV files, notes, text and pictures; never "spreadsheets" or
+"in the office", owner CEO D8) and sets the picture later that morning, after the board's
+9:15, and a read only picture of a file tab (§7.2) opened from a file chip on an Ask me card (§7.8). Same
+frame as §9.13 (`card-2`, `r-2xl`, `shadow-lg`). The top bar as §7.2: Office, Tasks, Pulse,
+Who talks to whom, the `line-2` hairline, then two file tabs (a Markdown note, and a CSV that is
+selected, `ink` fill, its name whole), each named as the app names it, without folder or
+extension (the same name as its chip), and the coral Needs you pill showing 1. Under it, the
+file view (§7.2: name, "Oscar / Payments" in `ink-3`, Open in app and Show in Finder) with
+the CSV as a table: Date, From, Invoice and Amount, amounts right aligned in mono, eight
+September payments, none named like the demo office (Harbor & Pine), whose last row has no
+invoice. Beside it, the
+right column's Ask me card, Michael's question for Oscar, asks whether that payment is the renewal deposit; the
+question names the file as a chip (`sheet` icon, the name without extension, "Open"), an
+answer is being typed, and it holds up 2 tasks. Under the frame, three plain notes that add
+what the lead leaves out: named files are buttons (Open, or Show in Finder, "Show in folder"
+on Windows, for anything else, §7.8, with PDF and Office files opening in their own app); the
+question stays beside it (§7.2); and it reads what your business already has: Excel exports
+from accounting and payroll software, long PDFs and PowerPoint decks (owner, 2026-10-15; the
+five tab limit is left to the app). The frame is one `role="img"` with a full text label; nothing in it
+can be clicked. File view and card side by side at 980 px and up; under that the card comes
+first (no wider than the app's 520 px right column), then the file, and the tab bar drops Pulse, Who talks to whom and the Markdown tab, then the
+Needs you pill under 600 px and Tasks under 480 px, so the selected file tab keeps its whole
+name. Under 400 px the table steps down to 11 / 16. The section never scrolls sideways.
+
+
+### 9.15 Privacy section (web)
+
+A home page section right after the refund story's Sending block (§9.11) and before the task
+board (§9.13), owner 2026-10-14 (site design review, direction C2). In place of the eyebrow, a
+"Privacy first" badge: a pill in `indigo` soft with `indigo-text`, 15/20 700, an 18 px shield
+icon. Heading "A trust layer built to stop agents going rogue and leaking your business data."
+with "trust layer" in `indigo-text`; the lead says Pete, the Research team member, does the
+team's web research and everyone else is told to ask Pete, every question the app passes to Pete
+is checked against what the owner keeps private, and every answer that comes back through the
+trust layer is cleaned of instructions before the team reads it. Two columns (5fr 7fr) at 980 px
+and up. Left: h3 "You decide what stays private.", one line, the three segment switch of
+§9.11 (As written, Cleaned, Not sent; Cleaned pressed first), its live line, then the example
+as message cards (`card`, padding 14, the story's cast): Kelly's question to Pete; for Cleaned
+and Not sent, a message from "Privacy check" to Kelly (a shield avatar on `indigo` soft, the
+sender the app uses) carrying the app's note word for word, "Sent to Pete as" with the cleaned
+question in a `neutral-soft` box, or "Not sent to Pete: it contains an account number or ID,
+which the owner keeps private. Ask again without it."; for As written, no message and one
+line saying Kelly gets no note. Then Pete's answer to Kelly: the app's reply label word for
+word in a `neutral-soft` box, the answer, and one struck line (`ink-3`, line through) marked
+"removed". Right: a read only picture of Settings, Research & privacy (§7.26): the "Research"
+head, a green dot and "On. Pete looks things up for the team." with Turn off, then "What your
+team may send to Pete" with "4 allowed, 8 private" and the twelve kinds in the app's fixed
+order, each with a segmented Allowed | Private, Passwords and keys "Always private". Under the
+columns, three plain notes: Keeps your business data in; Built to stop agents going rogue (what
+happens to answers that come back through the trust layer, never "a web page can't give your team
+orders"); the setup inset's Pete row says the app gives Pete questions only, never the owner's files,
+and its summary is shown in full (the others clamp to two lines on phones) so that clause stays visible whatever
+font the phone falls back to; Off until you turn
+them on. No card gets a coloured edge stripe. Pete's avatar is the globe
+and magnifier icon on `dept-team` l, m and acc (`.d-research`), never a letter, here and in
+the setup inset (§9.12), where Pete is the last row, unchecked, tagged "uses the internet".
+Pete is "they". The settings picture is one `role="img"` whose label names all twelve kinds;
+the switch is buttons with `aria-pressed` and an `aria-live` line. Without scripts the switch
+is hidden and the three outcomes stack under their labels. Under 980 px one column: the left
+column, then the picture, then the notes. Under 480 px the picture shows the four Allowed
+rows, Passwords and keys and "and 7 more kinds kept private", linking to /security. The site
+states no limit notes for this feature (owner, 2026-10-14). The section never scrolls
+sideways.
+
+### 9.16 Security page (web)
+
+`/security`, a page to read, not to sell (owner, 2026-10-14): the site nav and footer, no
+hero, no cards, Download the only call to action. One column at about 70 characters: h1
+"Privacy and security", a one line summary, a link back to the home page's privacy section,
+then six sections under h2s: Who is given what (Pete does the team's web research, everyone else,
+Michael included, is told to ask Pete, and the app turns off the web page tool and the web search tool
+for every team member but Pete; one table: your team and Michael "Told to ask Pete", Pete "Yes, the
+team's researcher" and "Questions only, never your files", against web pages and search, your
+files and mailboxes, and connectors; and
+one line: each team member keeps its own notes and inbox, and teammates, Michael included, are
+told to ask it instead of opening them), The trust
+layer (out: as written, cleaned or not sent; in: instructions removed, the answer labelled, an
+answer that tries to steer flagged to Michael; nothing goes through when the check can't run, the teammate who asked is told and so is Michael, and Pulse lists each message held because the check couldn't run (when, who it was between,
+what it was about, why, and who was told); every message the app passes to Pete, from a teammate,
+Michael, the app or one of your answers, is checked, except the app's own fixed notes, which go as
+written; the app gives Pete no files; passwords and keys are always private, and a message with one
+in a recognisable shape goes back before any model reads it; every answer that comes back through the
+trust layer is cleaned and labelled as information from the internet; Pete's notes are not copied for the team; and one line after the way in: since 0.2.3,
+Pulse lists each question the trust layer checked on its way to Research and each web answer, with what was taken out marked
+word by word, §7.27; owner, 2026-10-19), What
+stays private (the twelve kinds with their defaults), Links in the app (every link in a reply
+names the site it opens, and shows the real one when the words name a different site, §7.8;
+owner, 2026-10-15), What goes to Claude (what an agent reads for a job goes to Claude through the owner's plan or
+key; Pete runs only on Claude; at 0.2.3 Claude is the only engine the app offers), and Where your
+data lives (kept on the computer, passwords encrypted under a key the system keeps). Every sentence holds on Mac and Windows and for every
+engine, and the page states no limit notes: a privacy sentence says what the app gives, tells or
+passes through the app and its trust layer, never that something can't happen where the app can't
+enforce it (Windows has no sandbox, so a member's shell is not held there; owner, 2026-10-20). Send
+only says a teammate isn't given the watched inbox to read. The same rule covers the home page's
+hero, meta, JSON-LD, FAQ and privacy section (§9.15) and llms.txt. Headings sit
+closer to their text than to the section above; the page never scrolls sideways at 320 px.
+### 9.17 Pulse (web)
+
+A home page section right after the file tabs (§9.14) and before the "Everything else" tiles
+(owner, 2026-10-19, site design review): eyebrow "Pulse", heading "See what the office got
+done, and what it cost.", lead "A Pulse tab beside Tasks shows the week: what each team member
+did, what it cost, and ways to save that wait for your Apply. Here it is on Friday afternoon."
+A read only picture of Pulse (§7.27) in the story's cast for This week, Compare off: the
+header ("Pulse" 18/24 600, the period select reading This week, the Compare switch off,
+"Collecting since" in `t-meta` `ink-3`); one recommendation card in the app's own words (Run Kelly's "check the support inbox" less
+often / It found nothing to do on 258 of 312 runs. Every 1h to every 2h., the hourly job the
+story's Kelly runs, a `green` soft "Saves about $3.90 a week" chip at API prices as the app shows it, and Not now
+with an `ink` Apply kept together on one line); the scene is Friday afternoon of the week whose
+plan use resets Mon, Nov 2, late enough for the app to show advice; at the top of Recommendations the Company foundations
+strip (§7.27) as a `card` row, "Foundations" in `ink-3` with its (i), then Finance 3/5 and Sales
+4/6, most hit first, each pill drawn, not a button (Finance's empty Financial year is the Setup
+card's question, §9.18); then twelve tiles in §7.27's order, four to a row,
+every one above zero so no quiet chip is drawn: emails organized, emails sent for you, tasks
+finished, scheduled checks, questions to the internet, web answers cleaned, messages held
+(`amber` soft, "See what was held" drawn, not a link), steps blocked by your settings, what
+the team learned, questions to you, Spent with plan use (a Claude Max 20x price; Spent is
+the plan's real cost for Monday to Friday afternoon by the app's own formula, §7.27) and your
+time; then Team at work with six rows, busiest first, Oscar and Dwight each with the 12 px
+`indigo` ring and "Foundations 3 of 5" and "Foundations 4 of 6" in `ink-3` 11 px under the role
+(hidden with the roles on phones), the team average dashed, Busiest and
+Quiet callouts, hours and cost. Tokens as the board's picture (§9.13): a `card-2` frame,
+`r-2xl`, `shadow-lg`, padding 18; tiles `card`, `r-lg`, `shadow-sm` with a 1 px `line`,
+padding 12/14; numbers IBM Plex Mono 28/32 600 (24/28 on the last four); who did it bars in
+each member's department `acc`. Its CSS is its own block with a `pl-` prefix: it reuses no
+board or file tab class. Coral is never used. Under the frame, three plain notes: Ways to
+save (each looks at the last 14 days, comes with the numbers behind it and changes nothing until you click Apply; Undo
+puts it back; on a Claude plan the saving is counted at pay per use prices and frees plan
+use; advice starts two weeks after Pulse starts recording, and before that an Early look shows any
+patterns it already sees), Compare (this
+week beside last week, counted up to the same day, once there is a week before to compare), Real costs (on a Claude plan, what you pay
+for the plan split by each member's share of the work). The frame is one `role="img"` whose
+label carries every number and name in reading order; nothing in it can be clicked. As the app
+draws them: the held tile's icon square `card` with `amber-text`; the Quiet callout `neutral-soft`
+with `ink-3` and the Busiest callout `card` with `ink` and an inset 1 px `line-2` ring; from 480 px, where the chip
+shows, the quiet row's avatar and name at 70% (its role keeps full `ink-3`, so it stays readable), and its hours, in
+`ink`, at 70% from 760 px; legend dots 7 px with a 1 px `line` ring and
+counts in `ink-2`; the plan use percent in IBM Plex Mono 12/600 `ink` and the plan line 11/15
+`ink-3`; roles and callouts 10 px. Trimmed on the web, deliberately (owner, 2026-10-19, ship
+review): legend parts at zero, the See each question and See each answer links, the icons and
+sublines on the learned and questions tiles, Your time's While you were away half (its share is
+a sentence under Your time), the Team at work column heads and average footer, and the
+recommendation's button order (Not now, then Apply), and the learned tile's See the notes link and its in all footer.
+Questions to you counts at least one request per scheduled check and question to Pete. Four
+tiles a row at 1100 px and up, two from 760 to 1099; under 760 two compact tiles a row (icon
+and legend hidden, number, label and bar kept), Spent and Your time each across both columns,
+the recommendation stacked, Team at work without roles and with hours over cost. Under 480 px
+the Busiest and Quiet callouts are hidden and the frame's padding is 12. The section never
+scrolls sideways, also at 320 px with a scrollbar.
+
+### 9.18 Setup foundations inset (web)
+
+Under the setup inset (§9.12), a second quiet inset with the same fill, inset line, radius and
+padding, for what comes after setup (Company foundations, §7.27a): Michael's avatar, "Then the
+team learns your business" (600, 14/20), two inline items with 16 px icons ("One question to you,
+only when work needs the answer" and "Learns the rest from your answers and the team's work") and an
+`ink-3` line under them. Beside the text, a read only picture of one foundation card (§7.27a) in
+the story's cast, at the story's app scale: the question "Financial year" as its title; Oscar's
+Finance raiser chip and "needs this, 2h ago" in `ink-3`; Michael's one bold evidence line, example
+copy in the app's form ("Oscar set this quarter's sales tax reminder without knowing when your
+financial year starts."); the visible "Your answer" label, an empty box and the hint under it ("A
+few plain sentences, under 300 characters. For more, name the file that holds it."); Save answer
+(primary), Have Oscar draft it (secondary) and Not now as a quiet text link at the line's end; and
+the footer above a `line` rule, "Finance uses this" and "Asked weekly until answered". Oscar is in
+every pack, so the card holds whatever business the visitor picks. The card is one picture with
+one description (role=img): its buttons are drawn, and nothing in the inset can be clicked, as in
+§9.12. No coral: the card waits on an answer, it is not Blocked. Its own `fd-` classes; no class
+from another section. At 980 px and up the text and the card sit side by side, the card 380 px
+wide; under that the card goes under the text, up to 420 px wide. Never scrolls sideways, also at
+320 px with a scrollbar.
+
 ---
 
 ## 10. Iconography [Both]
@@ -1316,6 +1989,10 @@ key"), and an `ink-3` line under them. No buttons: nothing in it can be clicked.
 - Sizes: 14 (inline in meta), 16 (buttons, rows), 18 (top bar), 20 (empty states).
 - Every icon only button has an `aria-label` and a tooltip.
 - `file` (a document) and `sheet` (a spreadsheet or CSV) mark Ask me file rows (§7.8).
+- `external` (opens the browser) and `mail` (opens the mail app) follow a named link in
+  agent text, at 12 (§7.8).
+- `lock` marks a choice that cannot be changed, at 12, with visible words beside it
+  ("Always private", §7.26).
 - `help` (a question in a circle) marks a state that could not be checked (§7.25); `info`
   opens an InfoTip explanation. Never swap them.
 - `components/Icon.tsx` draws these outline icons; the v1 pixel set is retired (§17, row 6).
@@ -1467,7 +2144,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 6 | App | Pixel icon set | `components/Icon.tsx` | Done: outline icons behind the same component |
 | 7 | App | Settings and onboarding dialogs lack `role=dialog`, focus trap and Esc | `SettingsModal`, `OnboardingWizard` | Done: `shell/Dialog.tsx` and `useDialog` for Settings, hire, edit, quit and closing time; Esc reaches only the top dialog |
 | 8 | App | Task detail has no Esc handler | `TaskDetailOverlay` | Done |
-| 9 | App | Role to department mapping does not exist | `src/shared/officeRoles.ts` | Done: `departmentOf` in `scene/studio/layout.ts` |
+| 9 | App | Role to department mapping does not exist | `src/shared/officeRoles.ts` | Done: `departmentOf` in `src/shared/officeRoles.ts`, which `scene/studio/layout.ts` and Company foundations share |
 | 10 | App | No counters for delegated and kept | hive | Done: counted from the hive log and tasks, shown on Michael's wall sign and hub card |
 | 11 | App | UI strings not audited for dashes | `src/renderer/src/i18n` | Done: `test/no-dashes.test.cjs`; ALL CAPS strings moved to sentence case (§4) |
 | 12 | App | Reference screens use 9 to 9.5 px text and off-grid spacing | `reference/studio/` | Done: re-shot from the build (#25) |
@@ -1506,6 +2183,18 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-10 | The owner's message to Michael flies as a paper plane in the owner's indigo, not an envelope; it lands at his office with the two rings (§8.8, §8.12). |
 | 2026-10-09 | Web, Windows first class: the platform switch drops the Beta tag (§9.8, §9.9 retired for web); the Windows note is a lead line plus bullets; the home page gets the Sending switch with the mail approval card (§9.11), the setup inset (§9.12) and six "Everything else" tiles (§9.5); the social card says "on your computer" (§9.7). |
 | 2026-10-10 | Panel tabs: the mouse wheel scrolls an overflowing tab row sideways, and an edge fades while tabs are hidden past it (§7.11). |
+| 2026-10-12 | Web: the home page's task board after the refund story, the Tasks view (§7.20) as a read only picture that leads with Blocked and Waiting on small screens (§9.13). |
+| 2026-10-12 | Web: file tabs after the task board, a CSV open in a file tab (§7.2) from a chip on Oscar's Ask me card (§7.8), the card beside it, as a read only picture (§9.14). |
+| 2026-10-12 | Named links in agent text: a pasted URL on a card shows the app or site it opens, with an `external` or `mail` icon, a hidden screen reader phrase, and the real site in `ink-3` when the words name another one (§7.8, §10). |
+| 2026-10-12 | Ask me: the See full context footer shows only when the card has a background, a result or other questions and answers (§7.8). |
+| 2026-10-12 | Task detail: QUESTIONS newest first, each with how long ago it was asked (§7.21). |
+| 2026-10-12 | Office stops: out of credit and a sign in that stopped working join the plan limit break, as a counted owner to do with a coral chip; the plan limit stays the quiet amber break (§7.6a). |
+| 2026-10-13 | Pete joins the idle talk (§8.8): his own lines and bits from his season 9 story, and a first day welcome once per turn on, per office (owner, D1, D5, D7, D9). |
+| 2026-10-13 | Research & privacy (issue #230): a Settings section with the Research row and the data classes (§7.26), Research in the onboarding Team step (§7.25), the one time Research report card (§7.8); the Sites group is gone from the Access tab (§7.12). |
+| 2026-10-13 | The Research team member is called Pete (owner): the Settings copy, the Team step row and the report card name him (§7.8, §7.25, §7.26); his name and engine show as plain text in Edit agent. |
+| 2026-10-13 | The Research member is renamable, Pete by default, and the copy takes its current name; Research & privacy shows in every office (owner, ship 2 D16, ship 2 D17). |
+| 2026-10-13 | Research wears Pete, its own character (magnifier over a globe), not Ryan, who stays Marketing's (owner, third ship D4, §3.4, §7.25); the crash screen (§7.25a) and the `lock` icon (§10) are written down. |
+| 2026-10-14 | Tasks view: search box matching waiting on and member names, team member filter with Unassigned, clickable status count chips with `aria-pressed`, "Showing X of Y", and "No tasks match your search or filters" (§7.20). |
 | 2026-10-04 | Banter flies as paper planes only; an envelope on the floor is always a real message (§8.8, §8.12). |
 | 2026-10-04 | Ask me file rows: a question's named files open from the card, or show in Finder (§7.8); `file` and `sheet` icons (§10). |
 | 2026-10-01 | Pre-landing review fixes: dialogs close when closing time starts and its bar sits above them; the compact grid stays clear of the right column; selecting someone dims the rest of the stage to 45% (§7.14); Traces behind a flag (§7.11); setup screens on v2 fields and rows (§7.25); the composer keeps its width and takes pastes (§7.19); Settings and closing time copy in plain words. |
@@ -1522,6 +2211,27 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-09-30 | **v2 Studio adopted.** Pixel floor, bottom strip, Command Center layout, pixel UI, pixel type and the arcade web palette retired. One token set for app and web (§1.3). Sora and IBM Plex Mono replace Inter, VT323, Press Start 2P and Pixelify Sans. Wordmark in Sora; the Struck M mark kept. Studio illustration system (§8). Contrast corrected against the mockups: `ink-3` `#6C6884`, accent text colors, `coral-strong` for coral fills with text, `line-input` for control boundaries. v1 archived at `archive/DESIGN-v1-pixel.md`. Decisions and the functional map: `docs/designs/studio-home.md`. |
 | 2026-09-28 | (v1) Web: Pro offering removed; nav cut to four links plus Download. |
 | 2026-09-24 | (v1) One spec for app and web, moved into `branding/` with the brand kit. |
+| 2026-10-14 | Web: the privacy section after the Sending block, a Privacy first badge, a three position trust layer switch with the app's Privacy check notes and Pete's labelled answer, and Settings, Research & privacy as a read only picture; Pete's globe avatar; the /security page to read (§9.15, §9.16). |
+| 2026-10-15 | Web: the Files notes swap the five tab limit for what the office reads (Excel exports from accounting and payroll software, long PDFs, PowerPoint decks), PDF and Office opening joins the first note (§9.14); `/security` gains a Links in the app section (§9.16) (owner, 2026-10-15). |
+| 2026-10-14 | Edit agent: a Danger zone under the engine with Delete, for anyone but Michael, his assistant and Pete; the one card besides Settings' Danger zone with the coral ring (§6.3, §7.26). |
+| 2026-10-15 | Ask me: options as rows to pick, with a Recommended tag, and several questions with a line each; picking never sends, Reply on its own row says what it sends, and any question may be left blank (§7.8). |
+| 2026-10-15 | Pulse, a view tab between Tasks and Who talks to whom that takes the whole window: recommendations, what got done, Kept safe, the row of four tiles, Team at work, and trends on Last 4 weeks (§5.2, §7.2, §7.6, §7.27). |
+| 2026-10-16 | Pulse: periods Today, This week, This month, and Compare, two bars per tile against the span before up to the same day, the switch kept in place while a period cannot compare yet; Last week and Last 4 weeks go (§7.27). |
+| 2026-10-17 | Not reporting (§7.6b): a card on Needs you when a team member's engine stops reporting to the app, one per engine version, with Restart, Change engine and Keep working unchecked; an amber Not reporting tag on its pod and panel; the office's own card for Michael. §6.3 drops the stale coral left rule on Ask me cards (§7.8 has none since 2026-09-30). |
+| 2026-10-17 | Tasks board: time group headings in each open lane (Overdue to No date, §7.20). |
+| 2026-10-17 | Tasks board: open columns read earliest Next first, no Next after, ties by priority then the order made; the Next line shows the year when it is not this year (§7.20, §7.21). |
+| 2026-10-17 | Wide 1:1: Open wide moves the conversation with Michael and its box to the center, beside the right column and never over it; its own remembered choice; `t-read`, no fold and content sized tables while wide; Esc to the side, then close; one thing in the center, last opened wins (§4.2, §7.6, §7.19). |
+| 2026-10-18 | Office opening: the Clocking in card is the one colored card on the floor (indigo, `t-view` title, a bar, who is still coming), ends with "Everyone's in" or who has not clocked in at the cap, runs only from launch or a Restore team, and Michael's own start shares it; the clock pill says "Opening" and the count meanwhile; the screen reader hears start and end only (§7.3, §7.24). |
+| 2026-10-18 | Michael's wall and hub card count Waiting: five columns in the Tasks view's order (To do, Doing, Waiting, Blocked, Done), Waiting in `amber`; the hub card is 212 px so the five labels never touch (§7.17, §8.4). |
+| 2026-10-18 | Pulse, Kept safe: each tile names its number in a few words, the same at zero, with its own (i); shorter legend and gate names; a tile's legend shows only once a part is above zero (§7.27). |
+| 2026-10-19 | Pulse shows only tiles with something to say: one grid in a fixed order, quiet tiles as chips in one row that open their tile, Spent always; members with no working time fold into one row; Recommendations before advice is one `ink-3` line (§7.27). |
+| 2026-10-19 | Pulse, before two weeks: Early look insight cards take the one line's place when the advice rules already see something (§7.27). Company knowledge in Settings, Memory & Knowledge: no switch, a Documents list with Open, search by meaning inside the same block and no Semantic memory section (§7.26). Company foundations: the strip, the count and the member detail box on Pulse (§7.27), the foundation card and the one time Company knowledge is always on card on Needs you (§7.27a). A file named without its ending is a chip when the office's folders hold it (§7.8). |
+| 2026-10-16 | Wide panel: a person's or Michael's panel, and Edit agent over it, open wide in the center of the window with the office dimmed under the top bar; Edit wide in two columns with "Edit {name}"; unsaved changes ask before any way out; `t-read` 14 / 22 (§4.2, §5.2, §7.6). The right column drag reads as built: 420 default, 320 to 1200 (§5.2). |
+| 2026-10-15 | Studio: a department plate on each pod's pad ("HR" for people), so the pod says what it does (§7.14, §8.3); every monitor, Michael's too, is frameless glass, clear when idle and tinted in `acc` with scrolling lines at work (§3.4, §3.5, §8.3, §8.5); `home-light` and `home-dark` re-shot (§20). |
+| 2026-10-20 | Web: Pulse (web) catches up with 0.2.4: the Company foundations strip at the top of Recommendations (Finance 3/5, Sales 4/6), Foundations counts under Oscar's and Dwight's roles on Team at work, and the Ways to save note says an Early look shows any patterns Pulse already sees before advice starts (§9.17). |
+| 2026-10-20 | Web: Setup foundations inset (§9.18), a second Setup inset after Then Michael gets ready: Then the team learns your business, with a read only foundation card (§7.27a) for Oscar's Financial year question, its buttons drawn, nothing clickable. |
+| 2026-10-20 | Web: privacy wording that holds on Windows: Pete does the team's web research and the rest of the team is told to ask Pete; the app turns off the web tools for everyone else, gives Pete questions only, and the trust layer checks what passes through it both ways; /security's first section is Who is given what; data kept on the computer (§9.15, §9.16). |
+| 2026-10-19 | Web: Pulse (web), a read only picture of Pulse after the file tabs with three notes (§9.17); the Ask Michael tile names picking Michael's choices with a click (§9.5); the board's Waiting note names Michael asking whether to keep waiting (§9.13); /security names the memory wall and Pulse's lists, and who is told when a message is held (§9.16); the file tabs picture shows the Pulse tab (§9.14). |
 
 ---
 
@@ -1543,7 +2253,8 @@ In `reference/studio/` (PNG, 1440 × 900); the README uses them too. First appro
 the build as it is. `npm run shoot` re-shoots them all (or `npm run shoot -- home-dark` for
 one) from `tools/studio-lab/reference.tsx`, with the clock fixed at 10:42 and a seeded
 random, so a re-shoot changes only what the app changed. `home-light`, `home-dark`,
-`tasks-detail` and `who-talks-to-whom` were re-shot 2026-10-03. Then
+`tasks-detail` and `who-talks-to-whom` were re-shot 2026-10-03, and `home-light` and
+`home-dark` again 2026-10-15 (department plates, glass monitors). Then
 `python3 branding/source/build.py social guide` rebuilds the social card and the brand
 guide PDF, which use them. Re-shoot after any visible change to these screens.
 
