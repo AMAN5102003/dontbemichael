@@ -103,12 +103,62 @@ export function askFilePaths(question: string): string[] {
   // report.md") or parentheses, and either form may carry a title after the
   // target ("…", '…' or (…)). Each link found is blanked whole, so no part of
   // its target or title is read again as a plain path below.
-  const links = /\]\((?:<([^>\n]+)>|([^)\s]+))(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\)/g;
-  for (const m of prose.matchAll(links)) {
-    const target = m[1] ?? m[2];
-    if (isAbsolutePathText(target) && isFileSpan(target)) found.push({ path: target, at: m.index ?? 0 });
+  const linkRanges: Array<{ start: number; end: number }> = [];
+  for (const m of prose.matchAll(/\]\(/g)) {
+    const at = m.index ?? 0;
+    if (linkRanges.length && at < linkRanges[linkRanges.length - 1].end) continue;
+    let i = at + 2;
+    const angled = prose[i] === '<';
+    const start = i + (angled ? 1 : 0);
+    i = start;
+    let depth = 0;
+    while (i < prose.length) {
+      const c = prose[i];
+      if (c === '\\' && i + 1 < prose.length) {
+        if (!angled && /\s/.test(prose[i + 1])) break;
+        i += 2;
+        continue;
+      }
+      if (c === '\n' || (!angled && /\s|[<>]/.test(c))) break;
+      if (angled && c === '>') break;
+      if (!angled && c === '(' && ++depth > 32) break;
+      if (!angled && c === ')') {
+        if (depth === 0) break;
+        depth--;
+      }
+      i++;
+    }
+    if (i === start || (angled ? prose[i] !== '>' : depth !== 0)) continue;
+    const target = unescapeMarkdown(prose.slice(start, i));
+    if (angled) i++;
+    const titleSpace = i < prose.length && /\s/.test(prose[i]);
+    while (/\s/.test(prose[i] ?? '')) i++;
+    if (titleSpace && /["'(]/.test(prose[i] ?? '')) {
+      const quote = prose[i++];
+      let titleDepth = 1;
+      while (i < prose.length && prose[i] !== '\n') {
+        if (prose[i] === '\\' && i + 1 < prose.length) { i += 2; continue; }
+        if (quote === '(' && prose[i] === '(') titleDepth++;
+        if (prose[i] === (quote === '(' ? ')' : quote) && --titleDepth === 0) { i++; break; }
+        i++;
+      }
+      while (/\s/.test(prose[i] ?? '')) i++;
+    }
+    if (prose[i] !== ')') continue;
+    if (isAbsolutePathText(target) && isFileSpan(target)) found.push({ path: target, at });
+    linkRanges.push({ start: at, end: i + 1 });
   }
-  prose = prose.replace(links, blank).replace(/\]\([^)]*\)/g, blank);
+  if (linkRanges.length) {
+    const chunks: string[] = [];
+    let end = 0;
+    for (const range of linkRanges) {
+      chunks.push(prose.slice(end, range.start), blank(prose.slice(range.start, range.end)));
+      end = range.end;
+    }
+    chunks.push(prose.slice(end));
+    prose = chunks.join('');
+  }
+  prose = prose.replace(/\]\([^)]*\)/g, blank);
   for (const p of plainFilePaths(prose)) found.push({ path: p.path, at: p.start });
   const seen = new Set<string>();
   const out: string[] = [];
