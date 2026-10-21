@@ -14,6 +14,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **Michael's conversation keeps your place when new replies arrive.** Reading an earlier answer, you are no longer pulled to the bottom: a "2 new replies" button appears above the message box, and clicking it or scrolling down catches up. Moving the conversation between the bar and the center opens on the same line (contributed in #209).
 - **A change an agent makes in a connected app goes out once.** Writes to QuickBooks and other connected apps are recorded before they are sent, so an agent's retry, or a restart before the answer came back, never creates a second invoice, booking or contact. A write that may already have gone out is refused, and the agent tells Michael (contributed in #212).
 - **Team members can no longer read each other's conversations.** The engine's session records and prompt history are closed to every member's tools and shell, Michael included, even when the Claude folder is a link. The app still reads them itself (contributed in #387).
+- **Closing time shows what each waiting agent last said, and how long ago,** so a long job reads differently from a stuck one (contributed in #390).
 
 ### Fixed
 
@@ -28,6 +29,8 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - The memory tidy pass skips a note already in the index (ignoring case and spacing), and its log counts the changes it had to throw away, by reason (contributed in #353).
 - A skill install or catalog fetch no longer hangs on a redirect loop: it stops after five hops, follows a relative redirect, and stops reading past 8 MB (contributed in #362 and #363).
 - The Activity tab no longer redraws the office log every 3 seconds when nothing changed (contributed in #350).
+- Each empty column on the Tasks board says something of its own instead of "Nothing here" (contributed in #369).
+- On Windows, the Research screen says that the team's commands can still reach the internet (contributed in #389).
 - **The office opens filling the screen on every launch again.** It came back at a smaller size once a single moment had read as not filling the screen (a dragged title bar, a display change, or quitting from full screen). Now every launch fills the screen; un-maximizing still goes back to your last smaller size.
 - **Pulse's Questions to you is part of Your time.** Both counted the same questions you were asked. Your time now shows how many, and at its foot two small figures: the typical wait for your answer and how many per 100 requests the team took, with the period before's rate under it when Compare is on. The wait was labelled "on average"; it is the typical (middle) wait, and now says so.
 - **With Compare on, a Pulse card from the span before shows only when its bars show a change.** A web answers card showed 0 Yesterday and 0 Today because yesterday had an answer with nothing to take out; such a card is now a quiet chip.
