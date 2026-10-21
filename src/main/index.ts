@@ -6496,6 +6496,17 @@ ipcMain.handle('app:cancelClosingTime', () => closingTime.cancel());
 /** The closing-time dialog's Remind and Close without them (owner, 2026-09-29). */
 ipcMain.handle('app:closingTimeRemind', (_evt, id: unknown) => closingTime.remind(id));
 ipcMain.handle('app:closingTimeExcuse', (_evt, id: unknown) => closingTime.excuse(id));
+// The last thing each waiting agent said and when, so the owner can tell a
+// long job from a stuck one (closing time rows).
+ipcMain.handle('app:closingTimeSaid', (_evt, ids: unknown) => {
+  const said: Record<string, { text: string; at?: number }> = {};
+  if (!Array.isArray(ids)) return said;
+  for (const id of ids.slice(0, 50)) {
+    const line = typeof id === 'string' ? hookServer.latestLine(id) : undefined;
+    if (line) said[id] = line;
+  }
+  return said;
+});
 
 // ─── IPC: full reset (wipe data + config, relaunch into onboarding) ──────────
 ipcMain.handle('app:resetAll', () => {

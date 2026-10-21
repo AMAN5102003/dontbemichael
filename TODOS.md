@@ -62,7 +62,7 @@
 
 ### Take the internet from team members' shells on Windows
 
-**What:** Hold team members' shell commands off the internet on Windows, where Claude Code has no sandbox, or say on the Research screen that it only holds on a Mac.
+**What:** Hold team members' shell commands off the internet on Windows, where the engine has no sandbox. Until then, the Research screen says so on Windows (done 2026-10-18).
 
 **Why:** On Windows only the web tools are refused; a shell command can still reach the internet, so the rule that only Pete uses the internet is not enforced there. The CHANGELOG names this.
 
@@ -408,15 +408,6 @@
 **Priority:** P3
 
 ## Closing time (deferred from ship of feat/closing-time-progress, 2026-09-29)
-
-### Feed each row's latest line from the agent's transcript
-
-**What:** Show the last thing each agent said under its row, read from its Claude transcript.
-
-**Why:** The row's "latest line" was removed before release because `recentAssistantText` is only set by `src/renderer/src/mocks/mockEvents.ts`; real agents never fill it. The owner asked for it to tell a long process from a stuck one.
-
-**Effort:** M
-**Priority:** P2
 
 ### Rows in a second window
 
