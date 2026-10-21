@@ -85,7 +85,21 @@ as gatekeeper, in both directions, ahead of the guard described in the next sect
   removes instructions aimed at AI agents and keeps the findings and sources; it arrives
   labelled as information, and one that plainly tries to steer its reader is flagged to
   Michael only. An answer the layer can't check is not delivered and the recipient is told.
+  A check that could not run (no answer, an unreadable one, a failure) is tried again
+  with growing gaps (30 seconds, then 1, 2 and 4 minutes, then every 5) for up to 30
+  minutes before the message is held; nothing goes out unchecked meanwhile (owner,
+  2026-10-16). Too long, private data and settings are refused at once.
   Research's notes go into the team's shared memory only as a copy the layer cleaned.
+  The office's own AI team members' names (Michael's and Research's included) reach the
+  check as AI assistants' names, not people's, and pass as written; real people's names stay
+  private (owner, 2026-10-16: a note to Research about itself arrived as "Someone has
+  stopped"). Names are one line, four words, plain characters, so none carries instructions.
+  Each check the layer finishes is kept for the owner in the app's private folder (what was
+  written and what went out; 62 days on Pulse, then archived), never in the office log
+  (owner, 2026-10-16).
+  Superseded 2026-10-16 (owner: an agent's memory is private to it): no member's notes go
+  into any shared search, Research's included; teammates ask Research instead. The palace
+  holds company knowledge only.
 - **Walls** (D2.5 to D2.8): Research reads nothing in the home folder but its own folders
   (agent transcripts, app settings and documents included) and writes only its own folders
   (hook allowlist, plus permission rules on the riskiest home paths). Who Research is comes
@@ -232,6 +246,22 @@ is treated as untrusted:
 
 Known limit (owner D6): the review hit its cycle cap with converged false; a P1 TODO moves
 its mail to folders only the app writes.
+
+### Research versus the app's upkeep (owner, 2026-10-17)
+
+The check guards what Research may research with, and the Pulse list ("Questions sent to the
+internet") shows only that. Research is decided by who sent the message, never by its words:
+anything a teammate, Michael or the owner sends Research is research, checked and listed. The
+app's own upkeep notes (Office open, You were restarted, carry on after a stop, a schedule
+decision) are stamped `upkeep` by the code that sends them (`hive.send`'s third argument,
+`src/shared/upkeep.ts`); nothing in a message's file can set it. A fixed note whose words are
+exactly the app's own reaches Research with no paid check and is logged as
+`upkeep-to-research`; upkeep carrying anyone's words (a schedule decision with a note) is
+checked. Upkeep is never listed, counted or held in the lists. While Research is off or isn't
+reporting, upkeep is dropped quietly (Michael is never asked to resend it, which would make it
+a question); a fixed note still unread when Research is turned off is removed without a note
+to Michael, and none counts as waiting (owner, 2026-10-18 ship review). Research report:
+`reports/Message type stamping for trust layer.md`.
 
 ## The guard (superseded by the trust layer above)
 
@@ -827,6 +857,50 @@ that limits the rule to a business office, or that fixes the name to Pete.
   spaces and . ' -, at most 32 characters, never a word the hive routes by (human, Michael,
   broadcast and the like) or another member's id (review of this change: a name is in every
   agent's house rules and on every answer label).
+
+## Owner decision 2026-10-14: Michael hears every refusal
+
+Supersedes "sender only" in the Trust layer section, step 5 of the flow, the States table and
+the out of scope list above, which stay as the record of the 2026-10-13 decision.
+
+- **Who is told:** the sender still gets its "Not sent to Pete" note, and Michael now gets one
+  too, for every message the privacy check stops: whose message it was, its subject (quote marks
+  and line breaks removed, so it can't add text in the app's voice), the reason, and what to do
+  next: when Pete is off, that the owner turns him on in Settings, Research & privacy; otherwise,
+  that what stays private is set there (a check that could not run is below). Michael's own
+  refused messages give him one note, not two. Why: an owner saw Michael report that the
+  privacy check was blocking things for Pete with no way to learn what or why (owner,
+  2026-10-14: "Michael names it").
+- **A check that could not run** (no answer, an answer it could not read, too slow, settings it
+  could not read) refuses with its own reason: not sent, not about the wording, send it again
+  later. Michael is told it is an app problem. A message dropped from Research's inbox without
+  being checked gets the same reason, told to its sender only. Before, these asked the sender
+  to reword the message.
+- **Reading the verdict:** the check's answer may follow its JSON verdict with a sentence of
+  explanation. A verdict that lets something through is not trusted when another verdict object
+  follows it, including a badly written or differently cased one, so a self correction or a
+  verdict copied from the checked text fails closed.
+
+## Owner decision 2026-10-16: see what was held
+
+- **What a hold is:** a message to or from Pete that the privacy check could not judge (no
+  answer, an answer it could not read, too long, settings it could not read, a check that failed
+  or was not running). A deny the check reached (private data, a password) is a stop, not a hold.
+- **The held list:** each hold is written to `private/held.jsonl` in the office folder, never
+  the shared office log: when, which way, who to whom (names as they were), the subject (80
+  characters) and the first 300 characters, why, the check runner's error when it got no
+  answer, and who was told. Rows are kept 400 days; a reset removes the file and a move copies
+  it. Pulse's held tile opens it, and counts holds from the hive's own `trust-held` line, so the
+  number and the list match.
+- **Michael hears of held answers too:** a web answer the check could not clear is told to the
+  member waiting for it, as before, and now to Michael, so a card waiting on it never stalls
+  unseen. No Send again button: Michael and the sender decide what to ask again.
+- **One more try at launch:** every hold from 2026-10-14 to 2026-10-16 came 26 to 56 seconds
+  after the app started, while the whole team was starting and the check's hidden session never
+  took its prompt; a check 12 to 20 seconds later passed in 3 of the 4 cases where one came that
+  soon. A check that gets no answer before its time is up is run once more in a fresh session
+  15 seconds later. If that also gets nothing, the message is held as before. A check that used
+  its whole minute, or an answer it could not read, is not retried.
 
 ## GSTACK REVIEW REPORT
 

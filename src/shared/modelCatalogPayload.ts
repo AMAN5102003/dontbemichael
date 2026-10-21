@@ -37,7 +37,13 @@ export interface CatalogModel {
   label: string;
   minAppVersion?: string | null;
   maxAppVersion?: string | null;
+  /** Where the model sits in its provider's line up, for Pulse's model advice
+   *  (docs/designs/team-performance.md). Absent = no model advice for it. */
+  tier?: ModelTier;
 }
+
+export type ModelTier = 'top' | 'middle' | 'small';
+const TIERS: readonly string[] = ['top', 'middle', 'small'];
 
 export interface ModelCatalog {
   version: number;
@@ -95,6 +101,7 @@ function parseModel(raw: unknown): CatalogModel | null {
   const max = bound(o.maxAppVersion);
   if (min) model.minAppVersion = min;
   if (max) model.maxAppVersion = max;
+  if (typeof o.tier === 'string' && TIERS.includes(o.tier)) model.tier = o.tier as ModelTier;
   return model;
 }
 

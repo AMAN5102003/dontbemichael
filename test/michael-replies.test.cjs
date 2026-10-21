@@ -35,13 +35,14 @@ async function office(t) {
   return { hive, home, emitted, godDir };
 }
 
-/** Michael answers as he really does: a file in his outbox, routed by the hive. */
+/** Michael answers as he really does: a file in his outbox with no id, routed
+ *  by the hive. Returns the id the app gave it, as his sent copy records it. */
 let seq = 0;
 function michaelSays(hive, godDir, m) {
-  const id = m.id ?? `t-${++seq}`;
-  fs.writeFileSync(path.join(godDir, 'outbox', `${id}.json`), JSON.stringify({ id, from: 'god', created_at: new Date().toISOString(), ...m }));
+  const name = `t-${++seq}.json`;
+  fs.writeFileSync(path.join(godDir, 'outbox', name), JSON.stringify({ created_at: new Date().toISOString(), ...m }));
   hive.routeOnce();
-  return id;
+  return JSON.parse(fs.readFileSync(path.join(godDir, 'outbox', '.sent', name), 'utf8')).id;
 }
 
 const msg = (o) => ({ id: o.id, from: o.from ?? 'god', to: o.to ?? 'human', act: o.act ?? 'done', conversation: o.conversation, in_reply_to: o.in_reply_to ?? null, created_at: o.at ?? '2026-10-06T10:00:00.000Z', body: o.body ?? 'x', ...o.extra });
@@ -200,6 +201,16 @@ test('Michael is told how to answer in the conversation and where reports go', (
   assert.match(hive, /withdraw that ask \("dismissedAt" and "dismissedReason": "Answered in your conversation with the owner"\), never write an answer into it/);
   assert.match(hive, /put it on Ask me as a report: a card with "status": "done"/);
   assert.match(read('src/shared/michaelWorkStyle.ts'), /You answer every question the owner asks you in their conversation, in that conversation/);
+  // Value (extension): protects=the reply readability rules ship in the prompts (owner D5, D6, D8, D11, 2026-10-17); fails_when=a rule is dropped or reworded away; why_new=new prompt text; seam=none; no_claim=that agents follow it (no eval, TODOS.md)
+  assert.match(hive, /When an answer runs longer than a couple of sentences, keep the answer itself in the first sentence, then lay out the rest in the shape that reads best in a narrow panel: a short list with one item or figure per line, a small table of 2 or 3 columns when you compare several things on the same points/);
+  assert.match(hive, /Copy each figure a team member gave you exactly, with its currency; never recompute, convert or round one unless the owner asks/);
+  assert.match(hive, /Rewrite a report from the team into this shape\./);
+  assert.match(hive, /put longer detail in a file rather than the answer; never paste a report\./);
+  assert.match(hive, /When your report carries figures, several items or a comparison, end it with that part laid out: each figure on its own line as Label: amount, with the currency and the period it covers, copied exactly from your source/);
+  assert.match(read('src/shared/ownerRequests.ts'), /Lay out a longer answer as your rules say: the answer first, then a list or small table where it helps\./);
+  for (const rule of [/When an answer runs longer[^']*/, /When your report carries figures[^`]*/]) {
+    assert.doesNotMatch(hive.match(rule)[0], /[–—]| - /, 'no dashes in what agents are told to write');
+  }
 });
 
 test('the dock and its count follow the design', () => {
@@ -207,15 +218,18 @@ test('the dock and its count follow the design', () => {
   const dock = read('src/renderer/src/shell/MichaelDock.tsx');
   assert.match(dock, /role="region"/);
   assert.match(dock, /aria-live="polite"/);
-  assert.match(dock, /if \(e\.key === 'Escape'\)/);
+  assert.match(dock, /const action = dockEscAction\(\{ wide, inDock: true, composing: isComposingKey\(e\) \}\);/, 'Esc follows the wide 1:1 rule (wide-dock.test.cjs)');
   assert.match(dock, /if \(draft\.trim\(\)\) return;/, 'a floor click never closes it over a draft');
   const bar = read('src/renderer/src/shell/BottomBar.tsx');
   assert.match(bar, /background: waiting \? 'var\(--cth-coral-strong\)' : 'var\(--cth-indigo\)'/);
   assert.doesNotMatch(bar, /shell\.queued/, 'the queue chip is gone (2A)');
   assert.match(bar, /\{dock\.items\.length > 0 && \(\n\s*<button onClick=\{\(\) => \(dockOpen \? setDock\(false\) : openAt\(\)\)\} aria-expanded=\{dockOpen\}/,
     'with every reply read (after a restart, say) the conversation still opens from its own button');
+  // Value (extension): protects=the conversation button reads as open and close, not a new chat; fails_when=it goes back to a chat bubble or stops flipping with the dock; why_new=owner report 2026-10-17; seam=source pin (no layout harness)
+  assert.match(bar, /<path d=\{dockOpen \? 'M6 9l6 6 6-6' : 'M6 15l6-6 6 6'\} \/>/);
   // Value (extension): protects=the message box keeps its width when the conversation button joins its row; fails_when=the button squeezes the placeholder onto two lines; why_new=review D10; seam=source pin (no layout harness)
-  assert.match(bar, /flex: `0 1 \$\{dock\.items\.length > 0 \? 464 : 420\}px`, minWidth: dock\.items\.length > 0 \? 344 : 300,/);
+  assert.match(bar, /const slot = \{ flex: `0 1 \$\{dock\.items\.length > 0 \? 464 : 420\}px`, minWidth: dock\.items\.length > 0 \? 344 : 300 \};/);
+  assert.match(bar, /\.\.\.slot, minHeight: 50, display: 'flex'/, 'the narrow box keeps its width');
   const main = read('src/main/index.ts');
   assert.match(main, /n\.on\('click', \(\) => \{/);
   assert.match(main, /if \(inFront \|\| !hive\.ownerNotify\(msg\.in_reply_to, msg\.id\)\) return;/);
@@ -329,7 +343,7 @@ test('Couldn\'t finish without a reason reads "No reason given", and the dock sl
   const dock = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/shell/MichaelDock.tsx'), 'utf8');
   assert.match(dock, /const text = r\.act === 'refuse' && !r\.text\.trim\(\) \? t\('dock\.noReason'\) : r\.text;/);
   assert.match(dock, /<FileText source=\{boldFirst\(text\)\} who=\{\{ raisedBy: 'god' \}\} \/>/, 'files named in it are chips (open-file-tab.md)');
-  assert.match(dock, /className="cth-dock"/);
+  assert.match(dock, /className=\{wide \? 'cth-dock-wide' : 'cth-dock'\}/, 'the slide is the narrow dock\'s; wide moves with the sheet');
   const css = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/design/global.css'), 'utf8');
   assert.match(css, /\.cth-dock \{ animation: cth-dock-in 180ms ease-out; \}/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\) \{\n  \.cth-dock \{ animation: none; \}\n\}/);
@@ -339,3 +353,118 @@ test('Couldn\'t finish without a reason reads "No reason given", and the dock sl
     assert.doesNotMatch(d.noReason, /[–—]| - /, `${loc} noReason has no dash`);
   }
 });
+
+test('More opens only the reply it sits under, even when replies share an id', () => {
+  // Value: protects=More opens one reply and the list stays where the owner clicked; fails_when=replies keyed by message id (an agent may reuse one) so one More opens every reply with that id and the view jumps to older ones; why_new=owner report 2026-10-17, seen in the dev app; seam=pure key helper plus source pins (no layout harness)
+  const { dockKeys } = loadTs('src/renderer/src/shell/dockKeys.ts');
+  const keys = dockKeys([
+    { kind: 'owner', id: 'q1' }, { kind: 'michael', id: 'r' }, { kind: 'owner', id: 'q2' },
+    { kind: 'michael', id: 'r' }, { kind: 'michael', id: 'r' }, { kind: 'owner', id: 'r' }
+  ]);
+  assert.deepEqual(keys, ['owner:q1', 'michael:r', 'owner:q2', 'michael:r#1', 'michael:r#2', 'owner:r']);
+  assert.equal(new Set(keys).size, keys.length, 'every item has its own key');
+  const dock = read('src/renderer/src/shell/MichaelDock.tsx');
+  assert.match(dock, /const keys = dockKeys\(dock\.items\);/, 'keyed over the whole conversation, not only what shows');
+  assert.match(dock, /<ReplyBubble key=\{key\}[^\n]*\n\s*expanded=\{!!expanded\[key\]\} onMore=\{\(\) => \{ scroll\.pauseForExpansion\(\); setExpanded\(\(e\) => \(\{ \.\.\.e, \[key\]: true \}\)\); \}\}/);
+  assert.match(dock, /const rowOf = \(it: DockItem\) => \(\{ key: keyOf\.get\(it\)/, 'the scroll hook tracks rows by the same keys');
+  assert.doesNotMatch(dock, /expanded\[it\.id\]|key=\{it\.id\}/, 'never keyed by the raw message id');
+  // More keeps the spot clicked in view: it stops following the latest, and
+  // the list then holds the passage being read (useDockScroll.ts).
+  const hook = read('src/renderer/src/shell/useDockScroll.ts');
+  assert.match(hook, /pauseForExpansion: \(\) => \{\n\s*following\.current = false;/);
+  // scrollIntoView scrolls clipped ancestors too and hid the wide sheet's header.
+  assert.doesNotMatch(dock, /scrollIntoView/);
+  assert.doesNotMatch(hook, /scrollIntoView/);
+});
+
+test('the app makes every message id, and the sent copy records it', async (t) => {
+  // Value: protects=each reply in the conversation has its own id that the owner can answer, and no message overwrites another; fails_when=agents write no id (as told) so every reply reads "", the owner's answer to a question back never counts, or a reused id loses mail; why_new=owner report 2026-10-17 (one More opened every reply); seam=none
+  const { hive, home, godDir } = await office(t);
+  await hive.ensureAgent({ id: 'kelly', name: 'Kelly', provider: 'claude', cwd: home });
+  const q = hive.ownerAsk({ text: 'How much did we make this year?' });
+  hive.ownerDelivered(q.id);
+  // Written as the protocol says: no id, sender or time.
+  const write = (name, m) => { fs.writeFileSync(path.join(godDir, 'outbox', name), JSON.stringify(m)); hive.routeOnce(); };
+  write('a.json', { to: 'human', act: 'inform', in_reply_to: q.id, subject: 'On it', body: 'Asking Oscar.' });
+  write('b.json', { to: 'human', act: 'query', in_reply_to: q.id, subject: 'Which year?', body: 'This year or last?' });
+  // A reply still in his outbox is not shown: its id is not final until routed (D14).
+  fs.writeFileSync(path.join(godDir, 'outbox', 'late.json'), JSON.stringify({ to: 'human', act: 'inform', in_reply_to: q.id, subject: 'Late', body: 'Not routed yet.' }));
+  assert.ok(!hive.ownerConversationView().items.some((i) => i.kind === 'michael' && i.text === 'Not routed yet.'), 'unrouted reply hidden');
+  fs.rmSync(path.join(godDir, 'outbox', 'late.json'));
+  const replies = hive.ownerConversationView().items.filter((i) => i.kind === 'michael');
+  assert.equal(replies.length, 2);
+  assert.ok(replies.every((r) => r.id), 'no reply reads as ""');
+  assert.notEqual(replies[0].id, replies[1].id);
+  const sent = JSON.parse(fs.readFileSync(path.join(godDir, 'outbox', '.sent', 'b.json'), 'utf8'));
+  assert.equal(sent.id, replies[1].id, 'his sent copy carries the id the app gave it');
+  assert.equal(sent.from, 'god');
+  assert.equal(sent.body, 'This year or last?', 'his words are kept');
+  const status = () => hive.ownerConversationView().items.find((i) => i.kind === 'owner' && i.id === q.id).status;
+  assert.equal(status(), 'waiting-for-you');
+  hive.ownerAsk({ text: 'This year.', inReplyTo: replies[1].id, conversation: q.conversation });
+  assert.notEqual(status(), 'waiting-for-you', 'the owner\'s answer to his question back counts');
+
+  // A sent copy archived before the app stamped ids still gets one of its own.
+  const q2 = hive.ownerAsk({ text: 'Did Kelly chase Northwind?' });
+  hive.ownerDelivered(q2.id);
+  for (const n of ['old-1', 'old-2']) {
+    fs.writeFileSync(path.join(godDir, 'outbox', '.sent', `${n}.json`), JSON.stringify({ to: 'human', act: 'inform', in_reply_to: q2.id, subject: n, body: n }));
+  }
+  const old = hive.ownerConversationView().items.filter((i) => i.kind === 'michael' && i.replyTo === q2.id).map((i) => i.id);
+  assert.deepEqual(old.sort(), ['sent-old-1', 'sent-old-2']);
+
+  // An id an agent writes is not kept: two messages with one id both arrive.
+  write('c.json', { id: 'same-1', to: 'kelly', act: 'inform', subject: 'First', body: 'one' });
+  write('d.json', { id: 'same-1', to: 'kelly', act: 'inform', subject: 'Second', body: 'two' });
+  const kelly = path.join(home, 'hive', 'agents', 'kelly', 'inbox');
+  const got = fs.readdirSync(kelly).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(kelly, f), 'utf8')));
+  assert.deepEqual(got.map((m) => m.subject).sort(), ['First', 'Second']);
+  assert.ok(got.every((m) => m.id !== 'same-1'));
+});
+
+test('Reply shows under a waiting question back and under the latest answer, and sends in its thread', () => {
+  // Value: protects=design 3.1A (Reply on answered questions) and 16A (question back); fails_when=Reply shows on older replies, notes or couldn't finish, or the composer drops in_reply_to or the conversation; why_new=new rule (D4, 2026-10-17); seam=pure helper plus source pins
+  const { replyTargets } = loadTs('src/renderer/src/shell/replyTargets.ts');
+  const q = (id, status) => ({ kind: 'owner', id, status, conversation: `owner:${id}`, text: id, at: '2026-10-17T10:00:00.000Z' });
+  const r = (id, replyTo, act, notes = false) => ({ kind: 'michael', id, replyTo, act, notes, text: id, at: '2026-10-17T10:01:00.000Z' });
+  const items = [
+    q('a', 'answered'), r('a1', 'a', 'inform'), r('a2', 'a', 'done'), r('a3', 'a', 'inform', true),
+    q('b', 'waiting-for-you'), r('b1', 'b', 'query'),
+    q('c', 'couldnt-finish'), r('c1', 'c', 'refuse'),
+    q('d', 'has-it'), r('d1', 'd', 'inform')
+  ];
+  const got = [...replyTargets(items)].map((x) => x.id).sort();
+  assert.deepEqual(got, ['a2', 'b1'], 'latest answer of an answered question, and the waiting question back');
+  const dock = read('src/renderer/src/shell/MichaelDock.tsx');
+  assert.match(dock, /const canReply = useMemo\(\(\) => replyTargets\(dock\.items\), \[dock\.items\]\);/);
+  assert.match(dock, /canReply=\{canReply\.has\(it\)\}/);
+  assert.match(dock, /onReply=\{\(\) => question && onReply\(\{ inReplyTo: it\.id, conversation: question\.conversation, text: firstSentence\(it\.text\) \}\)\}/);
+  const bar = read('src/renderer/src/shell/BottomBar.tsx');
+  assert.match(bar, /sendToMichael\(godId, text, attachments, replyTo \? \{ inReplyTo: replyTo\.inReplyTo, conversation: replyTo\.conversation \} : undefined\)/);
+  assert.match(read('src/renderer/src/shell/ownerSend.ts'), /window\.cth\.ownerAsk\(\{ text: body, \.\.\.\(reply \?\? \{\}\) \}\)/);
+});
+
+test('a long reply folds by height, and tables sit in a labelled box that scrolls and takes Tab', () => {
+  // Value: protects=design 2.1A (fold by height, tables fold too), 5.1A (mono amount columns), 5.2A and 6.1A (table box, keyboard); fails_when=the fold goes back to a line clamp, the box loses its tab stop or label, or amount cells lose their class; why_new=new behavior (2026-10-17); seam=source pins (no layout harness); no_claim=the look (checked in the running app)
+  const dock = read('src/renderer/src/shell/MichaelDock.tsx');
+  assert.match(dock, /const FOLD_PX = 144;\nconst FOLD_NOTES_PX = 108;/);
+  assert.match(dock, /style=\{open \? undefined : \{ maxHeight: fold, overflow: 'hidden', position: 'relative' \}\}/);
+  assert.match(dock, /const open = expanded \|\| wide;/, 'wide, nothing folds (wide 1:1, 2A)');
+  assert.match(dock, /const measure = \(\) => setClipped\(el\.scrollHeight > el\.clientHeight \+ 1\);/);
+  assert.match(dock, /\{folded && <div aria-hidden="true" className="cth-dock-fade" \/>\}/);
+  assert.doesNotMatch(dock, /WebkitLineClamp/, 'a line clamp never folds a table');
+  const md = read('src/renderer/src/markdown/MarkdownPreview.tsx');
+  assert.match(md, /<div className="cth-md-table" tabIndex=\{0\} role="region" aria-label=\{t\('markdown\.table'\)\}>/);
+  assert.match(md, /return style\?\.textAlign === 'right' \? 'cth-md-num' : undefined;/);
+  const css = read('src/renderer/src/design/global.css');
+  assert.match(css, /\.cth-md-preview \.cth-md-table \{ margin: 0\.8em 0; overflow-x: auto;/);
+  assert.match(css, /\.cth-md-preview \.cth-md-table:focus-visible \{ outline: 2px solid var\(--cth-indigo\)/);
+  assert.match(css, /\.cth-dock-reply \.cth-md-card td\.cth-md-num \{\n  font-family: var\(--cth-font-mono\); font-size: 12px; font-variant-numeric: tabular-nums;/);
+  assert.doesNotMatch(css, /\.cth-md-preview table \{[^}]*overflow-x/, 'the box scrolls, not the table');
+  for (const loc of ['en', 'zh-CN', 'ar']) {
+    const label = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).markdown.table;
+    assert.equal(typeof label, 'string', loc);
+    assert.doesNotMatch(label, /[–—]| - /, `${loc} markdown.table has no dash`);
+  }
+});
+

@@ -54,6 +54,17 @@ test('text on stdout, newline-terminated, exit 0: Word converted, plain text pas
   assert.equal(txt.out, 'Deliveries on Tuesdays\n');
 });
 
+test('--json prints the whole result, for the app reading uploads in a process of its own', async () => {
+  const file = docx('menu.docx', '<w:p><w:r><w:t>Soup of the day</w:t></w:r></w:p>');
+  const r = docText('--json', file);
+  assert.equal(r.code, 0, r.err);
+  assert.deepEqual(JSON.parse(r.out), await extractDocumentText(file));
+  assert.equal(JSON.parse(r.out).text, 'Soup of the day');
+  const bad = docText('--json', write('plan.numbers', 'PK\u0003\u0004'));
+  assert.equal(bad.code, 0);
+  assert.equal(JSON.parse(bad.out).kind, 'unreadable');
+});
+
 test('a file it can\'t read, or an image: a plain reason on stderr, nothing on stdout, exit 1', () => {
   const r = docText(write('menu.numbers', 'PK\u0003\u0004'));
   assert.equal(r.code, 1);

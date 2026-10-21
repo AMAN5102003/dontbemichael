@@ -10,7 +10,7 @@ import { useStore } from '@/store/store';
 import { AgentAvatar } from './AgentAvatar';
 import { type HiveTask, type HumanQA } from './TasksKanban';
 import { compareByNewestAsk } from './askMeOrder';
-import { answerMessages, isAnswered, isReport, isWithdrawn, openAskIndexes, openReportIndexes, raiserOf } from '@shared/askMeRouting';
+import { answerMessages, askAsText, isAnswered, isReport, isWithdrawn, labeledAnswer, openAskIndexes, openReportIndexes, partAnswerText, raiserOf, readAskShape, type AskShape } from '@shared/askMeRouting';
 import { isComposingKey } from '@shared/imeGuard';
 import { useRtl } from '@/i18n/useDirection';
 import { ScheduleRequestCards } from './ScheduleRequestCards';
@@ -18,10 +18,15 @@ import { WorkStyleUpdateCards } from './WorkStyleUpdateCards';
 import { MailProposalCards } from './MailProposalCards';
 import { EngineSetupCard } from './EngineSetupCard';
 import { OfficeBreakCard, useOfficeBreak } from './OfficeBreakNotice';
+import { SilentEngineCards } from './SilentEngine';
+import { silentCards } from '@shared/silentEngine';
 import { FileText } from './FileChip';
+import { ChoiceRows, PartLines } from './AskAnswerFields';
 import { refreshNeedsYou, setupCardShown, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useResearchName } from '@/shell/research';
+import { FoundationCard } from './FoundationCard';
+import { foundationAsk, isSnoozed } from '@shared/foundations';
 
 /**
  * ASK ME — first-class human feedback through the task system.
@@ -60,6 +65,12 @@ function dependentsTree(id: string, all: HiveTask[], seen = new Set<string>()): 
   return direct.flatMap((d) => [d, ...dependentsTree(d.id, all, seen)]);
 }
 
+/** An ask without any pick or part answers already on it. */
+function withoutDetail<T extends object>(e: T): T {
+  const { picked: _p, partAnswers: _pa, ...rest } = e as T & { picked?: unknown; partAnswers?: unknown };
+  return rest as T;
+}
+
 export function AskMeTab() {
   const { t: translate, i18n } = useTranslation();
   const rtl = useRtl();
@@ -67,7 +78,9 @@ export function AskMeTab() {
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   // One shared read with the pill, the strip and the chips (D3, eng R4).
-  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice } = useNeedsYou();
+  const { tasks, requests: scheduleRequests, offers, proposals, engineSetup, stop, researchNotice, knowledgeNotice, silent, foundations } = useNeedsYou();
+  // Members whose engine isn't reporting (issue #326): their cards keep All clear away.
+  const silentShown = silentCards(silent).length > 0;
   // A sign in stop already asks the owner to sign in: one card (eng R3).
   const engineCard = setupCardShown({ engineSetup, stop });
   const onBreak = !!useOfficeBreak();
@@ -76,6 +89,10 @@ export function AskMeTab() {
   // view, and a half-typed answer must survive the round trip.
   const drafts = useStore((s) => s.answerDrafts);
   const setAnswerDraft = useStore((s) => s.setAnswerDraft);
+  // The picked option and each question's chip and line, kept like the typed
+  // draft (ask-me-options.md, 3A).
+  const picks = useStore((s) => s.answerPicks);
+  const setAnswerPick = useStore((s) => s.setAnswerPick);
   const openTaskDetail = useStore((s) => s.openTaskDetail);
   const [sending, setSending] = useState<string | null>(null);
   // The row whose last Reply did not save, so its card can say so.
@@ -90,6 +107,14 @@ export function AskMeTab() {
   const [answeredHere, setAnsweredHere] = useState<{ id: string; title: string; a: string; who?: string; whoId?: string }[]>([]);
   const [line] = useState(() => 1 + Math.floor(Math.random() * ALL_CLEAR_LINES));
   const rootRef = useRef<HTMLDivElement>(null);
+  // A foundation answer just saved, sent to Michael to add, or not written:
+  // one polite line, as the card leaves. `at` restarts the line for each save.
+  const [foundationSaved, setFoundationSaved] = useState<{ how: 'saved' | 'michael' | 'failed'; at: number } | null>(null);
+  useEffect(() => {
+    if (!foundationSaved) return;
+    const timer = setTimeout(() => setFoundationSaved(null), foundationSaved.how === 'failed' ? 10000 : 4000);
+    return () => clearTimeout(timer);
+  }, [foundationSaved]);
 
   // Opened from the pill, the strip or a "for you" chip: put focus in the
   // reply field of the asked for card, or the newest one (D10, D11).
@@ -129,7 +154,13 @@ export function AskMeTab() {
   const rowsOf = (pick: typeof openAskIndexes): AskRow[] => tasks
     .flatMap((t) => pick(t.humanQA).map((index) => ({ key: `${t.id}#${index}`, task: t, index, ask: t.humanQA![index] })))
     .sort((a, b) => compareByNewestAsk(a.ask, b.ask));
-  const waiting: AskRow[] = [...rowsOf(openAskIndexes), ...rowsOf(openReportIndexes)];
+  // Company foundations cards come after the decisions (design D10); one the
+  // owner put off with Not now stays out for its week.
+  const asks = rowsOf(openAskIndexes);
+  const now = Date.now();
+  // A question answered another way (a member, a file, Michael) leaves the board too.
+  const foundationRows = asks.filter((r) => { const id = foundationAsk(r.ask); return !!id && !isSnoozed(foundations?.snoozed, id, now) && !foundations?.answers?.[id]; });
+  const waiting: AskRow[] = [...asks.filter((r) => !foundationAsk(r.ask)), ...foundationRows, ...rowsOf(openReportIndexes)];
   const rowsRef = useRef<AskRow[]>(waiting);
   rowsRef.current = waiting;
   // A card with several open questions has a row for each: their labels add
@@ -143,6 +174,13 @@ export function AskMeTab() {
     return `${title}: ${q.length > 60 ? `${q.slice(0, 59).trimEnd()}…` : q}`;
   };
 
+  /** The answer a row would send: the owner's words, labeled with the option
+   *  or the questions it answers (ask-me-options.md, 5A). */
+  const answerFor = (row: AskRow, shape: AskShape): string => {
+    const pk = picks[row.key] ?? {};
+    return labeledAnswer(shape, { pick: pk.pick, note: drafts[row.key] ?? '', parts: pk.parts });
+  };
+
   /**
    * Record the owner's answer on one open question, then tell Michael.
    *
@@ -152,28 +190,46 @@ export function AskMeTab() {
    * or Michael withdrew it meanwhile), nothing is sent or remembered and the
    * draft is kept.
    */
-  const sendAnswer = async (row: AskRow) => {
+  const sendAnswer = async (row: AskRow, override?: string): Promise<boolean> => {
     const { task, index, ask: open } = row;
-    const text = (drafts[row.key] ?? '').trim();
-    if (!text || sending) return;
+    const shape = readAskShape(open);
+    const text = override ?? answerFor(row, shape);
+    if (!text || sending) return false;
+    // Whether the card itself took the answer (FoundationCard writes the
+    // foundations then, even if a message after it failed).
+    let onCard = false;
+    const pk = picks[row.key] ?? {};
+    // Which option and which parts, recorded beside the answer (main keeps them
+    // only with it: askMeRouting.ts mergeHumanQA).
+    const detail = shape.kind === 'choice' && pk.pick !== undefined
+      ? { picked: pk.pick }
+      : shape.kind === 'parts'
+        ? { partAnswers: shape.parts.map((p, i) => partAnswerText(p, pk.parts?.[i])) }
+        : {};
+    // Michael and memory notes read the options or questions with the answer.
+    const asked = askAsText(open.q, shape);
     setSending(row.key);
     setFailed(null);
     try {
       // 1) Document the answer ON the card, on this question only.
+      const answeredAt = new Date().toISOString();
       const next = tasks.map((t) => {
         if (t.id !== task.id) return t;
         const qa = (t.humanQA ?? []).map((e, i) =>
           i === index && e.q === open.q && !isAnswered(e) && !isWithdrawn(e)
-            ? { ...e, a: text, answeredAt: new Date().toISOString() }
+            // Only this Reply's own pick and lines go with the answer, never ones
+            // an agent left on the open ask.
+            ? { ...withoutDetail(e), a: text, answeredAt, ...detail }
             : e
         );
         return { ...t, humanQA: qa };
       });
       const updated = next.find((candidate) => candidate.id === task.id);
       const result = updated
-        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA })
+        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA }, index)
         : { ok: false, landed: false };
       if (!result.ok || result.landed === false) throw new Error('task changed before answer could be saved');
+      onCard = true;
       updateNeedsYouTasks(() => next);
       // 2) The answer reaches Michael as a request about the card, which he
       //    closes with done once he has routed it, and goes into the memory
@@ -182,15 +238,16 @@ export function AskMeTab() {
       const agents = useStore.getState().agents;
       const raiser = raiserOf(open, task, new Set(agents.map((a) => a.id)));
       const raiserName = agents.find((a) => a.id === raiser)?.name ?? raiser;
-      for (const m of answerMessages({ raiser, raiserName, taskId: task.id, title: task.title, q: open.q, a: text })) {
+      for (const m of answerMessages({ raiser, raiserName, taskId: task.id, title: task.title, q: asked, a: text, answeredAt })) {
         await window.cth.hiveSend({
           to: m.to, act: m.act, subject: m.subject, body: m.body,
           ...(m.conversation ? { conversation: m.conversation } : {}),
           ...(m.requires_reply !== undefined ? { requires_reply: m.requires_reply } : {})
         }, 'human');
       }
-      await window.cth.hiveRememberOwnerAnswer({ agentId: raiser, task: task.title, q: open.q, a: text }).catch(() => undefined);
+      await window.cth.hiveRememberOwnerAnswer({ agentId: raiser, task: task.title, q: asked, a: text }).catch(() => undefined);
       setAnswerDraft(row.key, '');
+      setAnswerPick(row.key, {});
       setAnsweredHere((list) => [{ id: row.key, title: task.title, a: text, who: nameFor(typeof task.assignee === 'string' ? task.assignee : undefined), whoId: typeof task.assignee === 'string' ? task.assignee : undefined }, ...list.filter((x) => x.id !== row.key)]);
       refreshNeedsYou();
     } catch {
@@ -200,6 +257,7 @@ export function AskMeTab() {
       refreshNeedsYou();
     }
     setSending(null);
+    return onCard;
   };
 
   return (
@@ -208,19 +266,25 @@ export function AskMeTab() {
     // board heading stays put.
     <div ref={rootRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12, padding: '2px 2px 10px', margin: '-2px -2px 0' }}>
       <OfficeBreakCard />
+      <SilentEngineCards />
       <EngineSetupCard status={engineCard ? engineSetup : null} />
       <ScheduleRequestCards requests={scheduleRequests} refresh={refreshScheduleRequests} />
       <WorkStyleUpdateCards offers={offers} />
       <MailProposalCards proposals={proposals} refresh={refreshNeedsYou} />
+      {/* Always mounted, so screen readers announce the line when it fills. */}
+      <div key={foundationSaved?.at} role={foundationSaved?.how === 'failed' ? 'alert' : 'status'} className={foundationSaved ? undefined : 'cth-sr-only'}
+        style={foundationSaved ? { fontSize: 12, lineHeight: '17px', color: foundationSaved.how === 'failed' ? 'var(--cth-coral-text)' : 'var(--cth-ink-3)', padding: '0 2px' } : undefined}>
+        {foundationSaved?.how === 'saved' ? translate('foundations.card.saved') : foundationSaved?.how === 'michael' ? translate('foundations.card.sentToMichael', { godName }) : foundationSaved?.how === 'failed' ? translate('foundations.card.failedGone', { godName }) : ''}
+      </div>
       {/* Nothing left (D4, D8): All clear, one light line, and what was just
           answered. The column closes on the next click outside it. */}
-      {!engineCard && !onBreak && !researchNotice && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
+      {!engineCard && !onBreak && !researchNotice && !knowledgeNotice && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && (
         <div style={{ padding: '4px 2px 2px' }}>
           <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)' }}>{translate('shell.allClear')}</div>
           <div style={{ marginTop: 4, fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink-3)' }}>{translate(`shell.allClearLine${line}`, { godName })}</div>
         </div>
       )}
-      {!engineCard && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && answeredHere.map((x) => (
+      {!engineCard && !silentShown && waiting.length === 0 && scheduleRequests.length === 0 && offers.length === 0 && proposals.length === 0 && answeredHere.map((x) => (
         <section key={x.id} aria-label={askTitle(x.title)} style={card}>
           <div style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px', letterSpacing: '-0.01em', color: 'var(--cth-ink)' }}>{askTitle(x.title)}</div>
           {x.who && <div style={{ marginTop: 6 }}><span style={personChip}><AgentAvatar id={x.whoId} name={x.who} size={16} />{x.who}</span></div>}
@@ -230,6 +294,24 @@ export function AskMeTab() {
       ))}
       {waiting.map((row, idx) => {
         const { task: t, ask: open } = row;
+        const foundationId = foundationAsk(open);
+        if (foundationId) {
+          // The member whose work hit it (D11), in its department color.
+          const raiser = open.raisedBy && open.raisedBy !== 'god' ? open.raisedBy : typeof t.assignee === 'string' ? t.assignee : undefined;
+          const member = raiser ? agents.find((a) => a.id === raiser) : undefined;
+          const fam = member && !member.isGod ? family(departmentOf(member), dark) : null;
+          return (
+            <FoundationCard
+              key={row.key} id={foundationId} rowKey={row.key} taskId={t.id} q={open.q} askedAt={open.askedAt}
+              raiserId={raiser} raiserName={nameFor(raiser)} raiserIsMember={!!member}
+              chipStyle={{ ...personChip, ...(fam ? { background: fam.l, boxShadow: `inset 0 0 0 1px ${fam.m}` } : {}) }}
+              foundations={foundations}
+              memberName={(mid) => agents.find((a) => a.id === mid)?.name}
+              onAnswer={(text) => sendAnswer(row, text)}
+              onSaved={(how) => setFoundationSaved({ how, at: Date.now() })}
+            />
+          );
+        }
         const stuck = dependentsTree(t.id, tasks);
         const owner = t.assignee ? agents.find((a) => a.id === t.assignee) : undefined;
         // Agents write tasks.json: a card's assignee may not be a string.
@@ -243,6 +325,17 @@ export function AskMeTab() {
           || (typeof t.result === 'string' && t.result.trim() !== '')
           || (t.humanQA?.length ?? 0) > 1;
         const draft = drafts[row.key] ?? '';
+        const shape = readAskShape(open);
+        const pk = picks[row.key] ?? {};
+        const toSend = answerFor(row, shape);
+        const partsAnswered = shape.kind === 'parts' ? shape.parts.filter((p, i) => partAnswerText(p, pk.parts?.[i])).length : 0;
+        // Reply says what it will send (D3): the option, or how many questions.
+        const replyLabel = shape.kind === 'choice' && pk.pick !== undefined
+          ? translate(draft.trim() ? 'askMe.replyOptionNote' : 'askMe.replyOption', { n: pk.pick + 1 })
+          : shape.kind === 'parts' && partsAnswered > 0 && partsAnswered < shape.parts.length
+            ? translate('askMe.replyPartial', { n: partsAnswered, total: shape.parts.length })
+            : translate('askMe.respond');
+        const hasDraft = !!draft.trim() || pk.pick !== undefined || partsAnswered > 0;
         const showStuck = openStuck[row.key] ?? false;
         // One card open at a time; the newest is open until the owner picks another.
         // The newest is open by default, and after the open card is answered
@@ -279,7 +372,7 @@ export function AskMeTab() {
                   )}
                   {ago && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{ago}</span>}
                   {isReport(open) && <span style={reportTag}>{translate('askMe.report')}</span>}
-                  {!expanded && draft.trim() && <span style={draftTag}>{translate('askMe.draft')}</span>}
+                  {!expanded && hasDraft && <span style={draftTag}>{translate('askMe.draft')}</span>}
                 </div>
                 {/* Folded: the ask itself, in a line or two. */}
                 {!expanded && (
@@ -312,7 +405,55 @@ export function AskMeTab() {
               {/* Files the question names are chips that open them (docs/designs/open-file-tab.md). */}
               <FileText source={open.q} who={{ raisedBy: open.raisedBy, assignee: typeof t.assignee === 'string' ? t.assignee : undefined }} />
             </div>
-            {/* One row: the answer, and Reply. */}
+            {shape.kind === 'choice' && (
+              <ChoiceRows
+                options={shape.options}
+                pick={pk.pick}
+                onPick={(pick) => setAnswerPick(row.key, { ...pk, pick })}
+                onSend={() => void sendAnswer(row)}
+                who={{ raisedBy: open.raisedBy, assignee: typeof t.assignee === 'string' ? t.assignee : undefined }}
+              />
+            )}
+            {shape.kind === 'parts' && (
+              <PartLines
+                parts={shape.parts}
+                answers={pk.parts ?? []}
+                onChange={(parts) => setAnswerPick(row.key, { ...pk, parts })}
+                onSend={() => void sendAnswer(row)}
+                who={{ raisedBy: open.raisedBy, assignee: typeof t.assignee === 'string' ? t.assignee : undefined }}
+              />
+            )}
+            {shape.kind !== 'plain' ? <>
+            {/* With options or questions (A1): the box full width, then Reply on
+                its own row, so picking never reads as sending. */}
+            <GrowingTextarea
+              className="cth-input"
+              dir={rtl ? 'auto' : undefined}
+              value={draft}
+              onChange={(e) => setAnswerDraft(row.key, e.target.value)}
+              onFocus={() => setOpenId(row.key)}
+              onKeyDown={(e) => { if (isComposingKey(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void sendAnswer(row); }}
+              placeholder={shape.kind === 'parts' ? translate('askMe.anythingElse') : pk.pick !== undefined ? translate('askMe.addNote') : translate('askMe.ownAnswer')}
+              style={{
+                width: '100%', display: 'block', boxSizing: 'border-box', padding: '7px 10px', minHeight: 34,
+                background: 'var(--cth-card)', border: 'none',
+                fontFamily: 'var(--cth-font-ui)', fontSize: 12, lineHeight: '18px',
+                color: 'var(--cth-ink)', outline: 'none'
+              }}
+            />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+              <PixelButton
+                variant="primary" size="sm"
+                disabled={!toSend || sending === row.key}
+                onClick={() => void sendAnswer(row)}
+                ariaLabel={shape.kind === 'choice' && pk.pick !== undefined ? translate('askMe.replyOptionAria', { n: pk.pick + 1, label: shape.options[pk.pick]?.label ?? '' }) : undefined}
+                style={{ height: 34, flexShrink: 0 }}
+              >
+                {sending === row.key ? translate('askMe.sending') : replyLabel}
+              </PixelButton>
+            </div>
+            </> : (
+            /* One row: the answer, and Reply. */
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
               <GrowingTextarea
                 className="cth-input"
@@ -346,6 +487,7 @@ export function AskMeTab() {
                 {sending === row.key ? translate('askMe.sending') : translate('askMe.respond')}
               </PixelButton>
             </div>
+            )}
             {failed === row.key && (
               <div role="alert" style={{ marginTop: 6, fontSize: 11, lineHeight: '15px', color: 'var(--cth-coral-text)' }}>{translate('askMe.mailFailed')}</div>
             )}
@@ -400,6 +542,7 @@ export function AskMeTab() {
       })}
       {/* A report, after the questions like every Report card (DESIGN.md 7.8). */}
       {researchNotice && <ResearchNoticeCard />}
+      {knowledgeNotice && <KnowledgeNoticeCard />}
     </div>
   );
 }
@@ -446,6 +589,29 @@ function ResearchNoticeCard() {
           seen();
           window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Research & privacy' } }));
         }}>{t('research.noticeOpen')}</PixelButton>
+      </div>
+    </section>
+  );
+}
+
+/** The one time card for an owner who had company knowledge off (owner,
+ *  2026-10-19: no switch now): a report, cleared by either button. */
+function KnowledgeNoticeCard() {
+  const { t } = useTranslation();
+  const seen = (): void => { void window.cth.kgNoticeSeen?.().then(() => refreshNeedsYou()).catch(() => undefined); };
+  return (
+    <section aria-label={t('knowledgeNotice.title')} style={card}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--cth-ink)' }}>{t('knowledgeNotice.title')}</span>
+        <span style={reportTag}>{t('askMe.report')}</span>
+      </div>
+      <p style={{ margin: '8px 0 12px', fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)' }}>{t('knowledgeNotice.body')}</p>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+        <PixelButton variant="secondary" size="sm" onClick={seen}>{t('askMe.gotIt')}</PixelButton>
+        <PixelButton variant="primary" size="sm" onClick={() => {
+          seen();
+          window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Memory & Knowledge' } }));
+        }}>{t('knowledgeNotice.open')}</PixelButton>
       </div>
     </section>
   );

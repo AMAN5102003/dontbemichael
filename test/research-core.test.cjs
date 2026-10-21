@@ -109,7 +109,8 @@ test('the renderer shows the Research agent\'s name from the floor, the archive,
     '@/store/store': { useStore, ACTION_CLOCKING_IN: 'clocking-in' },
     '@/store/config': { buildSpawnCommand: () => 'claude' },
     '@/components/terminalPool': { disposeTerminal: () => {} },
-    '@/scene/office/cast': { RESEARCH_CHARACTER: 'pete' }
+    '@/scene/office/cast': { RESEARCH_CHARACTER: 'pete' },
+    '@/scene/office/peteWelcome': loadTs('src/renderer/src/scene/office/peteWelcome.ts')
   };
   const resolve = Module._resolveFilename;
   Module._resolveFilename = function (req, ...rest) { return Object.hasOwn(stubs, req) ? `stub:${req}` : resolve.call(this, req, ...rest); };
@@ -198,14 +199,14 @@ test('the trust layer\'s checks keep no transcript of Research\'s text, and Rese
   const src = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
   const idx = src('src/main/index.ts');
   const layer = idx.slice(idx.indexOf('const trustLayer = makeTrustLayer({'), idx.indexOf('settings: () => dataClassSettings'));
-  assert.match(layer, /join\(app\.getPath\('userData'\), 'trust-check'\)/);
+  assert.match(layer, /join\(app\.getPath\('userData'\), TRUST_CHECK_DIR\)/);
   assert.match(layer, /dropTranscript: true/);
   assert.match(idx, /if \(isResearch\) pruneOldFiles\(dir, 7 \* 24 \* 60 \* 60_000\);\n\s+else setTimeout/);
   assert.match(idx, /const dir = isResearch \? ownResearchDir\(opts\.cwd, RESEARCH_TMP_DIR\) :/, 'its scratch folder only as a real folder');
   assert.match(layer, /sweepOldCheckTranscripts\(\);/, 'old check transcripts are swept');
-  assert.match(idx, /for \(const folder of \['standing-check', 'trust-check'\]\)/, 'and those a stopped check left in its own folder');
-  assert.match(idx, /memory\.setMineKey\(\(id\) => \(id === RESEARCH_ID \? trustLayer\.policyKey\?\.\(\) \?\? '' : ''\)\);/, 'its mined copy is made again when privacy settings change');
-  assert.match(src('src/main/memory.ts'), /const key = `\$\{mtime\}:\$\{extra\}`;/);
+  assert.match(idx, /for \(const folder of CHECK_FOLDERS\)/, 'and those a stopped check left in its own folder');
+  assert.deepEqual([...loadTs('src/main/factoryReset.ts').CHECK_FOLDERS], ['standing-check', 'trust-check']);
+  assert.doesNotMatch(idx, /setMineKey|setNotesFilter/, 'no copy of its notes is made for anyone (owner, 2026-10-16)');
   assert.match(idx, /claudeProjectsRoot\(\), \.\.\.teamFolders,/, 'its shell is walled from the projects folder wherever it is');
   // The guard itself: a link left in place of the scratch folder is replaced,
   // and what it pointed at is untouched.
@@ -234,7 +235,9 @@ test('Research wears Pete, its own face, also in an office that saved it in Ryan
   // Value: protects=the one agent on the internet never looks like Marketing; fails_when=a spawn or restore keeps Ryan, or Pete becomes a hire's face; why_new=owner, third ship D4; seam=source pins (the renderer modules need Electron)
   const src = (f) => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
   assert.match(src('src/renderer/src/shell/research.ts'), /character: RESEARCH_CHARACTER,/);
-  assert.match(src('src/renderer/src/hooks/useRestoreTeam.ts'), /\.\.\.\(a\.id === RESEARCH_ID \? \{ character: RESEARCH_CHARACTER \} : \{\}\),/);
+  assert.match(src('src/renderer/src/hooks/useRestoreTeam.ts'), /\.\.\.\(a\.id === RESEARCH_ID \? \{ character: RESEARCH_CHARACTER, \.\.\.\(res\.name \? \{ name: res\.name \} : \{\}\) \} : \{\}\),/, 'and the name the app gave it, also in an office that saved it as Research');
+  assert.match(src('src/main/index.ts'), /\.\.\.\(isResearch \? \{ name: hive\.researchName\(\) \} : \{\}\) \};/, 'the start reports the name from the app\'s settings');
+  assert.match(src('src/renderer/src/shell/research.ts'), /name: res\.name \|\| name,/, 'turning it on uses that name too');
   assert.match(src('src/renderer/src/scene/office/cast.ts'), /export const HIREABLE_CAST: CastMember\[\] = OFFICE_CAST\.filter\(\(c\) => c\.name !== RESEARCH_CHARACTER\);/);
   assert.match(src('src/renderer/src/components/AddAgentModal.tsx'), /const hit = HIREABLE_CAST\.find/);
   assert.match(src('src/renderer/src/scene/office/props.tsx'), /\n  pete: <>/);

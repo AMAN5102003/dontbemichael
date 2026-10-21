@@ -202,3 +202,34 @@ test('a web page or a command outside the sandbox, refused in a business office,
     assert.equal(r.detail, undefined, `${label}: no step`);
   }
 });
+
+test('a denied PreToolUse is emitted as blocked=true with no detail (issue: refused tool shows its detail)', async (t) => {
+  // Value: protects=the owner never sees a "using Tool · N min" line for a call the hook refused; fails_when=blocked is omitted or detail is populated on a denial; why_new=every denial branch called emit() with default blocked=false, leaking the tool detail to the renderer; seam=control.toolDecision injected
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-tool-detail-denied-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const sent = [];
+  const control = { shouldHalt: () => false, toolDecision: () => ({ deny: true, reason: 'Paused by operator.' }) };
+  const server = new HookServer(hive, () => ({ send: (c, p) => sent.push({ c, p }) }), () => ({ harnessHome: home }), control, undefined);
+  await server.handle({ agent_id: 'pam', session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'x', description: 'Run the full test suite' }, cwd: home });
+  const hook = sent.filter((s) => s.c === 'hive:hookEvent').pop()?.p;
+  assert.ok(hook, 'a hook event was emitted');
+  assert.equal(hook.blocked, true, 'denied call must be emitted as blocked');
+  assert.equal(hook.detail, undefined, 'denied call must not carry a detail');
+});
+
+test('an allowed PreToolUse is emitted as blocked=false with its detail intact', async (t) => {
+  // Value: protects=the happy path still reaches the renderer with detail and blocked=false after the denial guard; fails_when=the guard also suppresses allowed calls; why_new=regression check for the fix above; seam=no control (denial gate skipped)
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-tool-detail-allowed-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const sent = [];
+  const server = new HookServer(hive, () => ({ send: (c, p) => sent.push({ c, p }) }), () => ({ harnessHome: home }), undefined, undefined);
+  await server.handle({ agent_id: 'pam', session_id: 's1', hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'x', description: 'Run the full test suite' }, cwd: home });
+  const hook = sent.filter((s) => s.c === 'hive:hookEvent').pop()?.p;
+  assert.ok(hook, 'a hook event was emitted');
+  assert.equal(hook.blocked, false, 'allowed call must not be marked blocked');
+  assert.equal(hook.detail, 'Run the full test suite', 'allowed call must carry its detail');
+});

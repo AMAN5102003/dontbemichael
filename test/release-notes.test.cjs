@@ -88,6 +88,17 @@ test('emphasis markers go, snake_case identifiers stay', () => {
   assert.equal(stripMarkdown('![shield](https://img.shields.io/v.svg)'), '');
 });
 
+test('inline code comes out as written: no HTML, emphasis or link rule reaches inside it', () => {
+  assert.equal(stripMarkdown("Python's `__init__` files"), "Python's __init__ files");
+  assert.equal(stripMarkdown('Run `claude --model <id>` to pick'), 'Run claude --model <id> to pick');
+  assert.equal(stripMarkdown('`*.md` globs and `*.ts` files'), '*.md globs and *.ts files');
+  assert.equal(stripMarkdown('use `**kwargs` and `~~old~~` as is'), 'use **kwargs and ~~old~~ as is');
+  assert.equal(stripMarkdown('`.env` is read at launch'), '.env is read at launch', 'a span that opens the line keeps its dot');
+  assert.equal(stripMarkdown('`--verbose` flag'), '--verbose flag');
+  // Outside the code span the usual rules still run.
+  assert.equal(stripMarkdown('**Bold** then `<b>` and <b>tag</b>'), 'Bold then <b> and tag');
+});
+
 test("the 'What's new' section wins over the release template's preamble", () => {
   // This is the shape of RELEASE.md: a tagline and a site link come first, and
   // taking "the first lines" of the body would digest the boilerplate the user
@@ -284,6 +295,24 @@ test('rendered HTML from the atom feed never yields CSS', () => {
     assert.doesNotMatch(line, /[{};]/, 'a stylesheet fragment reached the toast');
     assert.doesNotMatch(line, /^\s*</, 'a raw HTML tag reached the toast');
   }
+});
+
+test('HTML entities from rendered notes read as the characters they stand for', () => {
+  assert.equal(stripMarkdown('Mail &amp; calendar now sync together'), 'Mail & calendar now sync together');
+  assert.equal(stripMarkdown('Say &quot;hi&quot; to the manager'), 'Say "hi" to the manager');
+  // Decoded after the tag rule, so an escaped placeholder is text, not a tag.
+  assert.equal(stripMarkdown('Pick a model with <code>--model &lt;id&gt;</code>'), 'Pick a model with --model <id>');
+  // `&amp;` is decoded last, so an escaped entity stays as written.
+  assert.equal(stripMarkdown('Write &amp;lt; for a less-than sign'), 'Write &lt; for a less-than sign');
+
+  const digest = summarizeReleaseNotes([
+    '<h2>What&#39;s new</h2>',
+    '<ul>',
+    '<li>Mail &amp; calendar now sync together</li>',
+    '<li>Pick a model with <code>--model &lt;id&gt;</code></li>',
+    '</ul>'
+  ].join('\n'));
+  assert.deepEqual(digest, ['Mail & calendar now sync together', 'Pick a model with --model <id>']);
 });
 
 test('rendered HTML yields the actual news, not the preamble or the downloads', () => {
