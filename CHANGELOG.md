@@ -20,7 +20,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - A schedule an agent asks for with `monthly` or `sunset` is refused instead of becoming a Monday or Sunday job; `Mondays`, `weds` and `mon.` still work (contributed in #193).
 - A team member's name, role or business name with a dollar sign, such as `Ca$$h Cuts`, is written as typed in Work styles, the first task and Michael's briefing (contributed in #198).
 - Text you write in the heartbeat box in Schedules now reaches Michael ahead of the floor summary; the box's own default text is not sent (contributed in #200).
-- A running schedule that checks the inbox says "Pam cannot check email" beside it when that team member has no email and no Gmail connector, instead of failing every run without a word (contributed in #218).
+- A running schedule that checks the inbox says "Pam cannot check email" beside it when that team member has no mailbox (or its mailbox was removed in Settings) and no Gmail connector, instead of failing every run without a word (contributed in #218, with the removed mailbox case from #348).
 - On Windows, a folder named like `CON.txt` or `NUL.log` is made safe as `CON-folder.txt`, since Windows reserves those names even with an extension (contributed in #291).
 - In Arabic, dragging the side panel's edge and its arrow keys now resize it the right way, and its hint is short in all three languages (contributed in #299).
 - Adding a second time to a schedule that runs every few days shortens that line to every 1 day, so the schedule can still be saved, and a note under the line says so (contributed in #329).

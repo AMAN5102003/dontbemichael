@@ -100,8 +100,8 @@ export function missionsFor(missions: ScheduledMission[], agentId: string, godId
 const MAIL_CHECK = /\b(?:inbox|mailbox(?:es)?)\b|\b(?:check|read|triage|sort|clear)(?:\s+(?!and\b|then\b|to\b)\w+){0,2}\s+e-?mails?\b/i;
 
 /** True when `m` is a running job that looks in the mailbox and its agent has
- *  no way to: its email is off and it holds no Gmail connector that is on
- *  (`gmail`). The hook refuses the mail call, so each run is a wasted turn
+ *  no way to: no mailbox it can use (`email`: email off, or its mailbox removed
+ *  in Settings) and no Gmail connector that is on (`gmail`). The hook refuses the mail call, so each run is a wasted turn
  *  (docs/designs/multi-mailbox.md); the schedules say so beside the job. */
 export function cannotCheckEmail(m: ScheduledMission, email: { enabled: boolean } | undefined, gmail = false): boolean {
   if (!m.enabled || (m.kind ?? 'dispatch') !== 'dispatch' || email?.enabled || gmail) return false;
