@@ -99,11 +99,16 @@ export function askFilePaths(question: string): string[] {
     if (isFileSpan(span)) found.push({ path: span, at: m.index ?? 0 });
   }
   let prose = text.replace(/`[^`\n]+`/g, blank);
-  for (const m of prose.matchAll(/\]\(<?([^)\s>]+)>?\)/g)) {
-    const target = m[1];
+  // A link target in <angle brackets> may hold spaces ("Harbor & Pine/Q3
+  // report.md") or parentheses, and either form may carry a title after the
+  // target ("…", '…' or (…)). Each link found is blanked whole, so no part of
+  // its target or title is read again as a plain path below.
+  const links = /\]\((?:<([^>\n]+)>|([^)\s]+))(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^)\n]*\)))?\)/g;
+  for (const m of prose.matchAll(links)) {
+    const target = m[1] ?? m[2];
     if (isAbsolutePathText(target) && isFileSpan(target)) found.push({ path: target, at: m.index ?? 0 });
   }
-  prose = prose.replace(/\]\([^)]*\)/g, blank);
+  prose = prose.replace(links, blank).replace(/\]\([^)]*\)/g, blank);
   for (const p of plainFilePaths(prose)) found.push({ path: p.path, at: p.start });
   const seen = new Set<string>();
   const out: string[] = [];
@@ -113,6 +118,48 @@ export function askFilePaths(question: string): string[] {
     out.push(path);
   }
   return out;
+}
+
+/** The endings tried, in this order, for a file named without one (owner,
+ *  2026-10-19): the documents a team writes most, then the rest the office
+ *  can open. `zip` and `xls` are left out: neither ever opens. */
+export const NAME_ENDINGS: readonly string[] = ['md', 'docx', 'xlsx', 'pdf', 'csv', 'txt', 'pptx', 'json', 'tsv', 'markdown', 'png', 'jpg', 'jpeg', 'gif', 'webp'];
+
+/** At most this many names are looked up per text: each tries every ending. */
+export const MAX_NAMES = 10;
+
+/** Whether a code span may name a file without its ending, such as
+ *  `First contact follow up draft 2026-10-19`: a few words with a letter, no
+ *  known file ending, and nothing that reads as an amount, address, link or
+ *  command. Only a file of that name in the office's folders makes it a chip. */
+export function isNameSpan(span: string): boolean {
+  const s = span.trim();
+  if (s.length < 3 || s.length > 160 || isFileSpan(s)) return false;
+  if (/^[$€£¥₹]|[@`\r\n]|:\/\/|^[-./~]|\.\.|\\/.test(s)) return false;
+  return /\p{L}/u.test(s);
+}
+
+/** The code spans a text names that may be files without their ending, in
+ *  order, each once, outside code fences (see askFilePaths). */
+export function askFileNames(text: string): string[] {
+  const prose = text.replace(/```[\s\S]*?```/g, (m) => ' '.repeat(m.length));
+  const out: string[] = [];
+  for (const m of prose.matchAll(/`([^`\n]+)`/g)) {
+    const name = m[1].trim();
+    if (isNameSpan(name) && !out.includes(name)) out.push(name);
+    if (out.length >= MAX_NAMES) break;
+  }
+  return out;
+}
+
+/** The text with each found name's code span written as its file's path, so
+ *  it draws as a chip like any other file. Code fences are left as they are. */
+export function withNamedFiles(text: string, found: Readonly<Record<string, string>>): string {
+  if (!Object.keys(found).length) return text;
+  return text.split(/(```[\s\S]*?```)/g).map((part, i) => (i % 2 ? part : part.replace(/`([^`\n]+)`/g, (m, inner: string) => {
+    const path = found[inner.trim()];
+    return path ? `\`${path}\`` : m;
+  }))).join('');
 }
 
 export type AskFileKind = 'markdown' | 'text' | 'json' | 'csv' | 'excel' | 'word' | 'powerpoint' | 'pdf' | 'image' | 'file';

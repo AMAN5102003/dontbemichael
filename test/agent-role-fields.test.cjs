@@ -44,7 +44,11 @@ test('joining uses whichever field is filled, and nothing when both are empty', 
 
 test('Edit Agent shows Role, Role description and Work style, with plain notes', () => {
   const src = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/EditAgentModal.tsx'), 'utf8');
-  const briefing = src.slice(src.indexOf('<Fields id="briefing"'), src.indexOf('</Fields>', src.indexOf('<Fields id="briefing"')));
+  // The rows are built once (roleRow to workStyleNotes) and laid out in one
+  // column or, wide, in two (wide panel WD2).
+  const briefing = src.slice(src.indexOf('const roleRow = ('), src.indexOf('const engine = ('));
+  const side = src.slice(src.indexOf('<Fields id="briefing" grow>'), src.indexOf('</Fields>', src.indexOf('<Fields id="briefing" grow>')));
+  assert.match(side, /\{roleRow\}\s*\{handlesRow\}\s*\{workStyleRow\}\s*\{schedules\}\s*\{workStyleNotes\}/, 'one column: role, what they handle, work style, then the jobs');
   for (const label of ["<Row label={t('editAgent.role')}>", "label={t('editAgent.handles', { name: who })}", "label={t('editAgent.workStyle')}"]) {
     assert.ok(briefing.includes(label), label);
   }

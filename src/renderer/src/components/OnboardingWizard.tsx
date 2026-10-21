@@ -1,3 +1,4 @@
+import { useResearchName } from '@/shell/research';
 import { CompanyProfileFields, localCurrency, localTimeZone } from './CompanyProfileFields';
 import { cityLine, cleanCompanyProfile, missingProfileFields, prefillLegalName, type CompanyProfile, type RequiredProfileField } from '@shared/companyProfile';
 import { useEffect, useRef, useState } from 'react';
@@ -15,8 +16,9 @@ import { modelsForProvider, onboardingEngineChoices, teamDefaultsFromMichael, ty
 import { isClaudeProvider, providerPreset } from '@shared/agentProvider';
 import { GetMichaelReady, GetMichaelReadyInfo } from './GetMichaelReady';
 import {
-  classifyEngineAvailability, engineAvailabilityBadge, engineAvailabilityMessage, engineBlocksOnboarding
+  classifyEngineAvailability, engineBlocksOnboarding
 } from '@shared/engineAvailability';
+import { engineBadgeWords, engineMissingWords } from './engineStatusWords';
 import type { ToolStatus } from '@shared/toolCatalog';
 import type { OfficePack } from '@shared/officePack';
 import type { AgentDefinitionV2 } from '@shared/agentDefinition';
@@ -204,6 +206,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
   const teamAgents = teamPack?.agents ?? [];
   const coreIds = new Set((corePack?.agents ?? []).map((a) => a.id));
   const [teamPicked, setTeamPicked] = useState<Record<string, boolean>>({});
+  // Research, the one member on the internet: off unless picked (issue #230, D11).
+  const [researchPicked, setResearchPicked] = useState(false);
+  const researchName = useResearchName();
   /** Folders the owner pointed somewhere other than the suggestion, keyed by agent id (or OFFICE_KEY). */
   const [folderOverrides, setFolderOverrides] = useState<Record<string, string>>({});
   const [folderSuggestions, setFolderSuggestions] = useState<(FolderSuggestions & { home: string }) | undefined>();
@@ -242,7 +247,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
   const plan = teamPlan(teamAgents, teamPicked, folderSuggestions, folderOverrides);
   const needed = connectionsNeeded(teamAgents, teamPicked);
-  const pickedCount = teamAgents.filter((a) => teamPicked[a.id]).length;
+  const pickedCount = teamAgents.filter((a) => teamPicked[a.id]).length + (researchPicked ? 1 : 0);
   /** `/Users/me/Documents/Pho` → `~/Documents/Pho`: shorter, and what an owner recognises. */
   const tildePath = (p: string) => {
     const h = folderSuggestions?.home;
@@ -498,6 +503,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
         // quick-picks, which is what registeredRepos has always fed.
         businessFolder: finishPlan.business,
         businessTeam: finishPlan.team,
+        // Research starts with the team when picked; a new office never gets
+        // the update card (design review D10).
+        research: { on: researchPicked, notice: false },
         registeredRepos: finishPlan.folders,
         autoMode,
         godProvider,
@@ -648,7 +656,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     ever used as an id or a path. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span style={{ fontSize: 14, color: 'var(--cth-ink-700)' }}>
+                    <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-2)' }}>
                       {t('onboarding.business.nameLabel')} *
                     </span>
                     <input
@@ -900,7 +908,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         </span>
                         {(() => {
                           const a = classifyEngineAvailability(engines, p.id);
-                          const badge = engineAvailabilityBadge(a);
+                          const badge = engineBadgeWords(a, t);
                           if (!badge) return null;
                           const bad = a.state === 'not-installable';
                           return (
@@ -971,14 +979,14 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)',
                     fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-900)'
                   }}>
-                    <span>{engineAvailabilityMessage(selectedEngine, providerPreset(godProvider).label)}</span>
+                    <span>{engineMissingWords(selectedEngine, providerPreset(godProvider).label, t)}</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <PixelButton variant="secondary" size="sm" onClick={() => { void probeEngines(); }} disabled={probing}>
-                        {probing ? 'checking...' : 'check again'}
+                        {probing ? t('onboarding.orchestrator.checking') : t('onboarding.orchestrator.checkAgain')}
                       </PixelButton>
                       {selectedEngine.docsUrl && (
                         <PixelButton variant="ghost" size="sm" onClick={() => { void window.cth.openExternal(selectedEngine.docsUrl!); }}>
-                          install instructions
+                          {t('onboarding.orchestrator.installInstructions')}
                         </PixelButton>
                       )}
                     </div>
@@ -1086,6 +1094,19 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                       labels={folderLabels}
                     />
                   ))}
+                  <TeamCard
+                    character="pete"
+                    name={`${researchName} · ${t('research.title')}`}
+                    summary={t('research.teamSummary')}
+                    chips={[{ tone: 'muted', label: t('research.teamTag') }]}
+                    picked={researchPicked}
+                    onTogglePicked={() => setResearchPicked((v) => !v)}
+                    displayPath={tildePath}
+                    overridden={false}
+                    onChangeFolder={() => undefined}
+                    onUseSuggested={() => undefined}
+                    labels={folderLabels}
+                  />
                 </div>
 
                 <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>

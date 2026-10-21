@@ -1,3 +1,5 @@
+import { isReservedName, RESEARCH_ID, RESEARCH_ONLY_SKILLS } from '@shared/research';
+import { useResearchName } from '@/shell/research';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
@@ -7,7 +9,7 @@ import { ProviderLogo } from './ProviderLogo';
 import { InfoTip } from './InfoTip';
 import { Dialog } from '@/shell/Dialog';
 import { useStore, type Agent, ACTION_CLOCKING_IN } from '@/store/store';
-import { OFFICE_CAST, CAST_BY_NAME, CAST_GROUPS, DEFAULT_CHARACTER, type OfficeCharacterName } from '@/scene/office/cast';
+import { OFFICE_CAST, CAST_BY_NAME, CAST_GROUPS, DEFAULT_CHARACTER, HIREABLE_CAST, type OfficeCharacterName } from '@/scene/office/cast';
 import { type AccentColorName } from '@/design/tokens';
 import type { HireManifest } from '@shared/hire';
 import { hireQueueProgress } from '@shared/hireQueue';
@@ -42,6 +44,7 @@ import {
   hireAgentId,
   hireFolderName,
   hireRole,
+  safeFolder,
   jobFor,
   overlapsByRules,
   ownJob,
@@ -109,12 +112,6 @@ function samePath(a: string, b: string): boolean {
 }
 const basename = (p: string) => p.split(/[\\/]/).filter(Boolean).pop() ?? p;
 const joinPath = (root: string, name: string) => `${root.replace(/[\\/]+$/, '')}/${name}`;
-/** One folder name, safe on every system: no path separators or characters
- *  Windows forbids, no leading dots, at most 60 characters. "AR/AP Clerk"
- *  becomes "AR-AP Clerk", never a folder inside a folder. */
-function safeFolder(raw: string): string {
-  return raw.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, '-').replace(/^[.\s-]+/, '').replace(/[.\s]+$/, '').trim().slice(0, 60);
-}
 
 const TOPIC_MAX = 120;
 
@@ -139,6 +136,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const updateAgent = useStore(s => s.updateAgent);
   const setSidebarTab = useStore(s => s.setSidebarTab);
   const agents = useStore(s => s.agents);
+  const researchName = useResearchName();
   // Deep links and file batches share one FIFO. The head alone seeds the form;
   // every item still requires an explicit hire or skip.
   const hireQueue = useStore(s => s.hireQueue);
@@ -148,7 +146,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const reviewProgress = hireQueueProgress(hireQueue);
 
   const knownCharacter = (c?: string): OfficeCharacterName =>
-    (OFFICE_CAST.some(m => m.name === c) ? (c as OfficeCharacterName) : DEFAULT_CHARACTER);
+    (HIREABLE_CAST.some(m => m.name === c) ? (c as OfficeCharacterName) : DEFAULT_CHARACTER);
   const knownAccent = (a?: string): AccentColorName | undefined =>
     (ACCENTS.includes(a as AccentColorName) ? (a as AccentColorName) : undefined);
   /** The cast member a typed name refers to, if any (typing "Meredith" picks her
@@ -156,7 +154,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const characterForName = (n: string): OfficeCharacterName | null => {
     const q = n.trim().toLowerCase();
     if (!q) return null;
-    const hit = OFFICE_CAST.find(c => c.displayName.toLowerCase() === q || c.name === q);
+    const hit = HIREABLE_CAST.find(c => c.displayName.toLowerCase() === q || c.name === q);
     return hit ? hit.name : null;
   };
 
@@ -570,7 +568,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     advanceHireReview();
   };
 
-  const nameTaken = (n: string) => agents.some((a) => a.name.trim().toLowerCase() === n.trim().toLowerCase());
+  const nameTaken = (n: string) => isReservedName(n, undefined, { [RESEARCH_ID]: { name: researchName } }) || agents.some((a) => a.name.trim().toLowerCase() === n.trim().toLowerCase());
   const whoError = !name.trim() ? tr('addAgent.errName') : nameTaken(name) ? tr('addAgent.wizard.nameTaken', { name: name.trim() }) : undefined;
 
   /** The role step's gate: a name, what they handle, and a job that is
@@ -852,10 +850,10 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                 {hireMeta.commandFlags.map((f, i) => <code key={`${f}-${i}`} style={codeChip('paprika')}>{f}</code>)}
               </span>
             )}
-            {hireMeta.skills && hireMeta.skills.length > 0 && (
+            {hireMeta.skills && hireMeta.skills.some((s) => !RESEARCH_ONLY_SKILLS.includes(s)) && (
               <span style={chipRow}>
                 <span style={{ fontSize: 12 }}>{tr('addAgent.hireSkills')}</span>
-                {hireMeta.skills.map((s) => <code key={s} style={codeChip('mint')}>{s}</code>)}
+                {hireMeta.skills.filter((s) => !RESEARCH_ONLY_SKILLS.includes(s)).map((s) => <code key={s} style={codeChip('mint')}>{s}</code>)}
               </span>
             )}
             {hireMeta.mcpServers && hireMeta.mcpServers.length > 0 && (() => {

@@ -15,7 +15,7 @@ const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
 const { askFilePaths, isFileSpan, kindOf, fileTitle, OPEN_EXTENSIONS } = loadTs('src/shared/askFiles.ts');
-const { askFileVerdict, askFileRootsFor, resolveAskFileRoots, opensAsFolder } = loadTs('src/main/fs.ts');
+const { askFileVerdict, askFileRootsFor, resolveAskFileRoots } = loadTs('src/main/fs.ts');
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 
 test('only code spans with a known file ending are files; money, emails and domains never are', () => {
@@ -33,6 +33,17 @@ test('only code spans with a known file ending are files; money, emails and doma
   assert.equal(kindOf('a.zip'), 'file');
   assert.equal(fileTitle('Quality/Cleanup checklist for owner.md'), 'Cleanup checklist for owner');
   assert.equal(OPEN_EXTENSIONS.has('xls'), false, 'old Excel can carry macros: shown, never opened (eng R2)');
+});
+
+test('a Markdown link to a file is a chip when its path has spaces or the link has a title', () => {
+  // Value: protects=links into an office folder named after the business become chips; fails_when=a space or a title drops the link; why_new=the link pattern stopped at the first space, then the link was blanked; seam=none
+  assert.deepEqual(askFilePaths('See [the report](</Users/me/Harbor & Pine/Q3 report.md>) please'), ['/Users/me/Harbor & Pine/Q3 report.md']);
+  assert.deepEqual(askFilePaths('See [r](/Users/me/Biz/report.md "Q3 numbers")'), ['/Users/me/Biz/report.md']);
+  assert.deepEqual(askFilePaths('See [r](<C:/Harbor & Pine/Q3 report.xlsx> "Q3")'), ['C:/Harbor & Pine/Q3 report.xlsx']);
+  assert.deepEqual(askFilePaths("See [r](/Users/me/Biz/report.md 'Q3') and [s](/Users/me/Biz/sheet.csv (Q3))"), ['/Users/me/Biz/report.md', '/Users/me/Biz/sheet.csv'], 'single quoted and parenthesised titles');
+  assert.deepEqual(askFilePaths('See [r](</Users/me/Biz/Q3 (final)/report.md>)'), ['/Users/me/Biz/Q3 (final)/report.md'], 'a ) inside the target leaves no tail behind');
+  assert.deepEqual(askFilePaths('See [r](/Users/me/a.md "draft (old) /Users/me/b.md")'), ['/Users/me/a.md'], 'a path inside a title is not a file');
+  assert.deepEqual(askFilePaths('See [r](/Users/me/Biz/report.md) and [site](https://example.com/a.md)'), ['/Users/me/Biz/report.md'], 'plain links unchanged, URLs stay links');
 });
 
 test('main opens only allowlisted documents inside the roots, judged on the canonical path', async (t) => {
@@ -123,17 +134,16 @@ test('files are looked for in the office, then the raiser, the assignee and the 
   assert.deepEqual(askFileRootsFor(P('/w/office'), agents, { raisedBy: 'michael', assignee: 'helper' }),
     [P('/w/office'), P('/w/office/Sales'), P('/w/office/Marketing'), P('/w/office/Ops')], 'Michael and his assistant never add a folder');
   assert.deepEqual(askFileRootsFor(undefined, { ada: { cwd: P('/w/office') }, ben: { cwd: P('/w/office') } }, null), [P('/w/office')]);
+  // Research's desk holds raw web pages: it never widens Open (red team, third ship).
+  assert.deepEqual(askFileRootsFor(P('/w/office'), { ada: { cwd: P('/w/office/Sales') }, research: { cwd: P('/w/research-desk') } }, { raisedBy: 'research', assignee: 'research' }),
+    [P('/w/office'), P('/w/office/Sales')], 'never Research\'s desk');
   assert.deepEqual(askFileRootsFor(P('/w/office'), {}, undefined), [P('/w/office')]);
 });
 
-test('revealing a directory never opens an app bundle, and the IPC re-checks before opening', () => {
-  // Value: protects=an agent printed Tool.app is shown in Finder, not launched; fails_when=revealPath opens any directory again; why_new=fs:revealPath had no directory rule (eng R4); seam=none
-  assert.equal(opensAsFolder('/Users/x/office/Sales'), true);
-  assert.equal(opensAsFolder('/Users/x/Downloads/Tool.app'), false);
-  assert.equal(opensAsFolder('/Users/x/Report.pages'), false);
-  for (const dotted of ['/Users/x/office/acme.com', '/Users/x/office/Q3.2026', '/Users/x/office/v1.2']) assert.equal(opensAsFolder(dotted), true, dotted);
+test('revealing a path never opens it, and the IPC re-checks an Ask me file before opening', () => {
+  // Value: protects=an agent printed Tool.app is shown in Finder, not launched; fails_when=revealPath opens anything again; why_new=fs:revealPath had no directory rule (eng R4), then never opens (owner D12); seam=none
   const main = read('src/main/index.ts');
-  assert.match(main, /if \(st\.isFile \|\| !opensAsFolder\(st\.path\)\) \{ shell\.showItemInFolder\(st\.path\); return \{ ok: true \}; \}/);
+  assert.match(main, /shell\.showItemInFolder\(st\.path\);\n\s+return \{ ok: true \};/, 'test/reveal-target.test.cjs');
   // Open runs the check again in main; a document that will not open is shown instead.
   assert.match(main, /ipcMain\.handle\('fs:openAskFile'[\s\S]*?const r = await askFileVerdict\(p, askFileRoots\(who\)\);[\s\S]*?if \(r\.verdict === 'open' && !\(await shell\.openPath\(r\.path\)\)\)[\s\S]*?shell\.showItemInFolder\(r\.path\);/);
   assert.match(main, /function askFileRoots\(who: unknown\): string\[\] \{\n\s+const cfg = readConfig\(\);\n\s+const office = cfg\.businessFolder \?\? legacyBusinessFolder\(cfg\.officeFolder\);\n\s+\/\/ gstack-shortcut\(dec-150d1c26[\s\S]*?return askFileRootsFor\(office, agents, who\);/);
@@ -145,8 +155,9 @@ test('the open card, Task detail and Michael\'s replies show chips in place of p
   const tab = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(tab, /<FileText source=\{open\.q\} who=\{\{ raisedBy: open\.raisedBy, assignee:/, 'the open card');
   const kanban = read('src/renderer/src/components/TasksKanban.tsx');
-  assert.match(kanban, /<FileText source=\{e\.q\} who=\{\{ raisedBy: e\.raisedBy, assignee: qaAssignee \}\} checks=\{qaFiles\[e\.raisedBy \?\? ''\] \?\? \{\}\} \/>/, 'Task detail, one check per card');
-  assert.match(kanban, /const qaFiles = useAskFileChecks\(task\.humanQA, qaAssignee\);/);
+  assert.match(kanban, /<FileText source=\{qaShown\?\.\[i\]\?\.q \?\? e\.q\} who=\{\{ raisedBy: e\.raisedBy, assignee: qaAssignee \}\} checks=\{qaFiles\[e\.raisedBy \?\? ''\] \?\? \{\}\} \/>/, 'Task detail, one check per card');
+  // The check runs over the text the card shows, options and parts included (ask-me-options.md).
+  assert.match(kanban, /const qaShown = useMemo\(\(\) => task\.humanQA\?\.map\(\(e\) => \(\{ \.\.\.e, q: askAsText\(e\.q, readAskShape\(e\)\) \}\)\), \[task\.humanQA\]\);\s*const qaFiles = useAskFileChecks\(qaShown, qaAssignee\);/);
   const dock = read('src/renderer/src/shell/MichaelDock.tsx');
   assert.match(dock, /<FileText source=\{boldFirst\(text\)\} who=\{\{ raisedBy: 'god' \}\} \/>/, 'replies, notes included');
   assert.equal(fs.existsSync(path.resolve(__dirname, '..', 'src/renderer/src/components/AskFileRows.tsx')), false, 'no rows left');
@@ -164,4 +175,52 @@ test('the open card, Task detail and Michael\'s replies show chips in place of p
     for (const k of ['fileOpenLabel', 'fileRevealLabel', 'fileRevealLabelWindows']) assert.match(a[k], /\{\{name\}\}/, `${loc} ${k}`);
     assert.doesNotMatch(JSON.stringify(a), /[–—]/, `${loc}: no dashes`);
   }
+});
+
+test('a file named without its ending opens from its chip when the office holds it (owner, 2026-10-19)', async (t) => {
+  // Value: protects=the Open chip for an ask that names a file by its title, like Dwight's `First contact follow up draft 2026-10-19` for the .md in Sales; fails_when=a name with no ending stays plain text although the file is there, an amount, address or name with no file becomes a chip, or a name reaches outside the office's folders; why_new=the chip needed a file ending before; seam=none; no_claim=the rendered chip (FileText pins and a live look)
+  const A = loadTs('src/shared/askFiles.ts');
+  const { askFileByName } = loadTs('src/main/fs.ts');
+  const q = '**Dwight needs two decisions.** The follow up draft is in the Sales folder as `First contact follow up draft 2026-10-19`. It costs `$1,200` for `IQM`; write to `ann@example.com`.\n```\n`not a file`\n```';
+  assert.deepEqual(askFilePaths(q), [], 'as written, no ending: this is the bug the owner saw');
+  assert.deepEqual(A.askFileNames(q), ['First contact follow up draft 2026-10-19', 'IQM'], 'amounts, addresses and fenced code are never looked up');
+
+  // The real path: Windows CI's temp folder comes back in its short 8.3 form (RUNNER~1).
+  const office = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ask-names-')));
+  t.after(() => fs.rmSync(office, { recursive: true, force: true }));
+  const sales = path.join(office, 'Sales');
+  fs.mkdirSync(sales);
+  fs.writeFileSync(path.join(sales, 'First contact follow up draft 2026-10-19.md'), '# Draft\n');
+  fs.writeFileSync(path.join(sales, 'Plan.docx'), 'x');
+  fs.writeFileSync(path.join(sales, 'Plan.md'), 'x');
+  const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ask-names-out-')));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(outside, 'Secret.md'), 'x');
+  const roots = await resolveAskFileRoots([office, sales]);
+
+  const found = await askFileByName('First contact follow up draft 2026-10-19', roots);
+  assert.equal(found.path, fs.realpathSync(path.join(sales, 'First contact follow up draft 2026-10-19.md')), "found in the raiser's folder");
+  assert.equal(found.verdict, 'open');
+  assert.equal(found.tab, true, 'Markdown opens in an office tab');
+  assert.equal((await askFileByName('Sales/First contact follow up draft 2026-10-19', roots)).verdict, 'open', 'a folder before the name works too');
+  assert.equal((await askFileByName('Plan', roots)).path.endsWith('Plan.md'), true, 'Markdown is tried first');
+  assert.equal(await askFileByName('IQM', roots), null, 'no file: the name stays plain text');
+  assert.equal(await askFileByName(`../${path.basename(outside)}/Secret`, roots), null, 'never outside the office');
+  assert.equal(await askFileByName(path.join(outside, 'Secret'), roots), null, 'a full path outside the office is not opened either');
+
+  const shown = A.withNamedFiles(q, { 'First contact follow up draft 2026-10-19': found.path, 'not a file': '/nope' });
+  assert.deepEqual(askFilePaths(shown), [found.path], 'the found name draws as its file chip');
+  assert.match(shown, /```\n`not a file`\n```/, 'fenced code is left as written');
+});
+
+test('FileText looks names up and Michael names files by full path with their ending', () => {
+  // Value: protects=the wiring of the name lookup into every place questions show, and the owner-approved rule change (D1, 2026-10-19); fails_when=FileText stops looking names up or rendering the swapped text, or the rule drops back to "file names"; why_new=new behavior; seam=none; no_claim=Michael following the rule (prompt, not evaluated)
+  const chip = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/FileChip.tsx'), 'utf8');
+  assert.match(chip, /const lookup = window\.cth\.askFileNames as typeof window\.cth\.askFileNames \| undefined;\n    if \(!names\.length \|\| !lookup\) return;/, 'a window without the lookup keeps the names as text, never crashes');
+  assert.match(chip, /void lookup\(names, \{ raisedBy, assignee \}\)/);
+  assert.match(chip, /<MarkdownPreview source=\{shown\}/);
+  const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
+  assert.match(main, /ipcMain\.handle\('fs:askFileNames'[\s\S]{0,600}askFileByName\(n, roots\)/);
+  const hive = fs.readFileSync(path.resolve(__dirname, '../src/main/hive.ts'), 'utf8');
+  assert.match(hive, /name each file by its full path, with its file ending, in backticks, so the owner can open it/);
 });

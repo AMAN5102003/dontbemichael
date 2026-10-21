@@ -23,12 +23,15 @@ const { runHiddenClaude } = loadTs('src/main/hiddenClaude.ts');
 const { projectDir } = loadTs('src/main/transcript.ts');
 
 // The fake: "signin" shows a login screen and ignores input. "slow" takes the
-// prompt into its transcript at once and answers a while later.
+// prompt into its transcript at once and answers a while later. "booting"
+// swallows the first Enter, as Claude Code still starting up does: the pasted
+// question stays in its input box, unsent (seen live, 2026-10-15).
 const FAKE = `
 const fs = require('fs');
 const path = require('path');
 const id = process.argv[process.argv.indexOf('--session-id') + 1];
 const line = (type, text) => JSON.stringify({ type, message: { content: [{ type: 'text', text }] } }) + '\\n';
+let enters = 0;
 if (process.env.FAKE_MODE === 'signin') {
   process.stdout.write('Select login method:\\r\\n');
   process.stdin.resume();
@@ -36,6 +39,7 @@ if (process.env.FAKE_MODE === 'signin') {
   process.stdout.write('> ');
   process.stdin.on('data', (d) => {
     if (!/[\\r\\n]/.test(String(d))) return;
+    if (process.env.FAKE_MODE === 'booting' && enters++ === 0) return;
     const dir = process.env.FAKE_PROJECT_DIR;
     fs.mkdirSync(dir, { recursive: true });
     const file = path.join(dir, id + '.jsonl');
@@ -71,6 +75,16 @@ test('a slow answer is still waited for once the prompt is in', { skip: !POSIX }
   const r = await runHiddenClaude('Is this a distinct job?', {
     model: 'haiku', cwd, command: bin, noTools: true, promptTakenMs: 1000, timeoutMs: 60_000,
     env: { FAKE_MODE: 'slow', FAKE_PROJECT_DIR: projectDir(cwd), FAKE_ANSWER_MS: '3000' }
+  });
+  assert.deepEqual(r, { ok: true, text: 'slow answer' });
+});
+
+test('an Enter swallowed while the session starts is pressed again, so the check still answers', { skip: !POSIX }, async () => {
+  // Value: protects=the Research trust layer at app launch, when a dozen agents start at once and a check's Enter is lost while its session boots; fails_when=a lost Enter makes the call give up as "never took the prompt" (every launch time trust check denied after 23 s, seen live 2026-10-15); why_new=root cause of the trust layer's no-answer denials; seam=fake claude in a real PTY; no_claim=the real Claude Code boot timing
+  const { bin, cwd } = fakeClaude();
+  const r = await runHiddenClaude('Is this a distinct job?', {
+    model: 'haiku', cwd, command: bin, noTools: true, promptTakenMs: 6000, timeoutMs: 60_000,
+    env: { FAKE_MODE: 'booting', FAKE_PROJECT_DIR: projectDir(cwd), FAKE_ANSWER_MS: '200' }
   });
   assert.deepEqual(r, { ok: true, text: 'slow answer' });
 });

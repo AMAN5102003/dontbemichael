@@ -23,7 +23,7 @@ import { arabicJoinRanges } from '@/terminal/arabicJoiner';
 import { attachArabicSpacingFix } from '@/terminal/arabicSpacingFix';
 import { isArabicTerminalEnabled } from '@/terminal/arabicSetting';
 import {
-  classifyPathToken, isPathToken, pathTokenMatcher, stripPathToken, type PathAction
+  classifyPathToken, isPathToken, linkCellRange, pathTokenMatcher, stripPathToken, type PathAction
 } from '@shared/terminalPaths';
 import {
   createTerminalRecoveryState,
@@ -1015,6 +1015,16 @@ async function activatePath(abs: string, action: PathAction): Promise<void> {
   storeApi?.getState().openFileInIde(hit.path);
 }
 
+/** A buffer line's cells as linkCellRange reads them. */
+function cellsOf(line: NonNullable<ReturnType<Terminal['buffer']['active']['getLine']>>): Array<{ chars: string; width: number }> {
+  const out: Array<{ chars: string; width: number }> = [];
+  for (let x = 0; x < line.length; x++) {
+    const c = line.getCell(x);
+    out.push({ chars: c?.getChars() ?? '', width: c?.getWidth() ?? 1 });
+  }
+  return out;
+}
+
 function registerMarkdownLinkProvider(term: Terminal, ptyId: string): void {
   try {
     term.registerLinkProvider({
@@ -1030,10 +1040,12 @@ function registerMarkdownLinkProvider(term: Terminal, ptyId: string): void {
           const abs = resolvePathCandidate(ptyId, raw);
           if (!abs) continue;
           const action = classifyPathToken(stripPathToken(raw));
+          const span = line ? linkCellRange(cellsOf(line), m.index, m.index + raw.length, raw) : null;
+          if (!span) continue;
           links!.push({
             range: {
-              start: { x: m.index + 1, y: bufferLineNumber },
-              end: { x: m.index + raw.length, y: bufferLineNumber }
+              start: { x: span.startX, y: bufferLineNumber },
+              end: { x: span.endX, y: bufferLineNumber }
             },
             text: raw,
             decorations: { underline: true, pointerCursor: true },

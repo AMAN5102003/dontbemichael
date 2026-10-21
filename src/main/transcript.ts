@@ -40,8 +40,25 @@ function legacyProjectKey(cwd: string): string {
  *  our own stale copies forever. When neither exists we return the CURRENT
  *  spelling, because callers that go on to create the directory must create the
  *  one Claude Code will actually read. */
+/** Claude Code's projects folder: under CLAUDE_CONFIG_DIR when the owner set
+ *  it (agents inherit it, ptyEnv.ts), as Claude Code itself uses it; else
+ *  ~/.claude (red team, third ship). */
+export function claudeProjectsRoot(): string {
+  return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+}
+
+/** Every folder Claude Code may keep `cwd`'s conversations in: the current
+ *  spelling and the older one, when it names a project. A reset removes both,
+ *  where projectDir picks just one to read or write. */
+export function projectDirs(cwd: string): string[] {
+  const root = claudeProjectsRoot();
+  const legacyKey = legacyProjectKey(cwd);
+  const current = path.join(root, projectKey(cwd));
+  return legacyKey && legacyKey !== projectKey(cwd) ? [current, path.join(root, legacyKey)] : [current];
+}
+
 export function projectDir(cwd: string): string {
-  const root = path.join(os.homedir(), '.claude/projects');
+  const root = claudeProjectsRoot();
   const current = path.join(root, projectKey(cwd));
   if (existsSync(current)) return current;
   // For cwd '/' the legacy key is the empty string, and path.join(root, '')
@@ -72,14 +89,18 @@ export function projectDir(cwd: string): string {
  *  crafted id like `../../x` would otherwise traverse out of the project dirs). */
 const VALID_SESSION_ID = /^[A-Za-z0-9_-]+$/;
 
-export function seedSessionTranscript(cwd: string, sessionId: string): boolean {
+export function seedSessionTranscript(cwd: string, sessionId: string, skipDirs: string[] = []): boolean {
   try {
     if (!sessionId || !VALID_SESSION_ID.test(sessionId)) return false;
     const target = path.join(projectDir(cwd), `${sessionId}.jsonl`);
     if (existsSync(target)) return true;
-    const projectsRoot = path.join(os.homedir(), '.claude/projects');
+    const projectsRoot = claudeProjectsRoot();
     if (!existsSync(projectsRoot)) return false;
+    // A project another agent may never take a conversation from (Research's,
+    // full of raw web text; red team, third ship).
+    const skip = new Set(skipDirs.map((d) => path.resolve(d)));
     for (const dir of readdirSync(projectsRoot)) {
+      if (skip.has(path.resolve(projectsRoot, dir))) continue;
       const candidate = path.join(projectsRoot, dir, `${sessionId}.jsonl`);
       if (existsSync(candidate)) {
         mkdirSync(path.dirname(target), { recursive: true });
@@ -103,7 +124,7 @@ export function seedSessionTranscript(cwd: string, sessionId: string): boolean {
 export function resolveSessionCwd(sessionId: string): string | null {
   try {
     if (!sessionId || !VALID_SESSION_ID.test(sessionId)) return null;
-    const projectsRoot = path.join(os.homedir(), '.claude/projects');
+    const projectsRoot = claudeProjectsRoot();
     if (!existsSync(projectsRoot)) return null;
     let best: { file: string; mtime: number } | null = null;
     for (const dir of readdirSync(projectsRoot)) {

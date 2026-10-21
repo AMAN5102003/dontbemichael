@@ -82,7 +82,7 @@ test('no agent reads or changes the app private folder, with or without a busine
   }
   assert.equal(folderDecision({ isGod: false, cwd: P('/w/Biz/Ops') }, bare, 'Read', P('/w/Biz/Ops/notes.md'), true).deny, false, 'own folder still opens');
   const main = read('src/main/index.ts');
-  assert.match(main, /: privateOnlyFolderPolicy\(!!opts\.hive\.isGod, opts\.cwd\),/, 'an office without a business folder still closes private/');
+  assert.match(main, /: privateOnlyFolderPolicy\(!!opts\.hive!\.isGod, opts\.cwd\);/, 'an office without a business folder still closes private/');
   assert.match(main, /return \{ \.\.\.folderPolicy\(\{ isGod, cwd \}, layout, process\.platform !== 'linux'\), sandboxOnly: false \};/, 'and keeps its shell rules as before');
   assert.match(read('src/main/officeFile.ts'), /appPrivate: join\(app, 'private'\)/);
 });

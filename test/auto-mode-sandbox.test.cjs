@@ -71,6 +71,11 @@ test('a Gemini agent gets its agent dir and the hive root in its workspace, in i
     { id: 'kelly-1', name: 'Kelly', provider: 'gemini', cwd },
     { extraWritableDirs: [palace] }
   );
+  assert.equal(
+    inj.env.GEMINI_CLI_TRUST_WORKSPACE,
+    'true',
+    'Gemini worker explicitly trusts its workspace'
+  );
   const agentDir = path.join(home, 'hive', 'agents', 'kelly-1');
   const hiveRoot = path.join(home, 'hive');
 

@@ -532,10 +532,11 @@ export function initAutoUpdater(getWebContents: () => WebContents | null): void 
     if (!href.startsWith(`https://github.com/${REPO}/`)) return { ok: false };
     // An asset URL means the badge's download click, not the notes link. It is
     // the only positive trace the manual path leaves, and it has to be written
-    // by the build being REPLACED, so the version that reads it is the next one
-    // — analytics.ts (update_applied.via) picks it up from 0.4.6, and until then
-    // this line is here purely so there is something to pick up. Nothing else
-    // depends on it and openExternal has already been decided above.
+    // by the build being REPLACED, so whichever later build reads it can only
+    // count installs that ran this one first. Nothing reads it yet —
+    // analytics.ts's update_applied.via does not look at this line — so for now
+    // it is here purely so there is something to pick up. Nothing else depends
+    // on it and openExternal has already been decided above.
     const asset = /\/releases\/download\/v([0-9][^/]*)\//.exec(href);
     if (asset) logLine(`manual download opened: ${asset[1]}`);
     void shell.openExternal(href);

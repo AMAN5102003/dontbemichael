@@ -154,8 +154,8 @@ export function teamMemberRole(def: Pick<AgentDefinitionV2, 'role' | 'summary' |
 export function fillBusiness(text: string, business: { name?: string; city?: string }): string {
   const name = business.name?.trim() || 'the business';
   const city = business.city?.trim();
-  return (city ? text.replace(/\{City\}/g, city) : text.replace(/,? ?\{City\}/g, ''))
-    .replace(/\{Business\}/g, name);
+  return (city ? text.replace(/\{City\}/g, () => city) : text.replace(/,? ?\{City\}/g, ''))
+    .replace(/\{Business\}/g, () => name);
 }
 
 /**
@@ -229,4 +229,18 @@ export function teamMemberStart(
   if (floorIds.has(id)) return { start: false };
   const known = typeof registryCwd === 'string' && registryCwd.trim() ? registryCwd : undefined;
   return { start: true, cwd: known ?? setupFolder };
+}
+
+/**
+ * Michael's note when picked team members did not start. The owner hears it
+ * through him (docs/designs/michael-only-notifications.md), and the app tries
+ * those members again the next time the office opens.
+ */
+export function didNotStartNote(names: string[], again: boolean): { subject: string; body: string } {
+  const one = names.length === 1;
+  const who = one ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  return {
+    subject: one ? `${who} did not start` : 'Team members did not start',
+    body: `${who} did not start ${again ? 'again on this launch' : 'when the office opened'} and ${one ? 'is' : 'are'} not on the floor. The app tries again the next time the office opens. Tell the owner who is missing.`
+  };
 }
