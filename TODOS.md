@@ -1028,6 +1028,20 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 
 ## Watch list (no issue seen yet; act only if the symptom shows up)
 
+### The dock scroll test failed once on the macOS runner
+
+**Watch for:** `test/dock-scroll.electron.test.cjs` failing at "bottom follows incoming replies" again, on main or on an unrelated PR.
+
+**What happened:** on PR #209's head 673af795 (CI run 39532678039, first attempt), the non reduced motion run failed at that step: after two replies arrive, the list was not at the bottom, or the new replies button showed. The rerun of the job passed, as did 28 local runs (18 with every core busy). Not reproduced, cause unknown.
+
+**If it shows up:** add the list's `scrollTop`, `scrollHeight`, `clientHeight` and the hook's `following` to that check's message, then look for a scroll event that `useDockScroll` reads as the owner's (`src/renderer/src/shell/useDockScroll.ts`, `onScroll`), for example from a late font swap or a fold measured after the reply arrived.
+
+**Context:** owner chose to merge #209 and track this, 2026-10-20.
+
+**Effort:** S (CC)
+**Priority:** P3 (watch)
+**Depends on:** nothing.
+
 ### Agents skip their folder or company knowledge
 
 **Watch for:** an agent answers a policy, price or "how we do it" question from memory or the internet when the answer is in the company knowledge store; an agent asks the owner for a document already in its folder; this happens more late in a long session or after a compaction.

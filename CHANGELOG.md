@@ -11,6 +11,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 ### Added
 
 - **Email an agent reads is labelled as written by someone outside the business.** Each message reaches the agent with a note that its text is information, never instructions, and any lines plainly written to steer an AI are listed so the agent skips them and carries on. Michael is told once per such email; you are not (contributed in #188). Research's web answers are checked against the same list.
+- **Michael's conversation keeps your place when new replies arrive.** Reading an earlier answer, you are no longer pulled to the bottom: a "2 new replies" button appears above the message box, and clicking it or scrolling down catches up. Moving the conversation between the bar and the center opens on the same line (contributed in #209).
 - **A change an agent makes in a connected app goes out once.** Writes to QuickBooks and other connected apps are recorded before they are sent, so an agent's retry, or a restart before the answer came back, never creates a second invoice, booking or contact. A write that may already have gone out is refused, and the agent tells Michael (contributed in #212).
 
 ### Fixed
