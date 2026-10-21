@@ -2153,6 +2153,7 @@
     "michaelBoard": "يحدّث اللوحة",
     "minutes": "{{count}} دقيقة",
     "agentWords": "«{{text}}»",
+    "lastSaid": "آخر ما قيل: «{{text}}»",
     "sendFailed": "لم يُرسل. حاول مجددًا.",
     "michaelEnded": "انتهت الطرفية: اضغط \"إلغاء والعودة إلى العمل\" أو \"خروج قسري الآن\"",
     "confirmedCount": "{{acked}} / {{total}} أكّدوا",

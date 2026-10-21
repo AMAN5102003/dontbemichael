@@ -2153,6 +2153,7 @@
     "michaelBoard": "正在更新看板",
     "minutes": "{{count}} 分钟",
     "agentWords": "“{{text}}”",
+    "lastSaid": "最后说：“{{text}}”",
     "sendFailed": "没有发送成功。请重试。",
     "michaelEnded": "终端已结束：请点“取消，回去工作”，或点“立即强制退出”",
     "confirmedCount": "{{acked}} / {{total}} 名成员已确认",

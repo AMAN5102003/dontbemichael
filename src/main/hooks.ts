@@ -96,7 +96,7 @@ import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, webAccess } from '../shared/webAcce
 import { isQuickBooksConnectorTool, isQuickBooksResourceCall, quickbooksAccess, quickbooksCapability } from '../shared/quickbooks';
 import { handoffContext } from '../shared/safeClear';
 import { ownerQuestionsContext, ownerRequestsContext, stuckCardsContext } from '../shared/ownerRequests';
-import { lastAssistantText } from './transcriptText';
+import { lastAssistantLine, lastAssistantText, type SaidLine } from './transcriptText';
 import { stopReasonFor, type OfficeStopReason } from '../shared/officeBreak';
 import { RESTARTED_NOTE } from '../shared/upkeep';
 
@@ -454,6 +454,17 @@ export class HookServer {
   /** The transcript file of an agent's CURRENT session, if any hook has fired. */
   transcriptPath(agentId: string): string | undefined {
     return this.transcriptPaths.get(agentId);
+  }
+
+  /** The last thing this agent said, as one safe line, and when, for its
+   *  closing-time row. Read only from a transcript in the engine's own folder: the path
+   *  comes from a hook frame, which an agent could write. */
+  latestLine(agentId: string): SaidLine | undefined {
+    const file = this.transcriptPaths.get(agentId);
+    if (!file || !isClaudeTranscript(file)) return undefined;
+    const said = lastAssistantLine(file);
+    const text = said ? safeLine(said.text) : undefined;
+    return text ? { ...said, text } : undefined;
   }
 
   /** The latest context-window accounting for an agent (current tokens + the real
@@ -1390,10 +1401,16 @@ const TOOL_LINE_MAX = 80;
  *  agent cannot disguise the line the owner decides by. */
 export function toolLine(tool: unknown, input: unknown): string | undefined {
   const d = toolDetail(tool, input);
-  if (!d) return undefined;
+  return d ? safeLine(d) : undefined;
+}
+
+/** Any agent text as one line the owner may read: redacted, without control
+ *  or invisible characters, at most 80 characters (toolLine, and the last
+ *  thing an agent said on its closing-time row). */
+export function safeLine(text: string): string | undefined {
   // Invisible format characters are removed, not spaced, so one hidden
   // inside a token cannot split it past redaction.
-  const plain = d.replace(/\p{Cf}+/gu, '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TOOL_LINE_SCAN_MAX);
+  const plain = text.replace(/\p{Cf}+/gu, '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TOOL_LINE_SCAN_MAX);
   // Cut by code point so an emoji is never split in half.
   const redacted = redactSecrets(plain);
   if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(redacted)) return undefined;
