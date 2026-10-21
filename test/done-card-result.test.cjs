@@ -36,6 +36,10 @@ test('the board line is the result\'s first line as plain text', () => {
   assert.equal(resultHeadline('1. Booked the van for Monday'), 'Booked the van for Monday');
   assert.equal(resultHeadline(undefined), '');
   assert.equal(resultHeadline('   \n  '), '');
+  // An underscore inside a name is part of it, not emphasis.
+  assert.equal(resultHeadline('Saved q3_sales_report.md in Office'), 'Saved q3_sales_report.md in Office');
+  assert.equal(resultHeadline('Emailed first_last_name@acme.com'), 'Emailed first_last_name@acme.com');
+  assert.equal(resultHeadline('Sent the _final_ quote to __Kelly__'), 'Sent the final quote to Kelly');
 });
 
 test('the card detail shows the result first on a Done card, and the board shows its first line', () => {

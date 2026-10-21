@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Named links mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  /* App tokens, copied from src/renderer/src/design/tokens.css (light). */
+  :root {
+    --cth-card: #FFFFFF; --cth-ink: #1E1B2E; --cth-ink-2: #4A4660; --cth-ink-3: #6C6884;
+    --cth-line: #E8E6F2; --cth-line-2: #DAD7EA; --cth-neutral-soft: #F0EFF5;
+    --cth-indigo: #6C5CE7; --cth-indigo-soft: #EEEBFD; --cth-indigo-text: #4338CA;
+    --cth-shadow-md: 0 1px 2px rgba(30,27,46,.05), 0 6px 18px rgba(62,52,140,.08);
+    --stage: #C9C4DE;
+    --cth-font-ui: "Sora", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--stage); font-family: var(--cth-font-ui); color: var(--cth-ink); padding: 24px 16px 48px; }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 4px; }
+  .lede { font-size: 12.5px; color: var(--cth-ink-2); margin: 0 0 20px; max-width: 70ch; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; align-items: start; }
+  .label { font-size: 12px; font-weight: 600; color: var(--cth-ink); margin: 0 0 8px; }
+  .label span { font-weight: 400; color: var(--cth-ink-2); }
+  .card { background: var(--cth-card); border-radius: 14px; box-shadow: 0 0 0 1px var(--cth-line-2), var(--cth-shadow-md); padding: 14px 16px; }
+  .title { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+  .who { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 11px; background: #DDF3F1; font-size: 11px; font-weight: 600; color: #155E58; }
+  .ago { font-size: 11px; color: var(--cth-ink-3); margin-inline-start: 6px; }
+  .q { font-size: 12.5px; line-height: 18px; margin: 10px 0 0; overflow-wrap: anywhere; }
+  .q p { margin: 0 0 1.1em; }
+  .q ol { padding-inline-start: 22px; margin: 0 0 1.1em; }
+  .q code { font-family: "JetBrains Mono", monospace; font-size: .9em; background: var(--cth-neutral-soft); border-radius: 4px; padding: 0 3px; }
+  .q a { color: var(--cth-indigo-text); }
+
+  /* Option A: named inline link, external glyph after it. */
+  a.named { color: var(--cth-indigo-text); font-weight: 500; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; white-space: nowrap; cursor: pointer; border-radius: 3px; }
+  a.named:hover { text-decoration-thickness: 2px; }
+  a.named:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 2px; }
+  a.named svg { width: 12px; height: 12px; vertical-align: -1px; margin-inline-start: 3px; }
+
+  /* Option B: a link chip, the file chip frame (DESIGN.md 7.8). */
+  button.linkchip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border: 0; border-radius: 6px; background: var(--cth-neutral-soft); font: inherit; font-size: 12px; cursor: pointer; vertical-align: middle; }
+  button.linkchip:hover { background: var(--cth-indigo-soft); }
+  button.linkchip .nm { font-weight: 500; color: var(--cth-ink); }
+  button.linkchip .act { font-weight: 600; color: var(--cth-indigo-text); }
+  button.linkchip svg { width: 14px; height: 14px; color: var(--cth-ink-3); }
+
+  .tip { display: inline-block; margin-top: 8px; font-family: "JetBrains Mono", monospace; font-size: 11px; background: var(--cth-ink); color: #fff; border-radius: 6px; padding: 4px 8px; }
+  .edge { margin-top: 28px; }
+  .edge table { width: 100%; border-collapse: collapse; background: var(--cth-card); border-radius: 12px; overflow: hidden; box-shadow: 0 0 0 1px var(--cth-line-2); font-size: 12px; }
+  .edge th, .edge td { text-align: start; padding: 8px 10px; border-bottom: 1px solid var(--cth-line); vertical-align: top; }
+  .edge th { font-weight: 600; color: var(--cth-ink-2); background: var(--cth-neutral-soft); }
+  .edge td.src { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--cth-ink-2); overflow-wrap: anywhere; }
+  @media (max-width: 480px) { body { padding: 16px; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="ext" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="mail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+  <symbol id="web" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 4 10 15 15 0 0 1-4 10 15 15 0 0 1-4-10 15 15 0 0 1 4-10z"/></symbol>
+</svg>
+
+<h1>Named links on Needs you cards</h1>
+<p class="lede">The same ask three ways. The agent wrote a bare URL in step 1. Today shows it raw; A and B show the app's name instead, with the full address in the tooltip. Hover the links.</p>
+
+<div class="grid">
+  <div>
+    <p class="label">Today <span>raw URL, wraps over two lines</span></p>
+    <div class="card">
+      <p class="title">Possible spam company in HubSpot</p>
+      <span class="who">Creed</span><span class="ago">50m ago</span>
+      <div class="q">
+        <p><strong>Please delete the myyahoo.com company in HubSpot, then tap done.</strong> Creed's tools can't delete records, so this one step is yours.</p>
+        <ol>
+          <li>Open <a href="#">https://app.hubspot.com/contacts/5773691/record/0-2/18164826678</a> (the company has no name, only the web address <code>myyahoo.com</code>)</li>
+          <li>Choose Actions, then Delete, and confirm</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <p class="label">A. Named link <span>app name, underlined, small arrow</span></p>
+    <div class="card">
+      <p class="title">Possible spam company in HubSpot</p>
+      <span class="who">Creed</span><span class="ago">50m ago</span>
+      <div class="q">
+        <p><strong>Please delete the myyahoo.com company in HubSpot, then tap done.</strong> Creed's tools can't delete records, so this one step is yours.</p>
+        <ol>
+          <li>Open <a class="named" href="#" title="https://app.hubspot.com/contacts/5773691/record/0-2/18164826678">HubSpot<svg aria-hidden="true"><use href="#ext"/></svg></a> (the company has no name, only the web address <code>myyahoo.com</code>)</li>
+          <li>Choose Actions, then Delete, and confirm</li>
+        </ol>
+      </div>
+      <span class="tip">app.hubspot.com/contacts/5773691/record/0-2/18164826678</span>
+    </div>
+  </div>
+
+  <div>
+    <p class="label">B. Link chip <span>same frame as the file chips</span></p>
+    <div class="card">
+      <p class="title">Possible spam company in HubSpot</p>
+      <span class="who">Creed</span><span class="ago">50m ago</span>
+      <div class="q">
+        <p><strong>Please delete the myyahoo.com company in HubSpot, then tap done.</strong> Creed's tools can't delete records, so this one step is yours.</p>
+        <ol>
+          <li>Open <button class="linkchip" title="https://app.hubspot.com/contacts/5773691/record/0-2/18164826678"><svg aria-hidden="true"><use href="#web"/></svg><span class="nm">HubSpot</span><span class="act">Open</span></button> (the company has no name, only the web address <code>myyahoo.com</code>)</li>
+          <li>Choose Actions, then Delete, and confirm</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="edge">
+  <p class="label">What option A shows for other links</p>
+  <table>
+    <tr><th>Agent wrote</th><th>Card shows</th><th>Why</th></tr>
+    <tr><td class="src">https://app.hubspot.com/contacts/…</td><td><a class="named" href="#">HubSpot<svg aria-hidden="true"><use href="#ext"/></svg></a></td><td>Known app host</td></tr>
+    <tr><td class="src">https://qbo.intuit.com/app/invoice?txnId=118</td><td><a class="named" href="#">QuickBooks<svg aria-hidden="true"><use href="#ext"/></svg></a></td><td>Known app host</td></tr>
+    <tr><td class="src">https://www.northwindcafe.com/menu/fall</td><td><a class="named" href="#">northwindcafe.com<svg aria-hidden="true"><use href="#ext"/></svg></a></td><td>Unknown host: the site's domain, no www</td></tr>
+    <tr><td class="src">[the company record](https://app.hubspot.com/…)</td><td><a class="named" href="#">the company record<svg aria-hidden="true"><use href="#ext"/></svg></a></td><td>Agent's own words kept</td></tr>
+    <tr><td class="src">[HubSpot](https://hubspot-login.example/…)</td><td><a class="named" href="#">HubSpot<svg aria-hidden="true"><use href="#ext"/></svg></a> <span style="color:var(--cth-ink-3)">(hubspot-login.example)</span></td><td>Words name an app the link doesn't go to: real site shown</td></tr>
+    <tr><td class="src">mailto:francis@example.com</td><td><a class="named" href="#">francis@example.com<svg aria-hidden="true"><use href="#mail"/></svg></a></td><td>Email: the address, mail icon (opens your email app)</td></tr>
+  </table>
+</div>
+</body>
+</html>

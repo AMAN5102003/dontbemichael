@@ -42,6 +42,10 @@ interface AgentControl {
 
 export class ControlRegistry {
   private readonly map = new Map<string, AgentControl>();
+  /** A steer some agents take another way: true means it was handled there
+   *  (Research's go through its trust layer, ship review D6.3). */
+  private divert: ((id: string, text: string) => boolean) | null = null;
+  setSteerDivert(fn: ((id: string, text: string) => boolean) | null): void { this.divert = fn; }
 
   private ensure(id: string): AgentControl {
     let c = this.map.get(id);
@@ -78,6 +82,7 @@ export class ControlRegistry {
   steer(id: string, text: string): void {
     const t = text.trim();
     if (!t) return;
+    if (this.divert?.(id, t.slice(0, 10000))) return;
     const q = this.ensure(id).steerQueue;
     if (q.length >= MAX_PENDING_STEERS) {
       // Drop the oldest so the newest instruction still reaches the next hook

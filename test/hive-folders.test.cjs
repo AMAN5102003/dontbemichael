@@ -48,7 +48,8 @@ test('a team member is told its own folder is private, and that the hive is off 
     { businessFolder: business }
   ));
   assert.ok(p.includes(`you work in ${finance}`), 'names its own folder');
-  assert.match(p, /read it for context before searching the internet/);
+  assert.match(p, /read it for context first/);
+  assert.doesNotMatch(p, /before searching the internet/, 'only Research uses the internet (issue #230)');
   assert.match(p, /It is private: only you, anyone sharing this folder, and Michael can open it/, 'its folder is private');
   assert.doesNotMatch(p, /Office folder/, 'no shared folder: company knowledge is the knowledge feature');
   assert.match(p, /is only for coordination: your memory notes, inbox and outbox\. Save documents, drafts and other work outside it\./);

@@ -18,7 +18,7 @@ const ts = require('typescript');
 
 const SHARED = path.join(__dirname, '..', 'src', 'shared');
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'agentprov-'));
-for (const name of ['claudeCommands', 'codexCommands', 'grokCommands', 'agentProvider']) {
+for (const name of ['claudeCommands', 'codexCommands', 'grokCommands', 'commandLine', 'agentProvider']) {
   const src = fs.readFileSync(path.join(SHARED, `${name}.ts`), 'utf8');
   const js = ts.transpileModule(src, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }
@@ -34,6 +34,31 @@ function test(name, fn) {
 }
 
 console.log('agent-provider registry tests');
+
+test('quoted executable paths infer their provider without splitting directory names', () => {
+  const cases = [
+    ['"C:\\Program Files\\Codex\\codex.exe" --model example', 'codex'],
+    ['"C:\\Tools\\claude.exe"', 'claude'],
+    ['"C:\\Agent Tools\\gemini.cmd"', 'gemini'],
+    ["'/opt/Agent Tools/gemini' --model example", 'gemini'],
+    ['"/opt/Agent Tools/gemini"', 'gemini'],
+    ['"C:\\Agent Tools\\custom.exe"', 'custom']
+  ];
+  for (const [command, provider] of cases) {
+    assert.strictEqual(ap.inferAgentProvider(command), provider, command);
+  }
+});
+
+test('command inference preserves bare commands, extensions, and explicit overrides', () => {
+  assert.strictEqual(ap.inferAgentProvider('codex --model example'), 'codex');
+  assert.strictEqual(ap.inferAgentProvider('C:\\Tools\\CODEX.EXE'), 'codex');
+  assert.strictEqual(ap.inferAgentProvider('gemini.cmd'), 'gemini');
+  assert.strictEqual(ap.inferAgentProvider('kimi.bat'), 'kimi');
+  assert.strictEqual(ap.inferAgentProvider('grok.ps1'), 'grok');
+  assert.strictEqual(ap.inferAgentProvider(undefined), 'claude');
+  assert.strictEqual(ap.inferAgentProvider('   '), 'claude');
+  assert.strictEqual(ap.inferAgentProvider('"C:\\Agent Tools\\codex.exe"', 'gemini'), 'gemini');
+});
 
 test('copilot is a recognized, selectable provider', () => {
   assert.ok(ap.isAgentProvider('copilot'), 'isAgentProvider("copilot")');

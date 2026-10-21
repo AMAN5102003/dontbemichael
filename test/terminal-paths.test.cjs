@@ -104,6 +104,43 @@ test('absolute, home, and Windows paths are all recognised', () => {
   assert.deepEqual(tokensIn('at C:\\Users\\x\\a.ts'), ['C:\\Users\\x\\a.ts']);
 });
 
+test('quoted paths with spaces keep their entire path, including the Windows drive', () => {
+  assert.deepEqual(
+    tokensIn('saved "C:\\Users\\Jane\\Business Reports\\summary.md"'),
+    ['C:\\Users\\Jane\\Business Reports\\summary.md']
+  );
+  assert.deepEqual(tokensIn("saved '/Users/Jane/Business Reports/summary.md'"), ['/Users/Jane/Business Reports/summary.md']);
+  assert.deepEqual(tokensIn('saved `~/Business Reports/summary.md`'), ['~/Business Reports/summary.md']);
+  assert.deepEqual(tokensIn('saved "./Business Reports/summary.md"'), ['./Business Reports/summary.md']);
+  assert.deepEqual(tokensIn('saved "../Business Reports/summary.md"'), ['../Business Reports/summary.md']);
+  assert.deepEqual(tokensIn('saved "\\Business Reports\\summary.md"'), ['\\Business Reports\\summary.md']);
+});
+
+test('quoted paths coexist with unquoted paths and preserve line suffix handling', () => {
+  assert.deepEqual(
+    tokensIn('see "./src/my folder/index.ts:42", build/icon.png and \'./docs/my notes.md\''),
+    ['./src/my folder/index.ts', 'build/icon.png', './docs/my notes.md']
+  );
+});
+
+test('quoted prose keeps linking the file name inside it', () => {
+  assert.deepEqual(tokensIn('git commit -m "Update README.md"'), ['README.md']);
+  assert.deepEqual(tokensIn('error: "Could not read config.yml"'), ['config.yml']);
+  assert.deepEqual(tokensIn("Michael's notes: see plan.md' later"), ['plan.md']);
+});
+
+test('quoted prose that starts with a slash links only the file name inside it', () => {
+  assert.deepEqual(tokensIn('note: "/ see notes.md"'), ['notes.md']);
+  assert.deepEqual(tokensIn("note: '/ see notes.md'"), ['notes.md']);
+  assert.deepEqual(tokensIn('note: `./ then open plan.md`'), ['plan.md']);
+  // a real path with spaces inside its folder names still links whole
+  assert.deepEqual(tokensIn('saved "/Users/Jane/Business Reports/summary.md"'), ['/Users/Jane/Business Reports/summary.md']);
+});
+
+test('quoted versions and prose do not become file paths', () => {
+  assert.deepEqual(tokensIn('version "v0.4.5", cost \'0.92\', called `spring.thaw`'), []);
+});
+
 test('a dotted directory name cannot masquerade as an extension', () => {
   // extensionOf looks at the LAST segment only, so v1.2 here is not the extension.
   assert.equal(classifyPathToken('reports/v1.2/summary.md'), 'preview');
@@ -112,4 +149,47 @@ test('a dotted directory name cannot masquerade as an extension', () => {
 test('case does not decide the verdict', () => {
   assert.equal(classifyPathToken('README.MD'), 'preview');
   assert.equal(classifyPathToken('src/App.TSX'), 'edit');
+});
+
+test('a link covers the cells of its path, past wide characters and inside its quotes', () => {
+  // Value: protects=the underline and click land on the path when the line holds Chinese text or quotes; fails_when=string offsets are used as cell columns or the quotes are underlined; why_new=design review of #280; seam=none
+  const { linkCellRange } = loadTs('src/shared/terminalPaths.ts');
+  const cellsFor = (s) => [...s].flatMap((ch) => (/[一-鿿]/.test(ch) ? [{ chars: ch, width: 2 }, { chars: '', width: 0 }] : [{ chars: ch, width: 1 }]));
+  const line = '报告 "/tmp/a b.md"';
+  const raw = '"/tmp/a b.md"';
+  const start = line.indexOf(raw);
+  assert.deepEqual(linkCellRange(cellsFor(line), start, start + raw.length, raw), { startX: 7, endX: 17 });
+  const plain = 'see notes.md';
+  assert.deepEqual(linkCellRange(cellsFor(plain), 4, 12, 'notes.md'), { startX: 5, endX: 12 });
+});
+
+test('a dotfile is named by its type: .gitignore, .env and .npmrc open as text', () => {
+  // Value: protects=dotfiles on the edit list open for editing instead of revealing; fails_when=the dotfile rule is dropped or extensionOf's no-extension answer wins; why_new=gitignore, dockerignore, env and npmrc never matched a real dotfile; seam=none; no_claim=a long dotfile name as a token, which waits on the longer extension fix (#190)
+  for (const p of ['.gitignore', 'src/.dockerignore', './.env', '~/.npmrc', 'C:\\proj\\.editorconfig']) {
+    assert.equal(classifyPathToken(p), 'edit', p);
+  }
+  assert.deepEqual(tokensIn('wrote ./.env and ~/.npmrc'), ['./.env', '~/.npmrc']);
+  // A dotfile that is not on a list is still only revealed, and a name with a
+  // real extension after the dot keeps it.
+  assert.equal(classifyPathToken('~/.bashrc'), 'reveal');
+  assert.equal(classifyPathToken('.env.local'), 'reveal');
+  assert.equal(classifyPathToken('src/.eslintrc.json'), 'edit');
+});
+
+test('extensions longer than 8 characters match without truncation and classify correctly', () => {
+  // Bare properties file (10-char extension in EDIT_EXTS)
+  assert.deepEqual(tokensIn('check application.properties for db config'), ['application.properties']);
+  assert.equal(classifyPathToken('application.properties'), 'edit');
+
+  // Quoted path containing spaces and explicit path prefix
+  assert.deepEqual(tokensIn('saved "./My Docs/app.properties" in project'), ['./My Docs/app.properties']);
+  assert.equal(classifyPathToken('./My Docs/app.properties'), 'edit');
+
+  // Windows path with long extension
+  assert.deepEqual(tokensIn('configured C:\\proj\\settings.properties successfully'), ['C:\\proj\\settings.properties']);
+  assert.equal(classifyPathToken('C:\\proj\\settings.properties'), 'edit');
+
+  // Existing short extensions and version-like strings behave correctly
+  assert.deepEqual(tokensIn('built src/index.ts in v0.4.5 after 1.5 hours'), ['src/index.ts']);
+  assert.equal(classifyPathToken('src/index.ts'), 'edit');
 });

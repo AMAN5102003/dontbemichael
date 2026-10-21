@@ -1,4 +1,5 @@
-import { useId, useState, type CSSProperties } from 'react';
+import { useId, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
+import { clipBoxOf, placeInfoTip } from './infoTipPlacement';
 
 /**
  * An info icon that explains a field on hover or keyboard focus, so screens
@@ -6,12 +7,30 @@ import { useId, useState, type CSSProperties } from 'react';
  * "one of the design goal every where should be make design less verbose").
  */
 /** `align="end"` opens the bubble toward the start side, for an icon at the
- *  end of a row inside a clipping card (it would run off the card's edge). */
+ *  end of a row inside a clipping card (it would run off the card's edge).
+ *  Either way, a bubble that would be cut off by its dialog or the window
+ *  opens toward the side with room, above the icon if need be (#232). */
 export function InfoTip({ text, label, align = 'start' }: { text: string; label?: string; align?: 'start' | 'end' }) {
   const [open, setOpen] = useState(false);
+  const [flip, setFlip] = useState({ inline: false, above: false });
+  const anchor = useRef<HTMLSpanElement>(null);
+  const tip = useRef<HTMLSpanElement>(null);
   const id = useId();
+  // Measured before paint, so a bubble that has to move never shows cut off first.
+  useLayoutEffect(() => {
+    const a = anchor.current;
+    const b = tip.current;
+    if (!open || !a || !b) return;
+    const ltr = getComputedStyle(a).direction !== 'rtl';
+    const opensRight = (align === 'start') === ltr;
+    const place = placeInfoTip(a.getBoundingClientRect(), { width: b.offsetWidth, height: b.offsetHeight }, clipBoxOf(a), { opensRight });
+    const next = { inline: place.opensRight !== opensRight, above: place.above };
+    setFlip((f) => (f.inline === next.inline && f.above === next.above ? f : next));
+  }, [open, text, align]);
+  const toEnd = (align === 'end') !== flip.inline;
   return (
     <span
+      ref={anchor}
       style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
@@ -35,7 +54,10 @@ export function InfoTip({ text, label, align = 'start' }: { text: string; label?
         </svg>
       </button>
       {open && (
-        <span id={id} role="tooltip" style={align === 'end' ? { ...bubble, insetInlineStart: 'auto', insetInlineEnd: -8 } : bubble}>{text}</span>
+        <span
+          ref={tip} id={id} role="tooltip"
+          style={{ ...bubble, ...(toEnd ? { insetInlineStart: 'auto', insetInlineEnd: -8 } : {}), ...(flip.above ? { top: 'auto', bottom: 'calc(100% + 6px)' } : {}) }}
+        >{text}</span>
       )}
     </span>
   );

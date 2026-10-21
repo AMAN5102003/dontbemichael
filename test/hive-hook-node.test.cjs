@@ -22,6 +22,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const loadTs = require('./load-ts.cjs');
+const { windowsOnly } = require('./platform.cjs');
 
 const { HiveManager } = loadTs('src/main/hive.ts');
 
@@ -52,6 +53,9 @@ function isolatedHomes(t, prefix, root) {
 
 const launcherIn = (home) =>
   path.join(home, 'hive', 'bin', POSIX ? 'hive-node' : 'hive-node.cmd');
+
+/** The two bundled-node shims: the launcher and the PATH-visible `node`. */
+const shimsIn = (hive, home) => [launcherIn(home), path.join(hive.runtimeBinDir(), POSIX ? 'node' : 'node.cmd')];
 
 /** Every file under `dir`. */
 function walk(dir, out = []) {
@@ -115,8 +119,59 @@ test('ensureHive writes an executable bundled-node launcher', async (t) => {
   assert.equal(fs.existsSync(launcher), true);
   const body = fs.readFileSync(launcher, 'utf8');
   assert.match(body, /ELECTRON_RUN_AS_NODE=1/, 'without this the binary opens a second app window');
-  assert.ok(body.includes(process.execPath), 'execPath is re-baked each bootstrap so an app move/update heals');
+  assert.ok(body.includes(process.execPath), 'execPath is re-baked when it differs, so an app move/update heals');
   if (POSIX) assert.ok(fs.statSync(launcher).mode & 0o111, 'must be executable');
+});
+
+test('a second bootstrap leaves unchanged bundled-node shims alone', async (t) => {
+  // ensureHive runs on every task write and every spawn. On Windows something
+  // holds a running .cmd open while a hook runs through it, so a rewrite of the
+  // same bytes failed with EBUSY and logged an error on every board change. A
+  // read-only file refuses a write the same way on every platform (as a normal
+  // user, which CI is), so it stands in for that lock here: an unchanged shim
+  // must not be written at all.
+  const home = tmpHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  hive.ensureHive();
+  const shims = shimsIn(hive, home);
+  const bodies = shims.map((p) => fs.readFileSync(p, 'utf8'));
+  const before = shims.map((p) => fs.statSync(p).mtimeMs);
+
+  const errors = [];
+  const realError = console.error;
+  console.error = (...args) => { errors.push(args.map(String).join(' ')); };
+  for (const p of shims) fs.chmodSync(p, 0o444);
+  try {
+    hive.ensureHive();
+  } finally {
+    console.error = realError;
+    for (const p of shims) fs.chmodSync(p, 0o644);
+  }
+
+  assert.deepEqual(errors.filter((line) => /writeNodeLauncher|writeRuntimeShims/.test(line)), [], 'no write was attempted');
+  shims.forEach((p, i) => {
+    assert.equal(fs.readFileSync(p, 'utf8'), bodies[i], p);
+    assert.equal(fs.statSync(p).mtimeMs, before[i], `${p} was not touched`);
+  });
+});
+
+test('shims left by another binary are re-baked on the next bootstrap', async (t) => {
+  const home = tmpHome();
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  hive.ensureHive();
+  const shims = shimsIn(hive, home);
+  const bodies = shims.map((p) => fs.readFileSync(p, 'utf8'));
+
+  // An app update or move: the shims on disk name the old executable.
+  shims.forEach((p, i) => fs.writeFileSync(p, bodies[i].replace(process.execPath, path.join(home, 'old-app')), 'utf8'));
+  hive.ensureHive();
+
+  shims.forEach((p, i) => {
+    assert.equal(fs.readFileSync(p, 'utf8'), bodies[i], `execPath is re-baked in ${p} when it differs`);
+    if (POSIX) assert.ok(fs.statSync(p).mode & 0o111, `${p} must still be executable`);
+  });
 });
 
 test('the claude hook + statusLine commands run through the launcher', async (t) => {
@@ -216,6 +271,65 @@ test('Codex hook commands survive a hive path containing spaces', { skip: !POSIX
   assert.equal(after.code, 0, `Codex hook failed from a space-containing hive path: ${after.stderr}`);
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.ok(received.length > 0, 'the quoted hook command never reached HIVE_SOCK');
+});
+
+/** Run `command` the way Codex runs a hook on Windows: ComSpec, `/C`, then the
+ *  command. `raw` is today's Codex (codex-rs command_runner.rs wraps it in one
+ *  pair of quotes, unescaped); otherwise it goes as an ordinary escaped
+ *  argument, as codex-cli 0.162.1 passes it. */
+function runLikeCodexOnWindows(command, env, raw) {
+  return new Promise((resolve) => {
+    const child = spawn(process.env.ComSpec || 'cmd.exe', ['/C', raw ? `"${command}"` : command], {
+      env, windowsVerbatimArguments: raw, stdio: ['pipe', 'pipe', 'pipe']
+    });
+    let stderr = '';
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.stdin.on('error', () => { /* the shim may exit before reading */ });
+    child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', session_id: 's1' }));
+    child.on('close', (code) => resolve({ code, stderr }));
+  });
+}
+
+test('Windows Codex hook commands survive a hive path containing spaces', { ...windowsOnly('cmd.exe runs Codex hooks there'), timeout: 20_000 }, async (t) => {
+  // The default office is ~/HarnessAgents, so a Windows user name with a space
+  // ("Jane Smith") puts one in every hook path.
+  const isolated = isolatedHomes(t);
+  const harness = `${isolated.harness} space`;
+  const hive = new HiveManager(() => harness);
+  hive.ensureHive();
+  const codexHome = hive.installCodexHooks(path.join(harness, 'hive', 'agents', 'a1'), 'a1');
+  const config = fs.readFileSync(path.join(codexHome, 'config.toml'), 'utf8');
+  const commands = [...config.matchAll(/^command\s*=\s*(.+)$/gm)].map((m) => JSON.parse(m[1].trim()));
+
+  assert.equal(commands.length, 8, 'every Codex lifecycle hook must be generated');
+  for (const c of commands) assert.doesNotMatch(c, /[\s"]/, `no space or quote for cmd.exe to split or mangle: ${c}`);
+  const body = fs.readFileSync(path.join(hive.runtimeBinDir(), `${commands[0]}.cmd`), 'utf8');
+  assert.match(body, /ELECTRON_RUN_AS_NODE=1/, 'without this the binary opens a second app window');
+
+  // The agent's PATH ends with the runtime folder (pty.ts withHiveRuntimeFallback).
+  const pipe = `\\\\.\\pipe\\md-codex-space-${process.pid}-${Date.now()}`;
+  const received = [];
+  const server = net.createServer((conn) => {
+    let buf = '';
+    conn.on('error', () => { /* the shim may hang up first */ });
+    conn.on('data', (d) => { buf += d; });
+    conn.on('close', () => { if (buf) received.push(buf); });
+    conn.write(JSON.stringify({ ok: true }) + '\n', () => conn.end());
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(pipe, resolve);
+  });
+  t.after(() => server.close());
+  const env = { ...process.env, PATH: `${process.env.PATH};${hive.runtimeBinDir()}`, HIVE_SOCK: pipe, AGENT_ID: 'a1' };
+
+  for (const raw of [true, false]) {
+    const before = received.length;
+    const r = await runLikeCodexOnWindows(commands[0], env, raw);
+    assert.equal(r.code, 0, `${raw ? 'raw' : 'escaped'} Codex hook failed from a space-containing hive path: ${r.stderr}`);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.ok(received.length > before, `the ${raw ? 'raw' : 'escaped'} hook command never reached HIVE_SOCK`);
+  }
 });
 
 test('POSIX Gemini and Antigravity hooks survive a hive path containing spaces', { skip: !POSIX }, async (t) => {
@@ -412,8 +526,11 @@ test('Gemini gets isolated lifecycle settings and an interactive protocol seed',
   assert.equal(settings.hooksConfig.enabled, true);
   assert.equal(settings.hooks.BeforeTool[0].matcher, '.*');
   assert.ok(settings.hooks.AfterAgent[0].hooks[0].command.includes('gemini-hook.cjs'));
-  assert.equal(injection.args[0], '-i');
-  assert.match(injection.args[1], /HIVE PROTOCOL/);
+  // The seed comes after Gemini's own flags (its workspace folders).
+  const seed = injection.args.indexOf('-i');
+  assert.ok(seed >= 0, 'gemini spawn carries -i');
+  assert.equal(seed, injection.args.length - 2);
+  assert.match(injection.args[seed + 1], /HIVE PROTOCOL/);
 });
 
 test('a hook fires with NO node on PATH, and its payload reaches HIVE_SOCK', { skip: !POSIX }, async (t) => {

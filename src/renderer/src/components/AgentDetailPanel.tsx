@@ -1,5 +1,6 @@
+import { RESEARCH_ID } from '../../../shared/research';
 import { CapabilitiesTab } from './CapabilitiesTab';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { PtyTerminalView } from './PtyTerminalView';
@@ -24,6 +25,7 @@ import { closeConfirmText } from './triggers/ScheduleList';
 import { OneOnOneLine, OwnerViaMichaelBar } from './OwnerViaMichaelBar';
 import { PanelCard, PanelHeader } from '@/shell/PanelChrome';
 import { roleOf } from '@/scene/studio/layout';
+import { SilentPanelLine } from './SilentEngine';
 
 export interface AgentDetailPanelProps {
   agent: Agent;
@@ -34,6 +36,15 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const [openTerminalState, setOpenTerminalState] = useState<'idle' | 'opening' | 'ok' | 'error'>('idle');
   const [openTerminalError, setOpenTerminalError] = useState<string | undefined>();
   const [editOpen, setEditOpen] = useState(false);
+  // Change engine on a not reporting card opens Edit here, the engine open (issue #326).
+  const [editEngine, setEditEngine] = useState(false);
+  const editRequest = useStore(s => s.editAgentRequest);
+  const clearEditRequest = useStore(s => s.clearEditAgentRequest);
+  useEffect(() => {
+    // Used once: a later visit to this panel never opens Edit by itself.
+    if (editRequest && editRequest.agentId === agent.id) { setEditEngine(editRequest.engine); setEditOpen(true); clearEditRequest(); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editRequest?.seq]);
 
   const archiveAgent = useStore(s => s.archiveAgent);
   const updateAgent = useStore(s => s.updateAgent);
@@ -77,6 +88,8 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const onKill = async () => {
     if (!agent.ptyId) return;
     if (!confirm(closeConfirmText(agent.id, agent.name, t))) return;
+    // Closing Research turns it off: its waiting asks go back (issue #230).
+    if (agent.id === RESEARCH_ID) await window.cth.researchOff().catch(() => undefined);
     // The owner is closing this agent on purpose: its schedules pause (design
     // 6A). A crash or a quit only archives it and leaves them running.
     await window.cth.closeAgentByOwner(agent.id).catch(() => undefined);
@@ -138,10 +151,13 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
       {isReal && <AgentControlStrip agentId={agent.id} />}
 
       {/* Tabs */}
+      {/* Its engine isn't reporting (issue #326, SD14): one amber line. */}
+      <SilentPanelLine agentId={agent.id} name={agent.name} />
       <SidebarTabs current={sidebarTab} accent={agent.accent} onChange={setSidebarTab} />
 
-      {/* Active tab body — fills remaining space */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+      {/* Active tab body — fills remaining space. data-panel-body: a wide
+          panel keeps its text at most 720 px across, the terminal full width. */}
+      <div data-panel-body data-tab={sidebarTab} style={{ flex: 1, minHeight: 0, display: 'flex' }}>
         {sidebarTab === 'terminal' && (
           isReal && agent.ptyId ? (
             isFullscreenedHere ? (
@@ -206,7 +222,7 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
       </div>
 
       {editOpen && (
-        <EditAgentModal agent={agent} onClose={() => setEditOpen(false)} />
+        <EditAgentModal agent={agent} onClose={() => { setEditOpen(false); setEditEngine(false); }} engineOpen={editEngine} />
       )}
     </PanelCard>
   );

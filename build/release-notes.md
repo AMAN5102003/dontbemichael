@@ -1,4 +1,5 @@
-- **Michael alone** keeps the task board.
-- **Done is final**: only you reopen a card.
-- **A parked step wakes** at its time.
-- **One numbered ask** per activity.
+- **Company foundations** for every job.
+- **Company knowledge** you can open and edit.
+- **No switches** for knowledge search.
+- **Pulse** shows what it sees early.
+- **Windows** reads scans and photos.

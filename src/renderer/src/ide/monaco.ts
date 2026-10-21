@@ -86,6 +86,38 @@ function defineThemes(m: typeof monaco): void {
       'diffEditor.removedLineBackground': '#FF6B6B22'
     }
   });
+  // Dark values match tokens.css data-cth-theme='dark' (card / ink / cream-200).
+  m.editor.defineTheme('cth-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [
+      { token: '', foreground: 'ECEAF4', background: '1F1E2B' },
+      { token: 'comment', foreground: 'A5A2B8', fontStyle: 'italic' },
+      { token: 'keyword', foreground: 'B197FC' },
+      { token: 'string', foreground: '6BCF7F' },
+      { token: 'number', foreground: 'FF8C90' },
+      { token: 'type', foreground: '4ECDC4' },
+      { token: 'function', foreground: 'FFA07A' },
+      { token: 'variable', foreground: 'ECEAF4' },
+      { token: 'delimiter', foreground: 'A5A2B8' }
+    ],
+    colors: {
+      'editor.background': '#1F1E2B',
+      'editor.foreground': '#ECEAF4',
+      'editorLineNumber.foreground': '#A5A2B8',
+      'editorLineNumber.activeForeground': '#CFCCDD',
+      'editor.selectionBackground': '#3D3420',
+      'editor.lineHighlightBackground': '#2A2938',
+      'editorCursor.foreground': '#FF8C90',
+      'editorGutter.background': '#24233A',
+      'editorWidget.background': '#2A2938',
+      'editorIndentGuide.background1': '#34324A',
+      'diffEditor.insertedTextBackground': '#6BCF7F33',
+      'diffEditor.removedTextBackground': '#FF6B6B33',
+      'diffEditor.insertedLineBackground': '#6BCF7F22',
+      'diffEditor.removedLineBackground': '#FF6B6B22'
+    }
+  });
 }
 
 let configured = false;
@@ -100,7 +132,10 @@ export function setupMonaco(): typeof monaco {
   return monaco;
 }
 
-export const CTH_MONACO_THEME = 'cth-light';
+/** Monaco theme id for the current app-wide light/dark switch. */
+export function monacoThemeFor(theme: 'light' | 'dark'): 'cth-light' | 'cth-dark' {
+  return theme === 'dark' ? 'cth-dark' : 'cth-light';
+}
 
 /** Map a filename to a Monaco language id (used to set the model language). */
 export function languageForPath(path: string): string {

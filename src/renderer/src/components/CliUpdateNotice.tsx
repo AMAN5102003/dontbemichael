@@ -15,6 +15,7 @@
  * click on it brings the toast back.
  */
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Spark } from '@/components/UpdateToast';
 import { cliUpdateToastVisible, type CliUpdateStatus } from '@shared/cliUpdate';
 
@@ -46,6 +47,7 @@ function useCliUpdate(): CliUpdateStatus | null {
 }
 
 export function CliUpdateToast({ onCloseAndReopen }: { onCloseAndReopen: (liveAgents: number) => Promise<boolean> }) {
+  const { t } = useTranslation();
   const status = useCliUpdate();
   const [laterFor, setLaterFor] = useState<string | null>(readLater);
 
@@ -69,20 +71,20 @@ export function CliUpdateToast({ onCloseAndReopen }: { onCloseAndReopen: (liveAg
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <Spark />
         <span className="cth-toast-title">
-          Your team has an upgrade waiting
+          {t('cliUpdate.title')}
         </span>
       </div>
       <span role="status" className="cth-toast-body">
-        Claude Code {status.installed} is installed, but {status.behind === 1 ? '1 agent is' : `${status.behind} agents are`} still
-        on the older version. Close the office and reopen to switch everyone over. Each agent
-        saves its work first, so nothing is lost. Nothing restarts until you say so.
+        {status.behind === 1
+          ? t('cliUpdate.body', { version: status.installed })
+          : t('cliUpdate.bodyPlural', { version: status.installed, count: status.behind })}
       </span>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button className="cth-toast-btn" onClick={later}>
-          Later
+          {t('cliUpdate.later')}
         </button>
         <button className="cth-toast-btn primary" onClick={go}>
-          Close office &amp; reopen
+          {t('cliUpdate.closeAndReopen')}
         </button>
       </div>
     </div>
@@ -91,13 +93,14 @@ export function CliUpdateToast({ onCloseAndReopen }: { onCloseAndReopen: (liveAg
 
 /** Title-bar chip: quiet, but there for as long as agents are behind. */
 export function CliUpdateBadge() {
+  const { t } = useTranslation();
   const status = useCliUpdate();
   if (!status) return null;
   return (
     <button
       className="cth-titlebar-nodrag"
       onClick={() => window.dispatchEvent(new Event(SHOW_EVENT))}
-      title={`Claude Code ${status.installed} is installed. Close the office and reopen to use it.`}
+      title={t('cliUpdate.chipTitle', { version: status.installed })}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         height: 26, padding: '0 10px', margin: 0,
@@ -106,7 +109,7 @@ export function CliUpdateBadge() {
         fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer'
       }}
     >
-      Team upgrade ready
+      {t('cliUpdate.chip')}
     </button>
   );
 }
