@@ -176,3 +176,51 @@ test('the open card, Task detail and Michael\'s replies show chips in place of p
     assert.doesNotMatch(JSON.stringify(a), /[–—]/, `${loc}: no dashes`);
   }
 });
+
+test('a file named without its ending opens from its chip when the office holds it (owner, 2026-10-19)', async (t) => {
+  // Value: protects=the Open chip for an ask that names a file by its title, like Dwight's `First contact follow up draft 2026-10-19` for the .md in Sales; fails_when=a name with no ending stays plain text although the file is there, an amount, address or name with no file becomes a chip, or a name reaches outside the office's folders; why_new=the chip needed a file ending before; seam=none; no_claim=the rendered chip (FileText pins and a live look)
+  const A = loadTs('src/shared/askFiles.ts');
+  const { askFileByName } = loadTs('src/main/fs.ts');
+  const q = '**Dwight needs two decisions.** The follow up draft is in the Sales folder as `First contact follow up draft 2026-10-19`. It costs `$1,200` for `IQM`; write to `ann@example.com`.\n```\n`not a file`\n```';
+  assert.deepEqual(askFilePaths(q), [], 'as written, no ending: this is the bug the owner saw');
+  assert.deepEqual(A.askFileNames(q), ['First contact follow up draft 2026-10-19', 'IQM'], 'amounts, addresses and fenced code are never looked up');
+
+  // The real path: Windows CI's temp folder comes back in its short 8.3 form (RUNNER~1).
+  const office = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ask-names-')));
+  t.after(() => fs.rmSync(office, { recursive: true, force: true }));
+  const sales = path.join(office, 'Sales');
+  fs.mkdirSync(sales);
+  fs.writeFileSync(path.join(sales, 'First contact follow up draft 2026-10-19.md'), '# Draft\n');
+  fs.writeFileSync(path.join(sales, 'Plan.docx'), 'x');
+  fs.writeFileSync(path.join(sales, 'Plan.md'), 'x');
+  const outside = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'ask-names-out-')));
+  t.after(() => fs.rmSync(outside, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(outside, 'Secret.md'), 'x');
+  const roots = await resolveAskFileRoots([office, sales]);
+
+  const found = await askFileByName('First contact follow up draft 2026-10-19', roots);
+  assert.equal(found.path, fs.realpathSync(path.join(sales, 'First contact follow up draft 2026-10-19.md')), "found in the raiser's folder");
+  assert.equal(found.verdict, 'open');
+  assert.equal(found.tab, true, 'Markdown opens in an office tab');
+  assert.equal((await askFileByName('Sales/First contact follow up draft 2026-10-19', roots)).verdict, 'open', 'a folder before the name works too');
+  assert.equal((await askFileByName('Plan', roots)).path.endsWith('Plan.md'), true, 'Markdown is tried first');
+  assert.equal(await askFileByName('IQM', roots), null, 'no file: the name stays plain text');
+  assert.equal(await askFileByName(`../${path.basename(outside)}/Secret`, roots), null, 'never outside the office');
+  assert.equal(await askFileByName(path.join(outside, 'Secret'), roots), null, 'a full path outside the office is not opened either');
+
+  const shown = A.withNamedFiles(q, { 'First contact follow up draft 2026-10-19': found.path, 'not a file': '/nope' });
+  assert.deepEqual(askFilePaths(shown), [found.path], 'the found name draws as its file chip');
+  assert.match(shown, /```\n`not a file`\n```/, 'fenced code is left as written');
+});
+
+test('FileText looks names up and Michael names files by full path with their ending', () => {
+  // Value: protects=the wiring of the name lookup into every place questions show, and the owner-approved rule change (D1, 2026-10-19); fails_when=FileText stops looking names up or rendering the swapped text, or the rule drops back to "file names"; why_new=new behavior; seam=none; no_claim=Michael following the rule (prompt, not evaluated)
+  const chip = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/FileChip.tsx'), 'utf8');
+  assert.match(chip, /const lookup = window\.cth\.askFileNames as typeof window\.cth\.askFileNames \| undefined;\n    if \(!names\.length \|\| !lookup\) return;/, 'a window without the lookup keeps the names as text, never crashes');
+  assert.match(chip, /void lookup\(names, \{ raisedBy, assignee \}\)/);
+  assert.match(chip, /<MarkdownPreview source=\{shown\}/);
+  const main = fs.readFileSync(path.resolve(__dirname, '../src/main/index.ts'), 'utf8');
+  assert.match(main, /ipcMain\.handle\('fs:askFileNames'[\s\S]{0,600}askFileByName\(n, roots\)/);
+  const hive = fs.readFileSync(path.resolve(__dirname, '../src/main/hive.ts'), 'utf8');
+  assert.match(hive, /name each file by its full path, with its file ending, in backticks, so the owner can open it/);
+});

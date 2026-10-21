@@ -25,7 +25,18 @@ export type TelemetryKind =
   | 'advice-applied'
   // Team at work and Kept safe (proposal 3): working time a backfill read from
   // a past session, a trust layer decision, a step a setting stopped.
-  | 'busy' | 'trust' | 'refused';
+  | 'busy' | 'trust' | 'refused'
+  // A message held because the check could not run (the hive's own line, so
+  // the held count and the held list come from one event, owner 2026-10-16).
+  | 'trust-held'
+  // One per message the check let through or stopped (owner, 2026-10-16).
+  | 'trust-checked'
+  // A note new to a member's memory index, by id and source, never its text
+  // (Learning, owner 2026-10-18: an edit or a repeat is not a new note).
+  | 'note-added'
+  // Company foundations (office-foundations.md, eng finding 4): a question
+  // answered, changed or cleared, or work that hit it while empty, by id.
+  | 'foundation';
 
 export interface TelemetryEvent {
   agentId: string | null;

@@ -34,12 +34,12 @@ test('every column has its own empty line, in every locale', () => {
       assert.ok(typeof s === 'string' && s.trim(), `${loc} kanban.${emptyKeys[col]}`);
       assert.doesNotMatch(s, /Michael/, `${loc} kanban.${emptyKeys[col]} names the manager through {{godName}}`);
     }
-    assert.ok(typeof k.noMatches === 'string' && k.noMatches.trim(), `${loc} kanban.noMatches`);
+    assert.ok(typeof k.noMatchingTasks === 'string' && k.noMatchingTasks.trim(), `${loc} kanban.noMatchingTasks`);
     assert.equal(k.empty, undefined, `${loc} still carries the old generic kanban.empty`);
   }
 });
 
 test('a filter with no match says no match, not an empty board', () => {
-  assert.match(kanban, /filtering \? t\('kanban\.noMatches'\) : t\(EMPTY_KEYS\[col\.key\], \{ godName \}\)/);
+  assert.match(kanban, /isFiltered \? t\('kanban\.noMatchingTasks'\) : t\(EMPTY_KEYS\[col\.key\], \{ godName \}\)/);
   assert.doesNotMatch(kanban, /t\('kanban\.empty'\)/);
 });

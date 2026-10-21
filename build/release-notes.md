@@ -1,4 +1,5 @@
-- **Pulse** shows work done and what it costs.
-- **Ask me** choices answer with a click.
-- **Delete** a team member for good.
-- **Stuck members** restart and carry on.
+- **Company foundations** for every job.
+- **Company knowledge** you can open and edit.
+- **No switches** for knowledge search.
+- **Pulse** shows what it sees early.
+- **Windows** reads scans and photos.

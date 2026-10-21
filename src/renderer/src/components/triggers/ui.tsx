@@ -86,9 +86,11 @@ export function Callout({ children, tone = 'warn' }: { children: ReactNode; tone
 
 /** An on/off switch. `role="switch"` + `aria-checked` so a screen reader hears
  *  "Run Triage the inbox, on" rather than a bare button (design 12A); `label`
- *  names what it switches. */
-export function Toggle({ on, onClick, onLabel, offLabel, label, disabled }: {
-  on: boolean; onClick: () => void; onLabel?: string; offLabel?: string; label?: string; disabled?: boolean;
+ *  names what it switches. `disabled` means busy. `unavailable` means it cannot
+ *  be used yet: it keeps the owner's position, greyed, stays focusable and
+ *  speaks `reason` (Pulse Compare, design D4, 2026-10-16). */
+export function Toggle({ on, onClick, onLabel, offLabel, label, disabled, unavailable, reason }: {
+  on: boolean; onClick: () => void; onLabel?: string; offLabel?: string; label?: string; disabled?: boolean; unavailable?: boolean; reason?: string;
 }) {
   const { t } = useTranslation();
   return (
@@ -98,12 +100,14 @@ export function Toggle({ on, onClick, onLabel, offLabel, label, disabled }: {
       aria-checked={on}
       aria-label={label}
       aria-busy={disabled || undefined}
+      aria-disabled={unavailable || undefined}
+      aria-description={unavailable ? reason : undefined}
       disabled={disabled}
-      onClick={onClick}
+      onClick={unavailable ? undefined : onClick}
       style={{
         // v2 switch (branding/DESIGN.md 7.12): the word, then a pill track.
         display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0, border: 'none', background: 'transparent',
-        cursor: disabled ? 'progress' : 'pointer', flexShrink: 0, opacity: disabled ? 0.6 : 1,
+        cursor: disabled ? 'progress' : unavailable ? 'default' : 'pointer', flexShrink: 0, opacity: disabled ? 0.6 : unavailable ? 0.5 : 1,
         fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, lineHeight: '18px',
         color: on ? 'var(--cth-green-text)' : 'var(--cth-ink-3)'
       }}

@@ -53,6 +53,13 @@ test('an explicit --permission-mode in the request always wins over auto-mode', 
   assert.deepEqual(l.args, ['--permission-mode', 'plan']);
 });
 
+test('a stance written as flag=value wins over auto-mode too', () => {
+  // Otherwise claude gets `--permission-mode=plan --permission-mode bypassPermissions`
+  // and runs on the last one, so the safe mode asked for becomes bypass.
+  assert.deepEqual(launch({ requestCommand: 'claude --permission-mode=plan', autoMode: true }).args, ['--permission-mode=plan']);
+  assert.deepEqual(launch({ requestCommand: 'codex --sandbox=read-only', autoMode: true }).args, ['--sandbox=read-only']);
+});
+
 test('auto-mode OFF appends nothing', () => {
   assert.deepEqual(launch({ requestCommand: 'claude', autoMode: false }).args, []);
   assert.deepEqual(launch({ requestCommand: 'codex', autoMode: false }).args, []);

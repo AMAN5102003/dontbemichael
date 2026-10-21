@@ -21,20 +21,47 @@ import type Database from 'better-sqlite3';
 import { CostFold } from '../shared/costFold';
 import { dayKey, type MemberDay, type CardFact, type MailDecision, type MailDecisionKind } from '../shared/teamPerformance';
 import type { TelemetryStore, TelemetryRow } from './telemetryStore';
-import { trustKeys, refusalKey, REFUSAL_GATES, type RefusalGate } from '../shared/pulseSafety';
+import type { AddedNote } from '../shared/teamLearning';
+import { trustKeys, checkedKeys, refusalKey, REFUSAL_GATES, type RefusalGate } from '../shared/pulseSafety';
 
 export const RUN_IDLE_END_MS = 2 * 60_000;
 export const RUN_CAP_MS = 60 * 60_000;
 export const RAW_KEEP_MS = 400 * 86_400_000;
+/** A session's saved running total is dropped once it has not moved for this
+ *  long. Sessions end at closing time, and a new one counts from zero anyway. */
+export const COST_KEY_KEEP_MS = 30 * 86_400_000;
 /** One request's working time counts at most this much (a reply left open overnight is not work). */
 export const TURN_CAP_MS = 60 * 60_000;
 const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit']);
 
 interface AgentState { lastStop: number; lastActivity: number; turnStart?: number }
 interface OpenRun { id: number; agentId: string; missionId: string; dispatched: number; start: number | null; usd: number; work: number; relay: boolean }
-interface FoldState { cursor: number; costs: Record<string, number>; agents: Record<string, AgentState>; away: boolean; lastPrune: number }
+interface FoldState {
+  cursor: number;
+  costs: Record<string, number>;
+  /** When each of `costs` last moved, so a quiet session's total can go. */
+  costsAt: Record<string, number>;
+  agents: Record<string, AgentState>;
+  away: boolean;
+  lastPrune: number;
+}
 
-const emptyState = (): FoldState => ({ cursor: 0, costs: {}, agents: {}, away: false, lastPrune: 0 });
+const emptyState = (): FoldState => ({ cursor: 0, costs: {}, costsAt: {}, agents: {}, away: false, lastPrune: 0 });
+
+/** The saved running totals without the ones that have not moved for
+ *  COST_KEY_KEEP_MS (two keys per agent and session, kept forever before).
+ *  A total from an older save, with no time yet, starts its clock now. */
+export function quietCostsDropped(s: Pick<FoldState, 'costs' | 'costsAt'>, now: number): Pick<FoldState, 'costs' | 'costsAt'> {
+  const costs: Record<string, number> = {};
+  const costsAt: Record<string, number> = {};
+  for (const [k, v] of Object.entries(s.costs)) {
+    const at = s.costsAt[k] ?? now;
+    if (now - at > COST_KEY_KEEP_MS) continue;
+    costs[k] = v;
+    costsAt[k] = at;
+  }
+  return { costs, costsAt };
+}
 
 export class TelemetryProcessor {
   constructor(
@@ -76,7 +103,10 @@ export class TelemetryProcessor {
         for (const r of rows) {
           if (r.kind !== 'cost' || !r.agentId) continue;
           const key = `${r.agentId}\t${String(r.attrs?.s ?? '')}`;
-          for (const k of [key, `${key}#t`]) { const v = fold.lastFor(k); if (v !== undefined) state.costs[k] = v; }
+          for (const k of [key, `${key}#t`]) {
+            const v = fold.lastFor(k);
+            if (v !== undefined) { state.costs[k] = v; state.costsAt[k] = this.now(); }
+          }
         }
         if (rows.length) state.cursor = rows[rows.length - 1].id;
         this.saveState(db, office, state);
@@ -192,6 +222,12 @@ export class TelemetryProcessor {
       case 'trust':
         for (const k of trustKeys(r.attrs ?? {})) this.safety(db, office, day, k);
         return;
+      case 'trust-checked':
+        for (const k of checkedKeys(r.attrs ?? {})) this.safety(db, office, day, k);
+        return;
+      case 'trust-held':
+        if (r.attrs?.way === 'in' || r.attrs?.way === 'out') this.safety(db, office, day, `${r.attrs.way}-held`);
+        return;
       case 'refused': {
         const gate = String(r.attrs?.gate ?? '') as RefusalGate;
         if (REFUSAL_GATES.includes(gate)) this.safety(db, office, day, refusalKey(gate));
@@ -242,7 +278,7 @@ export class TelemetryProcessor {
     try {
       db.prepare('DELETE FROM telemetry_events WHERE id IN (SELECT id FROM telemetry_events WHERE office = ? AND ts < ? ORDER BY id LIMIT 5000)')
         .run(office, this.now() - RAW_KEEP_MS);
-      this.saveState(db, office, { ...state, lastPrune: this.now() });
+      this.saveState(db, office, { ...state, ...quietCostsDropped(state, this.now()), lastPrune: this.now() });
       const pages = db.pragma('page_count', { simple: true }) as number;
       const free = db.pragma('freelist_count', { simple: true }) as number;
       if (pages > 0 && free / pages > 0.5) { db.exec('VACUUM'); db.pragma('wal_checkpoint(TRUNCATE)'); }
@@ -290,6 +326,21 @@ export class TelemetryProcessor {
     });
   }
 
+  /** Notes new to members' memory since a time (Learning, owner 2026-10-18). */
+  notesAdded(office: string, since: number): AddedNote[] {
+    return this.rows(office, ['note-added'], since)
+      .filter((r) => r.agentId && typeof r.attrs?.id === 'string')
+      .map((r) => ({ agentId: r.agentId!, id: String(r.attrs!.id), source: String(r.attrs?.source ?? 'task'), at: r.ts }));
+  }
+
+  /** When the office's first `note-added` record was made; null before any. */
+  firstNoteAdded(office: string): number | null {
+    const db = this.db();
+    if (!db) return null;
+    const r = db.prepare("SELECT MIN(ts) AS t FROM telemetry_events WHERE office = ? AND kind = 'note-added'").get(office) as { t: number | null } | undefined;
+    return r?.t ?? null;
+  }
+
   /** Cards finished or reopened since a time, with time held Blocked or Waiting. */
   cards(office: string, since: number): CardFact[] {
     const by = new Map<string, CardFact & { heldFrom: number | null }>();
@@ -313,10 +364,11 @@ export class TelemetryProcessor {
     return this.rows(office, ['mail-decision'], since).filter((r) => r.agentId).map((r) => ({ agentId: r.agentId!, decision: String(r.attrs?.decision) as MailDecisionKind, at: r.ts }));
   }
 
-  /** Requests Michael routed and cards he opened, since a time. */
-  michaelCounts(office: string, godId: string, since: number): { routed: number; cardsOpened: number } {
-    const routed = this.rows(office, ['message'], since).filter((r) => r.agentId === godId && r.attrs?.act === 'request').length;
-    const cardsOpened = this.rows(office, ['card-status'], since).filter((r) => r.attrs?.from === null).length;
+  /** Requests Michael routed and cards he opened between two times, so a past
+   *  span never counts later work (owner, 2026-10-16, D11). */
+  michaelCounts(office: string, godId: string, since: number, until = Infinity): { routed: number; cardsOpened: number } {
+    const routed = this.rows(office, ['message'], since).filter((r) => r.ts <= until && r.agentId === godId && r.attrs?.act === 'request').length;
+    const cardsOpened = this.rows(office, ['card-status'], since).filter((r) => r.ts <= until && r.attrs?.from === null).length;
     return { routed, cardsOpened };
   }
 

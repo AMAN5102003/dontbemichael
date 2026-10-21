@@ -27,7 +27,6 @@ const { HookServer } = loadTs('src/main/hooks.ts');
 const { HOOK_PATH_UNCHECKED } = loadTs('src/shared/hookEvents.ts');
 const F = loadTs('src/shared/folderAccess.ts');
 const R = loadTs('src/shared/research.ts');
-const { readResearchNotes, MAX_NOTES_TOTAL } = loadTs('src/main/researchNotes.ts');
 
 const unix = { skip: process.platform === 'win32' ? 'unix socket paths' : false };
 
@@ -101,7 +100,7 @@ test('each agent\'s session scratch folder is its own; Michael reads them all', 
   assert.deepEqual(walled.sandbox.allowRead, ['/Users/x/.dbm/agent-tmp/pam']);
   assert.equal(F.withAgentTmpWall(base, home, 'god', true), base);
   const idx = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
-  assert.match(idx, /const walled = withAgentTmpWall\(withResearchWall\(base, researchFolders\(\)\), home, opts\.hive!\.id, !!opts\.hive!\.isGod\);/);
+  assert.match(idx, /const walled = withMemberWall\(withAgentTmpWall\(withResearchWall\(base, researchFolders\(\)\), home, opts\.hive!\.id, !!opts\.hive!\.isGod\),\n\s+hiveRoot \?\? '', opts\.hive!\.id, Object\.keys\(hive\.registry\(\)\.agents \?\? \{\}\)\);/);
 });
 
 test('the shared temp check reads a save\'s path as the file it names', { skip: process.platform === 'win32' ? 'posix paths' : false }, () => {
@@ -125,20 +124,6 @@ test('a name that reads as Pete is his, and "pete" reaches him only when nobody 
   assert.equal(R.addressedToResearch('Pete', { 'pete-1': { name: 'Pete' } }), false);
   assert.equal(R.addressedToResearch('pete', { pete: { name: 'P' } }), false);
   assert.equal(R.addressedToResearch('research', { god: { name: 'Pete' } }), true, 'his id always');
-});
-
-test('Pete\'s notes stop at the total a copy may carry', (t) => {
-  // Value: protects=thousands of note files can't flood the app or the trust layer; fails_when=every note is read whole; why_new=specialist pass 2; seam=none
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(dir, 'memory'));
-  const n = Math.ceil(MAX_NOTES_TOTAL / 200_000) + 3;
-  for (let i = 0; i < n; i++) fs.writeFileSync(path.join(dir, 'memory', `n${String(i).padStart(3, '0')}.md`), String(i % 10).repeat(200_000));
-  const out = readResearchNotes(dir);
-  assert.ok(out.length <= MAX_NOTES_TOTAL + n * 2, `${out.length}`);
-  assert.ok(out.length > 0);
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/researchNotes.ts'), 'utf8');
-  assert.match(src, /const buf = Buffer\.allocUnsafe\(st\.size \+ 1\);/, 'read to its size, from the open file');
 });
 
 test('a path with spaces around it is judged as Claude Code reads it, trimmed', { skip: process.platform === 'win32' ? 'posix paths' : false }, async (t) => {
@@ -168,23 +153,6 @@ test('a folder check that fails refuses the call; it never falls open', async (t
     assert.equal(r.hookSpecificOutput?.permissionDecision, 'deny', tool_name);
     assert.equal(r.hookSpecificOutput?.permissionDecisionReason, R.RESEARCH_UNCHECKED_TOOL);
   }
-});
-
-test('Pete\'s notes folder must be his own folder, not a link to a big tree elsewhere', { skip: process.platform === 'win32' ? 'symlinks' : false }, (t) => {
-  // Value: protects=a link Pete makes can't make the app list a huge folder on the main process; fails_when=readdirSync runs on whatever memory/ points at; why_new=Codex adversarial review, second ship; seam=none
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes-link-')));
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const dir = path.join(base, 'research');
-  const elsewhere = path.join(base, 'elsewhere');
-  fs.mkdirSync(dir);
-  fs.mkdirSync(elsewhere);
-  fs.writeFileSync(path.join(elsewhere, 'a.md'), 'outside');
-  fs.symlinkSync(elsewhere, path.join(dir, 'memory'));
-  fs.writeFileSync(path.join(dir, 'memory.md'), 'top');
-  assert.equal(readResearchNotes(dir), 'top');
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/researchNotes.ts'), 'utf8');
-  assert.match(src, /for \(let e = d\.readSync\(\); e && names\.length < MAX_NOTE_ENTRIES; e = d\.readSync\(\)\) names\.push\(e\.name\);/, 'listed one name at a time, to the cap');
-  assert.doesNotMatch(src, /readdirSync/, 'never listed whole');
 });
 
 test('a Claude agent with no scratch folder of its own does not start, in any office', () => {

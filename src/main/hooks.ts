@@ -25,6 +25,7 @@ import { claudeProjectsRoot, projectDir } from './transcript';
 import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
 export { TERMINAL_PROMPT_TYPES, isTerminalPrompt };
 import { resolveGodName } from '../shared/godIdentity';
+import { ownValue } from '../shared/ownValue';
 import { APP_NAME } from '../shared/appName';
 
 /** The same terminal prompt is relayed to Michael at most once in this window. */
@@ -84,7 +85,7 @@ export const ASK_TOOL_REFUSAL =
   "Don't ask the owner here: nobody answers your terminal. File it as one new file in the hive's triage folder (your questions as one \"ask\", what you were doing in \"description\"). Michael checks it and puts it on the owner's ASK ME board.";
 
 import { GUARDED_TOOLS, harnessWriteDecision } from './harnessGuard';
-import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, agentTmpDecision, agentTmpName, folderDecision, folderToolTarget, AGENT_TMP_DIR, isSharedTempSave, researchFolderDecision, sharedTempWriteDecision, tempFolders, researchWallDecision } from '../shared/folderAccess';
+import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, agentTmpDecision, agentTmpName, folderDecision, folderToolTarget, AGENT_TMP_DIR, isSharedTempSave, researchFolderDecision, sharedTempWriteDecision, tempFolders, researchWallDecision, memberWallDecision } from '../shared/folderAccess';
 import { REFUSAL_WEB_TOOL, REFUSAL_WEB_TOOL_OFF, RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_SANDBOX_ONLY, RESEARCH_UNCHECKED_TOOL, researchText } from '../shared/research';
 import { folderLayoutFor } from './officeFile';
 import { expandTilde } from './fs';
@@ -97,6 +98,7 @@ import { handoffContext } from '../shared/safeClear';
 import { ownerQuestionsContext, ownerRequestsContext, stuckCardsContext } from '../shared/ownerRequests';
 import { lastAssistantText } from './transcriptText';
 import { stopReasonFor, type OfficeStopReason } from '../shared/officeBreak';
+import { RESTARTED_NOTE } from '../shared/upkeep';
 
 /** An MCP tool, or Claude Code's tools for MCP resources. */
 function isMcpCall(tool: string | undefined): boolean {
@@ -181,6 +183,7 @@ export class HookServer {
   /** The company profile last delivered to each agent's session: same once per
    *  session, again on change, rule as the goal. */
   private deliveredProfileByAgent = new Map<string, { sessionId: string | null; text: string | null }>();
+  private deliveredFoundationsByAgent = new Map<string, { sessionId: string | null; text: string | null }>();
   /** What roster each agent's session was last given, so it is sent again only on a change. */
   private deliveredRosterByAgent = new Map<string, { sessionId: string | null; layoutKey: string; statusKey: string }>();
   /** The session each agent was last given its memory index in. */
@@ -270,7 +273,11 @@ export class HookServer {
     /** The office break's signals (issue 124): a status line's usage windows,
      *  a turn cut off by the usage limit, a prompt taken, a turn finished.
      *  Optional so tests can omit it. */
-    private onPlan?: (signal: PlanSignal) => void
+    private onPlan?: (signal: PlanSignal) => void,
+    /** Company foundations as this agent reads them (office-foundations.md):
+     *  its job's section, the whole document for Michael, or null. Optional
+     *  so tests can omit it. */
+    private getFoundations?: (agentId: string) => string | null
   ) {}
 
   start(): void {
@@ -306,7 +313,15 @@ export class HookServer {
         // conn.end() below closes the connection after that single frame is handled.
         const frame = pending.subarray(0, nl).toString('utf8');
         let payload: HookPayload = {};
-        try { payload = JSON.parse(frame); } catch { /* ignore */ }
+        try {
+          const parsed: unknown = JSON.parse(frame);
+          // Valid JSON can be null, an array, a string or a number, but a hook
+          // payload is always an object. Anything else is normalized to {} so
+          // neither handle() nor the catch below dereferences a non-object
+          // (a bare `null` frame threw in both, and the second throw escaped
+          // the data callback, so conn.end() never ran and the socket hung).
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed as HookPayload;
+        } catch { /* ignore */ }
         // The sender is whoever owns the frame's secret (issue #61, eng E3): a
         // frame without one, or naming someone else, reaches no consumer; a
         // tool check from it is refused, never allowed.
@@ -360,10 +375,34 @@ export class HookServer {
   }
   private readonly rejected = new Map<string, number>();
   private readonly rejectLogged = new Map<string, number>();
+  private readonly impostorReported = new Map<string, number>();
+  /** Most names each refusal map keeps; past it a frame counts as "unknown". */
+  static readonly MAX_REFUSED_NAMES = 256;
+
+  /** The name a refused frame is counted under: the id it claims only when
+   *  that is a member of this office, so a process without a secret can't
+   *  fill the maps, the log and Pulse with made up names (TODOS.md). */
+  private refusedName(claimed: string | null): string {
+    if (!claimed) return 'unknown';
+    if (!this.hive.hasHookToken(claimed) && ownValue(this.registryMembers(), claimed) === undefined) return 'unknown';
+    return this.rejected.has(claimed) || this.rejected.size < HookServer.MAX_REFUSED_NAMES ? claimed : 'unknown';
+  }
+  /** The registry's members, read at most once a second, so a flood of
+   *  refused frames is not a flood of registry reads. */
+  private registryMembers(): Readonly<Record<string, unknown>> {
+    const now = Date.now();
+    if (this.membersMemo && now - this.membersMemo.at < 1000) return this.membersMemo.agents;
+    let agents: Readonly<Record<string, unknown>> = {};
+    try { agents = this.hive.registry().agents; } catch { /* no registry: no members */ }
+    this.membersMemo = { at: now, agents };
+    return agents;
+  }
+  private membersMemo: { at: number; agents: Readonly<Record<string, unknown>> } | null = null;
 
   /** Whether a frame came from the agent it names, by its hook secret. On
    *  success the frame names that agent and the secret is removed; on failure
-   *  the refusal is counted, and logged at most every 10 minutes per name. */
+   *  the refusal is counted, and logged and reported to Pulse at most every
+   *  10 minutes per name. */
   authenticate(p: HookPayload): boolean {
     const token = (p as { hook_token?: unknown }).hook_token;
     delete (p as { hook_token?: unknown }).hook_token;
@@ -373,14 +412,17 @@ export class HookServer {
       p.agent_id = owner;
       return true;
     }
-    const who = claimed ?? 'unknown';
+    const who = this.refusedName(claimed);
     this.rejected.set(who, (this.rejected.get(who) ?? 0) + 1);
     // No secret, or another member's: something is speaking for someone it is
     // not. A secret this start never made is a process left from an earlier
     // start, shutting down: refused, but not a protection worth showing.
     const reason = owner ? 'wrong-sender' : typeof token === 'string' && token ? 'old-secret' : 'no-secret';
-    if (reason !== 'old-secret') { try { this.onRefused?.(claimed ?? undefined, 'impostor'); } catch { /* counting never blocks a refusal */ } }
     const now = Date.now();
+    if (reason !== 'old-secret' && now - (this.impostorReported.get(who) ?? 0) > 10 * 60_000) {
+      this.impostorReported.set(who, now);
+      try { this.onRefused?.(who === 'unknown' ? undefined : who, 'impostor'); } catch { /* counting never blocks a refusal */ }
+    }
     if (now - (this.rejectLogged.get(who) ?? 0) > 10 * 60_000) {
       this.rejectLogged.set(who, now);
       try { this.hive.appendLog({ kind: 'hook-frame-rejected', reason, agentId: who, event: p.hook_event_name ?? null }); } catch { /* best-effort */ }
@@ -893,6 +935,25 @@ export class HookServer {
       }
     }
 
+    // Company foundations (office-foundations.md, eng D1): the member's job
+    // section, or the whole document for Michael, delivered like the profile:
+    // at the start of each session and again when it changes. Never to
+    // Research (eng finding 1).
+    let foundations: string | null = null;
+    if ((event === 'SessionStart' || event === 'UserPromptSubmit') && agentId && this.getFoundations && !isResearchAgent) {
+      let text: string | null = null;
+      try { text = this.getFoundations(agentId); } catch { text = null; }
+      const sessionId = p.session_id ?? null;
+      const delivered = this.deliveredFoundationsByAgent.get(agentId);
+      const fresh = event === 'SessionStart' || !delivered || delivered.sessionId !== sessionId;
+      if (fresh || delivered.text !== text) {
+        this.deliveredFoundationsByAgent.set(agentId, { sessionId, text });
+        if (text) foundations = text;
+        // Silence would leave the old section alive in the model's context.
+        else if (!fresh && delivered?.text) foundations = 'COMPANY FOUNDATIONS. Your job no longer has a company foundations section; the answers given earlier no longer apply to your work.';
+      }
+    }
+
     // The agent's memory index (owner, 2026-09-25): once at the start of each
     // session, and never again within it, so it stays in the prompt cache. The
     // tidy-up's changes arrive with the next session.
@@ -937,12 +998,12 @@ export class HookServer {
       ? this.hive.knowledgeUpdate(agentId, this.getKnowledge())
       : null;
 
-    if (steer || roster || goal || knowledgeNote || profile || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
+    if (steer || roster || goal || knowledgeNote || profile || foundations || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
       this.emit(agentId, event, p);
       return {
         hookSpecificOutput: {
           hookEventName: event,
-          additionalContext: [roster, profile, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
+          additionalContext: [roster, profile, foundations, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
         }
       };
     }
@@ -1017,10 +1078,19 @@ export class HookServer {
   /** agentId → its stuck episode: when the app restarted it for a prompt,
    *  whether the new session started, and whether Michael was told it is
    *  still stuck. It ends when the member moves on, so there is one automatic
-   *  restart per episode and no raise and withdraw loop on Ask me. */
-  private stuckEpisodes = new Map<string, { at: number; text: string; restarted: boolean; confirmed: boolean; escalated: boolean }>();
+   *  restart per episode and no raise and withdraw loop on Ask me. timedOut:
+   *  Michael heard the new session never started, so a late start is news too. */
+  private stuckEpisodes = new Map<string, { at: number; text: string; restarted: boolean; confirmed: boolean; escalated: boolean; timedOut?: boolean }>();
   /** agentId → when the app last restarted it for a prompt; outlives the episode. */
   private stuckRestartAt = new Map<string, number>();
+
+  /** The one automatic restart a member gets per STUCK_AGAIN_MS, shared by the
+   *  stuck path and the not reporting watch (issue #326, eng R4). */
+  mayAutoRestart(agentId: string): boolean {
+    const last = this.stuckRestartAt.get(agentId);
+    return last === undefined || this.now() - last >= STUCK_AGAIN_MS;
+  }
+  noteAutoRestart(agentId: string): void { this.stuckRestartAt.set(agentId, this.now()); }
 
   /** A member stopped on a prompt: restart them once, or, when it comes back
    *  before they moved on (or no window can restart them), Michael asks the owner. */
@@ -1052,7 +1122,7 @@ export class HookServer {
     // The resumed session gets no prompt of its own: this note wakes the member
     // (the inbox nudge) so its work carries on.
     try {
-      this.hive.send({ to: agentId, act: 'inform', subject: 'You were restarted', body: 'Your session stopped on a prompt only a person could answer, so the app restarted it. Carry on with your current work.' }, 'system');
+      this.hive.send({ to: agentId, act: 'inform', ...RESTARTED_NOTE }, 'system', 'restarted');
     } catch { /* Michael checks on them below */ }
     const t = setTimeout(() => this.checkStuckRestarts(), STUCK_CONFIRM_MS + 1_000);
     (t as { unref?: () => void }).unref?.();
@@ -1064,7 +1134,7 @@ export class HookServer {
     const now = this.now();
     for (const [agentId, ep] of this.stuckEpisodes) {
       if (ep.restarted && !ep.confirmed && !ep.escalated && now - ep.at >= STUCK_CONFIRM_MS) {
-        ep.escalated = this.relayStuckToMichael(agentId, ep.text, false);
+        ep.escalated = ep.timedOut = this.relayStuckToMichael(agentId, ep.text, false);
       }
     }
   }
@@ -1078,6 +1148,15 @@ export class HookServer {
       ep.confirmed = true;
       const name = this.displayName(agentId);
       this.tellMichael(agentId, `${name} was restarted`, `${name}'s session stopped on a prompt only a person could answer${ep.text ? ` ("${ep.text}")` : ''}, so the app restarted ${name} and told them to carry on with their current work. Check that ${name} picks their work back up. This is not for the owner's Ask me board: if you asked the owner whether ${name} is stuck, withdraw that question.`);
+    } else if (event === 'SessionStart' && ep.timedOut) {
+      // Michael heard the restart never took, but it did: tell him once, and a
+      // prompt that comes back after this is news for him again.
+      ep.timedOut = false;
+      ep.confirmed = true;
+      ep.escalated = false;
+      this.relayedPrompts.delete(agentId);
+      const name = this.displayName(agentId);
+      this.tellMichael(agentId, `${name} was restarted after all`, `${name}'s session started again after all, so the restart went through and ${name} is not stuck. Leave ${name}'s open work with them, and if you asked the owner whether ${name} is stuck, withdraw that question.`);
     } else if (STUCK_MOVED_ON.has(event)) {
       this.stuckEpisodes.delete(agentId);
     }
@@ -1169,6 +1248,23 @@ export class HookServer {
     for (const t of both) {
       const r = researchWallDecision(researchWall, tool, t, ci, rName());
       if (r.deny) return r;
+    }
+    // Each member's hive folder is its own, for everyone, Michael included
+    // (owner, 2026-10-16: a member's memory is private; ask the member).
+    if (hiveRoot) {
+      const nameOf = (id: string): string => (id === RESEARCH_ID ? rName() : reg.agents[id]?.name?.trim() || id);
+      // Who its start time Read rules cover, against the roster now: a
+      // member hired since is refused only to a search over everyone's folders.
+      const roster = { members: Object.keys(reg.agents ?? {}), walled: this.hive.walledMembersOf?.(agentId) ?? null };
+      // Each target judged against the hive as named and as the folder it
+      // really is, as the Research wall is: an office under a linked folder
+      // must not let a link in a member's own folder through (ship review).
+      for (const root of withReal([hiveRoot])) {
+        for (const t of both) {
+          const r = memberWallDecision(root, agentId, tool, t, ci, nameOf, roster);
+          if (r.deny) return r;
+        }
+      }
     }
     // While Research is on, nobody saves into the shared temp folders its
     // shell can read; each agent has its own scratch folder (owner, D7.2).

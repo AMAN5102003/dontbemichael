@@ -3,18 +3,20 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { PixelButton } from '../PixelButton';
 import { useStore } from '@/store/store';
+import { useHarnessConfig } from '@/hooks/useHarnessConfig';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { isComposingKey } from '@shared/imeGuard';
 import {
   Disclosure, Field, Hint, MiniButton, SchedulePicker, Toggle, fmtInterval, inputStyle, textareaStyle,
   weeklyDraft, weeklyIsUsable, type WeeklyDraft
 } from './ui';
-import { formatWeekly } from '@shared/weeklySchedule';
-import { formatTimes, normalizeTimes } from '@shared/scheduleTimes';
+import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
-import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, type ScheduledMission } from '@shared/missions';
+import { cannotCheckEmail, cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
+import { gmailConnectorOn } from '@shared/claudeConnectors';
 import { useRtl } from '@/i18n/useDirection';
+import i18n from '@/i18n';
 
 /**
  * SCHEDULES, per agent (docs/designs/per-agent-schedules.md).
@@ -189,14 +191,36 @@ function relTime(ms: number, lang: string): string {
   }
 }
 
+/** formatTimes' words in the owner's language. Day names come from Intl, so
+ *  every language gets them without a key per day. Sep 27 2026 is a Sunday. */
+function whenWords(t: TFunction, lang: string): WhenWords {
+  let weekday: Intl.DateTimeFormat;
+  try { weekday = new Intl.DateTimeFormat(lang, { weekday: 'short' }); } catch { weekday = new Intl.DateTimeFormat('en', { weekday: 'short' }); }
+  const sep = t('schedulesSection.whenSep');
+  return {
+    day: (d) => weekday.format(new Date(2026, 8, 27 + d)),
+    everyDay: t('triggersUi.everyDay'),
+    weekdays: t('triggersUi.weekdays'),
+    weekends: t('schedulesSection.whenWeekends'),
+    list: (items) => items.join(sep),
+    and: (items) => (items.length > 1
+      ? t('schedulesSection.whenAnd', { list: items.slice(0, -1).join(sep), last: items[items.length - 1] })
+      : items[0]),
+    at: (days, time) => t('schedulesSection.whenAt', { days, time }),
+    every: (interval) => t('schedulesSection.everyInterval', { interval }),
+    span: (from, to) => t('schedulesSection.whenSpan', { from, to })
+  };
+}
+
 /** When a job runs, in words: the calendar, the interval ("every 4h", like an
  *  every line in formatTimes), or the heartbeat. */
 export function whenText(m: Pick<ScheduledMission, 'kind' | 'weekly' | 'intervalMs' | 'times'>, t: TFunction): string {
   if (m.kind === 'heartbeat') return t('schedulesSection.beat');
+  const words = whenWords(t, i18n.language);
   const times = normalizeTimes(m.times);
-  if (times) return formatTimes(times);
+  if (times) return formatTimes(times, words);
   const w = weeklyDraft(m.weekly);
-  if (w) return formatWeekly(w);
+  if (w) return formatTimes([{ kind: 'at', days: w.days, minute: w.minute }], words);
   const every = fmtInterval(m.intervalMs);
   return /^\d/.test(every) ? t('schedulesSection.everyInterval', { interval: every }) : every;
 }
@@ -212,6 +236,8 @@ function Line({ children, tone = 'plain' }: { children: ReactNode; tone?: 'plain
 
 /* ──────────────────────────────── one row ──────────────────────────────── */
 
+type RunNowState = 'idle' | 'sending' | ReturnType<typeof runNowOutcome>;
+
 interface RowProps {
   mission: ScheduledMission;
   /** Who a `createdBy` agent id is, for "added by Pam". */
@@ -220,11 +246,13 @@ interface RowProps {
    *  schedule; owner, 2026-09-26). */
   readOnly?: boolean;
   ownerName: string;
+  /** The agent's email is off, so a job that checks mail is refused each run. */
+  noEmail?: boolean;
   /** For the focus area check on save; absent on read only rows. */
   focusOwner?: FocusOwner;
 }
 
-function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowProps) {
+function ScheduleRow({ mission, nameOf, readOnly, ownerName, noEmail, focusOwner }: RowProps) {
   const { t, i18n } = useTranslation();
   const rtl = useRtl();
   const godName = useResolvedGodName();
@@ -243,12 +271,24 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
   const { busy, failed, setFailed, run } = useSaveOp();
   const focusCheck = useFocusCheck(focusOwner ?? { name: ownerName, workStyle: '', jobs: [] });
   const [confirming, setConfirming] = useState(false);
+  // Run now (docs/designs/schedule-run-now.md): its own state, so a failed run
+  // never reads as a failed save.
+  const [runState, setRunState] = useState<RunNowState>('idle');
   const deleteRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLButtonElement>(null);
+
+  // "Sent" and "ran a moment ago" are a moment's answer; the row's "fired"
+  // line keeps the record. Left up, "less than a minute ago" goes stale.
+  useEffect(() => {
+    if (runState !== 'sent' && runState !== 'justRan') return;
+    const timer = setTimeout(() => setRunState('idle'), 4000);
+    return () => clearTimeout(timer);
+  }, [runState]);
 
   // Seed the draft when the row opens, never on every render, or the scheduler
   // stamping lastFiredAt mid-edit would wipe what you are typing.
   useEffect(() => {
+    setRunState('idle');
     if (!open) return;
     setLabel(mission.label);
     setIntervalMs(mission.intervalMs);
@@ -312,6 +352,17 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
   };
   const toggle = () => { void run(() => window.cth.setMissionEnabled(mission.id, !mission.enabled)); };
   const remove = () => { void run(() => window.cth.deleteMission(mission.id)); };
+  // A job only, never the heartbeat. Main answers with the saved job, so a row
+  // with unsaved edits asks for a save first instead of running the old text.
+  const canRunNow = !heartbeat && (mission.kind ?? 'dispatch') === 'dispatch';
+  const runNow = async () => {
+    setRunState('sending');
+    try {
+      setRunState(runNowOutcome(await window.cth.runMissionNow(mission.id)));
+    } catch {
+      setRunState('failed');
+    }
+  };
   const cancelDelete = () => { setConfirming(false); setTimeout(() => deleteRef.current?.focus(), 0); };
 
   const headerStyle = {
@@ -337,6 +388,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
         </span>
         <span style={{ display: 'block', marginTop: 2, fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>{whenText(mission, t)}</span>
         {sub && <span style={{ display: 'block', fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{sub}</span>}
+        {noEmail && <span data-no-email style={{ display: 'block', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-amber-text)' }}>{t('schedulesSection.cannotCheckEmail', { name: ownerName })}</span>}
         {/* An older job without a focus area keeps running as before (FA4). */}
         {!readOnly && !heartbeat && (mission.kind ?? 'dispatch') === 'dispatch' && !mission.focus && (
           <span data-add-focus style={{ display: 'block', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-amber-text)' }}>{t('schedulesSection.addFocus')}</span>
@@ -412,6 +464,16 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
             />
           )}
           {failed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
+          {canRunNow && runState === 'failed' && !dirty && <Line tone="error">{t('schedulesSection.runNowFailed')}</Line>}
+          {/* An unsaved edit is why Run now is off, so it outranks an earlier
+              run's answer. */}
+          {canRunNow && (dirty || runState === 'sent' || runState === 'justRan') && (
+            <div role="status" style={{ fontSize: 14, lineHeight: '20px', padding: '8px 0', color: 'var(--cth-ink-700)' }}>
+              {dirty ? t('schedulesSection.runNowSaveFirst')
+                : runState === 'sent' ? t('schedulesSection.runNowSent', { name: ownerName })
+                  : t('schedulesSection.runNowJustRan')}
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12 }}>
             {confirming ? (
               <>
@@ -423,6 +485,15 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
               <MiniButton tone="danger" onClick={() => setConfirming(true)} buttonRef={deleteRef}>{t('common.delete')}</MiniButton>
             )}
             <span style={{ flex: 1 }} />
+            {canRunNow && (
+              <MiniButton
+                onClick={() => void runNow()}
+                disabled={busy || runState === 'sending' || dirty}
+                label={t('schedulesSection.runNowAria', { job: mission.label })}
+              >
+                {runState === 'sending' ? t('schedulesSection.runNowSending') : t('schedulesSection.runNow')}
+              </MiniButton>
+            )}
             {/* Closing drops unsaved edits: the draft is reseeded on the next open. */}
             <MiniButton onClick={() => { setOpen(false); headerRef.current?.focus(); }}>
               {dirty ? t('common.cancel') : t('common.close')}
@@ -534,6 +605,7 @@ export function AgentSchedules({ agentId, agentName }: { agentId: string; agentN
   const godId = useGodId();
   const nameOf = useNameOf();
   const agents = useStore((s) => s.agents);
+  const config = useHarnessConfig();
   const mine = useMemo(() => missionsFor(missions, agentId, godId), [missions, agentId, godId]);
   const isGod = agentId === godId;
   // Michael's schedules keep the 'god' alias the router understands.
@@ -568,6 +640,7 @@ export function AgentSchedules({ agentId, agentName }: { agentId: string; agentN
             mission={m}
             nameOf={nameOf}
             ownerName={agentName}
+            noEmail={!!config && cannotCheckEmail(m, config.agentCapabilities?.[agentId]?.email, gmailConnectorOn(config, agentId))}
             focusOwner={focusOwner}
           />
         ))}
@@ -584,6 +657,7 @@ export function OfficeSchedules() {
   const godId = useGodId();
   const nameOf = useNameOf();
   const agents = useStore((s) => s.agents);
+  const config = useHarnessConfig();
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   useEffect(() => {
     window.cth.hiveRegistry()
@@ -625,6 +699,7 @@ export function OfficeSchedules() {
                   mission={m}
                   nameOf={nameOf}
                   ownerName={name}
+                  noEmail={!!config && cannotCheckEmail(m, config.agentCapabilities?.[owner]?.email, gmailConnectorOn(config, owner))}
                   readOnly
                 />
               ))}

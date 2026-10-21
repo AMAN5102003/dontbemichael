@@ -6,18 +6,17 @@
  * they read the temp folder: it is outside every folder they are kept out of
  * (folderAccess.ts).
  *
- * A file is removed only once it is old, at startup. Not on delivery: the path
- * is typed into the agent's terminal, and the agent opens the file later in its
- * turn, or in a later one.
+ * A file is removed only once it is old, at startup, and never while a saved
+ * queue still holds a message naming it. Not on delivery: the path is typed
+ * into the agent's terminal, and the agent opens the file later in its turn, or
+ * in a later one.
  *
  * Electron-free, so tests run under plain node.
  */
 import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** How long a pasted screenshot is kept. */
-// ponytail: age only, no check against the saved queues; read them first if a
-// message ever waits longer than this for its agent.
+/** How long a pasted screenshot is kept once no queued message names it. */
 export const PASTE_KEEP_MS = 14 * 24 * 60 * 60 * 1000;
 
 const PASTE_NAME = /^paste-\d+\.png$/;
@@ -35,12 +34,13 @@ export function savePaste(dir: string, png: Buffer, now = Date.now()): { path: s
   return { path, name };
 }
 
-/** Remove pasted screenshots older than `maxAgeMs`. Best effort. */
-export function sweepOldPastes(dir: string, maxAgeMs = PASTE_KEEP_MS, now = Date.now()): void {
+/** Remove pasted screenshots older than `maxAgeMs`, except one named in
+ *  `waiting` (the saved queues, as text). Best effort. */
+export function sweepOldPastes(dir: string, maxAgeMs = PASTE_KEEP_MS, now = Date.now(), waiting = ''): void {
   let names: string[];
   try { names = readdirSync(dir); } catch { return; }
   for (const name of names) {
-    if (!PASTE_NAME.test(name)) continue;
+    if (!PASTE_NAME.test(name) || waiting.includes(name)) continue;
     const p = join(dir, name);
     try {
       if (now - statSync(p).mtimeMs > maxAgeMs) rmSync(p, { force: true });
