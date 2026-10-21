@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useRtl } from '@/i18n/useDirection';
+import { dragWidth, keyWidth, splitterMax } from './sidebarWidth';
 
 export interface SidebarSplitterProps {
   /** Current sidebar width in px. */
@@ -13,23 +15,23 @@ export interface SidebarSplitterProps {
 }
 
 /**
- * Vertical drag handle. Sits between the floor canvas (left) and the sidebar
- * (right). Drag left → wider sidebar. Cursor + pixel-stripe affordance.
+ * Vertical drag handle between the office floor and the side panel. Dragging
+ * or an arrow key toward the floor widens the panel; in Arabic the panel is on
+ * the left and both directions flip (sidebarWidth.ts).
  */
 export function SidebarSplitter({
   width, onChange, viewportWidth, min = 320, max = 1200
 }: SidebarSplitterProps) {
   const { t } = useTranslation();
+  const rtl = useRtl();
+  const limits = { min, max, viewportWidth };
   const startRef = useRef<{ clientX: number; width: number } | null>(null);
   const [active, setActive] = useState(false);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!startRef.current) return;
-      const delta = startRef.current.clientX - e.clientX; // left drag = positive delta → grow sidebar
-      const clampMax = Math.min(max, Math.max(min, viewportWidth - 360));
-      const next = Math.min(clampMax, Math.max(min, startRef.current.width + delta));
-      onChange(next);
+      onChange(dragWidth(startRef.current.width, startRef.current.clientX, e.clientX, limits, rtl));
     };
     const onUp = () => {
       startRef.current = null;
@@ -47,17 +49,16 @@ export function SidebarSplitter({
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [active, viewportWidth, min, max, onChange]);
+  }, [active, viewportWidth, min, max, onChange, rtl]);
 
-  const clampMax = Math.min(max, Math.max(min, viewportWidth - 360));
-  const KEY_STEP = 24;
+  const clampMax = splitterMax(limits);
 
-  // Same direction as the drag: left makes the sidebar wider, right narrower.
+  // The same direction as the drag (sidebarWidth.ts).
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const next = keyWidth(e.key, width, limits, rtl);
+    if (next === undefined) return;
     e.preventDefault();
-    const delta = e.key === 'ArrowLeft' ? KEY_STEP : -KEY_STEP;
-    onChange(Math.min(clampMax, Math.max(min, width + delta)));
+    onChange(next);
   };
 
   return (

@@ -194,7 +194,7 @@
     "profile": "Profile",
     "capabilities": "Access",
     "resizeLabel": "Resize the side panel",
-    "resizeTitle": "Drag to resize. Double click to reset. With the handle focused, use the left and right arrow keys."
+    "resizeTitle": "Drag to resize. Double click to reset."
   },
   "toolWaterfall": {
     "fresh": "fresh {{tokens}}t",
