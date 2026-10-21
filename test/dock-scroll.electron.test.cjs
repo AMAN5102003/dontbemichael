@@ -38,6 +38,9 @@ for (const reduced of preview ? [false] : [false, true]) {
       });
       assert.equal(code, 0, output);
       console.log(output);
-    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+    } finally {
+      // Windows can hold Chromium's cache files for a moment after the child exits.
+      try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* temp folder */ }
+    }
   });
 }

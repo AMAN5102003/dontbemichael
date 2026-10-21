@@ -79,12 +79,18 @@ createRoot(document.getElementById('root')!).render(<Fixture />);
 
 // Let layout/ResizeObserver delivery finish before checking preservation or
 // absence: those predicates can already be true before the action is handled.
-const settle = () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+// A frame, or a short timer if no frame comes, so a stalled renderer fails a
+// check with its message instead of hanging the run.
+const frame = () => new Promise<void>((resolve) => {
+  const timer = setTimeout(resolve, 100);
+  requestAnimationFrame(() => { clearTimeout(timer); resolve(); });
+});
+const settle = async () => { await frame(); await frame(); };
 async function until(predicate: () => unknown, message: string): Promise<void> {
   const deadline = performance.now() + 2000;
   while (!predicate()) {
     if (performance.now() >= deadline) throw new Error(message);
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await frame();
   }
 }
 async function scrollTo(top: number) {

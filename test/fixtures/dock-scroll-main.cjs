@@ -4,6 +4,9 @@ const path = require('node:path');
 const fs = require('node:fs');
 app.setPath('userData', path.join(process.argv[2], 'profile'));
 if (process.argv.includes('--reduced-motion')) app.commandLine.appendSwitch('force-prefers-reduced-motion');
+// The window stays hidden. On Windows Chromium stops giving a hidden or
+// occluded window frames, and every check here waits on frames.
+for (const flag of ['disable-renderer-backgrounding', 'disable-backgrounding-occluded-windows', 'disable-background-timer-throttling']) app.commandLine.appendSwitch(flag);
 app.on('window-all-closed', () => app.quit());
 app.whenReady().then(async () => {
   const preview = process.argv.includes('--preview');
