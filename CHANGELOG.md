@@ -31,6 +31,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - The Activity tab no longer redraws the office log every 3 seconds when nothing changed (contributed in #350).
 - Each empty column on the Tasks board says something of its own instead of "Nothing here" (contributed in #369).
 - On Windows, the Research screen says that the team's commands can still reach the internet (contributed in #389).
+- When you answer on Ask me, Michael gets the question as one line marked as card text, so a line break in it can never pass for your words. Your answer still goes as you wrote it (contributed in #391).
 - **The office opens filling the screen on every launch again.** It came back at a smaller size once a single moment had read as not filling the screen (a dragged title bar, a display change, or quitting from full screen). Now every launch fills the screen; un-maximizing still goes back to your last smaller size.
 - **Pulse's Questions to you is part of Your time.** Both counted the same questions you were asked. Your time now shows how many, and at its foot two small figures: the typical wait for your answer and how many per 100 requests the team took, with the period before's rate under it when Compare is on. The wait was labelled "on average"; it is the typical (middle) wait, and now says so.
 - **With Compare on, a Pulse card from the span before shows only when its bars show a change.** A web answers card showed 0 Yesterday and 0 Today because yesterday had an answer with nothing to take out; such a card is now a quiet chip.
