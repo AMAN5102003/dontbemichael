@@ -2488,6 +2488,8 @@
     "waitingMany": "{{count}} asks are waiting. They go back to the sender.",
     "windows": "On Windows, {{name}} can still reach your office files.",
     "windowsTip": "Windows can't fence in {{name}}'s commands yet, so the privacy check doesn't fully hold there.",
+    "windowsTeam": "On Windows, your team's commands can still reach the internet.",
+    "windowsTeamTip": "Windows can't hold the team's commands off the internet yet: only their web tools are refused there. On a Mac, only {{name}} uses the internet.",
     "sendTitle": "What your team may send to {{name}}",
     "sendTip": "Every message to {{name}} is checked. Anything private goes back to the sender, and nothing leaves.",
     "count": "{{allowed}} allowed, {{private}} private",
