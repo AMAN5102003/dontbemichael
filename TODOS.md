@@ -418,15 +418,6 @@
 **Effort:** S
 **Priority:** P3
 
-### Show a locally added QuickBooks server in the status
-
-**What:** Read non-`claude.ai` QuickBooks servers from `claude mcp list` too.
-
-**Why:** A QuickBooks server added with `claude mcp add` is gated but Settings says it is not connected.
-
-**Effort:** S
-**Priority:** P3
-
 ## Closing time (deferred from ship of feat/closing-time-progress, 2026-09-29)
 
 ### Feed each row's latest line from the agent's transcript
