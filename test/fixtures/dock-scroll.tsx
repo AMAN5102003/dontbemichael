@@ -89,7 +89,7 @@ const settle = async () => { await frame(); await frame(); };
 async function until(predicate: () => unknown, message: string): Promise<void> {
   const deadline = performance.now() + 2000;
   while (!predicate()) {
-    if (performance.now() >= deadline) throw new Error(message);
+    if (performance.now() >= deadline) throw new Error(`${message} (${where()})`);
     await frame();
   }
 }
@@ -106,6 +106,13 @@ async function scrollTo(top: number) {
   } finally { el.removeEventListener('scroll', onScroll); }
 }
 const list = () => document.querySelector('.cth-dock > div:nth-child(2)') as HTMLElement;
+// The list's geometry and the catch-up button, added to a failed check so a
+// run that fails only on a CI runner says what the dock looked like.
+const where = () => {
+  const el = document.querySelector('.cth-dock > div:nth-child(2)') as HTMLElement | null;
+  if (!el) return 'no dock';
+  return `scrollTop ${el.scrollTop}, scrollHeight ${el.scrollHeight}, clientHeight ${el.clientHeight}, button ${document.querySelector('[data-dock-jump]')?.textContent ?? 'none'}`;
+};
 const jump = () => document.querySelector('[data-dock-jump]') as HTMLButtonElement | null;
 const bottom = () => list().scrollHeight - list().clientHeight - list().scrollTop;
 function reset() {

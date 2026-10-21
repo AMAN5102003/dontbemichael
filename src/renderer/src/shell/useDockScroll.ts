@@ -80,11 +80,12 @@ export function useDockScroll(
   const readPendingScroll = (el: HTMLElement) => {
     const saved = position.current;
     const delta = el.scrollTop - saved.top;
-    if (!delta) return;
+    // Under a pixel is layout rounding (scrollTop can be fractional), not a scroll.
+    if (Math.abs(delta) < 1) return;
     // Content removal can clamp scrollTop without a reading action. Preserve
     // the existing intent and let restoration pick a surviving visible row.
     const max = Math.max(0, el.scrollHeight - el.clientHeight);
-    if (max < saved.top && el.scrollTop === max) return;
+    if (max < saved.top && Math.abs(el.scrollTop - max) <= 1) return;
     const wasFollowing = following.current;
     following.current = saved.height - saved.viewport - el.scrollTop <= BOTTOM_SLOP;
     if (following.current) {
@@ -108,7 +109,7 @@ export function useDockScroll(
     // Only a new position is the owner's doing. Content that grew since the
     // last measure (late fonts, a fold measured, a file chip) moves the
     // bottom, not the reader, and the resize observer follows it.
-    if (el.scrollTop === position.current.top) return;
+    if (Math.abs(el.scrollTop - position.current.top) < 1) return;
     readPendingScroll(el);
     const wasFollowing = following.current;
     following.current = atBottom(el);

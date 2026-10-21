@@ -1036,7 +1036,11 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 
 **If it shows up:** add the list's `scrollTop`, `scrollHeight`, `clientHeight` and the hook's `following` to that check's message, then look for a scroll event that `useDockScroll` reads as the owner's (`src/renderer/src/shell/useDockScroll.ts`, `onScroll`), for example from a late font swap or a fold measured after the reply arrived.
 
-**Context:** owner chose to merge #209 and track this, 2026-10-20.
+**Seen again:** on PR #291 (CI run 39539334994, first attempt), same step, again only the normal motion run; the reduced motion run passed. 2 of 3 macOS CI runs.
+
+**Tried (running branch, 2026-10-20, not yet proven on CI):** `useDockScroll` now treats a scroll change under a pixel as layout rounding, and the clamp check (content shrank under the reader) allows a pixel, so a fractional `scrollTop` is no longer read as the owner scrolling up. Every failed check in the dock test page now prints the list's `scrollTop`, `scrollHeight`, `clientHeight` and the catch-up button. If it fails again after 0.2.5 lands, read those numbers first.
+
+**Context:** owner chose to merge #209 and track this, 2026-10-20; on its second failure, chose to fix it on the running branch rather than through a draft PR.
 
 **Effort:** S (CC)
 **Priority:** P3 (watch)
