@@ -552,7 +552,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
         <img className="cth-lockup-dark" src={lockupDark} alt="Don't Be Michael" style={{ height: 24, width: 'auto' }} />
         {stepIndex >= 0 && <StepIndicator steps={steps} current={stepIndex} />}
         {stepIndex >= 0 && (
-          <span style={{ marginInlineStart: 'auto', fontSize: 12, color: 'var(--cth-ink-3)' }}>
+          <span style={{ marginInlineStart: 'auto', fontSize: 14, color: 'var(--cth-ink-3)' }}>
             {t('onboarding.stepOf', { n: stepIndex + 1, total: steps.length })}
           </span>
         )}
@@ -585,16 +585,16 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
               <div role="status" data-damaged-config style={{
                 borderRadius: 'var(--cth-r-md)', padding: '8px 10px',
                 background: 'var(--cth-amber-soft)', color: 'var(--cth-amber-text)',
-                fontSize: 13, lineHeight: '19px'
+                fontSize: 14, lineHeight: '20px'
               }}>
                 {t('onboarding.damagedConfig')}{' '}
-                <span dir="ltr" style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, wordBreak: 'break-all' }}>{damagedCopy}</span>
+                <span dir="ltr" style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 14, wordBreak: 'break-all' }}>{damagedCopy}</span>
               </div>
             )}
 
             {step === 'resume' && found && (
               <>
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
                   {t('onboarding.resume.headline')}
                 </div>
                 <p style={{ margin: 0, lineHeight: '22px' }}>
@@ -1251,7 +1251,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 padding: '6px 10px',
                 background: 'var(--cth-coral-light)',
                 boxShadow: 'inset 0 0 0 1px var(--cth-coral)',
-                fontSize: 13,
+                fontSize: 14,
                 color: 'var(--cth-ink-900)',
                 overflowWrap: 'anywhere'
               }}>{error}</div>
