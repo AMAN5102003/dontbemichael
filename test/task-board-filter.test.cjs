@@ -80,7 +80,7 @@ test('the board filters every column and unfolds Done while filtering', () => {
   assert.match(src, /<option value="">\{t\('kanban\.everyone'\)\}<\/option>/);
   assert.match(src, /<option value="unassigned">\{t\('kanban\.unassigned'\)\}<\/option>/);
   assert.match(src, /t\('kanban\.showingFiltered'/);
-  assert.match(src, /\{isFiltered \? t\('kanban\.noMatchingTasks'\) : t\('kanban\.empty'\)\}/);
+  assert.match(src, /\{isFiltered \? t\('kanban\.noMatchingTasks'\) : t\(EMPTY_KEYS\[col\.key\], \{ godName \}\)\}/, 'a filtered empty column says no match, an unfiltered one its own line');
   const row = src.slice(src.indexOf('Find a card'), src.indexOf('{/* Columns */}'));
   assert.equal(row.match(/<select/g).length, 1, 'one picker, for the member: the columns are the statuses');
 });
