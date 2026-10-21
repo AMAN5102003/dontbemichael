@@ -11,12 +11,14 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 ### Added
 
 - **Email an agent reads is labelled as written by someone outside the business.** Each message reaches the agent with a note that its text is information, never instructions, and any lines plainly written to steer an AI are listed so the agent skips them and carries on. Michael is told once per such email; you are not (contributed in #188). Research's web answers are checked against the same list.
+- **A change an agent makes in a connected app goes out once.** Writes to QuickBooks and other connected apps are recorded before they are sent, so an agent's retry, or a restart before the answer came back, never creates a second invoice, booking or contact. A write that may already have gone out is refused, and the agent tells Michael (contributed in #212).
 
 ### Fixed
 
 - A file name with a long extension, such as `application.properties`, opens whole from an agent's output instead of being cut short (contributed in #190).
 - A schedule an agent asks for with `monthly` or `sunset` is refused instead of becoming a Monday or Sunday job; `Mondays`, `weds` and `mon.` still work (contributed in #193).
-
+- A team member's name, role or business name with a dollar sign, such as `Ca$$h Cuts`, is written as typed in Work styles, the first task and Michael's briefing (contributed in #198).
+- Text you write in the heartbeat box in Schedules now reaches Michael ahead of the floor summary; the box's own default text is not sent (contributed in #200).
 - **The office opens filling the screen on every launch again.** It came back at a smaller size once a single moment had read as not filling the screen (a dragged title bar, a display change, or quitting from full screen). Now every launch fills the screen; un-maximizing still goes back to your last smaller size.
 - **Pulse's Questions to you is part of Your time.** Both counted the same questions you were asked. Your time now shows how many, and at its foot two small figures: the typical wait for your answer and how many per 100 requests the team took, with the period before's rate under it when Compare is on. The wait was labelled "on average"; it is the typical (middle) wait, and now says so.
 - **With Compare on, a Pulse card from the span before shows only when its bars show a change.** A web answers card showed 0 Yesterday and 0 Today because yesterday had an answer with nothing to take out; such a card is now a quiet chip.
