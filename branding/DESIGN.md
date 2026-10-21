@@ -995,12 +995,20 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
 ### 7.20 Tasks view (TasksKanban)
 
 - Header on the stage: "Tasks" `t-view`, count chips (To do, Doing, Waiting, Blocked in
-  coral soft, Done in green soft), right aligned lock icon plus "New work goes through Michael"
-  (`t-meta`, `ink-3`). No add button; the board is read only.
+  coral soft, Done in green soft; each chip is clickable with `aria-pressed` to filter the
+  board to that status, clicking again resets to all columns), right aligned lock icon plus
+  "New work goes through Michael" (`t-meta`, `ink-3`). No add button; the board is read only.
+- Find a card (issue 158): one row above the columns, a search field (`cth-input`, 30 px,
+  up to 260 px, placeholder "Search tasks") matching title, description, result, id,
+  waiting on, or the team member's name; a team member select ("Everyone", "Unassigned",
+  or a specific member, `line-input` boundary, 30 px). While either is set, a quiet Clear
+  (28 px target, `ink-2`) and a count indicator ("Showing X of Y tasks", mono count) follow
+  them, each column counts only matching cards, and Done unfolds in full.
 - Five columns on a `floor` tinted ground, `r-xl`, 16 px gaps: To do, Doing, Waiting
   (`amber` key, yellow), Blocked, Done. Column head: key dot, name `t-ui` 600, mono count. Blocked
-  column tinted `coral` soft. A Waiting card shows an `amber` soft chip "Waiting on {who}"
-  (card-lifecycle.md section 8).
+  column tinted `coral` soft. An empty column shows "Nothing here", or "No tasks match your
+  search or filters" when search or filters are active. A Waiting card shows an `amber` soft
+  chip "Waiting on {who}" (card-lifecycle.md section 8).
 - Order (owner, 2026-10-17): To do, Doing, Waiting and Blocked read earliest Next first; cards
   with no Next time come after the dated ones; at the same time the higher priority first, then
   the order made. A time already passed is earliest. Done reads newest first. Search and the
@@ -1019,10 +1027,6 @@ a small "Fix" coral pill that opens Settings, Connections, Mailboxes.
   whose owner answer Michael has not closed reads "With Michael" and how long, then
   "Michael hasn't moved this" after one working day of office hours; a Blocked card with
   nothing asked reads "Nothing asked". Done shows the last 5 and "N more".
-- Find a card (issue 158): one row above the columns, a search field (`cth-input`, 30 px,
-  up to 260 px, placeholder "Search tasks") and a team member select ("Everyone" first,
-  `line-input` boundary, 30 px). While either is set, a quiet Clear (28 px target, `ink-2`)
-  follows them, each column counts only matching cards, and Done unfolds in full.
 
 ### 7.21 Task detail (TaskDetailOverlay)
 
@@ -2190,6 +2194,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-13 | The Research team member is called Pete (owner): the Settings copy, the Team step row and the report card name him (§7.8, §7.25, §7.26); his name and engine show as plain text in Edit agent. |
 | 2026-10-13 | The Research member is renamable, Pete by default, and the copy takes its current name; Research & privacy shows in every office (owner, ship 2 D16, ship 2 D17). |
 | 2026-10-13 | Research wears Pete, its own character (magnifier over a globe), not Ryan, who stays Marketing's (owner, third ship D4, §3.4, §7.25); the crash screen (§7.25a) and the `lock` icon (§10) are written down. |
+| 2026-10-14 | Tasks view: search box matching waiting on and member names, team member filter with Unassigned, clickable status count chips with `aria-pressed`, "Showing X of Y", and "No tasks match your search or filters" (§7.20). |
 | 2026-10-04 | Banter flies as paper planes only; an envelope on the floor is always a real message (§8.8, §8.12). |
 | 2026-10-04 | Ask me file rows: a question's named files open from the card, or show in Finder (§7.8); `file` and `sheet` icons (§10). |
 | 2026-10-01 | Pre-landing review fixes: dialogs close when closing time starts and its bar sits above them; the compact grid stays clear of the right column; selecting someone dims the rest of the stage to 45% (§7.14); Traces behind a flag (§7.11); setup screens on v2 fields and rows (§7.25); the composer keeps its width and takes pastes (§7.19); Settings and closing time copy in plain words. |

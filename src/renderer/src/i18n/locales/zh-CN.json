@@ -1696,7 +1696,9 @@
     "ageDays": "{{count}} 天",
     "closedByOwner": "由负责人关闭",
     "nothingAsked": "没有提问",
-    "nothingAskedTitle": "已阻塞，但没有等待你回答的问题。{{godName}} 会被提醒向你提问或移动它。"
+    "nothingAskedTitle": "已阻塞，但没有等待你回答的问题。{{godName}} 会被提醒向你提问或移动它。",
+    "showingFiltered": "显示 {{total}} 项任务中的 {{count}} 项",
+    "noMatchingTasks": "没有匹配搜索或筛选条件的任务"
   },
   "queueComposer": {
     "recording": "● 录音中，点击停止转写",
