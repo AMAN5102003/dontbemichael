@@ -11,7 +11,9 @@ export type OfficeCharacterName =
   // and the warehouse (inventory & shipping).
   | 'nick' | 'sadiq' | 'darryl'
   // Erin, the receptionist after Pam: same job as Pam (owner, 2026-09-27).
-  | 'erin';
+  | 'erin'
+  // Pete, the Research member's own face: never a hire's (owner, third ship D4).
+  | 'pete';
 
 export interface CastMember {
   name: OfficeCharacterName;
@@ -41,11 +43,19 @@ export const OFFICE_CAST: CastMember[] = [
   { name: 'nick',     displayName: 'Nick',     blurb: 'IT' },
   { name: 'sadiq',    displayName: 'Sadiq',    blurb: 'IT security' },
   { name: 'darryl',   displayName: 'Darryl',   blurb: 'Warehouse foreman' },
+  { name: 'pete',     displayName: 'Pete',     blurb: 'Research' },
 ];
+
+/** The Research member's character: Pete is its own, not borrowed from a pack
+ *  role (owner, third ship D4). No hire takes it. */
+export const RESEARCH_CHARACTER: OfficeCharacterName = 'pete';
+/** The cast a hire may take: everyone but the Research member's face. */
+export const HIREABLE_CAST: CastMember[] = OFFICE_CAST.filter((c) => c.name !== RESEARCH_CHARACTER);
 
 /** The cast grouped by the kind of work each did in the show, in the order Add
  *  Agent shows them. Related jobs share a group so no group is a lone tile
- *  (owner, 2026-09-27). Every cast member is in exactly one group. */
+ *  (owner, 2026-09-27). Every hireable cast member is in exactly one group;
+ *  Pete, the Research member's own, is in none. */
 export const CAST_GROUPS: { key: string; members: OfficeCharacterName[] }[] = [
   { key: 'office',     members: ['michael', 'pam', 'erin'] },
   { key: 'sales',      members: ['dwight', 'jim', 'stanley', 'phyllis', 'andy', 'ryan'] },

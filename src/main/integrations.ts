@@ -140,6 +140,20 @@ export function canStoreSecrets(): boolean {
   }
 }
 
+/** What the owner reads when a saved key or connection could not be kept
+ *  encrypted on this computer: the OS secret store (Keychain, DPAPI, or a Linux
+ *  keyring) is unavailable. Says what to do, never the raw error. Mailboxes have
+ *  their own wording for a password (cannotStoreReason in mail.ts). */
+export function secretStoreUnavailableReason(platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'darwin') {
+    return 'This Mac could not store the key safely in its keychain, so nothing was saved. If macOS asks whether this app may use your keychain, choose Allow. Then try again, and restart the Mac if it keeps happening.';
+  }
+  if (platform === 'linux') {
+    return 'This computer could not store the key safely because no keyring is unlocked, so nothing was saved. Set up a keyring such as GNOME Keyring or KWallet, unlock it, then try again.';
+  }
+  return 'This computer could not store the key safely, so nothing was saved. Restart the computer, then try again.';
+}
+
 /** Store a secret ENCRYPTED. Fail closed if OS encryption is unavailable (never
  *  writes plaintext). The plaintext is used only to encrypt and is not retained. */
 export function setSecret(secretRef: string, plaintext: string): { ok: boolean; error?: string } {
@@ -147,7 +161,7 @@ export function setSecret(secretRef: string, plaintext: string): { ok: boolean; 
   if (typeof plaintext !== 'string' || plaintext === '') return { ok: false, error: 'secret required' };
   try {
     if (!safeStorage.isEncryptionAvailable()) {
-      return { ok: false, error: 'OS secret encryption is unavailable; refusing to store a secret in plaintext' };
+      return { ok: false, error: secretStoreUnavailableReason() };
     }
     const cipher = safeStorage.encryptString(plaintext).toString('base64');
     const blob = readSecretBlobForWrite();

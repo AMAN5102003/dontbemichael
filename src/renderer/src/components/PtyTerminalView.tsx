@@ -366,6 +366,8 @@ export function PtyTerminalView({ ptyId, onStreamData, onUserPrompt, onToggleFul
 
   const zoom = (delta: number) => setTerminalFontSize(getTerminalFontSize() + delta);
   const resetZoom = () => setTerminalFontSize(DEFAULT_FONT_SIZE);
+  // The zoom keys accept either modifier (below); name the one this OS uses.
+  const mod = window.cth.platform === 'darwin' ? 'Cmd' : 'Ctrl';
 
   // Keyboard zoom: Cmd/Ctrl + '=' / '-' / '0'
   useEffect(() => {
@@ -406,12 +408,12 @@ export function PtyTerminalView({ ptyId, onStreamData, onUserPrompt, onToggleFul
         <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--cth-green)', boxShadow: '0 0 0 3px var(--cth-green-soft)', animation: 'cth-pulse 1.6s ease-in-out infinite' }} />
         <div style={{ marginInlineStart: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 'var(--cth-r-md)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', overflow: 'hidden' }}>
-            <button onClick={() => zoom(-1)} disabled={fontSize <= MIN_FONT_SIZE} title="Zoom out (Cmd -)" aria-label="Zoom out" style={zoomBtnStyle}>−</button>
-            <button onClick={resetZoom} title="Reset zoom (Cmd 0)" style={{ ...zoomBtnStyle, width: 'auto', padding: '0 8px', fontFamily: 'var(--cth-font-mono)', fontSize: 11, borderInline: '1px solid var(--cth-line)' }}>{fontSize}px</button>
-            <button onClick={() => zoom(1)} disabled={fontSize >= MAX_FONT_SIZE} title="Zoom in (Cmd +)" aria-label="Zoom in" style={zoomBtnStyle}>+</button>
+            <button onClick={() => zoom(-1)} disabled={fontSize <= MIN_FONT_SIZE} title={t('workTab.zoomOut', { mod })} aria-label={t('workTab.zoomOutLabel')} style={zoomBtnStyle}>−</button>
+            <button onClick={resetZoom} title={t('workTab.zoomReset', { mod })} aria-label={`${t('workTab.zoomResetLabel')}, ${fontSize}px`} style={{ ...zoomBtnStyle, width: 'auto', padding: '0 8px', fontFamily: 'var(--cth-font-mono)', fontSize: 11, borderInline: '1px solid var(--cth-line)' }}>{fontSize}px</button>
+            <button onClick={() => zoom(1)} disabled={fontSize >= MAX_FONT_SIZE} title={t('workTab.zoomIn', { mod })} aria-label={t('workTab.zoomInLabel')} style={zoomBtnStyle}>+</button>
           </div>
           {onToggleFullscreen && (
-            <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit focus mode (Esc)' : t('workTab.focus')} style={{ ...zoomBtnStyle, width: 'auto', padding: '0 10px', gap: 6, borderRadius: 'var(--cth-r-md)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', fontWeight: 600 }}>
+            <button onClick={onToggleFullscreen} title={fullscreen ? t('workTab.exitFocus') : t('workTab.focus')} style={{ ...zoomBtnStyle, width: 'auto', padding: '0 10px', gap: 6, borderRadius: 'var(--cth-r-md)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', fontWeight: 600 }}>
               {fullscreen ? <Icon name="minimize" /> : (
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5" /></svg>
               )}

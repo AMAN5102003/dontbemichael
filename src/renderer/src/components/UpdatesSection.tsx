@@ -15,7 +15,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { summarizeReleaseNotes } from '@shared/releaseNotes';
-import { describeUpdateSettings, manualDownloadUrl, manualInstallSteps, pendingVersion, reduceStatus, clampPercent, type UpdateStatus } from '@shared/updateState';
+import { describeUpdateSettings, manualDownloadUrl, pendingVersion, reduceStatus, clampPercent, type UpdateStatus } from '@shared/updateState';
+import { installSteps } from './updateWords';
 import { PixelButton } from './PixelButton';
 
 declare const __APP_VERSION__: string;
@@ -49,7 +50,7 @@ export function useUpdates() {
   /** The manual path is always on offer next to the automatic one. */
   const pending = pendingVersion(status, __APP_VERSION__);
   const [manualStarted, setManualStarted] = useState<string | null>(null);
-  const steps = manualInstallSteps(window.cth.platform ?? 'darwin');
+  const steps = installSteps(window.cth.platform ?? 'darwin', t);
   const downloadManually = () => {
     if (!status) return;
     const url = manualDownloadUrl(status, window.cth.platform, window.cth.arch);
@@ -58,8 +59,8 @@ export function useUpdates() {
     setManualStarted(pending);
   };
 
-  // The shared describeUpdateSettings() renders English prose (it also feeds the
-  // toolbar badge and the toast, which are not i18n'd yet). For THIS block we
+  // The shared describeUpdateSettings() renders English prose (the toolbar
+  // badge translates its own words in updateWords.ts). For THIS block we
   // re-derive the three prose fields from the status through i18n, keeping the
   // shared function as the single source of truth for tone/action/busy.
   const v = __APP_VERSION__;

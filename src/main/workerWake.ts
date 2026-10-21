@@ -21,8 +21,10 @@
  *  - never inside the boot sequence (BOOT_GRACE_MS from spawn, mirroring the
  *    renderer's bootGraceUntil),
  *  - delivery paused / agent paused / halted → no nudge (ControlRegistry),
- *  - a recent permission/HITL notification re-arms a block (HITL_REARM_MS) so a
- *    prompt the human is deciding on is never typed into,
+ *  - a permission/HITL notification blocks nudges until the agent moves on
+ *    (its next tool call, reply, prompt or session), so an open prompt is never
+ *    typed into: the nudge's Enter answered it "Yes" once a timed block ran
+ *    out (owner, 2026-10-15),
  *  - a per-worker cooldown (NUDGE_COOLDOWN_MS) so the watchdog and the renderer
  *    nudge don't stack on top of each other.
  *
@@ -42,8 +44,10 @@ export const WORKER_WAKE_IDLE_MS = 12_000;
 export const WORKER_WAKE_BOOT_GRACE_MS = 35_000;
 /** Minimum gap between two watchdog nudges of the same worker. */
 export const WORKER_WAKE_COOLDOWN_MS = 60_000;
-/** A permission/HITL notification blocks nudges for this long after it fires. */
-export const WORKER_WAKE_HITL_REARM_MS = 5 * 60_000;
+/** Hook events that mean the agent moved past a prompt: a new session ends a
+ *  dismissed one; an idle notice does not, since Claude Code can send one while
+ *  a permission prompt is still open (the same rule as safeClearer.ts). */
+const MOVED_ON_EVENTS = new Set(['SessionStart', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop']);
 
 /** A hook event message that means "the agent needs the human" — permission /
  *  approve / confirm prompts (mirrors the renderer's needsHuman detection in
@@ -95,6 +99,8 @@ export class WorkerWakeWatchdog {
   private announcedInboxIds = new Map<string, Set<string>>();
   /** agentId → timestamp of the last needsHuman hook notification. */
   private lastHumanNeedsAt = new Map<string, number>();
+  /** agentId → when it last moved past a prompt (MOVED_ON_EVENTS). */
+  private lastMovedOnAt = new Map<string, number>();
 
   /** Record a PTY spawn so its boot sequence is left alone. */
   noteSpawn(ptyId: string, at = Date.now()): void {
@@ -105,6 +111,7 @@ export class WorkerWakeWatchdog {
   noteHook(agentId: string | undefined, event: string | undefined, message: string | undefined, at = Date.now()): void {
     if (!agentId) return;
     if (classifyHook(event, message) === 'needsHuman') this.lastHumanNeedsAt.set(agentId, at);
+    else if (event && MOVED_ON_EVENTS.has(event)) this.lastMovedOnAt.set(agentId, at);
   }
 
   /** Forget per-agent state (e.g. the agent's PTY was closed). */
@@ -112,6 +119,7 @@ export class WorkerWakeWatchdog {
     this.lastNudgeAt.delete(agentId);
     this.announcedInboxIds.delete(agentId);
     this.lastHumanNeedsAt.delete(agentId);
+    this.lastMovedOnAt.delete(agentId);
     if (ptyId) this.spawnedAt.delete(ptyId);
   }
 
@@ -133,8 +141,8 @@ export class WorkerWakeWatchdog {
       if (now - f.lastOutputAt < WORKER_WAKE_IDLE_MS) continue; // mid-turn
       const spawned = this.spawnedAt.get(f.ptyId) ?? 0;
       if (spawned > 0 && now - spawned < WORKER_WAKE_BOOT_GRACE_MS) continue;
-      const lastHuman = this.lastHumanNeedsAt.get(f.agentId) ?? 0;
-      if (lastHuman > 0 && now - lastHuman < WORKER_WAKE_HITL_REARM_MS) continue;
+      // Waiting at a prompt: never typed into, however long it waits.
+      if ((this.lastHumanNeedsAt.get(f.agentId) ?? 0) > (this.lastMovedOnAt.get(f.agentId) ?? 0)) continue;
       const announced = this.announcedInboxIds.get(f.agentId);
       if (announced && !Array.from(inboxIds).some((id) => !announced.has(id))) continue;
       const lastNudge = this.lastNudgeAt.get(f.agentId) ?? 0;

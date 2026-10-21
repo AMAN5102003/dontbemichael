@@ -18,7 +18,7 @@ const os = require('node:os');
 const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
-const { claudeCliVersion } = loadTs('src/main/claudeCliVersion.ts');
+const { claudeCliVersion, versionCommand } = loadTs('src/main/claudeCliVersion.ts');
 
 const skip = process.platform === 'win32' ? 'shell-script fixtures' : false;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'md-cli-version-'));
@@ -71,4 +71,30 @@ test('an installer update that repoints the claude link is noticed too', { skip 
   fs.unlinkSync(link);
   fs.symlinkSync(v2.bin, link);
   assert.equal(await claudeCliVersion(link), '2.1.300');
+});
+
+test('a probe that cannot start at all answers null, never a rejection into the spawn', async () => {
+  // On Windows, execFile throws EINVAL for a .cmd it is handed directly,
+  // instead of calling back. Stand in for that on every platform.
+  const cp = require('node:child_process');
+  const real = cp.execFile;
+  cp.execFile = () => { throw Object.assign(new Error('spawn EINVAL'), { code: 'EINVAL' }); };
+  try {
+    const bin = path.join(tmp, 'claude-cannot-start.cmd');
+    fs.writeFileSync(bin, '@echo off\r\n');
+    assert.equal(await claudeCliVersion(bin), null);
+  } finally {
+    cp.execFile = real;
+  }
+});
+
+test('on Windows a .cmd or .bat shim runs through cmd.exe, quoted for paths with spaces', () => {
+  const npm = String.raw`C:\Users\Ann Lee\AppData\Roaming\npm\claude.cmd`;
+  assert.deepEqual(versionCommand('win32', npm, String.raw`C:\Windows\system32\cmd.exe`),
+    { file: String.raw`C:\Windows\system32\cmd.exe`, args: ['/d', '/s', '/c', `""${npm}" --version"`], verbatim: true });
+  assert.equal(versionCommand('win32', String.raw`C:\x\CLAUDE.CMD`).file, 'cmd.exe', 'any case, and cmd.exe when ComSpec is unset');
+  assert.equal(versionCommand('win32', String.raw`C:\x\claude.bat`).verbatim, true);
+  const exe = String.raw`C:\Users\o\.local\bin\claude.exe`;
+  assert.deepEqual(versionCommand('win32', exe), { file: exe, args: ['--version'], verbatim: false });
+  assert.deepEqual(versionCommand('darwin', '/Users/o/.local/bin/claude'), { file: '/Users/o/.local/bin/claude', args: ['--version'], verbatim: false });
 });

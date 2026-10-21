@@ -91,7 +91,9 @@ test('strings in every language, no dashes, no literal Michael', () => {
 
 test("every profile can open the agent's work folder, and says so when it can't", () => {
   const src = read('src/renderer/src/components/ProfileTab.tsx');
-  assert.match(src, /window\.cth\.revealPath\(agent\.cwd\)/, 'reuses the reveal that never launches a file');
+  assert.match(src, /window\.cth\.openAgentFolder\(agent\.id\)/, 'by id: main opens the folder it has on record, never a path from the renderer');
+  // Only a folder the app's settings name opens; the registry's path is only shown (owner, third ship D2).
+  assert.match(read('src/main/index.ts'), /const recorded = id === \(reg\.godId \?\? 'god'\) \? cfg\.businessFolder : \(cfg\.businessTeam \?\? \[\]\)\.find\(\(m\) => m\.agentId === id\)\?\.folder;[\s\S]{0,400}?if \(!recorded \|\| !dir \|\| isPackageDir\(shown\)\) \{ shell\.showItemInFolder\(shown\); return \{ ok: true \}; \}/);
   assert.match(src, /onClick=\{openFolder\}>\{t\('profile\.openFolder'\)\}/);
   assert.match(src, /if \(!r\.ok\) setFolderError\(true\);/);
   assert.match(src, /! \{t\('profile\.openFolderFailed'\)\}/);

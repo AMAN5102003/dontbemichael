@@ -4,7 +4,7 @@
  * data folder (never tasks.json, which agents write), so what goes out is what
  * the owner approved. The rules are in shared/mailProposals.ts.
  */
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import {
   addSendRecord,
@@ -46,6 +46,9 @@ export interface MailApprovalDeps {
    *  grant). Absent: assumed, as before. The late sweep skips one that can't,
    *  so Michael is never sent on a dead errand (OV6). */
   canSend?: (agentId: string, mailbox: string, proposalId: string) => boolean;
+  /** Every owner decision and withdrawal, for Pulse's kept as is (E2). No
+   *  subject or body: the member, the decision and whether it was edited. */
+  onDecision?: (agentId: string, decision: 'approve' | 'approve-edited' | 'changes' | 'decline' | 'cancelled') => void;
   now?: () => number;
 }
 
@@ -70,6 +73,9 @@ const STORE_UNREADABLE =
   'The saved mail approvals file could not be read, so nothing was saved over it. Try again; if it keeps failing, the file needs repair.';
 
 export class MailApprovals implements ProposalStore {
+  /** The file as last read or written, with its size and time stamp then. */
+  private cache: { mtimeMs: number; size: number; store: StoreFile } | null = null;
+
   constructor(private deps: MailApprovalDeps) {}
 
   private now(): number { return this.deps.now?.() ?? Date.now(); }
@@ -82,27 +88,56 @@ export class MailApprovals implements ProposalStore {
     if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
     const raw = v as Record<string, unknown>;
     const ok = <T extends { id?: unknown }>(a: unknown): T[] => (Array.isArray(a) ? (a as T[]).filter((x) => x && typeof x.id === 'string') : []);
-    const sends = Array.isArray(raw.sends) ? (raw.sends as SendRecord[]).filter((r) => r && typeof r.messageId === 'string' && typeof r.agentId === 'string') : [];
-    const paused = raw.paused && typeof raw.paused === 'object' && !Array.isArray(raw.paused) ? (raw.paused as Record<string, PausedNotice>) : {};
+    const sends = Array.isArray(raw.sends) ? (raw.sends as unknown[]).filter((r): r is SendRecord => {
+      if (!r || typeof r !== 'object' || Array.isArray(r)) return false;
+      const rec = r as Record<string, unknown>;
+      return typeof rec.agentId === 'string'
+        && typeof rec.mailbox === 'string'
+        && typeof rec.messageId === 'string'
+        && Array.isArray(rec.references)
+        && rec.references.every((ref) => typeof ref === 'string')
+        && typeof rec.to === 'string'
+        && typeof rec.subject === 'string'
+        && typeof rec.sentAt === 'number'
+        && Number.isFinite(rec.sentAt)
+        && Number.isFinite(new Date(rec.sentAt).getTime());
+    }) : [];
+    // A damaged notice is dropped, so pausedDue starts that pause's wait again.
+    const paused: Record<string, PausedNotice> = {};
+    if (raw.paused && typeof raw.paused === 'object' && !Array.isArray(raw.paused)) {
+      const now = this.now();
+      for (const [key, n] of Object.entries(raw.paused as Record<string, unknown>)) {
+        if (!n || typeof n !== 'object' || Array.isArray(n)) continue;
+        const { since, told } = n as Record<string, unknown>;
+        if (typeof since === 'number' && Number.isFinite(since) && since <= now && typeof told === 'boolean') paused[key] = { since, told };
+      }
+    }
     return { ...raw, proposals: ok<MailProposal>(raw.proposals), standing: ok<StandingApproval>(raw.standing), sends, paused };
   }
 
-  private load(): StoreFile {
+  private stamp(): { mtimeMs: number; size: number } | null {
     try {
-      if (!existsSync(this.deps.path)) return this.empty();
-      return this.coerceStore(JSON.parse(readFileSync(this.deps.path, 'utf8'))) ?? this.empty();
-    } catch { return this.empty(); }
+      const s = statSync(this.deps.path);
+      return { mtimeMs: s.mtimeMs, size: s.size };
+    } catch { return null; }
   }
 
+  /** The store, from memory until the file changes on disk. Null when the
+   *  file is there but can't be read. */
+  private current(): StoreFile | null {
+    const st = this.stamp();
+    if (!st) { this.cache = null; return this.empty(); }
+    if (this.cache && this.cache.mtimeMs === st.mtimeMs && this.cache.size === st.size) return this.cache.store;
+    let store: StoreFile | null = null;
+    try { store = this.coerceStore(JSON.parse(readFileSync(this.deps.path, 'utf8'))); } catch { /* unreadable */ }
+    this.cache = store ? { ...st, store } : null;
+    return store;
+  }
+
+  private load(): StoreFile { return this.current() ?? this.empty(); }
+
   private loadForWrite(): StoreFile {
-    if (!existsSync(this.deps.path)) return this.empty();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(readFileSync(this.deps.path, 'utf8'));
-    } catch {
-      throw new Error(STORE_UNREADABLE);
-    }
-    const store = this.coerceStore(parsed);
+    const store = this.current();
     if (!store) throw new Error(STORE_UNREADABLE);
     return store;
   }
@@ -115,7 +150,12 @@ export class MailApprovals implements ProposalStore {
     const tmp = `${this.deps.path}.tmp`;
     writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
     renameSync(tmp, this.deps.path);
-    try { this.deps.changed(); } catch { /* window gone */ }
+    const st = this.stamp();
+    this.cache = st ? { ...st, store: data } : null;
+    // Paused-grant notices are only Michael's bookkeeping; nothing on screen shows them.
+    if (next.proposals || next.standing || next.sends) {
+      try { this.deps.changed(); } catch { /* window gone */ }
+    }
   }
 
   private read(): MailProposal[] { return this.load().proposals; }
@@ -171,6 +211,7 @@ export class MailApprovals implements ProposalStore {
     if (!gone.length) return [];
     const ids = new Set(gone.map((p) => p.id));
     this.write(list.map((p) => (ids.has(p.id) ? { ...p, state: 'cancelled' as const, decidedAt: this.now(), cancelReason: reason } : p)));
+    for (const p of gone) { try { this.deps.onDecision?.(p.agentId, 'cancelled'); } catch { /* best-effort */ } }
     return gone;
   }
 
@@ -342,6 +383,7 @@ export class MailApprovals implements ProposalStore {
     this.save({ proposals: list.map((x) => (x.id === id ? next : x)), ...(standing ? { standing: [...this.load().standing, standing] } : {}) });
     const msg = decisionMessage(p, decision, edits, note, standing);
     try { this.deps.send({ to: p.agentId, ...msg }); } catch (e) { console.error('[mail] approval message:', e); }
+    try { this.deps.onDecision?.(p.agentId, decision === 'approve' ? (edits ? 'approve-edited' : 'approve') : decision === 'changes' ? 'changes' : 'decline'); } catch { /* best-effort */ }
     const line = memoryLine(p, decision, edits, note, this.today());
     if (line) { try { this.deps.remember(p.agentId, line); } catch { /* the decision stands */ } }
     if (standing) { try { this.deps.remember(p.agentId, standingMemoryLine(standing, true, this.today())); } catch { /* the approval stands */ } }

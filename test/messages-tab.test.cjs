@@ -42,6 +42,45 @@ test("Pam's tab: scheduled runs are counted; a question and its answer stay toge
   assert.equal(v.days[1].threads[0].latest, undefined, 'a one-message conversation has no reply line');
 });
 
+test('conversations with no usable time share one last group, after every real day', () => {
+  const v = messageView([
+    msg({ id: 'bad', from: 'dwight', conversation: 'c1', created_at: 'not a time' }),
+    msg({ id: 'new', from: 'dwight', conversation: 'c2', created_at: at(15) }),
+    msg({ id: 'none', from: 'dwight', conversation: 'c3', created_at: '' }),
+    msg({ id: 'old', from: 'dwight', conversation: 'c4', created_at: at(15, 24) })
+  ]);
+  assert.deepEqual(v.days.map((d) => d.day), [localDay(at(15)), localDay(at(15, 24)), '']);
+  assert.deepEqual(v.days[2].threads.map((t) => t.first.id).sort(), ['bad', 'none']);
+});
+
+test('a conversation with one broken time stays under its real day, timed by its newest real message', () => {
+  const v = messageView([
+    msg({ id: 'q', from: 'dwight', act: 'request', subject: 'Has Dennis replied?', conversation: 'c1', created_at: at(14) }),
+    msg({ id: 'x', from: 'pam', to: 'dwight', body: 'Still checking.', conversation: 'c1', created_at: 'not a time' }),
+    msg({ id: 'a', from: 'pam', to: 'dwight', body: 'Not yet.', conversation: 'c1', created_at: at(15) }),
+    msg({ id: 'other', from: 'dwight', conversation: 'c2', created_at: at(13) })
+  ]);
+  assert.deepEqual(v.days.map((d) => d.day), [localDay(at(15))], 'no Undated group');
+  const [t, other] = v.days[0].threads;
+  assert.equal(other.first.id, 'other', 'still ordered by its newest real time');
+  assert.equal(t.first.id, 'q');
+  assert.equal(t.latest.id, 'a', 'the reply line and the time beside it are the same message');
+  assert.equal(t.lastAt, at(15));
+  assert.deepEqual(t.messages.map((m) => m.id), ['q', 'a', 'x'], 'the undated message reads last');
+});
+
+test('one real time and one broken one: the row has no reply line to repeat the first message', () => {
+  const v = messageView([
+    msg({ id: 'x', from: 'pam', conversation: 'c1', created_at: '' }),
+    msg({ id: 'q', from: 'dwight', conversation: 'c1', created_at: at(14) })
+  ]);
+  const [t] = v.days[0].threads;
+  assert.equal(v.days[0].day, localDay(at(14)));
+  assert.equal(t.first.id, 'q');
+  assert.equal(t.latest, undefined);
+  assert.deepEqual(t.messages.map((m) => m.id), ['q', 'x']);
+});
+
 test('routine, verbs and the quoted gist', () => {
   assert.equal(isRoutine({ from: 'pam', subject: 'CLOSING-TIME-ACK' }), true);
   assert.equal(isRoutine({ from: 'dwight', subject: 'Deal' }), false);

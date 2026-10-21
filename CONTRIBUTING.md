@@ -60,7 +60,8 @@ much cheaper than finding out in review.
   are for Mac and Windows 11 (x64), and are not signed yet.
   Cross-platform smoke-testing and fixes are very welcome (see
   [Good first areas](#good-first-areas)).
-- **Node.js 18+** and npm.
+- **Node.js 20+** and npm. CI runs on Node 20; the mail libraries (`imapflow`,
+  `mailparser`, `nodemailer`) do not support anything older.
 - A **C/C++ toolchain** to build `node-pty`'s native addon. On macOS:
   ```bash
   xcode-select --install

@@ -307,7 +307,7 @@ test('pass 2 fixes: owner text out of the log, the owner folder is never routed,
   assert.equal(ctx.out.sends.length, 1);
 
   const main = read('src/main/index.ts');
-  assert.match(main, /cwd: \(\) => \{\n    const dir = join\(app\.getPath\('userData'\), 'standing-check'\);/);
+  assert.match(main, /cwd: \(\) => \{\n    const dir = join\(app\.getPath\('userData'\), STANDING_CHECK_DIR\);/);
   assert.match(main, /if \(saveOwnerDockKeys\(list\)\) writeConfig\(\{ ownerDockKeys: undefined \}\);/);
   assert.match(main, /mailApprovals\.waiting\(\)\.filter\(\(p\) => memberPresent\(p\.agentId\)\)/);
   assert.match(read('src/main/standingCheck.ts'), /settingSources: 'user'/);

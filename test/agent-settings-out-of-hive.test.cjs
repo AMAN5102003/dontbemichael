@@ -44,3 +44,19 @@ test('agent settings live outside the hive, and the hook folder is denied to eve
   assert.ok(fsx.denyWrite.includes(path.join(root, 'bin')), 'the hook folder is denied to the shell');
   assert.ok(fs.existsSync(path.join(root, 'bin', 'cth-hook.cjs')), 'and the hook it protects is there');
 });
+
+test('Research gets its tools allowed in its own settings, since its session cannot use bypass mode', async (t) => {
+  // Value: protects=Pete never stops on a permission prompt for his own tools; fails_when=the allow rules go or reach other members; why_new=owner 2026-10-15, Claude Code turns bypass into default without the owner's settings and Pete stopped on every shell command; seam=none
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-research-allow-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  const { RESEARCH_ALLOWED_TOOLS } = loadTs('src/main/hive.ts');
+  const pete = await hive.ensureAgent({ id: 'research', name: 'Pete', provider: 'claude', cwd: path.join(home, 'research-desk'), isResearch: true });
+  const peteSettings = JSON.parse(fs.readFileSync(pete.args[pete.args.indexOf('--settings') + 1], 'utf8'));
+  assert.deepEqual(peteSettings.permissions.allow, [...RESEARCH_ALLOWED_TOOLS]);
+  for (const tool of ['Bash', 'Read', 'Write', 'Edit', 'WebFetch', 'WebSearch']) assert.ok(peteSettings.permissions.allow.includes(tool), tool);
+  assert.equal(peteSettings.sandbox.enabled, true, 'the sandbox still holds his shell');
+  const pam = await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const pamSettings = JSON.parse(fs.readFileSync(pam.args[pam.args.indexOf('--settings') + 1], 'utf8'));
+  assert.equal(pamSettings.permissions?.allow, undefined, 'members in bypass mode get no allow list');
+});

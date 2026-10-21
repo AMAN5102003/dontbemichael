@@ -44,6 +44,14 @@ export function chooseInstallRung(
   return { kind: 'manual', nodeMissing: !npmAvailable };
 }
 
+/** Whether a finished installer PTY should auto restart-and-continue into the CLI.
+ *  A clean exit is not enough: the CLI must also be findable now, or the relaunch
+ *  just spawns the still-missing binary and wipes the install output for nothing.
+ *  `cliFound` is only called after a clean exit (the lookup can cost a login shell). */
+export function installSucceeded(exitCode: number | undefined, cliFound: () => boolean): boolean {
+  return exitCode === 0 && cliFound();
+}
+
 /** Build the shell script the missing-CLI auto-install path runs IN PLACE of a
  *  missing engine CLI. When a rung of the ladder above is runnable it prints a
  *  banner then RUNS it visibly (so the user can watch + finish any sign-in);
@@ -74,8 +82,8 @@ export function buildMissingCliScript(
   if (platform === 'win32') {
     // ONE cmd.exe line: `&` chains steps, `^&` prints a literal ampersand, and the
     // script carries NO double-quotes (it is wrapped verbatim in `/d /s /c "..."`).
-    // We avoid `if errorlevel` branching (untestable here) — a combined success/
-    // failure hint after the install is robust and satisfies the manual-fallback DoD.
+    // One combined success/failure hint follows the install (no branching on the
+    // result); the line then exits with the installer's code.
     const parts: string[] = ['echo.', `echo ${rule}`, `echo   Engine CLI not found:  ${safeBin}`, 'echo.'];
     if (nodeSteps && nodeInstaller) {
       parts.push(
@@ -100,7 +108,10 @@ export function buildMissingCliScript(
         cmd,
         'echo.',
         'echo   [done] If it succeeded, the agent launches automatically.',
-        'echo   If it failed, run the command above manually, then restart the agent.'
+        'echo   If it failed, run the command above manually, then restart the agent.',
+        // echo leaves ERRORLEVEL alone, so this hands back the installer's own code
+        // (the exit handler relaunches only on 0).
+        'if errorlevel 1 exit /b'
       );
     } else {
       if (rung.nodeMissing) {
@@ -170,7 +181,9 @@ export function buildMissingCliScript(
       `  echo '    ${cmd}'`,
       ...(docs ? [`  echo '    Docs: ${docs}'`] : []),
       `  echo '  Then restart the agent to launch it.'`,
-      `fi`
+      `fi`,
+      // The exit handler relaunches only on 0, so report what the installer did.
+      `exit $__clirc`
     );
   } else if (rung.nodeMissing) {
     // The honest dead end: no node, and this vendor ships no node-free installer.

@@ -42,6 +42,10 @@ export interface ScheduledMission {
   enabled: boolean;
   autoCompact?: boolean;
   lastFiredAt?: number;
+  /** When its current times took effect: added, turned on, or given new times.
+   *  A slot before this was never the schedule's to run, so it is not "missed"
+   *  (catchUpFloor). Main stamps it; absent on rows from before it existed. */
+  scheduledSince?: number;
   kind?: 'dispatch' | 'heartbeat' | 'compact';
   quietThresholdMs?: number;
   /** Who added it: `'owner'`, or the id of the agent whose request the owner
@@ -89,6 +93,19 @@ export function ownerOf(m: Pick<ScheduledMission, 'to'>, godId: string): string 
 /** The schedules `agentId` owns, in stored order. */
 export function missionsFor(missions: ScheduledMission[], agentId: string, godId: string): ScheduledMission[] {
   return missions.filter((m) => ownerOf(m, godId) === agentId);
+}
+
+/** A job that sends its agent to the mailbox: the name or focus speaks of the
+ *  inbox, or of checking, reading or sorting email. */
+const MAIL_CHECK = /\b(?:inbox|mailbox(?:es)?)\b|\b(?:check|read|triage|sort|clear)(?:\s+(?!and\b|then\b|to\b)\w+){0,2}\s+e-?mails?\b/i;
+
+/** True when `m` is a running job that looks in the mailbox and its agent has
+ *  no way to: its email is off and it holds no Gmail connector that is on
+ *  (`gmail`). The hook refuses the mail call, so each run is a wasted turn
+ *  (docs/designs/multi-mailbox.md); the schedules say so beside the job. */
+export function cannotCheckEmail(m: ScheduledMission, email: { enabled: boolean } | undefined, gmail = false): boolean {
+  if (!m.enabled || (m.kind ?? 'dispatch') !== 'dispatch' || email?.enabled || gmail) return false;
+  return MAIL_CHECK.test(`${m.label} ${m.focus ?? ''} ${m.body}`);
 }
 
 /** May `actor` (an agent id) ask for a change to `m`? Only its own. */
@@ -159,13 +176,20 @@ export interface ArmContext {
   standupFiredThisLaunch: boolean;
 }
 
+/** The time before which a passed slot is not a missed run: the later of the
+ *  last run and when the current times took effect. Without the second, a job
+ *  added at 14:00 for "weekdays at 09:00" ran at once, as if 09:00 was missed. */
+export function catchUpFloor(m: ScheduledMission): number {
+  return Math.max(m.lastFiredAt ?? 0, m.scheduledSince ?? 0);
+}
+
 /** How the scheduler should arm `m` at `now`. The same decisions syncMissions
  *  made inline before this module existed; see test/missions.test.cjs. */
 export function armPlan(m: ScheduledMission, now: number, ctx: ArmContext): ArmPlan {
   if (!m.enabled) return { type: 'skip' };
   const times = m.kind === 'heartbeat' ? null : normalizeTimes(m.times);
   if (times) {
-    const firstDelayMs = timesDelayMs(times, now, m.lastFiredAt ?? 0);
+    const firstDelayMs = timesDelayMs(times, now, catchUpFloor(m));
     return firstDelayMs === null ? { type: 'skip' } : { type: 'times', times, firstDelayMs };
   }
   // A weekly mission needs no interval, so the interval guard comes after it.
@@ -173,7 +197,7 @@ export function armPlan(m: ScheduledMission, now: number, ctx: ArmContext): ArmP
   if (!weekly && !(m.intervalMs > 0)) return { type: 'skip' };
   if (m.kind === 'heartbeat') return { type: 'heartbeat' };
   if (weekly) {
-    const firstDelayMs = weeklyDelayMs(weekly, now, m.lastFiredAt ?? 0);
+    const firstDelayMs = weeklyDelayMs(weekly, now, catchUpFloor(m));
     return firstDelayMs === null ? { type: 'skip' } : { type: 'weekly', weekly, firstDelayMs };
   }
   // Honor lastFiredAt so an edit elsewhere doesn't restart this interval from
@@ -195,33 +219,91 @@ export function firePayload(m: ScheduledMission): { to: string; subject: string;
   };
 }
 
+/* ───────────────────────────────── run now ───────────────────────────────── */
+// The owner runs one job at once, to see it work without waiting for its clock
+// (docs/designs/schedule-run-now.md). A run now sends exactly what the clock
+// sends (firePayload) and stamps lastFiredAt the same way, so it is a real run.
+
+/** How soon after a run the same job can be run again by hand. A double click,
+ *  or a click right after the clock fired, would otherwise send the job twice. */
+export const RUN_NOW_GAP_MS = 60_000;
+
+export type RunNowCheck =
+  | { ok: true; mission: ScheduledMission }
+  | { ok: false; error: 'not found' | 'not a job' | 'just ran' };
+
+/** May the schedule `id` be run now? Only a job (a dispatch schedule) can: the
+ *  heartbeat is the office's own pulse and a compact row sends nothing. A paused
+ *  job can, so the owner can try it before turning it on. */
+export function runNowCheck(list: ScheduledMission[], id: string, now: number): RunNowCheck {
+  const mission = list.find((m) => m.id === id);
+  if (!mission) return { ok: false, error: 'not found' };
+  if ((mission.kind ?? 'dispatch') !== 'dispatch' || !firePayload(mission)) return { ok: false, error: 'not a job' };
+  const last = mission.lastFiredAt ?? 0;
+  if (last > 0 && now >= last && now - last < RUN_NOW_GAP_MS) return { ok: false, error: 'just ran' };
+  return { ok: true, mission };
+}
+
+/** What a row says after main answers a run now: sent, ran a moment ago (the
+ *  gap above), or failed for any other reason. */
+export function runNowOutcome(res: { ok: boolean; error?: string }): 'sent' | 'justRan' | 'failed' {
+  if (res.ok) return 'sent';
+  return res.error === 'just ran' ? 'justRan' : 'failed';
+}
+
 /* ──────────────────────────── one-schedule edits ──────────────────────────── */
 // Each operation names the one schedule it changes and is applied by main to the
 // list it reads at that moment, so a screen opened earlier can never delete a
 // schedule it didn't know about (eng review R2).
 
+/** What decides when a schedule runs. A change here is new times. */
+function timingKey(m: ScheduledMission): string {
+  return JSON.stringify([m.kind ?? 'dispatch', m.intervalMs, normalizeWeekly(m.weekly), normalizeTimes(m.times)]);
+}
+
+/** `m` with `scheduledSince` set: `now` when its times just took effect, else
+ *  the stored value. Without a `now` nothing is stamped. */
+function withSince(m: ScheduledMission, since: number | undefined): ScheduledMission {
+  const out = { ...m };
+  if (since === undefined) delete out.scheduledSince; else out.scheduledSince = since;
+  return out;
+}
+
 /** Insert or replace `incoming` by id. `lastFiredAt` is the scheduler's, so the
- *  newer of the two stamps wins; `createdBy` is never rewritten by an edit. */
-export function upsertMission(list: ScheduledMission[], incoming: ScheduledMission): ScheduledMission[] {
+ *  newer of the two stamps wins; `createdBy` is never rewritten by an edit.
+ *  With `now`, a new schedule, new times or turning it on set `scheduledSince`
+ *  (catchUpFloor); otherwise the stored value stands, whatever the caller sent. */
+export function upsertMission(list: ScheduledMission[], incoming: ScheduledMission, now?: number): ScheduledMission[] {
   const prev = list.find((m) => m.id === incoming.id);
-  if (!prev) return [...list, { ...incoming, createdBy: incoming.createdBy ?? OWNER }];
+  if (!prev) {
+    const added = { ...incoming, createdBy: incoming.createdBy ?? OWNER };
+    return [...list, now === undefined ? added : withSince(added, now)];
+  }
   const lastFiredAt = Math.max(incoming.lastFiredAt ?? 0, prev.lastFiredAt ?? 0) || undefined;
   const merged: ScheduledMission = { ...incoming, lastFiredAt, createdBy: prev.createdBy ?? incoming.createdBy ?? OWNER };
   // An explicit `weekly: undefined` is the switch back to interval mode, and
   // an absent or undefined `times` drops the extra lines.
   if (!('weekly' in incoming) || incoming.weekly === undefined) delete merged.weekly;
   if (!('times' in incoming) || incoming.times === undefined) delete merged.times;
-  return list.map((m) => (m.id === incoming.id ? merged : m));
+  const restarted = timingKey(merged) !== timingKey(prev) || (merged.enabled && !prev.enabled);
+  const since = now !== undefined && restarted ? now : prev.scheduledSince;
+  return list.map((m) => (m.id === incoming.id ? withSince(merged, since) : m));
 }
 
 export function deleteMission(list: ScheduledMission[], id: string): ScheduledMission[] {
   return list.filter((m) => m.id !== id);
 }
 
-/** Turn one schedule on or off. Null when there is no such schedule. */
-export function setMissionEnabled(list: ScheduledMission[], id: string, on: boolean): ScheduledMission[] | null {
+/** Turn one schedule on or off. Null when there is no such schedule. With
+ *  `now`, turning it on sets `scheduledSince`, so a slot that passed while it
+ *  was off is not run. */
+export function setMissionEnabled(list: ScheduledMission[], id: string, on: boolean, now?: number): ScheduledMission[] | null {
   if (!list.some((m) => m.id === id)) return null;
-  return list.map((m) => (m.id === id ? { ...m, enabled: on } : m));
+  return list.map((m) => {
+    if (m.id !== id) return m;
+    const next = { ...m, enabled: on };
+    return on && !m.enabled && now !== undefined ? withSince(next, now) : next;
+  });
 }
 
 /** Pause every schedule `agentId` owns (the owner closed that agent, design 6A
@@ -280,7 +362,7 @@ export interface ScheduleRequest {
   createdAt: number;
 }
 
-const DAY_NAMES: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const LABEL_MAX = 80;
 
 /** Node timers can't wait longer than 2^31-1 ms (about 24.8 days): a longer
@@ -299,8 +381,17 @@ function parseDays(raw: unknown): number[] | null {
     if (d === 'weekdays') [1, 2, 3, 4, 5].forEach((x) => days.add(x));
     else if (d === 'weekends') [0, 6].forEach((x) => days.add(x));
     else if (d === 'daily' || d === 'every day') [0, 1, 2, 3, 4, 5, 6].forEach((x) => days.add(x));
-    else if (d.slice(0, 3) in DAY_NAMES) days.add(DAY_NAMES[d.slice(0, 3)]);
-    else return null;
+    else {
+      // "mon", "tues", "Friday", "Mondays", "weds", "mon.": a start of a real
+      // day name, never just its first three letters, so "monthly" or
+      // "sunset" is not read as a day.
+      const w = d.replace(/\.$/, '');
+      const day = w.length >= 3
+        ? DAY_NAMES.findIndex((n) => n.startsWith(w) || w === `${n}s` || (w === 'weds' && n === 'wednesday'))
+        : -1;
+      if (day < 0) return null;
+      days.add(day);
+    }
   }
   return days.size ? [...days].sort((a, b) => a - b) : null;
 }
@@ -555,9 +646,10 @@ export function requestIsStale(req: ScheduleRequest, missions: ScheduledMission[
   return !target || missionFingerprint(target) !== req.snapshot;
 }
 
-/** Apply an approved request to the current list. Refuses a stale one. */
+/** Apply an approved request to the current list. Refuses a stale one. With
+ *  `now`, an add, a resume or new times set `scheduledSince` (upsertMission). */
 export function applyScheduleRequest(
-  req: ScheduleRequest, missions: ScheduledMission[], newId: string
+  req: ScheduleRequest, missions: ScheduledMission[], newId: string, now?: number
 ): { ok: true; missions: ScheduledMission[]; missionId: string } | { ok: false; error: string } {
   if (requestIsStale(req, missions)) return { ok: false, error: 'stale' };
   if (req.op === 'add' && req.draft) {
@@ -568,12 +660,12 @@ export function applyScheduleRequest(
       ...(req.draft.focus ? { focus: req.draft.focus } : {}),
       to: req.agentId, body: '', enabled: true, createdBy: req.agentId
     };
-    return { ok: true, missions: [...missions, m], missionId: newId };
+    return { ok: true, missions: [...missions, now === undefined ? m : withSince(m, now)], missionId: newId };
   }
   const id = req.missionId ?? '';
   if (req.op === 'delete') return { ok: true, missions: deleteMission(missions, id), missionId: id };
   if (req.op === 'pause' || req.op === 'resume') {
-    const next = setMissionEnabled(missions, id, req.op === 'resume');
+    const next = setMissionEnabled(missions, id, req.op === 'resume', now);
     return next ? { ok: true, missions: next, missionId: id } : { ok: false, error: 'stale' };
   }
   if (req.op === 'update' && req.draft) {
@@ -583,6 +675,7 @@ export function applyScheduleRequest(
     if (req.draft.focus) updated.focus = req.draft.focus;
     if (req.draft.weekly) updated.weekly = req.draft.weekly; else delete updated.weekly;
     if (req.draft.times) updated.times = req.draft.times; else delete updated.times;
+    if (now !== undefined && timingKey(updated) !== timingKey(target)) updated.scheduledSince = now;
     return { ok: true, missions: missions.map((m) => (m.id === id ? updated : m)), missionId: id };
   }
   return { ok: false, error: 'invalid' };
