@@ -4,8 +4,10 @@ const path = require('node:path');
 const fs = require('node:fs');
 app.setPath('userData', path.join(process.argv[2], 'profile'));
 if (process.argv.includes('--reduced-motion')) app.commandLine.appendSwitch('force-prefers-reduced-motion');
-// The window stays hidden. On Windows Chromium stops giving a hidden or
-// occluded window frames, and every check here waits on frames.
+// Every check here waits on frames. On Windows Chromium gives a hidden
+// window none (each wait then falls back to a timer and the run crawls), so
+// there the window is shown; elsewhere it stays hidden.
+const showWindow = process.platform === 'win32';
 for (const flag of ['disable-renderer-backgrounding', 'disable-backgrounding-occluded-windows', 'disable-background-timer-throttling']) app.commandLine.appendSwitch(flag);
 app.on('window-all-closed', () => app.quit());
 // Each step on stderr with its time, so a run that stalls says where.
@@ -14,7 +16,7 @@ const step = (name) => process.stderr.write(`[dock] ${name} at ${Date.now() - st
 app.whenReady().then(async () => {
   step('ready');
   const preview = process.argv.includes('--preview');
-  const win = new BrowserWindow({ width: 900, height: 720, show: preview, webPreferences: { backgroundThrottling: false } });
+  const win = new BrowserWindow({ width: 900, height: 720, show: preview || showWindow, skipTaskbar: !preview, webPreferences: { backgroundThrottling: false } });
   try {
     await win.loadFile(path.join(process.argv[2], 'dock.html'));
     step('page loaded');
