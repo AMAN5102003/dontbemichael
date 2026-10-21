@@ -40,9 +40,12 @@ export function describeRow(
   const state = a.action === atPrompt ? t('closingTime.atPrompt')
     : a.status === 'idle' ? t('closingTime.nothingToDo')
     : t('closingTime.stillWorking');
-  // Idle and at-a-prompt already say it all in `state`; no second line.
+  // Idle and at-a-prompt already say it all in `state`; no second line. The
+  // detail is the agent's own words, so it's quoted, not shown as the app's.
+  // Its own quote marks become ' so it can't close the quotes early.
   const what = a.status === 'idle' || a.action === atPrompt ? undefined
-    : a.actionDetail === undefined ? caption(a.action, t) : limitCombiningMarks(a.actionDetail);
+    : a.actionDetail === undefined ? caption(a.action, t)
+    : t('closingTime.agentWords', { text: limitCombiningMarks(a.actionDetail).replace(/[“”„«»"]/g, "'") });
   const mins = a.actionAt ? Math.floor((now - a.actionAt) / 60_000) : 0;
   const line = [what, mins >= 1 ? t('closingTime.minutes', { count: mins }) : ''].filter(Boolean).join(' · ') || undefined;
   return { state, line };

@@ -109,6 +109,16 @@ test('classifyMailError: timeouts, unknown errors and MailError pass through', (
   assert.equal(classifyMailError({ responseText: 'Please log in via your web browser' }).kind, 'provider-blocked');
 });
 
+test('classifyMailError: 535 is a refused login only as a reply code, not inside an address or a number', () => {
+  assert.equal(classifyMailError({ response: '535-5.7.8 Username and Password not accepted' }).kind, 'auth', 'a multiline 535 reply');
+  assert.equal(classifyMailError(new Error('Invalid login: 535 Incorrect authentication data')).kind, 'auth');
+  // nodemailer copies the server's reply into the message, address and all.
+  const reply = '550 5.1.1 <ann1535@example.com>: Recipient address rejected';
+  const rejected = Object.assign(new Error(`Can't send mail - all recipients were rejected: ${reply}`), { code: 'EENVELOPE', response: reply });
+  assert.equal(classifyMailError(rejected).kind, 'unknown');
+  assert.equal(classifyMailError({ response: '552 5.3.4 Message size exceeds fixed limit (35350000 bytes)' }).kind, 'unknown');
+});
+
 // ── handleMailRequest: refusals and error mapping ───────────────────────────
 
 test('mail route: unknown tool 404, missing id or subject 400, numeric id reads, missing message 404', async () => {
@@ -229,6 +239,16 @@ test('send failures: a refusal says "Not sent" and is not remembered; a timeout 
     state.smtpError = null;
     assert.equal((await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' })).status, 200, `${never.message}: the retry sends`);
   }
+});
+
+test('a rejected recipient whose address holds 535 is not sent, and the mailbox is not marked as needing a password', async () => {
+  const { call, state } = setup();
+  const reply = '550 5.1.1 <ann1535@example.com>: Recipient address rejected';
+  state.smtpError = Object.assign(new Error(`Can't send mail - all recipients were rejected: ${reply}`), { code: 'EENVELOPE', response: reply });
+  const r = await call('dwight', 'send', { mailbox: 'sales', to: 'ann1535@example.com', subject: 's', body: 'b' });
+  assert.match(r.body.error, /^Not sent\./);
+  assert.doesNotMatch(r.body.error, /password/);
+  assert.equal(state.statuses.some((s) => s.status === 'needs-attention'), false, 'the password is fine; only the recipient was refused');
 });
 
 test('a send from a non Gmail mailbox files a copy in Sent; Gmail does not', async () => {

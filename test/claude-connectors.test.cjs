@@ -15,6 +15,8 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const loadTs = require('./load-ts.cjs');
+const R = loadTs('src/shared/research.ts');
+const W = loadTs('src/shared/webAccess.ts');
 
 const electron = require.resolve('electron');
 require.cache[electron] = {
@@ -168,6 +170,22 @@ test('spawn: stripped agents get the env and strict mode; others get deny rules 
   assert.match(hidden, /\['--strict-mcp-config', '--disallowedTools', \.\.\.disallowed\]/);
 });
 
+test('a claude an agent starts from its shell loads no connector, even when the agent has grants', { skip: process.platform === 'win32' ? 'bash shell env file' : false }, async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md conn shell-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  const granted = await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home }, { connectors: { strip: false, deny: [] } });
+  // The agent keeps its connectors; only its shell commands get the switch.
+  assert.equal(granted.env.ENABLE_CLAUDEAI_MCP_SERVERS, undefined);
+  const file = granted.env.CLAUDE_ENV_FILE;
+  assert.ok(file && fs.existsSync(file), 'shell env file written');
+  // Beside the settings file, outside the hive, so no agent's shell rewrites it.
+  const settings = granted.args[granted.args.indexOf('--settings') + 1];
+  assert.equal(path.dirname(file), path.dirname(settings));
+  const out = spawnSync('bash', ['-c', `source "$1"; printf %s "$ENABLE_CLAUDEAI_MCP_SERVERS"`, 'x', file], { encoding: 'utf8' });
+  assert.equal(out.stdout, 'false');
+});
+
 test('the hook shim refuses MCP calls when it cannot reach the app, and leaves other tools alone (D8)', { skip: process.platform === 'win32' ? 'unix socket paths' : false }, async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-conn-shim-'));
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
@@ -186,6 +204,22 @@ test('the hook shim refuses MCP calls when it cannot reach the app, and leaves o
     const bash = run('Bash', env);
     assert.equal(bash.status, 0);
     assert.equal(bash.stdout, '', 'built-in tools go on as before');
+    // Research's every call fails closed: the hook is its file tools' only wall (ship review pass 3).
+    for (const tool of ['Read', 'Grep', 'Write', 'Bash']) {
+      const r = JSON.parse(run(tool, { ...env, AGENT_ID: 'research' }).stdout);
+      assert.equal(r.hookSpecificOutput.permissionDecisionReason, R.RESEARCH_UNCHECKED_TOOL, `Research ${tool} ${JSON.stringify(env)}`);
+    }
+    // A save into the shared temp folders, which Research's shell reads, fails closed too (Codex review).
+    for (const file_path of ['/tmp/draft.md', '/private/var/folders/ab/T/x.md', '/TMP/draft.md']) {
+      const r = spawnSync(process.execPath, [shim], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path } }), env: { PATH: process.env.PATH, AGENT_ID: 'pam', ...env }, encoding: 'utf8', timeout: 10_000 });
+      assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, 'deny', file_path);
+    }
+    assert.equal(spawnSync(process.execPath, [shim], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(os.homedir(), 'Office', 'x.md') } }), env: { PATH: process.env.PATH, AGENT_ID: 'pam', ...env }, encoding: 'utf8', timeout: 10_000 }).stdout, '', 'its own folders go on as before');
+    // Web pages and search fail closed too, for everyone but Research (issue #230, ship review pass 2).
+    for (const tool of ['WebFetch', 'WebSearch']) {
+      assert.equal(JSON.parse(run(tool, env).stdout).hookSpecificOutput.permissionDecision, 'deny', `${tool} ${JSON.stringify(env)}`);
+      assert.equal(JSON.parse(run(tool, { ...env, AGENT_ID: 'research' }).stdout).hookSpecificOutput.permissionDecision, 'deny', `Research ${tool}: its every call fails closed`);
+    }
   }
 });
 
@@ -241,7 +275,7 @@ test('a change to an agent\'s connectors restarts it when idle, or at once with 
   assert.match(main, /liveWebContents\(\)\?\.send\('connectors:restartNeeded', \{ agentId: rec\.agentId \}\)/);
   // The plan the agent started with is the one recorded, so a change made
   // while it was starting still asks for a restart; signing in counts too.
-  assert.match(main, /const connectorPlan = opts\.hive && claudeProvider \? connectorStart\(readConfig\(\), opts\.hive\.id\) : undefined;/);
+  assert.match(main, /const connectorPlan = opts\.hive && claudeProvider && !isResearch \? connectorStart\(readConfig\(\), opts\.hive\.id\) : undefined;/);
   assert.match(main, /connectors: connectorPlan\?\.plan/);
   assert.match(main, /connectorPlans\.set\(opts\.id, \{ agentId: opts\.hive\.id, sig: failures === 1 \? 'unapplied' : connectorPlan\.sig \}\);/, 'one retry after a failed injection, then quiet');
   assert.match(main, /const signedIn = usableConnectors\(cfg, agentId, books\)\.map\(\(c\) => `\$\{c\.key\}:\$\{c\.status\}`\)/);
@@ -305,12 +339,13 @@ test('over the hook socket, a gate that throws refuses an MCP call and lets a bu
   t.after(() => fs.rmSync(home, { recursive: true, force: true }));
   const hive = new HiveManager(() => home);
   await hive.ensureAgent({ id: 'pam', name: 'Pam', provider: 'claude', cwd: home });
+  const token = hive.mintHookToken('pam');
   const server = new HookServer(hive, () => null, () => { throw new Error('config unreadable'); });
   server.start();
   t.after(() => server.stop());
   const ask = (payload) => new Promise((resolve, reject) => {
     let out = '';
-    const c = net.createConnection(hive.sockPath(), () => c.write(JSON.stringify(payload) + '\n'));
+    const c = net.createConnection(hive.sockPath(), () => c.write(JSON.stringify({ hook_token: token, ...payload }) + '\n'));
     c.setEncoding('utf8');
     c.on('data', (d) => { out += d; });
     c.on('end', () => resolve(JSON.parse(out)));
@@ -324,6 +359,19 @@ test('over the hook socket, a gate that throws refuses an MCP call and lets a bu
   }
   const bash = await ask({ ...base, tool_name: 'Bash', tool_input: { command: 'ls' } });
   assert.ok(!denied(bash), 'built-in tools go on as before');
+  // Web pages and search fail closed too, for everyone but Research (issue #230, testing review pass 3).
+  server.handle = () => { throw new Error('gate threw'); };
+  for (const tool_name of ['WebFetch', 'WebSearch']) {
+    assert.equal((await ask({ ...base, tool_name })).hookSpecificOutput.permissionDecisionReason, W.WEB_SETTINGS_UNREADABLE, tool_name);
+  }
+  assert.ok(!denied(await ask({ ...base, tool_name: 'Bash', tool_input: { command: 'ls' } })));
+  const researchToken = hive.mintHookToken('research');
+  for (const tool_name of ['WebFetch', 'Read', 'Bash']) {
+    assert.equal((await ask({ ...base, agent_id: 'research', hook_token: researchToken, tool_name })).hookSpecificOutput.permissionDecisionReason, R.RESEARCH_UNCHECKED_TOOL, `Research ${tool_name}`);
+  }
+  // A save into the shared temp folders fails closed here too, as in the hook program (api review).
+  assert.equal((await ask({ ...base, tool_name: 'Write', tool_input: { file_path: '/TMP/draft.md', content: 'x' } })).hookSpecificOutput.permissionDecisionReason, R.RESEARCH_UNCHECKED_TOOL);
+  assert.ok(!denied(await ask({ ...base, tool_name: 'Write', tool_input: { file_path: path.join(os.homedir(), 'Office', 'x.md'), content: 'x' } })), 'a folder outside the temp folders goes on');
 });
 
 // Value: protects=the no-agent check runs before the md-mail skip, and a needs-sign-in connector the owner turned on and gave works without a re-read; fails_when=connectorAccess checks the app server before agentId (md-mail calls with no agent id then pass, since the md-mail gate needs an agent id), or the gate starts reading the stale saved status; why_new=no test calls md-mail without an agent id or a needs-sign-in connector that is on and granted; seam=none
@@ -397,7 +445,7 @@ async function throughShim(t, cfg, payload) {
   t.after(() => server.stop());
   await new Promise((r) => setTimeout(r, 50));
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath() } });
+    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath(), HIVE_HOOK_SEAL: hive.mintHookToken('pam') } });
     let out = '';
     p.stdout.on('data', (d) => { out += d; });
     p.on('close', () => resolve(out));
@@ -437,7 +485,7 @@ test('a Task subagent is checked as its team member, and its finish is not the a
 test('an agent whose hive settings could not be written starts with no connectors', () => {
   const main = read('src/main/index.ts');
   assert.match(main, /if \(connectorPlan && !connectorsApplied\) \{[\s\S]{0,300}'--strict-mcp-config'[\s\S]{0,120}ENABLE_CLAUDEAI_MCP_SERVERS: 'false'/);
-  assert.match(main, /opts\.args = \[\.\.\.\(opts\.args \?\? \[\]\), \.\.\.inj\.args\];\s*connectorsApplied = true;/, 'only a completed injection counts as applied');
+  assert.match(main, /opts\.args = \[\.\.\.\(opts\.args \?\? \[\]\), \.\.\.inj\.args\];(?:\s*\/\/[^\n]*)*\s*if \(isResearch\) opts\.args = \[\.\.\.opts\.args, '--setting-sources', ''\];\s*connectorsApplied = true;/, 'only a completed injection counts as applied');
 });
 
 // Value: protects=connector deny rules sit beside the folder privacy rules in one permissions.deny list; fails_when=hookSettings writes deny: connectorDeny (or only the folder rules) and one set silently disappears; why_new=folder and connector rules were only tested apart; seam=none

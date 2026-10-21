@@ -42,7 +42,7 @@ function fakeImap(state) {
       if (q.header) return (typeof state.sentHit === 'function' ? state.sentHit(q.header['message-id']) : state.sentHit) ? [1] : [];
       return state.folders[folder].filter((m) => !q.from || m.from.includes(q.from)).map((m) => m.uid);
     },
-    async *fetch(uids) { for (const m of state.folders[folder]) if (uids.includes(m.uid)) yield { uid: m.uid, envelope: { from: [{ address: m.from }], subject: m.subject, date: new Date('2026-09-25') }, flags: new Set(m.seen ? ['\\Seen'] : []) }; },
+    async *fetch(uids) { for (const m of state.folders[folder]) if (uids.includes(m.uid)) yield { uid: m.uid, envelope: { from: [{ address: m.from }], subject: m.subject, date: m.date ?? new Date('2026-09-25') }, flags: new Set(m.seen ? ['\\Seen'] : []) }; },
     async fetchOne(uid) { const m = state.folders[folder].find((x) => String(x.uid) === String(uid)); return m ? { source: m.source } : false; },
     async append(p, content) { state.folders[p].push({ uid: 100 + state.folders[p].length, from: '', subject: '', source: content }); }
   };
@@ -139,6 +139,15 @@ test('search and read work in the agent\'s mailbox; bodies are capped', async ()
   const big = await call('dwight', 'read', { mailbox: 'sales', id: '2' });
   assert.equal(big.body.truncated, true);
   assert.equal((await call('dwight', 'search', { mailbox: 'ceo' })).status, 403, 'not his mailbox');
+});
+
+test('search still lists the mail when one email has a date nobody can read', async () => {
+  const { call, state } = setup();
+  // imapflow passes the raw header text through when it cannot parse the date
+  state.folders.INBOX[1].date = 'Mon, 32 Foo 2026';
+  const s = await call('dwight', 'search', { mailbox: 'sales' });
+  assert.equal(s.status, 200);
+  assert.deepEqual(s.body.messages.map((m) => [m.subject, m.date]), [['Hello', ''], ['Quote please', '2026-09-25T00:00:00.000Z']]);
 });
 
 test('draft lands in Drafts; Draft only cannot send', async () => {

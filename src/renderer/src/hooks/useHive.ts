@@ -1,3 +1,5 @@
+import { RESEARCH_ID } from '../../../shared/research';
+import { startResearch } from '@/shell/research';
 import { useEffect, useRef } from 'react';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
 import {
@@ -18,8 +20,9 @@ import { getOfficeBreak } from '@/components/OfficeBreakNotice';
 import { resolveGodName } from '../../../shared/godIdentity';
 import { acquireTerminal, resetTerminal, isTerminalAutomationSafe, hasTerminalDraft } from '@/components/terminalPool';
 import { canDeliverToAgent, deliverWithAcknowledgement, checkPrecondition } from './queueDelivery';
-import { OFFICE_CAST, DEFAULT_CHARACTER, type OfficeCharacterName } from '@/scene/office/cast';
-import { teamMemberName, teamMemberRole, teamMemberGoal, teamAccent, teamMemberStart, rewrittenInstructions } from '../../../shared/teamPlan';
+import { RunningToolCalls } from './runningToolCalls';
+import { OFFICE_CAST, DEFAULT_CHARACTER, HIREABLE_CAST, type OfficeCharacterName } from '@/scene/office/cast';
+import { teamMemberName, teamMemberRole, teamMemberGoal, teamAccent, teamMemberStart, rewrittenInstructions, didNotStartNote } from '../../../shared/teamPlan';
 import type { AgentDefinitionV2 } from '../../../shared/agentDefinition';
 import { FIRST_TASK_EDITED_MAX, withoutLegacyFirstTask } from '../../../shared/firstTask';
 import { firstTaskSection } from '../../../shared/workStyleText';
@@ -28,6 +31,8 @@ import { ACTION_AT_PROMPT, ACTION_CLOCKING_IN } from '@/store/store';
 import { ENGINE_READY_EVENT } from '@/shell/useNeedsYou';
 import { seedStarterJobs } from '@/shell/seedStarterJobs';
 import { PromptSubmits, confirmSubmit } from '../../../shared/submitConfirm';
+import { isTerminalPrompt } from '../../../shared/hookEvents';
+import { cutText } from '@shared/cutText';
 
 const GOD_ID = 'god';
 /** Accent palette for MAIN-spawned (voice-hired) agents — picked deterministically
@@ -122,6 +127,8 @@ async function waitForTerminalReady(
 // When each agent last accepted a prompt (its UserPromptSubmit hook), so a
 // submit can confirm it landed (shared/submitConfirm.ts).
 const promptSubmits = new PromptSubmits();
+// Each agent's tool calls still running, so parallel calls keep their detail.
+const runningCalls = new RunningToolCalls();
 
 function submitToPty(
   ptyId: string,
@@ -340,7 +347,12 @@ async function startBusinessTeam(config: HarnessConfig): Promise<void> {
   const team = config.businessTeam ?? [];
   // After the first run, only the members that failed to start are tried.
   const retry = config.businessTeamStarted ? new Set(config.businessTeamRetry ?? []) : undefined;
-  if (team.length === 0 || retry?.size === 0) return;
+  // Research, when the owner picked it in the Team step (issue #230): started
+  // with the first run even when no other member was picked.
+  if (team.length === 0 || retry?.size === 0) {
+    if (!retry) await startPickedResearch(config);
+    return;
+  }
 
   const { packs, core } = await window.cth.packsList();
   // The business's pack; when its type is unknown (an office continued from its
@@ -370,7 +382,7 @@ async function startBusinessTeam(config: HarnessConfig): Promise<void> {
   const command = buildSpawnCommand(config, model, provider);
   const [exe, ...args] = tokenizeCommand(command.trim());
   const castName = (c?: string): OfficeCharacterName =>
-    OFFICE_CAST.some((m) => m.name === c) ? (c as OfficeCharacterName) : DEFAULT_CHARACTER;
+    HIREABLE_CAST.some((m) => m.name === c) ? (c as OfficeCharacterName) : DEFAULT_CHARACTER;
 
   const failed: string[] = [];
   for (const [index, member] of team.entries()) {
@@ -438,6 +450,19 @@ async function startBusinessTeam(config: HarnessConfig): Promise<void> {
     }
   }
   await window.cth.updateConfig({ businessTeamStarted: true, businessTeamRetry: failed }).catch(() => undefined);
+  // Who did not start goes to Michael, who tells the owner; it was only logged.
+  if (failed.length) {
+    const note = didNotStartNote(failed.map((id) => teamMemberName(defs.get(id)!)), !!retry);
+    await window.cth.hiveSend({ to: GOD_ID, act: 'inform', ...note }, 'system').catch(() => undefined);
+  }
+  if (!retry) await startPickedResearch(config);
+}
+
+/** Research, when the owner picked it in the Team step (issue #230). */
+async function startPickedResearch(config: HarnessConfig): Promise<void> {
+  if (!config.research?.on || useStore.getState().agents.some((a) => a.id === RESEARCH_ID)) return;
+  const r = await startResearch(config);
+  if (!r.ok) console.warn(`[team] Research did not start: ${r.error ?? 'unknown error'}`);
 }
 
 /**
@@ -457,7 +482,8 @@ async function respawnResumed(a: Agent, ptyId: string): Promise<{ ok: boolean; e
   // it if it still exists, else fall back to the base cwd, same as restoreTeam.
   let cwd = a.cwd;
   if (a.worktreePath && (await window.cth.gitIsRepo(a.worktreePath))) cwd = a.worktreePath;
-  await window.cth.killPty(ptyId);
+  // A restart: the worktree it re-enters stays (ship review 2026-10-17).
+  await window.cth.killPty(ptyId, { restart: true });
   // Soft-reset the pooled xterm in place (no-op if none): re-arm input and
   // clear the stale frame so the revived TUI paints clean, like the button.
   resetTerminal(ptyId);
@@ -686,6 +712,14 @@ export function useHive(config: HarnessConfig | null): void {
   useEffect(() => {
     return window.cth.onHiveHookEvent((e) => {
       if (!e.agentId) return;
+      // A new Claude process (a start or a --resume, not a /compact or /clear)
+      // has not been told about the mail already in its inbox: the nudge typed
+      // into the process it replaced (signed out, wedged, killed) went with it.
+      // Forget what this agent was nudged about, so the inbox wake (#3) names
+      // that mail again. Without it, Michael restarted after the owner saved
+      // an API key sat idle: the office open standup had been nudged into a
+      // signed out Claude and was never named again.
+      if (e.event === 'SessionStart' && (e.source === 'startup' || e.source === 'resume')) delete nudged.current[e.agentId];
       if (e.event === 'Notification' || e.event === 'PermissionRequest') promptSubmits.noteAttention(e.agentId);
       const { updateAgent, agents } = useStore.getState();
       const self = agents.find((a) => a.id === e.agentId);
@@ -702,9 +736,13 @@ export function useHive(config: HarnessConfig | null): void {
       } else if (e.event === 'PostCompact') {
         if (!breakerArmed) updateAgent(e.agentId, { status: 'working', action: 'resumed', carrying: undefined, actionDetail: undefined, actionAt: Date.now() });
       } else if (e.event === 'PreToolUse' && e.tool) {
+        // A blocked event means the hook denied this call; nothing ran.
+        // Do not update the agent's working state or count a tool use for it.
+        if (e.blocked) return;
         const m = stationForTool(e.tool);
         // Each tool call restarts the clock the closing-time rows show.
         if (!breakerArmed) updateAgent(e.agentId, { status: 'working', currentStation: m.station, carrying: m.carry, action: `using ${e.tool}`, actionDetail: e.detail, actionAt: Date.now() });
+        if (e.toolUseId) runningCalls.start(e.agentId, e.toolUseId, { tool: e.tool, detail: e.detail, at: Date.now() });
         useStore.getState().bumpToolCount(e.agentId); // usage proxy for the command center
       } else if (e.event === 'PostToolUse' || e.event === 'UserPromptSubmit') {
         // A turn is in progress (prompt submitted / tool just finished) — keep
@@ -712,8 +750,13 @@ export function useHive(config: HarnessConfig | null): void {
         // finished tool's detail goes, so the closing-time row never shows a
         // tool that already ended as still running (owner, 2026-09-29).
         if (!breakerArmed) updateAgent(e.agentId, { status: 'working', actionDetail: undefined, actionAt: Date.now() });
+        // With parallel calls, the row goes back to the latest one still running.
+        const running = e.event === 'PostToolUse' ? runningCalls.end(e.agentId, e.toolUseId) : undefined;
+        if (running && !breakerArmed) updateAgent(e.agentId, { action: `using ${running.tool}`, actionDetail: running.detail, actionAt: running.at });
+        // Nothing still running: the row stops naming the tool that finished.
+        else if (e.event === 'PostToolUse' && !breakerArmed) updateAgent(e.agentId, { action: 'thinking' });
         // The prompt landed: a submit waiting on it stops pressing Enter.
-        if (e.event === 'UserPromptSubmit') promptSubmits.note(e.agentId);
+        if (e.event === 'UserPromptSubmit') { promptSubmits.note(e.agentId); runningCalls.clear(e.agentId); }
       } else if (e.event === 'PreInvocation') {
         // Antigravity (agy): the model is being called — it's thinking/working.
         if (!breakerArmed) updateAgent(e.agentId, { status: 'working', action: 'thinking', actionDetail: undefined, actionAt: Date.now() });
@@ -731,6 +774,7 @@ export function useHive(config: HarnessConfig | null): void {
         } else {
           // A genuine stop clears any breaker override — the run is over.
           breakerLevel.current[e.agentId] = 'healthy';
+          runningCalls.clear(e.agentId);
           updateAgent(e.agentId, { status: 'idle', action: 'idle', carrying: undefined, actionDetail: undefined, actionAt: Date.now() });
         }
       } else if (e.event === 'Notification' && !breakerArmed) {
@@ -740,17 +784,9 @@ export function useHive(config: HarnessConfig | null): void {
         //      input") — i.e. the agent answered and has nothing queued.
         // Only (1) is a real "needs you". Treating (2) as blocked made Michael
         // march to the door with a red "!" right after finishing, so detect the
-        // idle case and let him linger on the floor instead.
-        const msg = (e.message ?? '').toLowerCase();
-        const idleWaiting = !msg
-          || msg.includes('waiting for your input')
-          || msg.includes('is idle')
-          || msg.includes('waiting for input');
-        const needsHuman = msg.includes('permission')
-          || msg.includes('approve')
-          || msg.includes('confirm')
-          || msg.includes('needs your');
-        if (needsHuman && !idleWaiting) {
+        // idle case and let him linger on the floor instead. One rule shared
+        // with main (isTerminalPrompt): prompt types or permission messages.
+        if (isTerminalPrompt(e)) {
           // Only the god agent escalates to the human; sub-agents are autonomous
           // and read as "waiting" (parked on god, not on you).
           updateAgent(e.agentId, self.isGod ? { status: 'blocked' } : { status: 'waiting', action: ACTION_AT_PROMPT, actionDetail: undefined, actionAt: Date.now() });
@@ -780,9 +816,12 @@ export function useHive(config: HarnessConfig | null): void {
 
   // 2c) Context gauge backfill: poll each live agent's current context size
   //     (tokens) from its session transcript — only until the status line
-  //     (effect 2d) has delivered exact numbers for that agent.
+  //     (effect 2d) has delivered exact numbers for that agent. A session that
+  //     names its own window (a Codex rollout) has no status line, so it is
+  //     sized by that window and polled for as long as it runs.
   useEffect(() => {
     if (!config?.onboardingComplete) return;
+    const sizedByPoll = new Set<string>();
     const poll = async () => {
       const { agents, updateAgent } = useStore.getState();
       for (const a of agents) {
@@ -790,14 +829,21 @@ export function useHive(config: HarnessConfig | null): void {
         // The status line pushes exact numbers after every response (effect
         // 2d) — this transcript poll only backfills agents whose status line
         // hasn't fired yet (e.g. freshly restored, no response so far).
-        if (a.contextLimit !== undefined) continue;
+        if (a.contextLimit !== undefined && !sizedByPoll.has(a.id)) continue;
         try {
           const ctx = await window.cth.agentContext(a.id);
           if (ctx === null) continue;
+          const tokens = ctx.tokens;
+          if (ctx.limit) {
+            sizedByPoll.add(a.id);
+            const progress = Math.max(0, Math.min(8, Math.round((tokens / ctx.limit) * 8)));
+            updateAgent(a.id, { contextTokens: tokens, contextLimit: ctx.limit, progress });
+            continue;
+          }
           const hinted = /1m/i.test(a.model ?? '') ? 1_000_000 : 200_000;
-          const limit = Math.max(hinted, ctx > 200_000 ? 1_000_000 : 0);
-          const progress = Math.max(0, Math.min(8, Math.round((ctx / limit) * 8)));
-          updateAgent(a.id, { contextTokens: ctx, progress });
+          const limit = Math.max(hinted, tokens > 200_000 ? 1_000_000 : 0);
+          const progress = Math.max(0, Math.min(8, Math.round((tokens / limit) * 8)));
+          updateAgent(a.id, { contextTokens: tokens, progress });
         } catch { /* ignore — try again next tick */ }
       }
     };
@@ -1136,7 +1182,7 @@ export function useHive(config: HarnessConfig | null): void {
             : [];
         const id = `slack-${slack.thread_ts}-${m.id}`;
         if (existing.some((t) => t.id === id)) return; // already promoted — no dup
-        const title = m.text.length > 80 ? `${m.text.slice(0, 79)}…` : m.text;
+        const title = cutText(m.text, 80);
         const card: SlackTaskCard = {
           id,
           title,
@@ -1245,7 +1291,7 @@ export function useHive(config: HarnessConfig | null): void {
       // particular character. Unknown values fall through to the inference rather
       // than breaking the card.
       const castMember = (q?: string) =>
-        q ? OFFICE_CAST.find((m) => m.name === q || m.displayName.toLowerCase() === q)?.name : undefined;
+        q ? HIREABLE_CAST.find((m) => m.name === q || m.displayName.toLowerCase() === q)?.name : undefined;
       const character =
         castMember(rec.character?.trim().toLowerCase()) ??
         castMember((rec.name || rec.id).toLowerCase()) ??
@@ -1358,7 +1404,12 @@ export function useHive(config: HarnessConfig | null): void {
       }
     };
     window.addEventListener(ENGINE_READY_EVENT, onReady);
-    return () => window.removeEventListener(ENGINE_READY_EVENT, onReady);
+    // A new API key replaced one that stopped working (office-stopped-account.md):
+    // the running Claude terminals restart, resumed, the same way.
+    const offKey = window.cth.onOfficeRestartClaude?.((restart) => {
+      onReady(new CustomEvent(ENGINE_READY_EVENT, { detail: { restart } }));
+    });
+    return () => { window.removeEventListener(ENGINE_READY_EVENT, onReady); offKey?.(); };
   }, [config?.onboardingComplete]);
 
   // 8) Restart to apply (docs/designs/multi-mailbox.md E2 + E5, and
@@ -1379,12 +1430,31 @@ export function useHive(config: HarnessConfig | null): void {
     void window.cth.connectorsPendingRestarts?.().then((ids) => ids.forEach(queue)).catch(() => {});
     return window.cth.onConnectorsRestartNeeded?.(({ agentId }) => queue(agentId));
   }, [config?.onboardingComplete]);
+  // A member stopped on a prompt the owner can't answer: restart now, which
+  // clears it; they resume where they left off (owner, 2026-10-15).
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    return window.cth.onAgentRestartStuck?.(({ agentId }) => {
+      const a = useStore.getState().agents.find((x) => x.id === agentId);
+      if (a?.ptyId) useStore.getState().setPendingRestart(agentId, { at: Date.now(), reason: 'stuck', now: true });
+    });
+  }, [config?.onboardingComplete]);
+  // A member whose engine stopped reporting (issue #326): Michael's one restart,
+  // or the owner's Restart on its card. Same restart as Restart & Continue; it
+  // also starts a member that was stopped (its terminal id is kept).
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    return window.cth.onAgentRestartSilent?.(({ agentId }) => {
+      const a = useStore.getState().agents.find((x) => x.id === agentId);
+      if (a?.ptyId) useStore.getState().setPendingRestart(agentId, { at: Date.now(), reason: 'silent', now: true });
+    });
+  }, [config?.onboardingComplete]);
   useEffect(() => {
     if (!config?.onboardingComplete) return;
     const CEILING_MS = 10 * 60_000;
     const POLL_MS = 5_000;
     const BUSY = new Set(['thinking', 'working', 'compacting', 'looping']);
-    const WHY = { email: 'turn on email', connectors: 'apply its connectors', engine: 'start on Claude Code' } as const;
+    const WHY = { email: 'turn on email', connectors: 'apply its connectors', engine: 'start on Claude Code', stuck: 'clear a stuck prompt', silent: 'report to the app again' } as const;
     const inFlight = new Set<string>();
     const tick = (): void => {
       const { pendingRestart, agents, setPendingRestart, updateAgent } = useStore.getState();

@@ -1,4 +1,5 @@
-- **Office break** at your Claude plan limit.
-- **Files Michael names** open in an office tab.
-- **Done cards** show the result.
-- **No repeat sends** when a send drops.
+- **Company foundations** for every job.
+- **Company knowledge** you can open and edit.
+- **No switches** for knowledge search.
+- **Pulse** shows what it sees early.
+- **Windows** reads scans and photos.

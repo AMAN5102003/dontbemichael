@@ -53,6 +53,13 @@ test('an explicit --permission-mode in the request always wins over auto-mode', 
   assert.deepEqual(l.args, ['--permission-mode', 'plan']);
 });
 
+test('a stance written as flag=value wins over auto-mode too', () => {
+  // Otherwise claude gets `--permission-mode=plan --permission-mode bypassPermissions`
+  // and runs on the last one, so the safe mode asked for becomes bypass.
+  assert.deepEqual(launch({ requestCommand: 'claude --permission-mode=plan', autoMode: true }).args, ['--permission-mode=plan']);
+  assert.deepEqual(launch({ requestCommand: 'codex --sandbox=read-only', autoMode: true }).args, ['--sandbox=read-only']);
+});
+
 test('auto-mode OFF appends nothing', () => {
   assert.deepEqual(launch({ requestCommand: 'claude', autoMode: false }).args, []);
   assert.deepEqual(launch({ requestCommand: 'codex', autoMode: false }).args, []);
@@ -72,6 +79,23 @@ test("auto-mode appends the PROVIDER'S flag, not claude's", () => {
 test('an explicit stance wins for non-claude providers too (no doubled flag)', () => {
   const l = launch({
     requestCommand: 'codex --dangerously-bypass-approvals-and-sandbox',
+    autoMode: true
+  });
+  assert.deepEqual(l.args, ['--dangerously-bypass-approvals-and-sandbox']);
+});
+
+test('a quoted Codex path gets Codex auto flags and preserves its executable and model', () => {
+  const l = launch({
+    requestCommand: '"C:\\Program Files\\Codex\\codex.exe" --model "example model"',
+    autoMode: true
+  });
+  assert.equal(l.bin, 'C:\\Program Files\\Codex\\codex.exe');
+  assert.deepEqual(l.args, ['--model', 'example model', '-a', 'never', '-s', 'workspace-write']);
+});
+
+test('a quoted Codex path preserves an explicit permission stance', () => {
+  const l = launch({
+    requestCommand: '"C:\\Program Files\\Codex\\codex.exe" --dangerously-bypass-approvals-and-sandbox',
     autoMode: true
   });
   assert.deepEqual(l.args, ['--dangerously-bypass-approvals-and-sandbox']);

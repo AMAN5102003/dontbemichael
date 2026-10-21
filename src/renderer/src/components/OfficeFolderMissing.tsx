@@ -7,8 +7,9 @@ import lockupDark from '@brandkit/logo/lockup/dbm-lockup-horizontal-dark.svg?url
 import { clearLocalState, restoreLocalState, snapshotLocalState } from '@/store/localState';
 import type { HarnessConfig } from '@/store/config';
 
+// Split on both separators: a Windows office path holds no '/' at all.
 function folderName(path: string): string {
-  return path.split('/').filter(Boolean).pop() ?? path;
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 }
 
 /**

@@ -208,6 +208,30 @@ test('the git diff read refuses a final component swapped for a symlink mid-call
   assert.equal(res.working, '', 'the external file contents must never reach the renderer');
 }));
 
+test('a name that starts with two dots is inside the workspace, not an escape', async (t) => {
+  // No links here: path.relative gives "..cache" for a folder named ..cache,
+  // which only looks like a step out of the root.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'path-containment-dots-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const root = path.join(dir, 'workspace');
+  fs.mkdirSync(path.join(root, '..cache'), { recursive: true });
+  fs.writeFileSync(path.join(root, '..cache', 'notes.txt'), 'cached\n');
+  fs.writeFileSync(path.join(dir, 'outside.txt'), SECRET);
+
+  const list = await listDir(root, '..cache');
+  assert.equal(list.ok, true, list.error);
+  assert.deepEqual(list.entries.map((e) => e.name), ['notes.txt']);
+  const text = await readFileText(root, path.join('..cache', 'notes.txt'));
+  assert.equal(text.ok, true, text.error);
+  assert.equal(text.content, 'cached\n');
+  const write = await writeFileText(root, '..new.txt', 'hello\n');
+  assert.equal(write.ok, true, write.error);
+  assert.equal(fs.readFileSync(path.join(root, '..new.txt'), 'utf8'), 'hello\n');
+
+  const out = await readFileText(root, path.join('..', 'outside.txt'));
+  assert.equal(out.ok, false, 'a real step out of the root is still refused');
+});
+
 test('lexical traversal out of the root is still rejected', () => withWorkspace(async ({ root, dir }) => {
   for (const rel of ['../outside/secret.txt', 'docs/../../outside/secret.txt', path.join(dir, 'outside', 'secret.txt')]) {
     const res = await readFileText(root, rel);

@@ -3,15 +3,20 @@ import { COMMAND_GROUPS } from '@shared/claudeCommands';
 import { CODEX_COMMAND_GROUPS } from '@shared/codexCommands';
 import { GROK_COMMAND_GROUPS } from '@shared/grokCommands';
 import { ownerComposeTarget, withAttachments } from '@shared/ownerRequests';
+import { CONTEXT_COMMAND_VERBS } from '@shared/providerAutomation';
 
 /** Slash commands of every engine Michael can run on (R7): only these go
- *  straight to his terminal; anything else is a question for the dock. */
-const COMMANDS: ReadonlySet<string> = new Set(
-  [...COMMAND_GROUPS, ...CODEX_COMMAND_GROUPS, ...GROK_COMMAND_GROUPS]
+ *  straight to his terminal; anything else is a question for the dock.
+ *  The command references cover claude, codex and grok; CONTEXT_COMMAND_VERBS
+ *  adds the verbs the app itself types on the other engines, so a command the
+ *  harness would send for the owner is never refused as a question. */
+const COMMANDS: ReadonlySet<string> = new Set([
+  ...[...COMMAND_GROUPS, ...CODEX_COMMAND_GROUPS, ...GROK_COMMAND_GROUPS]
     .flatMap((g) => g.items)
     .filter((c) => c.kind === 'slash')
-    .map((c) => c.cmd.split(/\s+/)[0].toLowerCase())
-);
+    .map((c) => c.cmd.split(/\s+/)[0].toLowerCase()),
+  ...CONTEXT_COMMAND_VERBS
+]);
 
 /**
  * What both composers do with a message to Michael (docs/designs/michael-replies.md,

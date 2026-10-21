@@ -9,6 +9,9 @@
 export interface BroadcastCandidate {
   /** Michael's prep assistant — send-only, drains no inbox. */
   isAssistant?: boolean;
+  /** Research: only messages that passed the trust layer reach it, one at
+   *  a time, so it never takes a team broadcast (eng review A1). */
+  isResearch?: boolean;
   /** PTY tab closed; the record is retained but the agent is not live. */
   archived?: boolean;
 }
@@ -42,6 +45,7 @@ export function selectBroadcastTargets(
     if (!agent) return false;
     if (id === fromId) return false;
     if (agent.isAssistant) return false;
+    if (agent.isResearch) return false;
     if (agent.archived) return false;
     return true;
   });

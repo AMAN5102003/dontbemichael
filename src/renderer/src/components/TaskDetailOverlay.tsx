@@ -61,13 +61,21 @@ export function TaskDetailOverlay() {
     } catch { void refresh(); }
   };
 
+  const reopen = async (reason: string) => {
+    setTasks(tasks.map((t) => (t.id === task.id ? { ...t, status: 'todo' as const, closedBy: undefined } : t))); // optimistic
+    try {
+      const result = await window.cth.hiveMoveTask(task.id, 'todo', reason);
+      if (!result.ok) void refresh();
+    } catch { void refresh(); }
+  };
+
   const assign = () => {
     // Route through the Command Center's dispatch box (which mails the god —
     // the human never writes into a worker's inbox directly).
     const st = useStore.getState();
     const god = st.agents.find((a) => a.isGod);
     if (god) st.select(god.id);
-    const desc = task.description?.trim() || task.notes?.trim() || '(no description)';
+    const desc = task.description?.trim() || '(no description)';
     st.requestDispatchSeed(`Task: ${task.title}\nContext: ${desc}\n`);
     st.requestCommandCenterTab('floor');
     closeTaskDetail();
@@ -79,6 +87,7 @@ export function TaskDetailOverlay() {
       all={tasks}
       assigneeName={nameFor(task.assignee)}
       onMove={(s) => void move(s)}
+      onReopen={(reason) => void reopen(reason)}
       onAssign={assign}
       onClose={closeTaskDetail}
     />

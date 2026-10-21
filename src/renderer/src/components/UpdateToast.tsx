@@ -35,6 +35,8 @@
  * goes through the existing `openExternal` opener.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { APP_NAME } from '@shared/appName';
 import { summarizeReleaseNotes } from '@shared/releaseNotes';
 import { extractDropHtml } from '@shared/releaseDrop';
 import { ReleaseDrop } from '@/components/ReleaseDrop';
@@ -78,6 +80,7 @@ function markStarAsked(): void {
 }
 
 export function UpdateToast() {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<ToastStatus | null>(null);
   const [busy, setBusy] = useState(false);
   // Read once per window, so persisting the flag below cannot make the link
@@ -199,20 +202,20 @@ export function UpdateToast() {
         <Spark />
         <span className="cth-toast-title">
           {status.state === 'downloaded'
-            ? `Update v${status.version} downloaded`
-            : `v${status.version} is available`}
+            ? t('updateToast.downloadedTitle', { version: status.version })
+            : t('updateToast.availableTitle', { version: status.version })}
         </span>
       </div>
       <span className="cth-toast-body">
         {status.state === 'downloaded'
-          ? 'Restart Don\'t Be Michael whenever you like to apply it. Nothing restarts on its own.'
-          : 'This install can’t update itself. Grab the new build from the releases page.'}
+          ? t('updateToast.downloadedBody', { app: APP_NAME })
+          : t('updateToast.manualBody')}
       </span>
 
       {notes.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
-            What’s new
+            {t('updateToast.whatsNew')}
           </div>
           {/* The digest is already capped at ~280 chars; the clamp is the second
               belt, for the day a release body defeats the parser. */}
@@ -236,13 +239,13 @@ export function UpdateToast() {
               href={status.state === 'available-manual' ? status.url : GITHUB_RELEASES_URL}
               onClick={(e) => { e.preventDefault(); openRelease(); }}
               style={linkStyle}
-            >Read more</a>
+            >{t('updateToast.readMore')}</a>
             {showStar && (
               <a
                 href={GITHUB_REPO_URL}
                 onClick={(e) => { e.preventDefault(); void window.cth.openExternal(GITHUB_REPO_URL); }}
                 style={linkStyle}
-              >⭐ Star us on GitHub</a>
+              >{t('updateToast.star')}</a>
             )}
           </div>
         </div>
@@ -250,15 +253,15 @@ export function UpdateToast() {
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button className="cth-toast-btn" onClick={() => setStatus(null)}>
-          Later
+          {t('updateToast.later')}
         </button>
         {status.state === 'downloaded' ? (
           <button className="cth-toast-btn primary" onClick={restart} disabled={busy}>
-            {busy ? 'Restarting…' : 'Restart to update'}
+            {busy ? t('updateToast.restarting') : t('updateToast.restart')}
           </button>
         ) : (
           <button className="cth-toast-btn primary" onClick={openRelease}>
-            {hasDownload ? `Download ${status.version}` : 'Open releases'}
+            {hasDownload ? t('updateToast.download', { version: status.version }) : t('updateToast.openReleases')}
           </button>
         )}
       </div>

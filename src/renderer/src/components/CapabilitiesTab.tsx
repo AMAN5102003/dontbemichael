@@ -1,3 +1,4 @@
+import { RESEARCH_ID } from '../../../shared/research';
 import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, Toggle, TriggerCard, MiniButton } from './triggers/ui';
@@ -13,6 +14,8 @@ import { quickbooksCapability, type QuickBooksCapability } from '@shared/quickbo
 import { connectorGranted, connectorOn, isQuickBooksKey } from '@shared/claudeConnectors';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
+import { SHOW_MAILBOXES } from '@shared/buildFeatures';
+import { useResearchName } from '@/shell/research';
 
 type SectionKey = 'email' | 'connectors' | 'schedules';
 
@@ -42,6 +45,7 @@ type SectionKey = 'email' | 'connectors' | 'schedules';
  */
 export function CapabilitiesTab({ agent }: { agent: Agent }) {
   const { t } = useTranslation();
+  const researchName = useResearchName();
   const config = useHarnessConfig();
   const godName = useResolvedGodName();
   const pending = useStore((s) => s.pendingRestart[agent.id]);
@@ -201,13 +205,29 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
 
   const openSettings = (): void => { window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Connections' } })); };
 
+  // Research holds no office data (issue #230): no mailbox, connector or
+  // schedule can be given to it, so its tab shows none of them.
+  if (agent.id === RESEARCH_ID) {
+    return (
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 14 }}>
+        <div style={{ maxWidth: '72ch', ...hint }}>
+          {t('capabilities.research', { name: researchName })}{' '}
+          <button type="button" style={link} onClick={() => window.dispatchEvent(new CustomEvent('cth:open-settings', { detail: { section: 'Research & privacy' } }))}>
+            {t('capabilities.researchSettings')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 14 }}>
       <div style={{ maxWidth: '72ch' }}>
         <div style={hint}>{t('capabilities.intro', { name })}</div>
 
         <div style={{ height: 8 }} />
-        <TriggerCard
+        {/* Email: hidden in this build when SHOW_MAILBOXES is off. */}
+        {SHOW_MAILBOXES && <TriggerCard
           title={t('capabilities.email')}
           blurb={t('capabilities.emailBlurb', { name })}
           summary={inUse ? t('capabilities.emailSummary', { count: inUse }) : t('capabilities.emailSummaryNone')}
@@ -344,7 +364,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
               <MiniButton onClick={() => setMoving(null)}>{t('capabilities.keepIt')}</MiniButton>
             </div>
           )}
-        </TriggerCard>
+        </TriggerCard>}
 
         <TriggerCard
           title={t('capabilities.connectors')}
@@ -419,7 +439,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
 
 /** A one-choice list (DESIGN.md 7.10a Radio row): arrow keys move and choose,
  *  only the chosen row is in the tab order (the first when none is chosen). */
-function RadioRows({ label, value, options, onChange, inline = false }: {
+export function RadioRows({ label, value, options, onChange, inline = false }: {
   label: string; value: string | undefined; options: Array<{ value: string; label: string; desc?: string; disabled?: boolean }>;
   onChange: (value: string) => void;
   /** Short choices side by side, as pills (the Sending choice on a mailbox). */

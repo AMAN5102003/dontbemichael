@@ -292,7 +292,8 @@ test('Add Agent groups the characters by their job in the show (owner, 2026-09-2
   assert.match(src, /tr\(`addAgent\.castGroup\.\$\{g\.key\}`\)/);
   const { OFFICE_CAST, CAST_GROUPS } = loadTs('src/renderer/src/scene/office/cast.ts');
   const grouped = CAST_GROUPS.flatMap((g) => g.members);
-  assert.deepEqual([...grouped].sort(), OFFICE_CAST.map((c) => c.name).sort(), 'every character is in exactly one group');
+  // Pete is the Research member's own face and no hire's (owner, third ship D4).
+  assert.deepEqual([...grouped].sort(), OFFICE_CAST.map((c) => c.name).filter((n) => n !== 'pete').sort(), 'every hireable character is in exactly one group');
   assert.equal(new Set(grouped).size, grouped.length);
   assert.deepEqual(CAST_GROUPS[0], { key: 'office', members: ['michael', 'pam', 'erin'] });
   assert.deepEqual(CAST_GROUPS[1].members.slice(0, 2), ['dwight', 'jim']);

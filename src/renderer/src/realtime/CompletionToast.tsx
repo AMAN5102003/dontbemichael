@@ -17,6 +17,7 @@
  * Branch feat/realtime-michael. See board.md "🎙 REALTIME MICHAEL".
  */
 import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Icon } from '@/components/Icon';
 import { useStore } from '@/store/store';
 
@@ -43,13 +44,14 @@ const AUTO_DISMISS_MS = 9000;
 const MAX_VISIBLE = 4;
 
 export function CompletionToast(): JSX.Element | null {
-  const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? 'the orchestrator';
+  const { t } = useTranslation();
+  const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? t('completionToast.orchestrator');
   const [toasts, setToasts] = useState<ActiveToast[]>([]);
   // Stable across renders so the subscription's closures always see live timers.
   const timers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = (key: string): void => {
-    setToasts((prev) => prev.filter((t) => t.key !== key));
+    setToasts((prev) => prev.filter((toast) => toast.key !== key));
     const tm = timers.current.get(key);
     if (tm) {
       clearTimeout(tm);
@@ -65,7 +67,7 @@ export function CompletionToast(): JSX.Element | null {
     const off = subscribe((evt) => {
       const key = `${evt.correlationId}:${evt.completedAt}`;
       setToasts((prev) => {
-        if (prev.some((t) => t.key === key)) return prev; // de-dupe re-delivery
+        if (prev.some((toast) => toast.key === key)) return prev; // de-dupe re-delivery
         return [...prev, { ...evt, key }].slice(-MAX_VISIBLE);
       });
       const tm = setTimeout(() => dismiss(key), AUTO_DISMISS_MS);
@@ -98,9 +100,9 @@ export function CompletionToast(): JSX.Element | null {
         pointerEvents: 'none'
       }}
     >
-      {toasts.map((t) => (
+      {toasts.map((toast) => (
         <div
-          key={t.key}
+          key={toast.key}
           role="status"
           style={{
             borderRadius: 'var(--cth-r-md)',
@@ -125,11 +127,11 @@ export function CompletionToast(): JSX.Element | null {
               textTransform: 'uppercase'
             }}
           >
-            <Icon name="bell" /> {godName} · completed
+            <Icon name="bell" /> {t('completionToast.completed', { name: godName })}
             <button
               type="button"
-              onClick={() => dismiss(t.key)}
-              aria-label="Dismiss"
+              onClick={() => dismiss(toast.key)}
+              aria-label={t('completionToast.dismiss')}
               style={{
                 marginLeft: 'auto',
                 border: 'none',
@@ -153,11 +155,11 @@ export function CompletionToast(): JSX.Element | null {
               color: 'var(--cth-ink-900)'
             }}
           >
-            {t.summary}
+            {toast.summary}
           </div>
-          {t.objective && (
+          {toast.objective && (
             <div style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-700)' }}>
-              {t.objective}
+              {toast.objective}
             </div>
           )}
         </div>
