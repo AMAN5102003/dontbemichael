@@ -14,18 +14,6 @@
 **Priority:** P2
 **Depends on:** Decision 2 (per-agent grants), Decision 22 (serialized executor); only relevant from Phase 2, when agents make real third-party calls.
 
-### A write to a connected app is never sent twice (issue #54)
-
-**What:** The send once rule mail already has, for writes the broker forwards to a connected app (anything other than GET or HEAD): an identical write is recorded before it goes upstream and answered from that record if it comes again, across a restart too.
-
-**Why:** The broker forwards a write with no dedupe behind a 30 second timeout (`src/main/integrationBroker.ts`, `UPSTREAM_TIMEOUT_MS`). If the provider accepts it but the answer is lost, or the app stops before it comes back, the agent's retry creates a second invoice, booking or contact. Plain mail sends got this in PR #126; connected app writes did not.
-
-**Context:** Reuse PR #126's pattern inside the broker, not a new store: an app private journal like `mail-send-journal.json`, keyed on the agent, integration, method, path and a hash of the body, written as pending before the upstream call and settled after. Pass the key upstream where the provider takes one (an `Idempotency-Key` header, QuickBooks `requestid`). A write left pending after a stop that the app cannot check is refused with a plain reason telling the agent to tell Michael, as PR #126 does for mail; the app never makes or moves a card for it (Michael owns every card). Issue #54 also proposed a per task work record for engine hand off and proof of done; those stay with "Make a second engine (Codex first) ready for an office", #36, #48 and #51.
-
-**Effort:** M
-**Priority:** P2
-**Depends on:** None
-
 ## Research agent (deferred from the third ship of mit/named-links, 2026-10-13)
 
 ### A checked message for Pete is never dropped when delivery fails
@@ -752,20 +740,6 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 **Priority:** P1
 **Depends on:** nothing.
 
-## Schedules
-
-### Make the heartbeat's description honest
-
-**What:** The heartbeat card in Schedules shows an editable description box, but the heartbeat never sends that text. It sends a summary it builds itself (`buildHeartbeatDigest`, `src/main/index.ts`). Either show the heartbeat's description as fixed text, or send the owner's text ahead of the summary.
-
-**Why:** An owner who edits the box expects Michael to receive it. Every other schedule stopped carrying a prompt on 2026-09-25 (the label names the job and the agent's Work style says how), so the heartbeat is the one card left with a box, and it's a box that does nothing.
-
-**Context:** Found in the 2026-09-25 agent instructions audit; the owner chose to leave the heartbeat as it is for now (it ships off). `src/renderer/src/components/triggers/ScheduleList.tsx` keeps the box for `kind: 'heartbeat'` only.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** nothing.
-
 ## Engines
 
 ### Run Gemini members in Gemini's own sandbox
@@ -864,6 +838,19 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Depends on:** None
 
 ## Completed
+
+### A write to a connected app is never sent twice (issue #54)
+
+**What:** The send once rule mail already has, for writes the broker forwards to a connected app (anything other than GET or HEAD): an identical write is recorded before it goes upstream and answered from that record if it comes again, across a restart too.
+
+**Why:** The broker forwards a write with no dedupe behind a 30 second timeout (`src/main/integrationBroker.ts`, `UPSTREAM_TIMEOUT_MS`). If the provider accepts it but the answer is lost, or the app stops before it comes back, the agent's retry creates a second invoice, booking or contact. Plain mail sends got this in PR #126; connected app writes did not.
+
+**Context:** Reuse PR #126's pattern inside the broker, not a new store: an app private journal like `mail-send-journal.json`, keyed on the agent, integration, method, path and a hash of the body, written as pending before the upstream call and settled after. Pass the key upstream where the provider takes one (an `Idempotency-Key` header, QuickBooks `requestid`). A write left pending after a stop that the app cannot check is refused with a plain reason telling the agent to tell Michael, as PR #126 does for mail; the app never makes or moves a card for it (Michael owns every card). Issue #54 also proposed a per task work record for engine hand off and proof of done; those stay with "Make a second engine (Codex first) ready for an office", #36, #48 and #51.
+
+**Effort:** M
+**Priority:** P2
+**Depends on:** None
+**Completed:** Connected app writes are recorded in `broker-write-journal.json` before they go upstream (`src/main/brokerWriteOnce.ts`). A repeat of a write that worked gets the first answer; a failed one may go again with the same key. A write still pending after a restart is refused, and the agent is told to tell Michael. No card is opened. QuickBooks also gets a stable `requestid`. A damaged journal is set aside and a fresh one started (PR #212).
 
 ### Message when the OS cannot encrypt stored credentials
 

@@ -76,6 +76,7 @@ export const APP_DATA_ENTRIES = [
   'knowledge',
   'integration-secrets.json',
   'mail-send-journal.json',
+  'broker-write-journal.json',
   'mail-proposals.json',
   'trigger-history.json',
   'owner-dock-keys.json',
@@ -123,6 +124,13 @@ export function isKnowledgeStore(root: string): boolean {
   } catch { return false; }
 }
 
+/** Damaged write journals the broker moved aside; they hold app answers. */
+function setAsideJournals(userData: string): string[] {
+  try {
+    return readdirSync(userData).filter((n) => /^broker-write-journal\.damaged-\d+\.json$/.test(n)).map((n) => join(userData, n));
+  } catch { return []; }
+}
+
 /** Erase the office's data. `extra` adds folders that live elsewhere (the
  *  hive and palace where they resolve, Research's and the checks' Claude Code
  *  conversations). Returns the paths it could not remove; a reset carries on
@@ -141,6 +149,8 @@ export function eraseOfficeData(p: { home: string | null; userData: string; extr
     // Only the app's own office record, never an owner's file of that name.
     ...(home && readOfficeRecord(home) ? [officeRecordPath(home)] : []),
     ...APP_DATA_ENTRIES.map((n) => join(p.userData, n)),
+    // A damaged connected app write journal the broker set aside (brokerWriteOnce.ts).
+    ...setAsideJournals(p.userData),
     ...(p.extra ?? []).filter(Boolean)
   ];
   const failed: string[] = [];

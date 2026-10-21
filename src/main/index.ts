@@ -37,7 +37,7 @@ import { initAutoUpdater, abortPendingRestart } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
   readConfig, damagedConfigCopy, writeConfig, setAgentTokenCap, resetConfig, onConfigWritten, ensureHarnessHome, ensureClaudePermissionsAccepted, approveClaudeApiKey,
-  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, FOUNDATIONS_CHECK_MISSION, type HarnessConfig, type ScheduledMission
+  modelForRole, OPS_STANDUP_MISSION, OPS_STANDUP_BUILT_IN_BODIES, OPS_STANDUP_FOCUS, OPS_STANDUP_BUILT_IN_FOCUSES, HEARTBEAT_MISSION, heartbeatMessage, COMPACT_MAINTENANCE_MISSION, FOUNDATIONS_CHECK_MISSION, type HarnessConfig, type ScheduledMission
 } from './config';
 import { terminalLaunches } from './terminalAtFolder';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde, askFileVerdict, askFileByName, askFileRootsFor, resolveAskFileRoots, readAskFile, isPackageDir, type AskFileAgent } from './fs';
@@ -1084,6 +1084,8 @@ function researchFolders(): string[] {
 const integrationBroker = new IntegrationBroker({
   getRecord: integrations.getRecord,
   getSecret: integrations.getSecret,
+  // Same folder as the mail send journal, never the hive agents can read.
+  journalPath: join(app.getPath('userData'), 'broker-write-journal.json'),
   mail: SHOW_MAILBOXES ? (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line), tellMichael: (subject, text) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body: text }, 'mail'); } }, agentId, op, body) : undefined
 });
 
@@ -2474,7 +2476,9 @@ function armHeartbeat(m: ScheduledMission): void {
       // worker's reply doesn't sit unread while other agents keep the floor busy.
       const actionable = godActionableInboxCount();
       if (isFloorQuiet(quiet) || actionable > 0) {
-        reengageGod(buildHeartbeatDigest(quiet, actionable));
+        // Read each beat, so an edit to the heartbeat box counts from the next one.
+        const body = readConfig().missions?.find((x) => x.id === m.id)?.body;
+        reengageGod(heartbeatMessage(body, buildHeartbeatDigest(quiet, actionable)));
         next = Math.round(base * 2.5);            // back off after re-engaging
       } else if (looksStuck(quiet)) {
         next = Math.max(30_000, Math.round(base / 4)); // tighten when an agent is wedged

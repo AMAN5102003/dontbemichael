@@ -349,7 +349,7 @@ export interface ScheduleRequest {
   createdAt: number;
 }
 
-const DAY_NAMES: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const LABEL_MAX = 80;
 
 /** Node timers can't wait longer than 2^31-1 ms (about 24.8 days): a longer
@@ -368,8 +368,17 @@ function parseDays(raw: unknown): number[] | null {
     if (d === 'weekdays') [1, 2, 3, 4, 5].forEach((x) => days.add(x));
     else if (d === 'weekends') [0, 6].forEach((x) => days.add(x));
     else if (d === 'daily' || d === 'every day') [0, 1, 2, 3, 4, 5, 6].forEach((x) => days.add(x));
-    else if (d.slice(0, 3) in DAY_NAMES) days.add(DAY_NAMES[d.slice(0, 3)]);
-    else return null;
+    else {
+      // "mon", "tues", "Friday", "Mondays", "weds", "mon.": a start of a real
+      // day name, never just its first three letters, so "monthly" or
+      // "sunset" is not read as a day.
+      const w = d.replace(/\.$/, '');
+      const day = w.length >= 3
+        ? DAY_NAMES.findIndex((n) => n.startsWith(w) || w === `${n}s` || (w === 'weds' && n === 'wednesday'))
+        : -1;
+      if (day < 0) return null;
+      days.add(day);
+    }
   }
   return days.size ? [...days].sort((a, b) => a - b) : null;
 }
