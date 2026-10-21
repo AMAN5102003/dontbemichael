@@ -16,9 +16,17 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **Team members can no longer read each other's conversations.** The engine's session records and prompt history are closed to every member's tools and shell, Michael included, even when the Claude folder is a link. The app still reads them itself (contributed in #387).
 - **Closing time shows what each waiting agent last said, and how long ago,** so a long job reads differently from a stuck one (contributed in #390).
 - **Pulse shows which emails were organized.** "See the emails" on the emails organized tile lists each email archived, marked read or moved to junk in the period: its subject, its sender, where it went, who moved it and when. A name under the bar lists only that member's. Senders and subjects are kept in the office's private folder for 62 days, then in a monthly archive that only a reset erases; mail organized before this update is counted as having no details.
+- **A team member with no schedules gets up to three starter jobs to add in one click,** taken from its office pack. Each is added paused, so nothing runs until you turn it on (contributed in #407).
 
 ### Fixed
 
+- An agent can no longer write into the office's own files (the board, the task list, memory) through a link in its folder that points into the office, even a link to a file that doesn't exist yet (contributed in #444).
+- A card number written next to its expiry date or security code, such as `4111 1111 1111 1111 12/27`, is now caught before a question reaches Research (contributed in #447).
+- A link into Settings that names a section that is unknown or switched off opens General instead of a blank window (contributed in #474).
+- Adding an integration never replaces one already registered, or its saved key: the new one gets a free id, and an add that still lands on a taken id, from a second window or before the list loaded, is refused with a note to change the label (contributed in #476).
+- Restoring an older office on Windows keeps its team when the folder paths differ only in letter case, such as `C:\Biz` and `c:\biz`, and a bare network share is never taken as the business folder (contributed in #477).
+- A file link whose path has parentheses, such as `Q3 (final)/report.md`, opens instead of staying greyed out (contributed in #478).
+- A message that only mentions closing time, such as "What is the closing time for this deal?", shows in Messages instead of being filed with the closing time notices; every note closing time itself sends is still filed there (contributed in #479).
 - A file name with a long extension, such as `application.properties`, opens whole from an agent's output instead of being cut short (contributed in #190).
 - A schedule an agent asks for with `monthly` or `sunset` is refused instead of becoming a Monday or Sunday job; `Mondays`, `weds` and `mon.` still work (contributed in #193).
 - A team member's name, role or business name with a dollar sign, such as `Ca$$h Cuts`, is written as typed in Work styles, the first task and Michael's briefing (contributed in #198).
