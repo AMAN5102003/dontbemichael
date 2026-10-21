@@ -120,6 +120,8 @@ export interface HarnessConfig {
   godProvider?: AgentProvider;
   /** How Claude Code signs in: the owner's Claude account, or an Anthropic API key (mirrors src/main/config.ts). */
   claudeAuth?: 'account' | 'apiKey';
+  /** The owner's monthly Claude plan price in USD; unset uses the detected plan's (mirrors src/main/config.ts). */
+  planPriceMonthly?: number;
   godModel?: string;
   /** Per-server consent for the default MCP bundle, keyed by catalog id (mirrors
    *  src/main/config.ts; seeded from MCP_CATALOG). */
@@ -139,7 +141,6 @@ export interface HarnessConfig {
   connectorsOn?: { [key: string]: boolean };
   /** Connector keys the owner has seen in Settings. */
   connectorsSeen?: string[];
-  semanticMemory: boolean;
   embeddingModel: 'minilm' | 'embeddinggemma';
   missions?: ScheduledMission[];
   opsStandupSeeded?: boolean;
@@ -295,7 +296,8 @@ export type { CatalogModel, ModelCatalog } from '@shared/modelCatalogPayload';
  *  - kimi: managed Kimi Code aliases accepted by `kimi --model <alias>`.
  *  - custom: no presets at all; the command field is the whole interface.
  */
-const BAKED: ModelCatalog = modelCatalog;
+// The JSON import types `tier` as a plain string; the parser's ModelTier is the contract.
+const BAKED: ModelCatalog = modelCatalog as ModelCatalog;
 
 /** The catalog the pickers actually read. Starts as the baked copy and is
  *  replaced, per provider, when the remote copy arrives from main. `let`, not

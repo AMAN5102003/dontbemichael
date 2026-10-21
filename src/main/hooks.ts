@@ -10,6 +10,7 @@
  *
  * Runs in the Electron main process.
  */
+import type { RefusalGate } from '../shared/pulseSafety';
 import { createServer, type Server } from 'node:net';
 import { existsSync, lstatSync, readlinkSync, realpathSync, rmSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -21,13 +22,26 @@ import type { ControlRegistry } from './control';
 import type { CircuitBreaker } from './breaker';
 import { estimateCostUsd } from './pricing';
 import { claudeProjectsRoot, projectDir } from './transcript';
-import { HOOK_PATH_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
+import { HOOK_PATH_UNCHECKED, HOOK_SENDER_UNCHECKED, MAX_HOOK_FRAME_BYTES, TERMINAL_PROMPT_TYPES, batchToolUseIds, isTerminalPrompt, validateHookEvent } from '../shared/hookEvents';
 export { TERMINAL_PROMPT_TYPES, isTerminalPrompt };
 import { resolveGodName } from '../shared/godIdentity';
+import { ownValue } from '../shared/ownValue';
 import { APP_NAME } from '../shared/appName';
 
 /** The same terminal prompt is relayed to Michael at most once in this window. */
 const PROMPT_RELAY_DEDUPE_MS = 10 * 60_000;
+/** Prompts within this long after an automatic restart are the same prompt,
+ *  still on screen while the restart runs, not a new one. */
+export const STUCK_SETTLE_MS = 60_000;
+/** A member stopped on a prompt again within this long after the app restarted
+ *  them is stuck for real, even if they moved on in between (the app's own
+ *  wake note counts as moving on): Michael asks the owner, never another restart. */
+export const STUCK_AGAIN_MS = 30 * 60_000;
+/** A restart counts once the member's session starts again within this long;
+ *  otherwise Michael hears they are still stuck (ship review, 2026-10-16). */
+export const STUCK_CONFIRM_MS = 60_000;
+/** Events that show a stuck member moved on: the stuck episode ends. */
+const STUCK_MOVED_ON = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop']);
 
 /** A Claude Code session transcript: a .jsonl file in Claude's own projects
  *  folder (CLAUDE_CONFIG_DIR when set, as Claude Code uses it), where agents
@@ -71,7 +85,7 @@ export const ASK_TOOL_REFUSAL =
   "Don't ask the owner here: nobody answers your terminal. File it as one new file in the hive's triage folder (your questions as one \"ask\", what you were doing in \"description\"). Michael checks it and puts it on the owner's ASK ME board.";
 
 import { GUARDED_TOOLS, harnessWriteDecision } from './harnessGuard';
-import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, agentTmpDecision, agentTmpName, folderDecision, folderToolTarget, AGENT_TMP_DIR, isSharedTempSave, researchFolderDecision, sharedTempWriteDecision, tempFolders, researchWallDecision } from '../shared/folderAccess';
+import { FOLDER_READ_TOOLS, FOLDER_WRITE_TOOLS, agentTmpDecision, agentTmpName, folderDecision, folderToolTarget, AGENT_TMP_DIR, isSharedTempSave, researchFolderDecision, sharedTempWriteDecision, tempFolders, researchWallDecision, memberWallDecision } from '../shared/folderAccess';
 import { REFUSAL_WEB_TOOL, REFUSAL_WEB_TOOL_OFF, RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_SANDBOX_ONLY, RESEARCH_UNCHECKED_TOOL, researchText } from '../shared/research';
 import { folderLayoutFor } from './officeFile';
 import { expandTilde } from './fs';
@@ -82,8 +96,9 @@ import { WEB_SETTINGS_UNREADABLE, WEB_TOOLS, webAccess } from '../shared/webAcce
 import { isQuickBooksConnectorTool, isQuickBooksResourceCall, quickbooksAccess, quickbooksCapability } from '../shared/quickbooks';
 import { handoffContext } from '../shared/safeClear';
 import { ownerQuestionsContext, ownerRequestsContext, stuckCardsContext } from '../shared/ownerRequests';
-import { lastAssistantText } from './transcriptText';
+import { lastAssistantLine, lastAssistantText, type SaidLine } from './transcriptText';
 import { stopReasonFor, type OfficeStopReason } from '../shared/officeBreak';
+import { RESTARTED_NOTE } from '../shared/upkeep';
 
 /** An MCP tool, or Claude Code's tools for MCP resources. */
 function isMcpCall(tool: string | undefined): boolean {
@@ -124,6 +139,8 @@ interface HookPayload {
   /** Set by the hook program when it cut a call's long fields to fit a frame. */
   tool_input_trimmed?: boolean;
   tool_use_id?: string;
+  /** PostToolBatch only: the batch's calls, sent by the hook program with only their ids. */
+  tool_calls?: unknown;
   stop_hook_active?: boolean;
   prompt?: string;
   source?: string;
@@ -168,6 +185,7 @@ export class HookServer {
   /** The company profile last delivered to each agent's session: same once per
    *  session, again on change, rule as the goal. */
   private deliveredProfileByAgent = new Map<string, { sessionId: string | null; text: string | null }>();
+  private deliveredFoundationsByAgent = new Map<string, { sessionId: string | null; text: string | null }>();
   /** What roster each agent's session was last given, so it is sent again only on a change. */
   private deliveredRosterByAgent = new Map<string, { sessionId: string | null; layoutKey: string; statusKey: string }>();
   /** The session each agent was last given its memory index in. */
@@ -182,6 +200,9 @@ export class HookServer {
   private lastIdleAt: number | null = null;
   /** The clock, swappable so tests can step past the idle gap. */
   now: () => number = Date.now;
+  /** Restart a member whose session stopped on a prompt (the same restart as
+   *  Restart & Continue, in the window). False when there is no window to do it. */
+  restartStuck?: (agentId: string) => boolean;
 
   /** When Michael's last turn ended, for the notes fallback (R8). Starts at
    *  launch, so his first turn never files words for an older question. */
@@ -238,7 +259,7 @@ export class HookServer {
     /** Optional observer of every hook boundary (agentId, event, message). The
      *  worker inbox-wake watchdog (workerWake.ts) feeds on this to learn when an
      *  agent is parked on a permission/HITL prompt so it never types into it. */
-    private onEvent?: (agentId: string | undefined, event: string, message: string | undefined) => void,
+    private onEvent?: (agentId: string | undefined, event: string, message: string | undefined, toolName?: string) => void,
     /** Company knowledge's live state, so turning it on or off reaches running
      *  agents on their next prompt instead of at their next start. */
     private getKnowledge?: () => { active: boolean; cliPath?: string; root?: string; meaning?: { bin: string; palace: string } },
@@ -254,7 +275,11 @@ export class HookServer {
     /** The office break's signals (issue 124): a status line's usage windows,
      *  a turn cut off by the usage limit, a prompt taken, a turn finished.
      *  Optional so tests can omit it. */
-    private onPlan?: (signal: PlanSignal) => void
+    private onPlan?: (signal: PlanSignal) => void,
+    /** Company foundations as this agent reads them (office-foundations.md):
+     *  its job's section, the whole document for Michael, or null. Optional
+     *  so tests can omit it. */
+    private getFoundations?: (agentId: string) => string | null
   ) {}
 
   start(): void {
@@ -290,7 +315,22 @@ export class HookServer {
         // conn.end() below closes the connection after that single frame is handled.
         const frame = pending.subarray(0, nl).toString('utf8');
         let payload: HookPayload = {};
-        try { payload = JSON.parse(frame); } catch { /* ignore */ }
+        try {
+          const parsed: unknown = JSON.parse(frame);
+          // Valid JSON can be null, an array, a string or a number, but a hook
+          // payload is always an object. Anything else is normalized to {} so
+          // neither handle() nor the catch below dereferences a non-object
+          // (a bare `null` frame threw in both, and the second throw escaped
+          // the data callback, so conn.end() never ran and the socket hung).
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed as HookPayload;
+        } catch { /* ignore */ }
+        // The sender is whoever owns the frame's secret (issue #61, eng E3): a
+        // frame without one, or naming someone else, reaches no consumer; a
+        // tool check from it is refused, never allowed.
+        if (!this.authenticate(payload)) {
+          conn.end(JSON.stringify(payload.hook_event_name === 'PreToolUse' ? mcpDeny(HOOK_SENDER_UNCHECKED) : {}));
+          return;
+        }
         let res: unknown = {};
         // A gate that throws allows a built-in tool as before, but never an MCP
         // call (connectors fail closed, D8) and never a web tool for anyone
@@ -330,6 +370,68 @@ export class HookServer {
     server.listen(sock);
   }
 
+  /** Frames refused for a missing or wrong secret, by the agent they named
+   *  (or "unknown"). Kept for the telemetry health readout (TODOS.md); tests read it today. */
+  rejectedFrames(): ReadonlyMap<string, number> {
+    return this.rejected;
+  }
+  private readonly rejected = new Map<string, number>();
+  private readonly rejectLogged = new Map<string, number>();
+  private readonly impostorReported = new Map<string, number>();
+  /** Most names each refusal map keeps; past it a frame counts as "unknown". */
+  static readonly MAX_REFUSED_NAMES = 256;
+
+  /** The name a refused frame is counted under: the id it claims only when
+   *  that is a member of this office, so a process without a secret can't
+   *  fill the maps, the log and Pulse with made up names (TODOS.md). */
+  private refusedName(claimed: string | null): string {
+    if (!claimed) return 'unknown';
+    if (!this.hive.hasHookToken(claimed) && ownValue(this.registryMembers(), claimed) === undefined) return 'unknown';
+    return this.rejected.has(claimed) || this.rejected.size < HookServer.MAX_REFUSED_NAMES ? claimed : 'unknown';
+  }
+  /** The registry's members, read at most once a second, so a flood of
+   *  refused frames is not a flood of registry reads. */
+  private registryMembers(): Readonly<Record<string, unknown>> {
+    const now = Date.now();
+    if (this.membersMemo && now - this.membersMemo.at < 1000) return this.membersMemo.agents;
+    let agents: Readonly<Record<string, unknown>> = {};
+    try { agents = this.hive.registry().agents; } catch { /* no registry: no members */ }
+    this.membersMemo = { at: now, agents };
+    return agents;
+  }
+  private membersMemo: { at: number; agents: Readonly<Record<string, unknown>> } | null = null;
+
+  /** Whether a frame came from the agent it names, by its hook secret. On
+   *  success the frame names that agent and the secret is removed; on failure
+   *  the refusal is counted, and logged and reported to Pulse at most every
+   *  10 minutes per name. */
+  authenticate(p: HookPayload): boolean {
+    const token = (p as { hook_token?: unknown }).hook_token;
+    delete (p as { hook_token?: unknown }).hook_token;
+    const owner = this.hive.hookTokenOwner(token);
+    const claimed = typeof p.agent_id === 'string' && p.agent_id ? p.agent_id : null;
+    if (owner && (!claimed || claimed === owner)) {
+      p.agent_id = owner;
+      return true;
+    }
+    const who = this.refusedName(claimed);
+    this.rejected.set(who, (this.rejected.get(who) ?? 0) + 1);
+    // No secret, or another member's: something is speaking for someone it is
+    // not. A secret this start never made is a process left from an earlier
+    // start, shutting down: refused, but not a protection worth showing.
+    const reason = owner ? 'wrong-sender' : typeof token === 'string' && token ? 'old-secret' : 'no-secret';
+    const now = Date.now();
+    if (reason !== 'old-secret' && now - (this.impostorReported.get(who) ?? 0) > 10 * 60_000) {
+      this.impostorReported.set(who, now);
+      try { this.onRefused?.(who === 'unknown' ? undefined : who, 'impostor'); } catch { /* counting never blocks a refusal */ }
+    }
+    if (now - (this.rejectLogged.get(who) ?? 0) > 10 * 60_000) {
+      this.rejectLogged.set(who, now);
+      try { this.hive.appendLog({ kind: 'hook-frame-rejected', reason, agentId: who, event: p.hook_event_name ?? null }); } catch { /* best-effort */ }
+    }
+    return false;
+  }
+
   /** Waits, up to `ms`, until the channel has opened or failed. */
   async whenOpen(ms = 5000): Promise<void> {
     let timer: NodeJS.Timeout | undefined;
@@ -354,6 +456,17 @@ export class HookServer {
   /** The transcript file of an agent's CURRENT session, if any hook has fired. */
   transcriptPath(agentId: string): string | undefined {
     return this.transcriptPaths.get(agentId);
+  }
+
+  /** The last thing this agent said, as one safe line, and when, for its
+   *  closing-time row. Read only from a transcript in the engine's own folder: the path
+   *  comes from a hook frame, which an agent could write. */
+  latestLine(agentId: string): SaidLine | undefined {
+    const file = this.transcriptPaths.get(agentId);
+    if (!file || !isClaudeTranscript(file)) return undefined;
+    const said = lastAssistantLine(file);
+    const text = said ? safeLine(said.text) : undefined;
+    return text ? { ...said, text } : undefined;
   }
 
   /** The latest context-window accounting for an agent (current tokens + the real
@@ -382,7 +495,9 @@ export class HookServer {
     // subagent stopping must not mark the agent idle or replace its transcript.
     const subagent = typeof p.subagent_id === 'string' && p.subagent_id.length > 0;
     if (subagent && event === 'SubagentStop') return {};
-    this.onEvent?.(agentId, event, p.message);
+    this.onEvent?.(agentId, event, p.message, p.tool_name);
+    // Before any early return below (SessionStart and Stop usually return early).
+    if (agentId && !subagent && event !== 'Notification' && this.stuckEpisodes.has(agentId)) this.stuckProgress(agentId, event);
     if (agentId && !subagent && typeof p.transcript_path === 'string' && p.transcript_path) {
       this.transcriptPaths.set(agentId, p.transcript_path);
       // Michael's notes fallback reads only the transcript his own session
@@ -534,7 +649,7 @@ export class HookServer {
     if (event === 'PreToolUse' && agentId && this.control) {
       const d = this.control.toolDecision(agentId, p.tool_name ?? '');
       if (d.deny) {
-        this.emitRefused(agentId, event, p);
+        this.emitRefused(agentId, event, p, 'paused');
         return {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
@@ -560,7 +675,7 @@ export class HookServer {
       const d = connectorAccess(cfg, agentId, p.tool_name ?? '', p.tool_input, agentId ? (this.roleReadsBooks?.(agentId) ?? false) : false);
       if (!d.ok) {
         console.log(`[connectors] refused ${p.tool_name} for ${agentId ?? 'no agent'}: ${d.reason}`);
-        this.emitRefused(agentId, event, p);
+        this.emitRefused(agentId, event, p, 'connector');
         return mcpDeny(d.reason);
       }
     }
@@ -575,7 +690,7 @@ export class HookServer {
       const cap = quickbooksCapability(cfg.agentCapabilities?.[agentId]?.quickbooks, this.roleReadsBooks?.(agentId) ?? false);
       const d = quickbooksAccess(cfg.quickbooksClaude === true, cap, p.tool_name ?? '');
       if (!d.ok) {
-        this.emitRefused(agentId, event, p);
+        this.emitRefused(agentId, event, p, 'quickbooks');
         return {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
@@ -603,7 +718,7 @@ export class HookServer {
       const refs = { forward: named(input.forward), attachFrom: Array.isArray(input.attach_from) && input.attach_from.some(named) };
       const d = op ? mailAccess(cfg, agentId, typeof input.mailbox === 'string' ? input.mailbox : undefined, op, proposal, { refs, present: this.memberPresent }) : { ok: false as const, reason: 'Unknown mail tool.' };
       if (!d.ok) {
-        this.emitRefused(agentId, event, p);
+        this.emitRefused(agentId, event, p, 'mail');
         return mcpDeny(d.reason);
       }
     }
@@ -618,7 +733,7 @@ export class HookServer {
     // up at its restart.
     if (event === 'PreToolUse' && agentId && agentId !== RESEARCH_ID && p.tool_name === 'Bash'
       && (p.tool_input as { dangerouslyDisableSandbox?: unknown } | undefined)?.dangerouslyDisableSandbox === true) {
-      this.emitRefused(agentId, event, p);
+      this.emitRefused(agentId, event, p, 'sandbox');
       return {
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -637,7 +752,7 @@ export class HookServer {
         d = { ok: false, reason: WEB_SETTINGS_UNREADABLE };
       }
       if (!d.ok) {
-        this.emitRefused(agentId, event, p);
+        this.emitRefused(agentId, event, p, 'internet');
         return {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
@@ -659,7 +774,7 @@ export class HookServer {
       let cfg: ReturnType<typeof this.getConfig>;
       let hiveRoot: string | null | undefined;
       try { cfg = this.getConfig(); hiveRoot = this.hive.root(); }
-      catch { this.emitRefused(agentId, event, p); return mcpDeny(RESEARCH_UNCHECKED_TOOL); }
+      catch { this.emitRefused(agentId, event, p, 'office-files'); return mcpDeny(RESEARCH_UNCHECKED_TOOL); }
       if ((cfg.businessFolder || cfg.officeFolder) && cfg.harnessHome && hiveRoot) {
         let d: { deny: boolean; reason?: string };
         try { d = harnessWriteDecision({
@@ -673,7 +788,7 @@ export class HookServer {
           caseInsensitive: process.platform !== 'linux'
         }); } catch { d = { deny: true, reason: RESEARCH_UNCHECKED_TOOL }; }
         if (d.deny) {
-          this.emitRefused(agentId, event, p);
+          this.emitRefused(agentId, event, p, 'office-files');
           return {
             hookSpecificOutput: {
               hookEventName: 'PreToolUse',
@@ -716,7 +831,7 @@ export class HookServer {
       try { d = unjudged ? { deny: true, reason: HOOK_PATH_UNCHECKED } : this.folderCheck(agentId, toolName, p.tool_input, p.cwd); }
       catch { d = { deny: true, reason: RESEARCH_UNCHECKED_TOOL }; }
       if (d.deny) {
-        this.emitRefused(agentId, event, p);
+        this.emitRefused(agentId, event, p, 'folder');
         return {
           hookSpecificOutput: {
             hookEventName: 'PreToolUse',
@@ -833,6 +948,25 @@ export class HookServer {
       }
     }
 
+    // Company foundations (office-foundations.md, eng D1): the member's job
+    // section, or the whole document for Michael, delivered like the profile:
+    // at the start of each session and again when it changes. Never to
+    // Research (eng finding 1).
+    let foundations: string | null = null;
+    if ((event === 'SessionStart' || event === 'UserPromptSubmit') && agentId && this.getFoundations && !isResearchAgent) {
+      let text: string | null = null;
+      try { text = this.getFoundations(agentId); } catch { text = null; }
+      const sessionId = p.session_id ?? null;
+      const delivered = this.deliveredFoundationsByAgent.get(agentId);
+      const fresh = event === 'SessionStart' || !delivered || delivered.sessionId !== sessionId;
+      if (fresh || delivered.text !== text) {
+        this.deliveredFoundationsByAgent.set(agentId, { sessionId, text });
+        if (text) foundations = text;
+        // Silence would leave the old section alive in the model's context.
+        else if (!fresh && delivered?.text) foundations = 'COMPANY FOUNDATIONS. Your job no longer has a company foundations section; the answers given earlier no longer apply to your work.';
+      }
+    }
+
     // The agent's memory index (owner, 2026-09-25): once at the start of each
     // session, and never again within it, so it stays in the prompt cache. The
     // tidy-up's changes arrive with the next session.
@@ -877,12 +1011,12 @@ export class HookServer {
       ? this.hive.knowledgeUpdate(agentId, this.getKnowledge())
       : null;
 
-    if (steer || roster || goal || knowledgeNote || profile || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
+    if (steer || roster || goal || knowledgeNote || profile || foundations || memoryIndex || handoff || ownerRequests || ownerQuestions || stuckCards) {
       this.emit(agentId, event, p);
       return {
         hookSpecificOutput: {
           hookEventName: event,
-          additionalContext: [roster, profile, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
+          additionalContext: [roster, profile, foundations, memoryIndex, handoff, goal, knowledgeNote, ownerRequests, ownerQuestions, stuckCards, steer].filter(Boolean).join('\n\n')
         }
       };
     }
@@ -909,13 +1043,14 @@ export class HookServer {
     }
 
     // A team member's session stopped on a prompt only a person can answer in
-    // that terminal (a permission, a sign-in, a trust dialog). Tell Michael
-    // what it says; he can't type there, so he puts it on ASK ME for the owner
-    // to answer in a 1:1 (docs/designs/owner-talks-via-michael.md).
-    // Not in 1:1: the owner is already at that terminal to answer it. The cheap
-    // prompt check runs first; the registry is read only for a real prompt.
+    // it (a permission, a sign-in, a trust dialog). Business owners don't work
+    // in terminals or 1:1 chats (owner, 2026-10-15): the app restarts the
+    // member, which clears the prompt, and Michael asks the owner only if it
+    // comes back right after. Not in 1:1: the owner is already there to answer
+    // it. The cheap prompt check runs first; the registry is read only for a
+    // real prompt.
     if (event === 'Notification' && agentId && isTerminalPrompt(p) && !this.isGod(agentId) && !this.onHold(agentId)) {
-      this.relayPromptToMichael(agentId, (p.message ?? '').trim());
+      this.stuckOnPrompt(agentId, (p.message ?? '').trim());
     }
 
     // Forward everything else to the renderer so avatars reflect real activity.
@@ -953,22 +1088,112 @@ export class HookServer {
 
   /** agentId → last prompt relayed, so one prompt isn't relayed twice. */
   private relayedPrompts = new Map<string, { text: string; at: number }>();
+  /** agentId → its stuck episode: when the app restarted it for a prompt,
+   *  whether the new session started, and whether Michael was told it is
+   *  still stuck. It ends when the member moves on, so there is one automatic
+   *  restart per episode and no raise and withdraw loop on Ask me. timedOut:
+   *  Michael heard the new session never started, so a late start is news too. */
+  private stuckEpisodes = new Map<string, { at: number; text: string; restarted: boolean; confirmed: boolean; escalated: boolean; timedOut?: boolean }>();
+  /** agentId → when the app last restarted it for a prompt; outlives the episode. */
+  private stuckRestartAt = new Map<string, number>();
 
-  private relayPromptToMichael(agentId: string, text: string): void {
-    const last = this.relayedPrompts.get(agentId);
-    if (last && last.text === text && Date.now() - last.at < PROMPT_RELAY_DEDUPE_MS) return;
-    try {
-      const name = this.displayName(agentId);
-      this.hive.send({
-        to: this.hive.registry().godId ?? 'god',
-        act: 'inform',
-        subject: `${name} is waiting on something in their terminal`,
-        body: `${name}'s session stopped on a prompt only the owner can answer in that terminal${text ? `: "${text}"` : '.'} You can't answer it there. Put it on the owner's ASK ME board (a card for ${agentId}, status "blocked", one humanQA ask with "raisedBy": "${agentId}") saying what it is waiting on and to talk 1:1 with ${name} to answer it.`
-      }, 'system');
-      // Stamped only once it went out, so a failed send is retried on the
+  /** The one automatic restart a member gets per STUCK_AGAIN_MS, shared by the
+   *  stuck path and the not reporting watch (issue #326, eng R4). */
+  mayAutoRestart(agentId: string): boolean {
+    const last = this.stuckRestartAt.get(agentId);
+    return last === undefined || this.now() - last >= STUCK_AGAIN_MS;
+  }
+  noteAutoRestart(agentId: string): void { this.stuckRestartAt.set(agentId, this.now()); }
+
+  /** A member stopped on a prompt: restart them once, or, when it comes back
+   *  before they moved on (or no window can restart them), Michael asks the owner. */
+  private stuckOnPrompt(agentId: string, text: string): void {
+    const now = this.now();
+    const ep = this.stuckEpisodes.get(agentId);
+    if (ep) {
+      // The same prompt, still on screen while the restart runs.
+      if (now - ep.at < STUCK_SETTLE_MS) return;
+      if (!ep.escalated) ep.escalated = this.relayStuckToMichael(agentId, text, ep.restarted);
+      return;
+    }
+    const last = this.stuckRestartAt.get(agentId);
+    if (last !== undefined && now - last < STUCK_AGAIN_MS) {
+      // Restarted not long ago: no second restart, Michael asks the owner.
+      if (this.relayStuckToMichael(agentId, text, true)) this.stuckEpisodes.set(agentId, { at: now, text, restarted: true, confirmed: true, escalated: true });
+      return;
+    }
+    let restarted = false;
+    try { restarted = this.restartStuck?.(agentId) === true; } catch { /* the plain ask below */ }
+    if (!restarted) {
+      // Stamped only once it went out, so a failed send is tried again on the
       // next prompt event (adversarial review, 2026-09-25).
-      this.relayedPrompts.set(agentId, { text, at: Date.now() });
-    } catch { /* best-effort: the panel offers Talk 1:1 meanwhile */ }
+      if (this.relayStuckToMichael(agentId, text, false)) this.stuckEpisodes.set(agentId, { at: now, text, restarted: false, confirmed: false, escalated: true });
+      return;
+    }
+    this.stuckEpisodes.set(agentId, { at: now, text, restarted: true, confirmed: false, escalated: false });
+    this.stuckRestartAt.set(agentId, now);
+    // The resumed session gets no prompt of its own: this note wakes the member
+    // (the inbox nudge) so its work carries on.
+    try {
+      this.hive.send({ to: agentId, act: 'inform', ...RESTARTED_NOTE }, 'system', 'restarted');
+    } catch { /* Michael checks on them below */ }
+    const t = setTimeout(() => this.checkStuckRestarts(), STUCK_CONFIRM_MS + 1_000);
+    (t as { unref?: () => void }).unref?.();
+  }
+
+  /** A restart whose new session never started is no restart: Michael hears
+   *  the member is still stuck. Run by a timer after each restart. */
+  checkStuckRestarts(): void {
+    const now = this.now();
+    for (const [agentId, ep] of this.stuckEpisodes) {
+      if (ep.restarted && !ep.confirmed && !ep.escalated && now - ep.at >= STUCK_CONFIRM_MS) {
+        ep.escalated = ep.timedOut = this.relayStuckToMichael(agentId, ep.text, false);
+      }
+    }
+  }
+
+  /** The member's session started again (the restart worked) or it moved on
+   *  (the episode is over). */
+  private stuckProgress(agentId: string, event: string): void {
+    const ep = this.stuckEpisodes.get(agentId);
+    if (!ep) return;
+    if (event === 'SessionStart' && ep.restarted && !ep.confirmed && !ep.escalated) {
+      ep.confirmed = true;
+      const name = this.displayName(agentId);
+      this.tellMichael(agentId, `${name} was restarted`, `${name}'s session stopped on a prompt only a person could answer${ep.text ? ` ("${ep.text}")` : ''}, so the app restarted ${name} and told them to carry on with their current work. Check that ${name} picks their work back up. This is not for the owner's Ask me board: if you asked the owner whether ${name} is stuck, withdraw that question.`);
+    } else if (event === 'SessionStart' && ep.timedOut) {
+      // Michael heard the restart never took, but it did: tell him once, and a
+      // prompt that comes back after this is news for him again.
+      ep.timedOut = false;
+      ep.confirmed = true;
+      ep.escalated = false;
+      this.relayedPrompts.delete(agentId);
+      const name = this.displayName(agentId);
+      this.tellMichael(agentId, `${name} was restarted after all`, `${name}'s session started again after all, so the restart went through and ${name} is not stuck. Leave ${name}'s open work with them, and if you asked the owner whether ${name} is stuck, withdraw that question.`);
+    } else if (STUCK_MOVED_ON.has(event)) {
+      this.stuckEpisodes.delete(agentId);
+    }
+  }
+
+  /** True once Michael has the note (sent now, or already within the window). */
+  private relayStuckToMichael(agentId: string, text: string, restarted: boolean): boolean {
+    const last = this.relayedPrompts.get(agentId);
+    if (last && last.text === text && this.now() - last.at < PROMPT_RELAY_DEDUPE_MS) return true;
+    const name = this.displayName(agentId);
+    const sent = this.tellMichael(agentId, `${name} is stuck`,
+      `${name}'s session stopped on a prompt only a person could answer${text ? ` ("${text}")` : ''}, and ${restarted ? `restarting ${name} did not clear it` : `the app could not restart ${name}`}. The owner can't answer it either: never ask them to, and never mention terminals, prompts, sessions or a 1:1 chat. Move ${name}'s open work to a teammate who fits. Then put one plain question on the owner's Ask me board (a card for ${agentId}, status "blocked", one humanQA ask with "raisedBy": "${agentId}") saying ${name} is stuck and can't work until it is looked into, with options that fit, such as "Leave ${name} for now".`);
+    // Stamped only once it went out, so a failed send is retried on the next
+    // prompt event (adversarial review, 2026-09-25).
+    if (sent) this.relayedPrompts.set(agentId, { text, at: this.now() });
+    return sent;
+  }
+
+  /** One note to Michael from the app; false when it could not be sent. */
+  private tellMichael(agentId: string, subject: string, body: string): boolean {
+    try {
+      this.hive.send({ to: this.hive.registry().godId ?? 'god', act: 'inform', subject, body }, 'system');
+      return true;
+    } catch { return false; }
   }
 
   private isGod(agentId: string): boolean {
@@ -1037,6 +1262,23 @@ export class HookServer {
       const r = researchWallDecision(researchWall, tool, t, ci, rName());
       if (r.deny) return r;
     }
+    // Each member's hive folder is its own, for everyone, Michael included
+    // (owner, 2026-10-16: a member's memory is private; ask the member).
+    if (hiveRoot) {
+      const nameOf = (id: string): string => (id === RESEARCH_ID ? rName() : reg.agents[id]?.name?.trim() || id);
+      // Who its start time Read rules cover, against the roster now: a
+      // member hired since is refused only to a search over everyone's folders.
+      const roster = { members: Object.keys(reg.agents ?? {}), walled: this.hive.walledMembersOf?.(agentId) ?? null };
+      // Each target judged against the hive as named and as the folder it
+      // really is, as the Research wall is: an office under a linked folder
+      // must not let a link in a member's own folder through (ship review).
+      for (const root of withReal([hiveRoot])) {
+        for (const t of both) {
+          const r = memberWallDecision(root, agentId, tool, t, ci, nameOf, roster);
+          if (r.deny) return r;
+        }
+      }
+    }
     // While Research is on, nobody saves into the shared temp folders its
     // shell can read; each agent has its own scratch folder (owner, D7.2).
     if (home && this.hive.researchOn()) {
@@ -1085,9 +1327,14 @@ export class HookServer {
     }
   }
 
+  /** Pulse's Kept safe (proposal 3): each step a setting stopped, by gate.
+   *  A question sent on to Michael is routing, so it passes no gate. */
+  onRefused?: (agentId: string | undefined, gate: RefusalGate) => void;
+
   // A refused call sends no step and is marked blocked, so the sidebar and
   // the office floor show nothing for a call that never ran.
-  private emitRefused(agentId: string | undefined, event: string, p: HookPayload): void {
+  private emitRefused(agentId: string | undefined, event: string, p: HookPayload, gate?: RefusalGate): void {
+    if (gate) { try { this.onRefused?.(agentId, gate); } catch { /* counting never blocks a refusal */ } }
     this.emit(agentId, event, p, true, true);
   }
 
@@ -1097,6 +1344,7 @@ export class HookServer {
       event,
       tool: p.tool_name,
       toolUseId: typeof p.tool_use_id === 'string' ? p.tool_use_id : undefined,
+      toolUseIds: event === 'PostToolBatch' ? batchToolUseIds(p.tool_calls) : undefined,
       notificationType: p.notification_type,
       source: p.source,
       message: p.message,
@@ -1156,10 +1404,16 @@ const TOOL_LINE_MAX = 80;
  *  agent cannot disguise the line the owner decides by. */
 export function toolLine(tool: unknown, input: unknown): string | undefined {
   const d = toolDetail(tool, input);
-  if (!d) return undefined;
+  return d ? safeLine(d) : undefined;
+}
+
+/** Any agent text as one line the owner may read: redacted, without control
+ *  or invisible characters, at most 80 characters (toolLine, and the last
+ *  thing an agent said on its closing-time row). */
+export function safeLine(text: string): string | undefined {
   // Invisible format characters are removed, not spaced, so one hidden
   // inside a token cannot split it past redaction.
-  const plain = d.replace(/\p{Cf}+/gu, '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TOOL_LINE_SCAN_MAX);
+  const plain = text.replace(/\p{Cf}+/gu, '').replace(/\p{Cc}+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, TOOL_LINE_SCAN_MAX);
   // Cut by code point so an emoji is never split in half.
   const redacted = redactSecrets(plain);
   if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(redacted)) return undefined;

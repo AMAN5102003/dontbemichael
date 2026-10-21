@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { OfficeOpening } from '@/shell/clockingIn';
 import type { AccentColorName } from '@/design/tokens';
 import type { OfficeCharacterName } from '@/scene/office/cast';
 import type { StatusKind } from '@/components/PixelBadge';
@@ -22,7 +23,9 @@ import { refocusAfterRemoval, focusOnLoad, restoreFocus } from './focusMode';
 import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
 import { canOpen } from '../shell/closingFloor';
+import type { CenterClaim } from '../shell/wideCenter';
 import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
+import { afterLeave, attemptLeave } from './leaveGuard';
 
 export type ToolKind =
   | 'Read' | 'Edit' | 'Write' | 'Bash' | 'WebFetch' | 'WebSearch'
@@ -31,11 +34,17 @@ export type ToolKind =
 export type StationKind =
   | 'shelf' | 'terminal' | 'web' | 'board' | 'mailbox' | 'mcp' | 'desk';
 
+/** An unsent Ask me pick: the option picked on a choice, or each question's
+ *  chip and typed line on an ask with several (docs/designs/ask-me-options.md). */
+export interface AnswerPick { pick?: number; parts?: ({ chip?: number; text?: string } | undefined)[] }
+
 /** Why an agent waits for a restart (store.pendingRestart). */
 export interface PendingRestart {
   at: number;
-  /** engine: Claude Code was just set up (docs/designs/get-michael-ready.md). */
-  reason: 'email' | 'connectors' | 'engine';
+  /** engine: Claude Code was just set up (docs/designs/get-michael-ready.md).
+   *  stuck: the session stopped on a prompt (hooks.ts stuckOnPrompt).
+   *  silent: its engine stopped reporting to the app (issue #326). */
+  reason: 'email' | 'connectors' | 'engine' | 'stuck' | 'silent';
   /** The owner pressed Restart now: do not wait for idle. */
   now?: boolean;
   /** The last restart attempt failed; it is tried again on the next tick. */
@@ -256,8 +265,27 @@ interface State {
    *  fallback for anything that genuinely has no particular agent in mind. */
   ideAgentId: string | null;
   sidebarWidth: number;
+  /** The person's or Michael's panel opens wide, centered over the office
+   *  (wide panel WD6): the owner's choice, remembered on this computer, never
+   *  set by the window's size. The Needs you board ignores it (WD1). */
+  panelWide: boolean;
+  setPanelWide: (on: boolean) => void;
+  /** The 1:1 with Michael opens wide in the center (design review 2026-10-17,
+   *  1A): its own choice, remembered on this computer, set only by its Open
+   *  wide button (7A). */
+  dockWide: boolean;
+  setDockWide: (on: boolean) => void;
+  /** Esc sent the wide 1:1 back to the side for now (6B); cleared on close. */
+  dockSideForNow: boolean;
+  setDockSideForNow: (on: boolean) => void;
+  /** Who opened last, the 1:1 or the right column: that one takes the center
+   *  (8A, shell/wideCenter.ts). Never remembered. */
+  centerClaim: CenterClaim;
   sidebarTab: SidebarTab;
   godStatus: GodStatus;
+  /** The office opening (DESIGN.md 7.24): the Clocking in card and the clock
+   *  pill read it; TeamClockingIn.tsx moves it on (shell/clockingIn.ts). */
+  opening: OfficeOpening;
   /** Per-agent outgoing message queue (agent id → messages awaiting delivery).
    *  Lets the user keep "talking" to a busy agent: messages park here and are
    *  drained to the terminal one-by-one once the agent is free. */
@@ -267,6 +295,9 @@ interface State {
   toolCounts: Record<string, number>;
   bumpToolCount: (id: string) => void;
   setGodStatus: (status: GodStatus) => void;
+  setOpening: (opening: OfficeOpening) => void;
+  /** A Restore team run opens the office again, card and pill included. */
+  reopenOffice: () => void;
   select: (id: string) => void;
   /** Closing time: who has gone home (confirmed or closed without). Empty when
    *  not closing. Nobody in it can be opened (docs/designs/closing-floor.md). */
@@ -278,7 +309,9 @@ interface State {
    *  launch), so the column needs its own state. Starts closed; App opens the
    *  board whenever anything waits and nothing may close it then. */
   rightColumn: RightColumn;
-  setRightColumn: (column: RightColumn) => void;
+  /** `claim: false` for the app's own opening (an ask arriving), which never
+   *  takes the center from the 1:1 (8A counts the owner's actions only). */
+  setRightColumn: (column: RightColumn, opts?: { claim?: boolean }) => void;
   /** Open the Needs you board from an owner action (the pill, the coral strip,
    *  a "for you" chip). Asks the board to put focus in a reply field (D10),
    *  on `taskId`'s card when given (D11). */
@@ -327,10 +360,18 @@ interface State {
    *  graph no longer sits next to that tab. seq-keyed like ccTabRequest. */
   memoryFocusRequest: { agentId: string; seq: number } | null;
   openAgentMemory: (agentId: string) => void;
+  /** Open a team member's Profile tab (their schedules), from Pulse. */
+  openAgentProfile: (agentId: string) => void;
   /** The task whose detail overlay is open (rendered app-wide over the office
    *  floor — the card content grows: contracts, deps, the human Q&A trail). */
   taskDetailId: string | null;
   openTaskDetail: (id: string) => void;
+  /** Open Edit {name} for a member from outside its panel (a Needs you card's
+   *  Change engine, issue #326): its panel opens and Edit with it. */
+  editAgentRequest: { agentId: string; engine: boolean; seq: number } | null;
+  requestEditAgent: (agentId: string, opts?: { engine?: boolean }) => void;
+  /** Edit opened for the request: it is used once (ship review 2026-10-17). */
+  clearEditAgentRequest: () => void;
   closeTaskDetail: () => void;
   /** One-shot prefill for the Command Center's dispatch box (a task detail's
    *  "assign" from anywhere in the app). seq-keyed like ccTabRequest. */
@@ -340,6 +381,10 @@ interface State {
    *  unmounts the ask-me view) doesn't eat a half-typed answer. */
   answerDrafts: Record<string, string>;
   setAnswerDraft: (taskId: string, text: string) => void;
+  /** The picked option and each question's chip and line on an Ask me card,
+   *  kept like a typed draft (docs/designs/ask-me-options.md, decision 3A). */
+  answerPicks: Record<string, AnswerPick>;
+  setAnswerPick: (key: string, pick: AnswerPick) => void;
   /** Unsent composer drafts, per agent — so switching agents (which remounts the
    *  composer) doesn't eat what the user was typing. */
   drafts: Record<string, string>;
@@ -393,6 +438,8 @@ interface State {
    *  and the owner question to show. */
   dockOpen: boolean;
   dockFocus?: string;
+  /** Every explicit navigation, including reopening the same question. */
+  dockNavigation: number;
   setDock: (open: boolean, focus?: string) => void;
   /** "Send now" while floor auto-delivery is paused: marks the message manual
    *  (drain bypasses the pause gate for it) and moves it to the queue front. */
@@ -440,6 +487,8 @@ interface State {
 
 const LS_SIDEBAR_WIDTH = 'cth.sidebarWidth';
 const LS_SIDEBAR_TAB = 'cth.sidebarTab';
+const LS_PANEL_WIDE = 'cth.panelWide';
+const LS_DOCK_WIDE = 'cth.dockWide';
 const LS_AGENTS = 'cth.agents';
 const LS_ARCHIVED = 'cth.archivedAgents';
 const LS_RESTORABLE = 'cth.restorableAgents';
@@ -451,20 +500,20 @@ const LS_FOCUS_MODE = 'cth.prefersFocusMode';
 const LS_FLOOR_VIEW = 'cth.floorView';
 
 /** Opening the right column on purpose (Needs you, a person, Michael's tabs)
- *  goes back to the office: Tasks and Who talks to whom hide the column
- *  (owner, 2026-10-03). A file tab keeps it beside the file, so an Ask me card
- *  stays answerable while its file is read (open-file-tab.md, F1). */
+ *  goes back to the office: Tasks, Pulse and Who talks to whom hide the column
+ *  (owner, 2026-10-03; Pulse 2026-10-15). A file tab keeps it beside the file,
+ *  so an Ask me card stays answerable while its file is read (open-file-tab.md, F1). */
 function officeView(view: FloorView): { floorView?: FloorView } {
   if (view === 'office' || view === 'file') return {};
   try { window.localStorage.setItem(LS_FLOOR_VIEW, 'office'); } catch { /* per-Mac nicety only */ }
   return { floorView: 'office' };
 }
 
-export type FloorView = 'office' | 'tasks' | 'graph' | 'file';
+export type FloorView = 'office' | 'tasks' | 'pulse' | 'graph' | 'file';
 const initialFloorView: FloorView = (() => {
   try {
     const v = window.localStorage.getItem(LS_FLOOR_VIEW);
-    return v === 'tasks' || v === 'graph' ? v : 'office';
+    return v === 'tasks' || v === 'graph' || v === 'pulse' ? v : 'office';
   } catch { return 'office'; }
 })();
 
@@ -839,6 +888,12 @@ const initialSidebarWidth = (() => {
   } catch { /* noop */ }
   return 420;
 })();
+const initialPanelWide = (() => {
+  try { return window.localStorage.getItem(LS_PANEL_WIDE) === '1'; } catch { return false; }
+})();
+const initialDockWide = (() => {
+  try { return window.localStorage.getItem(LS_DOCK_WIDE) === '1'; } catch { return false; }
+})();
 const initialSidebarTab: SidebarTab = (() => {
   try {
     const v = window.localStorage.getItem(LS_SIDEBAR_TAB);
@@ -907,7 +962,14 @@ export const useStore = create<State>((set, get) => ({
   addAgentOpen: false,
   ccTabRequest: null,
   memoryFocusRequest: null,
-  openAgentMemory: (agentId) => set((s) => {
+  // Every action that changes the panel asks the leave guard first, so Edit
+  // agent's unsaved changes are never lost without asking (leaveGuard.ts).
+  openAgentProfile: (agentId) => { attemptLeave({ selectedId: agentId, rightColumn: 'person' }, () => set((s) => {
+    const seq = (s.ccTabRequest?.seq ?? 0) + 1;
+    persistAgents(s.agents, agentId);
+    return { selectedId: agentId, ccTabRequest: { tab: 'profile', seq }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) };
+  })); },
+  openAgentMemory: (agentId) => { attemptLeave({ selectedId: get().agents.find((a) => a.isGod)?.id ?? get().selectedId, rightColumn: 'person' }, () => set((s) => {
     const god = s.agents.find((a) => a.isGod);
     const seq = (s.ccTabRequest?.seq ?? 0) + 1;
     const selectedId = god?.id ?? s.selectedId;
@@ -917,17 +979,22 @@ export const useStore = create<State>((set, get) => ({
       ccTabRequest: { tab: 'memory', seq },
       memoryFocusRequest: { agentId, seq },
       rightColumn: 'person' as const,
+      centerClaim: 'column' as const,
       ...officeView(s.floorView)
     };
-  }),
+  })); },
   // 'human' was Michael's Ask me tab; in v2 Ask me is the Needs you board.
-  requestCommandCenterTab: (tab) =>
-    set((s) => tab === 'human'
-      ? { rightColumn: 'board' as const, ...officeView(s.floorView) }
-      // Not onto a person who has gone home at closing time (5A).
-      : s.selectedId && !canOpen(s.selectedId, s.goneHome)
-        ? {}
-        : { ccTabRequest: { tab, seq: (s.ccTabRequest?.seq ?? 0) + 1 }, rightColumn: 'person' as const, ...officeView(s.floorView) }),
+  requestCommandCenterTab: (tab) => {
+    const s0 = get();
+    // Not onto a person who has gone home at closing time (5A).
+    const blocked = tab !== 'human' && !!s0.selectedId && !canOpen(s0.selectedId, s0.goneHome);
+    attemptLeave(blocked ? null : { selectedId: s0.selectedId, rightColumn: tab === 'human' ? 'board' : 'person' }, () =>
+      set((s) => tab === 'human'
+        ? { rightColumn: 'board' as const, centerClaim: 'column' as const, ...officeView(s.floorView) }
+        : s.selectedId && !canOpen(s.selectedId, s.goneHome)
+          ? {}
+          : { ccTabRequest: { tab, seq: (s.ccTabRequest?.seq ?? 0) + 1 }, rightColumn: 'person' as const, centerClaim: 'column' as const, ...officeView(s.floorView) }));
+  },
   missions: [],
   missionsStatus: 'loading',
   setMissions: (missions, status = 'ready') => set({ missions, missionsStatus: status }),
@@ -936,11 +1003,24 @@ export const useStore = create<State>((set, get) => ({
   floorView: initialFloorView,
   fileTabs: [],
   activeFileTab: null,
-  lastFixedView: initialFloorView === 'tasks' || initialFloorView === 'graph' ? initialFloorView : 'office',
+  lastFixedView: initialFloorView === 'tasks' || initialFloorView === 'graph' || initialFloorView === 'pulse' ? initialFloorView : 'office',
   ideInitialFile: null,
   ideOpen: false,
   ideAgentId: null,
   sidebarWidth: initialSidebarWidth,
+  panelWide: initialPanelWide,
+  setPanelWide: (on) => {
+    try { window.localStorage.setItem(LS_PANEL_WIDE, on ? '1' : '0'); } catch { /* noop */ }
+    set(on ? { panelWide: on, centerClaim: 'column' } : { panelWide: on });
+  },
+  dockWide: initialDockWide,
+  setDockWide: (on) => {
+    try { window.localStorage.setItem(LS_DOCK_WIDE, on ? '1' : '0'); } catch { /* noop */ }
+    set(on ? { dockWide: on, dockSideForNow: false, centerClaim: 'dock' } : { dockWide: on, dockSideForNow: false });
+  },
+  dockSideForNow: false,
+  setDockSideForNow: (on) => set({ dockSideForNow: on }),
+  centerClaim: null,
   sidebarTab: initialSidebarTab,
   godStatus: 'booting',
   messageQueues: initialQueues,
@@ -948,21 +1028,27 @@ export const useStore = create<State>((set, get) => ({
   bumpToolCount: (id) =>
     set((s) => ({ toolCounts: { ...s.toolCounts, [id]: (s.toolCounts[id] ?? 0) + 1 } })),
   setGodStatus: (status) => set({ godStatus: status }),
+  opening: { kind: 'opening', since: Date.now() },
+  setOpening: (opening) => set({ opening }),
+  reopenOffice: () => set({ opening: { kind: 'opening', since: Date.now() } }),
   // A person who has gone home at closing time opens from nowhere (5A).
-  select: (id) => set((s) => {
+  select: (id) => { attemptLeave(canOpen(id, get().goneHome) ? { selectedId: id, rightColumn: 'person' } : null, () => set((s) => {
     if (!canOpen(id, s.goneHome)) return {};
     persistAgents(s.agents, id);
-    return { selectedId: id, ccTabRequest: null, memoryFocusRequest: null, rightColumn: 'person', ...officeView(s.floorView) };
-  }),
+    return { selectedId: id, ccTabRequest: null, memoryFocusRequest: null, rightColumn: 'person', centerClaim: 'column', ...officeView(s.floorView) };
+  })); },
   goneHome: [],
   setGoneHome: (ids) => set((s) => (ids.length === s.goneHome.length && ids.every((id) => s.goneHome.includes(id)) ? {} : { goneHome: ids })),
   rightColumn: 'closed',
-  setRightColumn: (column) => set({ rightColumn: column }),
-  openNeedsYou: (opts) => set((s) => ({
+  setRightColumn: (column, opts) => { attemptLeave({ selectedId: get().selectedId, rightColumn: column }, () => set(
+    column !== 'closed' && opts?.claim !== false ? { rightColumn: column, centerClaim: 'column' } : { rightColumn: column }
+  )); },
+  openNeedsYou: (opts) => { attemptLeave({ selectedId: get().selectedId, rightColumn: 'board' }, () => set((s) => ({
     rightColumn: 'board',
+    centerClaim: 'column',
     ...officeView(s.floorView),
     needsYouFocus: { seq: (s.needsYouFocus?.seq ?? 0) + 1, ...(opts?.taskId ? { taskId: opts.taskId } : {}) }
-  })),
+  }))); },
   needsYouFocus: null,
 
   updateAgent: (id, patch) =>
@@ -1174,6 +1260,14 @@ export const useStore = create<State>((set, get) => ({
     }),
   taskDetailId: null,
   openTaskDetail: (id) => set({ taskDetailId: id }),
+  editAgentRequest: null,
+  requestEditAgent: (agentId, opts) => {
+    get().select(agentId);
+    // After the select applies, so Keep editing drops the request with it; the
+    // panel clears it once it opens Edit (ship review 2026-10-17).
+    afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
+  },
+  clearEditAgentRequest: () => set({ editAgentRequest: null }),
   closeTaskDetail: () => set({ taskDetailId: null }),
   dispatchSeedRequest: null,
   requestDispatchSeed: (text) =>
@@ -1181,6 +1275,9 @@ export const useStore = create<State>((set, get) => ({
   answerDrafts: {},
   setAnswerDraft: (taskId, text) =>
     set((s) => ({ answerDrafts: { ...s.answerDrafts, [taskId]: text } })),
+  answerPicks: {},
+  setAnswerPick: (key, pick) =>
+    set((s) => ({ answerPicks: { ...s.answerPicks, [key]: pick } })),
   drafts: {},
   setDraft: (agentId, text) =>
     set((s) => ({ drafts: { ...s.drafts, [agentId]: text } })),
@@ -1214,7 +1311,11 @@ export const useStore = create<State>((set, get) => ({
   setOrgTrigger: (cfg) => set({ orgTrigger: cfg }),
   dockOpen: false,
   dockFocus: undefined,
-  setDock: (open, focus) => set({ dockOpen: open, dockFocus: open ? focus : undefined }),
+  dockNavigation: 0,
+  // Opening the 1:1 takes the center (8A); closing ends Esc's "for now" (7A).
+  setDock: (open, focus) => set((s) => open
+    ? { dockOpen: true, dockFocus: focus, centerClaim: 'dock', dockNavigation: s.dockNavigation + 1 }
+    : { dockOpen: false, dockFocus: undefined, dockSideForNow: false, dockNavigation: s.dockNavigation + 1 }),
   enqueueMessage: (agentId, text, meta) =>
     set((s) => {
       const trimmed = text.trim();

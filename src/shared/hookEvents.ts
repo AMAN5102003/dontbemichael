@@ -6,6 +6,8 @@ export const MAX_HOOK_FRAME_BYTES = 256 * 1024;
 /** A file tool call whose path could not reach the app's check whole (ship
  *  review pass 2): refused, never let through unchecked. */
 export const HOOK_PATH_UNCHECKED = 'The app could not check where this step reads or saves, so it did not run. Use a shorter file path.';
+/** A step whose hook frame carried no valid secret for its sender (issue #61). */
+export const HOOK_SENDER_UNCHECKED = 'The app could not confirm which team member asked for this step, so it did not run.';
 
 /** Renderer-facing hook event shared across the Electron IPC boundary. */
 export interface HookEvent {
@@ -22,10 +24,28 @@ export interface HookEvent {
   /** PreToolUse and PostToolUse: the call's id (Claude's tool_use_id), so
    *  parallel calls can be told apart. */
   toolUseId?: string;
+  /** PostToolBatch only: the id of every call in the finished batch,
+   *  including the ones the engine refused on its own. */
+  toolUseIds?: string[];
   blocked?: boolean;
 }
 
 const OPTIONAL_STRING_FIELDS = ['tool', 'notificationType', 'source', 'message', 'detail', 'toolUseId'] as const;
+
+/** At most this many ids of one finished batch reach the panel. */
+export const MAX_BATCH_TOOL_USE_IDS = 256;
+
+const isToolUseId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 128;
+
+/** PostToolBatch: the ids its tool_calls list names. An entry without a
+ *  usable id is dropped, and a missing list names none. */
+export function batchToolUseIds(calls: unknown): string[] {
+  if (!Array.isArray(calls)) return [];
+  return calls
+    .map((c) => (c && typeof c === 'object' ? (c as { tool_use_id?: unknown }).tool_use_id : undefined))
+    .filter(isToolUseId)
+    .slice(0, MAX_BATCH_TOOL_USE_IDS);
+}
 
 /** Validate an untrusted payload before it crosses the Electron IPC boundary. */
 export function validateHookEvent(value: unknown): value is HookEvent {
@@ -41,6 +61,8 @@ export function validateHookEvent(value: unknown): value is HookEvent {
   for (const field of OPTIONAL_STRING_FIELDS) {
     if (candidate[field] !== undefined && typeof candidate[field] !== 'string') return false;
   }
+  const ids = candidate.toolUseIds;
+  if (ids !== undefined && !(Array.isArray(ids) && ids.length <= MAX_BATCH_TOOL_USE_IDS && ids.every(isToolUseId))) return false;
 
   return candidate.blocked === undefined || typeof candidate.blocked === 'boolean';
 }

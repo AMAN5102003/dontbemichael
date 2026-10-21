@@ -3,18 +3,22 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { PixelButton } from '../PixelButton';
 import { useStore } from '@/store/store';
+import { useHarnessConfig } from '@/hooks/useHarnessConfig';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { isComposingKey } from '@shared/imeGuard';
 import {
   Disclosure, Field, Hint, MiniButton, SchedulePicker, Toggle, fmtInterval, inputStyle, textareaStyle,
   weeklyDraft, weeklyIsUsable, type WeeklyDraft
 } from './ui';
-import { formatWeekly } from '@shared/weeklySchedule';
-import { formatTimes, normalizeTimes } from '@shared/scheduleTimes';
+import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
-import { cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, type ScheduledMission } from '@shared/missions';
+import { cannotCheckEmail, cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
+import { remainingStarterMissions, starterSuggestionsFor, type StarterSuggestion } from '@shared/starterJobs';
+import type { OfficePack } from '@shared/officePack';
+import { gmailConnectorOn } from '@shared/claudeConnectors';
 import { useRtl } from '@/i18n/useDirection';
+import i18n from '@/i18n';
 
 /**
  * SCHEDULES, per agent (docs/designs/per-agent-schedules.md).
@@ -189,14 +193,36 @@ function relTime(ms: number, lang: string): string {
   }
 }
 
+/** formatTimes' words in the owner's language. Day names come from Intl, so
+ *  every language gets them without a key per day. Sep 27 2026 is a Sunday. */
+function whenWords(t: TFunction, lang: string): WhenWords {
+  let weekday: Intl.DateTimeFormat;
+  try { weekday = new Intl.DateTimeFormat(lang, { weekday: 'short' }); } catch { weekday = new Intl.DateTimeFormat('en', { weekday: 'short' }); }
+  const sep = t('schedulesSection.whenSep');
+  return {
+    day: (d) => weekday.format(new Date(2026, 8, 27 + d)),
+    everyDay: t('triggersUi.everyDay'),
+    weekdays: t('triggersUi.weekdays'),
+    weekends: t('schedulesSection.whenWeekends'),
+    list: (items) => items.join(sep),
+    and: (items) => (items.length > 1
+      ? t('schedulesSection.whenAnd', { list: items.slice(0, -1).join(sep), last: items[items.length - 1] })
+      : items[0]),
+    at: (days, time) => t('schedulesSection.whenAt', { days, time }),
+    every: (interval) => t('schedulesSection.everyInterval', { interval }),
+    span: (from, to) => t('schedulesSection.whenSpan', { from, to })
+  };
+}
+
 /** When a job runs, in words: the calendar, the interval ("every 4h", like an
  *  every line in formatTimes), or the heartbeat. */
 export function whenText(m: Pick<ScheduledMission, 'kind' | 'weekly' | 'intervalMs' | 'times'>, t: TFunction): string {
   if (m.kind === 'heartbeat') return t('schedulesSection.beat');
+  const words = whenWords(t, i18n.language);
   const times = normalizeTimes(m.times);
-  if (times) return formatTimes(times);
+  if (times) return formatTimes(times, words);
   const w = weeklyDraft(m.weekly);
-  if (w) return formatWeekly(w);
+  if (w) return formatTimes([{ kind: 'at', days: w.days, minute: w.minute }], words);
   const every = fmtInterval(m.intervalMs);
   return /^\d/.test(every) ? t('schedulesSection.everyInterval', { interval: every }) : every;
 }
@@ -212,6 +238,8 @@ function Line({ children, tone = 'plain' }: { children: ReactNode; tone?: 'plain
 
 /* ──────────────────────────────── one row ──────────────────────────────── */
 
+type RunNowState = 'idle' | 'sending' | ReturnType<typeof runNowOutcome>;
+
 interface RowProps {
   mission: ScheduledMission;
   /** Who a `createdBy` agent id is, for "added by Pam". */
@@ -220,11 +248,13 @@ interface RowProps {
    *  schedule; owner, 2026-09-26). */
   readOnly?: boolean;
   ownerName: string;
+  /** The agent's email is off, so a job that checks mail is refused each run. */
+  noEmail?: boolean;
   /** For the focus area check on save; absent on read only rows. */
   focusOwner?: FocusOwner;
 }
 
-function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowProps) {
+function ScheduleRow({ mission, nameOf, readOnly, ownerName, noEmail, focusOwner }: RowProps) {
   const { t, i18n } = useTranslation();
   const rtl = useRtl();
   const godName = useResolvedGodName();
@@ -243,12 +273,24 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
   const { busy, failed, setFailed, run } = useSaveOp();
   const focusCheck = useFocusCheck(focusOwner ?? { name: ownerName, workStyle: '', jobs: [] });
   const [confirming, setConfirming] = useState(false);
+  // Run now (docs/designs/schedule-run-now.md): its own state, so a failed run
+  // never reads as a failed save.
+  const [runState, setRunState] = useState<RunNowState>('idle');
   const deleteRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLButtonElement>(null);
+
+  // "Sent" and "ran a moment ago" are a moment's answer; the row's "fired"
+  // line keeps the record. Left up, "less than a minute ago" goes stale.
+  useEffect(() => {
+    if (runState !== 'sent' && runState !== 'justRan') return;
+    const timer = setTimeout(() => setRunState('idle'), 4000);
+    return () => clearTimeout(timer);
+  }, [runState]);
 
   // Seed the draft when the row opens, never on every render, or the scheduler
   // stamping lastFiredAt mid-edit would wipe what you are typing.
   useEffect(() => {
+    setRunState('idle');
     if (!open) return;
     setLabel(mission.label);
     setIntervalMs(mission.intervalMs);
@@ -312,6 +354,17 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
   };
   const toggle = () => { void run(() => window.cth.setMissionEnabled(mission.id, !mission.enabled)); };
   const remove = () => { void run(() => window.cth.deleteMission(mission.id)); };
+  // A job only, never the heartbeat. Main answers with the saved job, so a row
+  // with unsaved edits asks for a save first instead of running the old text.
+  const canRunNow = !heartbeat && (mission.kind ?? 'dispatch') === 'dispatch';
+  const runNow = async () => {
+    setRunState('sending');
+    try {
+      setRunState(runNowOutcome(await window.cth.runMissionNow(mission.id)));
+    } catch {
+      setRunState('failed');
+    }
+  };
   const cancelDelete = () => { setConfirming(false); setTimeout(() => deleteRef.current?.focus(), 0); };
 
   const headerStyle = {
@@ -337,6 +390,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
         </span>
         <span style={{ display: 'block', marginTop: 2, fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>{whenText(mission, t)}</span>
         {sub && <span style={{ display: 'block', fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{sub}</span>}
+        {noEmail && <span data-no-email style={{ display: 'block', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-amber-text)' }}>{t('schedulesSection.cannotCheckEmail', { name: ownerName })}</span>}
         {/* An older job without a focus area keeps running as before (FA4). */}
         {!readOnly && !heartbeat && (mission.kind ?? 'dispatch') === 'dispatch' && !mission.focus && (
           <span data-add-focus style={{ display: 'block', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-amber-text)' }}>{t('schedulesSection.addFocus')}</span>
@@ -412,6 +466,16 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
             />
           )}
           {failed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
+          {canRunNow && runState === 'failed' && !dirty && <Line tone="error">{t('schedulesSection.runNowFailed')}</Line>}
+          {/* An unsaved edit is why Run now is off, so it outranks an earlier
+              run's answer. */}
+          {canRunNow && (dirty || runState === 'sent' || runState === 'justRan') && (
+            <div role="status" style={{ fontSize: 14, lineHeight: '20px', padding: '8px 0', color: 'var(--cth-ink-700)' }}>
+              {dirty ? t('schedulesSection.runNowSaveFirst')
+                : runState === 'sent' ? t('schedulesSection.runNowSent', { name: ownerName })
+                  : t('schedulesSection.runNowJustRan')}
+            </div>
+          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12 }}>
             {confirming ? (
               <>
@@ -423,6 +487,15 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, focusOwner }: RowPr
               <MiniButton tone="danger" onClick={() => setConfirming(true)} buttonRef={deleteRef}>{t('common.delete')}</MiniButton>
             )}
             <span style={{ flex: 1 }} />
+            {canRunNow && (
+              <MiniButton
+                onClick={() => void runNow()}
+                disabled={busy || runState === 'sending' || dirty}
+                label={t('schedulesSection.runNowAria', { job: mission.label })}
+              >
+                {runState === 'sending' ? t('schedulesSection.runNowSending') : t('schedulesSection.runNow')}
+              </MiniButton>
+            )}
             {/* Closing drops unsaved edits: the draft is reseeded on the next open. */}
             <MiniButton onClick={() => { setOpen(false); headerRef.current?.focus(); }}>
               {dirty ? t('common.cancel') : t('common.close')}
@@ -528,16 +601,64 @@ function useNameOf(): (id: string) => string {
 }
 
 /** One agent's own schedules, editable. `agentId` is its floor id. */
-export function AgentSchedules({ agentId, agentName }: { agentId: string; agentName: string }) {
+export function AgentSchedules({ agentId, agentName, businessType, sourceCard }: {
+  agentId: string; agentName: string; businessType?: string; sourceCard?: string;
+}) {
   const { t } = useTranslation();
   const { missions, status, retry } = useMissions();
   const godId = useGodId();
   const nameOf = useNameOf();
   const agents = useStore((s) => s.agents);
+  const config = useHarnessConfig();
   const mine = useMemo(() => missionsFor(missions, agentId, godId), [missions, agentId, godId]);
   const isGod = agentId === godId;
   // Michael's schedules keep the 'god' alias the router understands.
   const to = isGod ? GOD_ALIAS : agentId;
+  const [suggestionData, setSuggestionData] = useState<{ key: string; items: StarterSuggestion[] } | null>(null);
+  const { busy: suggestionBusy, failed: suggestionFailed, run: saveSuggestion } = useSaveOp();
+  const suggestionKey = `${agentId}:${businessType ?? ''}:${sourceCard ?? ''}`;
+  const starterItems = suggestionData?.key === suggestionKey ? suggestionData.items : [];
+  const suggestionSaving = useRef(false);
+  const suggestions = isGod ? [] : remainingStarterMissions(
+    starterItems, to, missions, godId, (i) => `suggestion_${agentId}_${i}`
+  );
+
+  useEffect(() => {
+    let alive = true;
+    setSuggestionData(null);
+    if (status !== 'ready' || isGod) return;
+    void window.cth.packsList()
+      .then(({ packs, core }) => {
+        const available = [...packs.map((p) => p.pack), core].filter((p): p is OfficePack => !!p);
+        if (alive) setSuggestionData({
+          key: suggestionKey,
+          // Keep all definitions for recognizing existing starter jobs; the
+          // remaining list is capped after excluding jobs already added.
+          items: starterSuggestionsFor(available, businessType, agentId, sourceCard, Infinity)
+        });
+      })
+      .catch(() => { /* The manual add button still works if packs cannot load. */ });
+    return () => { alive = false; };
+  }, [agentId, businessType, sourceCard, suggestionKey, status, isGod]);
+
+  const addSuggestion = (suggestion: ScheduledMission): void => {
+    if (suggestionSaving.current || suggestionBusy) return;
+    // Recheck the current store: another view may have added a custom job or
+    // this starter since the row was rendered.
+    const mission = remainingStarterMissions(
+      starterItems, to, useStore.getState().missions, godId,
+      (i) => `m_${Date.now().toString(36)}_${agentId}_${i}`
+    ).find((m) => m.label === suggestion.label);
+    if (!mission) return;
+    suggestionSaving.current = true;
+    void saveSuggestion(() => window.cth.upsertMission(mission), () => {
+      const current = useStore.getState();
+      if (!current.missions.some((m) => m.id === mission.id)) {
+        current.setMissions([...current.missions, mission], 'ready');
+      }
+      refreshMissions();
+    }).finally(() => { suggestionSaving.current = false; });
+  };
 
   const waiting = loadState(status, missions.length === 0, t('schedulesSection.loadError', { name: agentName }), retry, t);
   if (waiting) return waiting;
@@ -568,10 +689,33 @@ export function AgentSchedules({ agentId, agentName }: { agentId: string; agentN
             mission={m}
             nameOf={nameOf}
             ownerName={agentName}
+            noEmail={!!config && cannotCheckEmail(m, config.agentCapabilities?.[agentId]?.email, gmailConnectorOn(config, agentId))}
             focusOwner={focusOwner}
           />
         ))}
       </div>
+      {suggestions.length > 0 && (
+        <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
+          {suggestions.map((suggestion) => (
+            <li key={suggestion.id} style={{
+              display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+              padding: '8px 0', borderTop: '1px solid var(--cth-ink-100)'
+            }}>
+              <span style={{ flex: '1 1 200px', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
+                {t('schedulesSection.suggestedJob', { title: suggestion.label, schedule: whenText(suggestion, t) })}
+              </span>
+              <PixelButton
+                variant="secondary"
+                size="sm"
+                disabled={suggestionBusy}
+                ariaLabel={t('schedulesSection.addSuggestedJob', { title: suggestion.label })}
+                onClick={() => addSuggestion(suggestion)}
+              >{t('common.add')}</PixelButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {suggestionFailed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
       <AddSchedule to={to} ownerName={agentName} focusOwner={focusOwner} />
     </div>
   );
@@ -584,6 +728,7 @@ export function OfficeSchedules() {
   const godId = useGodId();
   const nameOf = useNameOf();
   const agents = useStore((s) => s.agents);
+  const config = useHarnessConfig();
   const [closed, setClosed] = useState<Record<string, boolean>>({});
   useEffect(() => {
     window.cth.hiveRegistry()
@@ -625,6 +770,7 @@ export function OfficeSchedules() {
                   mission={m}
                   nameOf={nameOf}
                   ownerName={name}
+                  noEmail={!!config && cannotCheckEmail(m, config.agentCapabilities?.[owner]?.email, gmailConnectorOn(config, owner))}
                   readOnly
                 />
               ))}
@@ -639,11 +785,26 @@ export function OfficeSchedules() {
 /** The close confirmation. When the agent has schedules running, it says they
  *  will pause (design 6A); otherwise it is the plain close question. */
 export function closeConfirmText(agentId: string, name: string, t: TFunction): string {
-  // The same ownership rule the close uses to pause them (pauseMissionsOf).
-  const st = useStore.getState();
-  const godId = st.agents.find((a) => a.isGod)?.id ?? GOD_ALIAS;
-  const count = missionsFor(st.missions, agentId, godId).filter((m) => m.enabled).length;
+  const count = schedulesOn(agentId);
   return count > 0
     ? t(count === 1 ? 'agentDetail.killConfirmSchedules' : 'agentDetail.killConfirmSchedulesPlural', { name, count })
     : t('agentDetail.killConfirm', { name });
+}
+
+/** The Danger zone's delete confirmation in Edit agent: final, and it names
+ *  the schedules that pause, like the close. */
+export function deleteConfirmText(agentId: string, name: string, t: TFunction): string {
+  const count = schedulesOn(agentId);
+  return count > 0
+    ? t(count === 1 ? 'editAgent.deleteConfirmSchedules' : 'editAgent.deleteConfirmSchedulesPlural', { name, count })
+    : t('editAgent.deleteConfirm', { name });
+}
+
+/** Their schedules that are on: the same ownership rule a close or a delete
+ *  uses to pause them (pauseMissionsOf). */
+function schedulesOn(agentId: string): number {
+  const st = useStore.getState();
+  const godId = st.agents.find((a) => a.isGod)?.id ?? GOD_ALIAS;
+  const count = missionsFor(st.missions, agentId, godId).filter((m) => m.enabled).length;
+  return count;
 }

@@ -65,8 +65,8 @@ export type PathAction = 'preview' | 'edit' | 'reveal';
 /**
  * Candidate path tokens in one line of terminal output.
  *
- * The extension must START WITH A LETTER and run 1-8 more alphanumerics. That
- * single constraint is what keeps `v0.4.5`, `1.5`, and `0.92` out: their
+ * The extension must START WITH A LETTER and run up to 15 more alphanumerics, so
+ * `application.properties` comes through whole. Starting with a letter is what keeps `v0.4.5`, `1.5`, and `0.92` out: their
  * "extension" is digits. `node_modules/.bin` has no extension and is caught by
  * the separator rule in `isPathToken` instead.
  *
@@ -77,7 +77,16 @@ export type PathAction = 'preview' | 'edit' | 'reveal';
  */
 // Only explicit path prefixes qualify for a whole quoted match; otherwise prose
 // such as "Update README.md" must fall through to the filename inside it.
-const PATH_TOKEN_RE = /"(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^"\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?"|'(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^'\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?'|`(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^`\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?`|(?:[A-Za-z]:[\\/])?[A-Za-z0-9_@.~/\\+-]*[A-Za-z0-9_@~/\\+-]\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?/g;
+// A folder name may hold spaces ("Business Reports/summary.md"), but a space is
+// never right before or after a separator in a real path. Prose that happens to
+// start with a slash ("/ see notes.md") has one, so it falls through too.
+const quotedPathRe = (q: string): string =>
+  String.raw`${q}(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])(?!\s)(?:[^${q}\r\n\\/]|(?<!\s)[\\/](?!\s))*\.[A-Za-z][A-Za-z0-9]{0,15}(?::\d+)?${q}`;
+const PATH_TOKEN_RE = new RegExp(
+  [quotedPathRe('"'), quotedPathRe("'"), quotedPathRe('`'),
+    String.raw`(?:[A-Za-z]:[\\/])?[A-Za-z0-9_@.~/\\+-]*[A-Za-z0-9_@~/\\+-]\.[A-Za-z][A-Za-z0-9]{0,15}(?::\d+)?`].join('|'),
+  'g'
+);
 
 /** A fresh matcher. The regex is stateful (`g`), so callers must never share one. */
 export function pathTokenMatcher(): RegExp {

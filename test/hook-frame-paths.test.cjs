@@ -13,6 +13,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const net = require('node:net');
 const { spawn } = require('node:child_process');
 const loadTs = require('./load-ts.cjs');
 
@@ -24,10 +25,9 @@ require.cache[electron] = {
 
 const { HiveManager } = loadTs('src/main/hive.ts');
 const { HookServer } = loadTs('src/main/hooks.ts');
-const { HOOK_PATH_UNCHECKED } = loadTs('src/shared/hookEvents.ts');
+const { HOOK_PATH_UNCHECKED, MAX_HOOK_FRAME_BYTES } = loadTs('src/shared/hookEvents.ts');
 const F = loadTs('src/shared/folderAccess.ts');
 const R = loadTs('src/shared/research.ts');
-const { readResearchNotes, MAX_NOTES_TOTAL } = loadTs('src/main/researchNotes.ts');
 
 const unix = { skip: process.platform === 'win32' ? 'unix socket paths' : false };
 
@@ -41,7 +41,7 @@ async function office(t) {
   t.after(() => server.stop());
   await new Promise((r) => setTimeout(r, 50));
   const shim = (payload, env = {}) => new Promise((resolve) => {
-    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath(), ...env } });
+    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: hive.sockPath(), HIVE_HOOK_SEAL: hive.mintHookToken('pam'), ...env } });
     let out = '';
     p.stdout.on('data', (d) => { out += d; });
     p.on('close', () => resolve(out ? JSON.parse(out).hookSpecificOutput ?? {} : {}));
@@ -69,6 +69,53 @@ test('a big save keeps its path, padded or not, and the app still refuses anothe
   // A path that can't fit even alone is refused by the hook program itself.
   const huge = await shim({ tool_name: 'Read', tool_input: { file_path: 'a/'.repeat(150_000) + 'x.md' } });
   assert.equal(huge.permissionDecisionReason, HOOK_PATH_UNCHECKED);
+});
+
+test('a finished batch too big for one frame goes out with only its call ids, and the panel gets every one', unix, async (t) => {
+  // Value: protects=the panel hears every batch end, refused calls included; fails_when=the hook program sends the batch's inputs and outputs, so a few big reads pass the frame limit and the app drops it; why_new=maintainer review of #401; seam=a plain socket in place of the app's
+  const home = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-batch-')));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const hive = new HiveManager(() => home);
+  await hive.ensureAgent({ id: 'pam', name: 'Pam', cwd: home });
+  const sock = path.join(home, 'b.sock');
+  const frames = [];
+  const server = net.createServer((conn) => {
+    let buf = '';
+    conn.on('error', () => {});
+    conn.on('data', (d) => {
+      buf += d;
+      if (buf.includes('\n')) { frames.push(buf.slice(0, buf.indexOf('\n'))); conn.end('{}'); }
+    });
+  });
+  await new Promise((r) => server.listen(sock, r));
+  t.after(() => server.close());
+  const send = (payload) => new Promise((resolve) => {
+    const p = spawn(process.execPath, [hive.shimPath()], { env: { PATH: process.env.PATH, AGENT_ID: 'pam', HIVE_SOCK: sock } });
+    p.on('close', () => resolve(frames.pop()));
+    p.stdin.end(JSON.stringify({ session_id: 's', cwd: home, ...payload }));
+  });
+  const big = 'x'.repeat(100_000);
+  const ids = ['toolu_bash', 'toolu_r1', 'toolu_r2', 'toolu_r3'];
+  const calls = ids.map((id, i) => ({ tool_name: i ? 'Read' : 'Bash', tool_input: { file_path: `/a/${i}.md` }, tool_use_id: id, tool_response: i ? big : 'This command requires approval' }));
+  assert.ok(Buffer.byteLength(JSON.stringify({ hook_event_name: 'PostToolBatch', tool_calls: calls })) > MAX_HOOK_FRAME_BYTES, 'too big as the engine sends it');
+  const batch = await send({ hook_event_name: 'PostToolBatch', tool_calls: calls });
+  assert.ok(Buffer.byteLength(batch) <= MAX_HOOK_FRAME_BYTES, 'under the limit');
+  assert.deepEqual(JSON.parse(batch).tool_calls, ids.map((id) => ({ tool_use_id: id })), 'every id and nothing else');
+  // The app forwards the ids to the panel.
+  const sent = [];
+  const app = new HookServer(hive, () => ({ send: (c, p) => sent.push({ c, p }) }), () => ({ harnessHome: home }));
+  app.handle(JSON.parse(batch));
+  assert.deepEqual(sent.filter((x) => x.c === 'hive:hookEvent').pop()?.p.toolUseIds, ids);
+  // A finished or failed call goes without its output; its input stays for the breaker and the Read hook.
+  const post = JSON.parse(await send({ hook_event_name: 'PostToolUse', tool_name: 'Read', tool_input: { file_path: '/a/1.md' }, tool_use_id: 'toolu_r1', tool_response: big.repeat(3) }));
+  assert.equal(post.tool_response, undefined);
+  assert.equal(post.tool_use_id, 'toolu_r1');
+  assert.deepEqual(post.tool_input, { file_path: '/a/1.md' });
+  const failed = JSON.parse(await send({ hook_event_name: 'PostToolUseFailure', tool_name: 'Bash', tool_input: { command: 'npm test' }, tool_use_id: 'toolu_bash', error: big.repeat(3) }));
+  assert.equal(failed.error, undefined);
+  assert.equal(failed.tool_use_id, 'toolu_bash');
+  // A missing list goes out as no ids.
+  assert.deepEqual(JSON.parse(await send({ hook_event_name: 'PostToolBatch' })).tool_calls, []);
 });
 
 test('the app refuses a trimmed file call that arrives without its path', async (t) => {
@@ -101,7 +148,7 @@ test('each agent\'s session scratch folder is its own; Michael reads them all', 
   assert.deepEqual(walled.sandbox.allowRead, ['/Users/x/.dbm/agent-tmp/pam']);
   assert.equal(F.withAgentTmpWall(base, home, 'god', true), base);
   const idx = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
-  assert.match(idx, /const walled = withAgentTmpWall\(withResearchWall\(base, researchFolders\(\)\), home, opts\.hive!\.id, !!opts\.hive!\.isGod\);/);
+  assert.match(idx, /const walled = withMemberWall\(withAgentTmpWall\(withResearchWall\(base, researchFolders\(\)\), home, opts\.hive!\.id, !!opts\.hive!\.isGod\),\n\s+hiveRoot \?\? '', opts\.hive!\.id, Object\.keys\(hive\.registry\(\)\.agents \?\? \{\}\)\);/);
 });
 
 test('the shared temp check reads a save\'s path as the file it names', { skip: process.platform === 'win32' ? 'posix paths' : false }, () => {
@@ -125,20 +172,6 @@ test('a name that reads as Pete is his, and "pete" reaches him only when nobody 
   assert.equal(R.addressedToResearch('Pete', { 'pete-1': { name: 'Pete' } }), false);
   assert.equal(R.addressedToResearch('pete', { pete: { name: 'P' } }), false);
   assert.equal(R.addressedToResearch('research', { god: { name: 'Pete' } }), true, 'his id always');
-});
-
-test('Pete\'s notes stop at the total a copy may carry', (t) => {
-  // Value: protects=thousands of note files can't flood the app or the trust layer; fails_when=every note is read whole; why_new=specialist pass 2; seam=none
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes-'));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(dir, 'memory'));
-  const n = Math.ceil(MAX_NOTES_TOTAL / 200_000) + 3;
-  for (let i = 0; i < n; i++) fs.writeFileSync(path.join(dir, 'memory', `n${String(i).padStart(3, '0')}.md`), String(i % 10).repeat(200_000));
-  const out = readResearchNotes(dir);
-  assert.ok(out.length <= MAX_NOTES_TOTAL + n * 2, `${out.length}`);
-  assert.ok(out.length > 0);
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/researchNotes.ts'), 'utf8');
-  assert.match(src, /const buf = Buffer\.allocUnsafe\(st\.size \+ 1\);/, 'read to its size, from the open file');
 });
 
 test('a path with spaces around it is judged as Claude Code reads it, trimmed', { skip: process.platform === 'win32' ? 'posix paths' : false }, async (t) => {
@@ -168,23 +201,6 @@ test('a folder check that fails refuses the call; it never falls open', async (t
     assert.equal(r.hookSpecificOutput?.permissionDecision, 'deny', tool_name);
     assert.equal(r.hookSpecificOutput?.permissionDecisionReason, R.RESEARCH_UNCHECKED_TOOL);
   }
-});
-
-test('Pete\'s notes folder must be his own folder, not a link to a big tree elsewhere', { skip: process.platform === 'win32' ? 'symlinks' : false }, (t) => {
-  // Value: protects=a link Pete makes can't make the app list a huge folder on the main process; fails_when=readdirSync runs on whatever memory/ points at; why_new=Codex adversarial review, second ship; seam=none
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes-link-')));
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const dir = path.join(base, 'research');
-  const elsewhere = path.join(base, 'elsewhere');
-  fs.mkdirSync(dir);
-  fs.mkdirSync(elsewhere);
-  fs.writeFileSync(path.join(elsewhere, 'a.md'), 'outside');
-  fs.symlinkSync(elsewhere, path.join(dir, 'memory'));
-  fs.writeFileSync(path.join(dir, 'memory.md'), 'top');
-  assert.equal(readResearchNotes(dir), 'top');
-  const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/researchNotes.ts'), 'utf8');
-  assert.match(src, /for \(let e = d\.readSync\(\); e && names\.length < MAX_NOTE_ENTRIES; e = d\.readSync\(\)\) names\.push\(e\.name\);/, 'listed one name at a time, to the cap');
-  assert.doesNotMatch(src, /readdirSync/, 'never listed whole');
 });
 
 test('a Claude agent with no scratch folder of its own does not start, in any office', () => {

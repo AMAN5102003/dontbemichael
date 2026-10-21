@@ -69,11 +69,28 @@ test('name swap is whole word only', () => {
   assert.equal(H.swapName('text', '', 'Erin'), 'text');
 });
 
+test('a new name with a dollar sign is written as typed', () => {
+  assert.equal(H.swapName('Pam sorts the inbox. Ask Pam.', 'Pam', 'A$$AP'), 'A$$AP sorts the inbox. Ask A$$AP.');
+  assert.equal(H.swapName('Ask Pam first.', 'Pam', 'Mr $& Jr'), 'Ask Mr $& Jr first.');
+  assert.equal(H.swapName('Ask Pam first.', 'Pam', "Cash$'"), "Ask Cash$' first.");
+});
+
 test('a hire gets its own folder, suffixed with its name on a clash', () => {
   const taken = new Set(['Admin', 'Admin_Erin']);
   assert.equal(H.hireFolderName('Finance', 'Kevin', (f) => taken.has(f)), 'Finance');
   assert.equal(H.hireFolderName('Admin', 'Jim', (f) => taken.has(f)), 'Admin_Jim');
   assert.equal(H.hireFolderName('Admin', 'Erin', (f) => taken.has(f)), 'Admin_Erin_2');
+});
+
+test('a folder name never ends in a dot or a space that Windows would drop', () => {
+  // "a".repeat(59) + " b" is 61 chars: the 60-char cut used to leave a
+  // trailing space, which Windows silently drops from the folder on disk.
+  const long = H.safeFolder(`${'a'.repeat(59)} b`);
+  assert.equal(long.length, 59);
+  assert.equal(long, 'a'.repeat(59));
+  assert.equal(H.safeFolder('AR/AP Clerk'), 'AR-AP Clerk');
+  assert.equal(H.safeFolder('  ..Reports  '), 'Reports');
+  assert.equal(H.hireFolderName('Sales', 'Dwight.', (f) => f === 'Sales'), 'Sales_Dwight');
 });
 
 test('the rules flag a near copy of what to send, not a title', () => {

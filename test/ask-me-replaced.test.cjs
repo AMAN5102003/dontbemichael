@@ -89,7 +89,7 @@ test('Ask me shows a row per open question, and the card history and rules agree
   assert.match(hive, /BEFORE YOU ADD AN ASK, read the asks already open on the board/);
   assert.match(hive, /Never move a card with an open question out of Blocked, or close it, until the owner has answered it or you have withdrawn it\./);
   assert.match(hive, /Only god writes tasks\.json: never change a card yourself, file what your work needs as one new file in the triage folder of the hive, and tell god what changed\./, 'workers leave every card, one with an open question included, to Michael (ship review D8)');
-  assert.match(hive, /this\.stuckCardsCache = \[\.\.\.blockedWithNothingAsked\(tasks, this\.ownerRequestsCache\), \.\.\.asksToTidy\(tasks\)\];/);
+  assert.match(hive, /this\.stuckCardsCache = \[\.\.\.blockedWithNothingAsked\(tasks, this\.ownerRequestsCache\), \.\.\.this\.goneQuiet, \.\.\.asksToTidy\(tasks, this\.askListSince\(\)\)\];/, 'Waiting cards gone quiet join the list (waiting-follow-ups.test.cjs)');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const k = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).kanban;
     assert.ok(k.askWithdrawn, loc);

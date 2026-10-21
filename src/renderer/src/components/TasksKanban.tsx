@@ -1,5 +1,5 @@
 import { askTitle, askedAgo } from './askHeadline';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
@@ -13,10 +13,10 @@ import { useBackdropClose } from '@/hooks/useBackdropClose';
 
 export { openQuestion, openQuestions, waitsOnHuman, parseTasks, type HiveTask, type HumanQA } from './hiveTasks';
 import { refreshNeedsYou, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
-import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches } from './hiveTasks';
+import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches, byNext, nextGroup, type NextGroup } from './hiveTasks';
 import { FileText, useAskFileChecks } from './FileChip';
 import { blockedWithNothingAsked, michaelCardState, type WorkHours } from '@shared/ownerRequests';
-import { isAnswered, isWithdrawn } from '@shared/askMeRouting';
+import { askAsText, isAnswered, isWithdrawn, readAskShape } from '@shared/askMeRouting';
 
 type Status = TaskStatus;
 
@@ -31,6 +31,17 @@ const COLUMNS: { key: Status; labelKey: string; accent: string; soft: string; te
   { key: 'blocked', labelKey: 'kanban.colBlocked', accent: 'var(--cth-coral-base)', soft: 'var(--cth-coral-soft)',   text: 'var(--cth-coral-text)' },
   { key: 'done',    labelKey: 'kanban.colDone',    accent: 'var(--cth-green)',      soft: 'var(--cth-green-soft)',   text: 'var(--cth-green-text)' }
 ];
+// What an empty column says. Each column has its own line instead of one
+// generic "Nothing here", so an empty Blocked reads as good news and an empty
+// To do points the owner at what to do next. While a search or a team member
+// filter is on, an empty column means no match, not no work, so it says that.
+const EMPTY_KEYS: Record<Status, string> = {
+  todo: 'kanban.emptyTodo',
+  doing: 'kanban.emptyDoing',
+  waiting: 'kanban.emptyWaiting',
+  blocked: 'kanban.emptyBlocked',
+  done: 'kanban.emptyDone'
+};
 /** How many done cards show before "N more" (DESIGN.md 7.20). */
 const DONE_SHOWN = 5;
 
@@ -114,21 +125,30 @@ export function TasksKanban() {
   /** Resolve an assignee id to a display name — falls back to the restorable
    *  roster so a done card keeps its author's name even after that worker's
    *  terminal is gone, then to the raw id. */
-  const nameFor = (id?: string): string | undefined =>
+  const nameFor = useCallback((id?: string): string | undefined =>
     id
-      ? (agents.find((a) => a.id === id)?.name
-        ?? restorableAgents.find((a) => a.id === id)?.name
-        ?? id)
-      : undefined;
+      ? (id === 'god'
+        ? godName
+        : (agents.find((a) => a.id === id)?.name
+          ?? restorableAgents.find((a) => a.id === id)?.name
+          ?? id))
+      : undefined, [agents, restorableAgents, godName]);
 
   const [showAllDone, setShowAllDone] = useState(false);
+  // A render a minute, so the time groups move with the clock (Today becomes
+  // Overdue, Tomorrow becomes Today); `now` above is read on each render.
+  const [, setTick] = useState(0);
+  useEffect(() => { const tick = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(tick); }, []);
   // Search and one team member (issue 158). While either is set every match
   // shows, Done included, and the counts are of the matches.
   const [query, setQuery] = useState('');
   const [member, setMember] = useState('');
-  const filter = { query, assignee: member };
+  const [status, setStatus] = useState<Status | ''>('');
+  const filter = { query, assignee: member, nameFor };
   const filtering = filterActive(filter);
   const shown = filtering ? tasks.filter((x) => taskMatches(x, filter)) : tasks;
+  const isFiltered = filtering || Boolean(status);
+  const visibleColumns = status ? COLUMNS.filter((c) => c.key === status) : COLUMNS;
   const members = [...new Set(tasks.map((x) => x.assignee).filter((a): a is string => !!a))]
     .map((id) => ({ id, name: nameFor(id) ?? id }))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -136,21 +156,34 @@ export function TasksKanban() {
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', position: 'relative', padding: '18px 24px 0' }}>
       {/* Header (DESIGN.md 7.20): the board's counts, and why there is no add
           button: new work goes through Michael, who writes the ledger. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap', marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, flexWrap: 'wrap', marginBottom: 12 }}>
         <h1 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: '-0.03em', color: 'var(--cth-ink)' }}>{t('floorView.tasks')}</h1>
         <InfoTip text={t('floorView.tasksIntro')} />
-        {COLUMNS.map((col) => (
-          <span key={col.key} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: '0 10px', borderRadius: 999,
-            background: col.key === 'blocked' || col.key === 'done' ? col.soft : 'var(--cth-card)',
-            boxShadow: col.key === 'blocked' || col.key === 'done' ? 'none' : 'inset 0 0 0 1px var(--cth-line)',
-            fontSize: 11.5, fontWeight: 500, color: col.key === 'blocked' || col.key === 'done' ? col.text : 'var(--cth-ink-2)'
-          }}>
-            <i style={{ width: 6, height: 6, borderRadius: 2, background: col.accent, display: 'block' }} />
-            {t(col.labelKey)}
-            <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600 }}>{shown.filter((x) => x.status === col.key).length}</b>
-          </span>
-        ))}
+        {COLUMNS.map((col) => {
+          const isSelected = status === col.key;
+          return (
+            <button
+              key={col.key}
+              type="button"
+              aria-pressed={isSelected}
+              onClick={() => setStatus((curr) => curr === col.key ? '' : col.key)}
+              title={t(col.labelKey)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, height: 24, padding: '0 10px', borderRadius: 999,
+                background: col.key === 'blocked' || col.key === 'done' ? col.soft : 'var(--cth-card)',
+                boxShadow: isSelected
+                  ? `inset 0 0 0 2px ${col.accent}`
+                  : (col.key === 'blocked' || col.key === 'done' ? 'none' : 'inset 0 0 0 1px var(--cth-line)'),
+                fontSize: 11.5, fontWeight: isSelected ? 600 : 500, color: col.key === 'blocked' || col.key === 'done' ? col.text : 'var(--cth-ink-2)',
+                border: 'none', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)'
+              }}
+            >
+              <i style={{ width: 6, height: 6, borderRadius: 2, background: col.accent, display: 'block' }} />
+              {t(col.labelKey)}
+              <b style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600 }}>{shown.filter((x) => x.status === col.key).length}</b>
+            </button>
+          );
+        })}
         <span style={{ marginInlineStart: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--cth-ink-3)' }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" />
@@ -185,26 +218,33 @@ export function TasksKanban() {
           }}
         >
           <option value="">{t('kanban.everyone')}</option>
+          <option value="unassigned">{t('kanban.unassigned')}</option>
           {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
         </select>
-        {filtering && (
-          <button type="button" onClick={() => { setQuery(''); setMember(''); }} style={{
-            minHeight: 28, padding: '0 8px', border: 'none', borderRadius: 'var(--cth-r-md)', background: 'transparent', cursor: 'pointer',
-            fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)'
-          }}>{t('common.clear')}</button>
+        {isFiltered && (
+          <>
+            <button type="button" onClick={() => { setQuery(''); setMember(''); setStatus(''); }} style={{
+              minHeight: 28, padding: '0 8px', border: 'none', borderRadius: 'var(--cth-r-md)', background: 'transparent', cursor: 'pointer',
+              fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)'
+            }}>{t('common.clear')}</button>
+            <span style={{ marginInlineStart: 'auto', fontSize: 11.5, color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-ui)' }}>
+              {t('kanban.showingFiltered', { count: (status ? shown.filter((x) => x.status === status) : shown).length, total: tasks.length })}
+            </span>
+          </>
         )}
       </div>
 
       {/* Columns */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 8 }}>
-        {COLUMNS.map((col) => {
+        {visibleColumns.map((col) => {
           const all = shown.filter((x) => x.status === col.key);
           // Done reads newest first, folded or not (it is kept in creation order).
-          // A filter shows every match, so an old Done card can be found.
-          const cards = col.key === 'done' ? (showAllDone || filtering ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : all;
+          // A filter shows every match, so an old Done card can be found. Every
+          // open column reads earliest Next first (owner, 2026-10-17).
+          const cards = col.key === 'done' ? (showAllDone || filtering ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : byNext(all);
           return (
             <div key={col.key} style={{
-              flex: '1 1 0', minWidth: 200, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
+              flex: status ? '0 0 360px' : '1 1 0', minWidth: 200, maxWidth: status ? 480 : undefined, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
               background: col.key === 'blocked' ? 'var(--cth-coral-soft)' : 'color-mix(in srgb, var(--cth-floor) 55%, transparent)'
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '12px 14px 8px', fontSize: 13, fontWeight: 600, color: col.key === 'blocked' ? col.text : 'var(--cth-ink)' }}>
@@ -214,9 +254,18 @@ export function TasksKanban() {
               </div>
               <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '2px 10px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {all.length === 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>{t('kanban.empty')}</div>
+                  <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', textAlign: 'center', padding: '10px 0' }}>
+                    {isFiltered ? t('kanban.noMatchingTasks') : t(EMPTY_KEYS[col.key], { godName })}
+                  </div>
                 )}
-                {cards.map((x) => (
+                {(() => { const dated = cards.some((c) => nextGroup(c.nextAt, now) !== 'none'); return cards.map((x, i) => {
+                  // Open lanes are cut into time groups, each with its heading
+                  // (owner, 2026-10-17); Done is not.
+                  // A lane with no dated card shows no headings: a lone "No date" says nothing.
+                  const group = col.key === 'done' || !dated ? null : nextGroup(x.nextAt, now);
+                  const heading = group && (i === 0 || group !== nextGroup(cards[i - 1].nextAt, now))
+                    ? <GroupHeading key={`g-${group}`} group={group} first={i === 0} /> : null;
+                  return [heading, (
                   <TaskCard
                     key={x.id}
                     task={x}
@@ -229,7 +278,8 @@ export function TasksKanban() {
                     onOpen={() => openTaskDetail(x.id)}
                     onDismiss={() => dismissTask(x.id)}
                   />
-                ))}
+                  )];
+                }); })()}
                 {col.key === 'done' && !filtering && all.length > DONE_SHOWN && (
                   <button onClick={() => setShowAllDone((v) => !v)} style={{
                     alignSelf: 'flex-start', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
@@ -242,6 +292,18 @@ export function TasksKanban() {
         })}
       </div>
     </div>
+  );
+}
+
+/** A time group's heading in an open lane: 11.5 px 600 `ink-3`, Overdue in
+ *  `coral-text` (DESIGN.md 7.20). */
+function GroupHeading({ group, first }: { group: NextGroup; first: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div role="heading" aria-level={3} data-next-group={group} style={{
+      margin: first ? '2px 2px -4px' : '6px 2px -4px', fontSize: 11.5, fontWeight: 600,
+      color: group === 'overdue' ? 'var(--cth-coral-text)' : 'var(--cth-ink-3)'
+    }}>{t(`kanban.group.${group}`)}</div>
   );
 }
 
@@ -391,7 +453,10 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
   const detailGodName = useResolvedGodName();
   // Every file the Q&A trail names, checked in one go rather than per question.
   const qaAssignee = typeof task.assignee === 'string' ? task.assignee : undefined;
-  const qaFiles = useAskFileChecks(task.humanQA, qaAssignee);
+  // Each question as the card shows it, options and parts included, so a file
+  // named in an option gets its chip checked too (ask-me-options.md).
+  const qaShown = useMemo(() => task.humanQA?.map((e) => ({ ...e, q: askAsText(e.q, readAskShape(e)) })), [task.humanQA]);
+  const qaFiles = useAskFileChecks(qaShown, qaAssignee);
   const col = COLUMNS.find((c) => c.key === task.status) ?? COLUMNS[0];
   // Belt + suspenders: parseTasks normalizes these, but the ledger is a
   // hand-written file — never trust a card's shape at the point of use.
@@ -546,7 +611,8 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
                         {ago && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{ago}</span>}
                         {open && <span style={{ marginInlineStart: 'auto', padding: '1px 8px', borderRadius: 999, background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)', fontSize: 10.5, fontWeight: 600 }}>{t('kanban.awaitingAnswer')}</span>}
                       </div>
-                      <FileText source={e.q} who={{ raisedBy: e.raisedBy, assignee: qaAssignee }} checks={qaFiles[e.raisedBy ?? ''] ?? {}} />
+                      {/* With its options or questions, which no longer sit in the text (ask-me-options.md). */}
+                      <FileText source={qaShown?.[i]?.q ?? e.q} who={{ raisedBy: e.raisedBy, assignee: qaAssignee }} checks={qaFiles[e.raisedBy ?? ''] ?? {}} />
                       {isAnswered(e) ? (
                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--cth-line)' }}>
                           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--cth-green-text)', marginBottom: 2 }}>{t('kanban.answer')}</div>
@@ -558,6 +624,8 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
                         <div dir={rtl ? 'auto' : undefined} style={{ marginTop: 6, fontSize: 12, color: 'var(--cth-ink-3)' }}>
                           {e.dismissedBy === 'card-closed'
                             ? t('kanban.askWithdrawnCardClosed')
+                            : e.dismissedBy === 'member-deleted'
+                            ? t('kanban.askWithdrawnMemberDeleted')
                             : e.dismissedReason?.trim()
                               ? t('kanban.askWithdrawnBecause', { reason: `\u2068${e.dismissedReason.trim()}\u2069` })
                               : t('kanban.askWithdrawn')}

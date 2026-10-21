@@ -177,6 +177,8 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
   0%, 100% { opacity: 1; }
   50% { opacity: .35; }
 }
+/* The office opening's end card fades as its shown time runs out (7.24). */
+@keyframes cth-opening-out { to { opacity: 0; } }
 @keyframes cth-breathe {
   0%, 100% { opacity: 1; }
   50% { opacity: .55; }
@@ -245,6 +247,24 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0s !important; transition-duration: 0s !important; }
 }
+
+/* Pulse (docs/designs/pulse-smart-view.md): a quiet tile's chip (5A), and a
+   tile or chip that just moved between the grid and the chip row (3A). */
+.cth-quiet-chip {
+  height: 26px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px;
+  border: none; border-radius: var(--cth-r-pill); background: var(--cth-neutral-soft);
+  color: var(--cth-ink-3); font-family: var(--cth-font-ui); cursor: pointer;
+}
+.cth-quiet-chip:hover { background: var(--cth-card); box-shadow: inset 0 0 0 1px var(--cth-line-2); }
+.cth-quiet-chip-name { font-size: 11px; line-height: 15px; color: var(--cth-ink-2); }
+.cth-quiet-chip-n { font-family: var(--cth-font-mono); font-size: 11px; line-height: 15px; color: var(--cth-ink-3); }
+/* Company foundations pills on Pulse: the strip's jobs and member detail's questions. */
+.cth-foundation-pill { transition: box-shadow var(--cth-dur-fast) var(--cth-ease); }
+.cth-foundation-pill:hover { box-shadow: inset 0 0 0 1px var(--cth-line-2); }
+.cth-foundation-pill:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 2px; }
+.cth-tile-in { animation: cth-tile-in 150ms var(--cth-ease) both; }
+@keyframes cth-tile-in { from { opacity: 0; transform: translateY(4px); } }
+@media (prefers-reduced-motion: reduce) { .cth-tile-in { animation: none; } }
 
 /* xterm: disable font ligatures.
  * Some browsers (e.g. Firefox 130+) treat sequences like "ff"/"ft"/"fi" as
@@ -378,9 +398,11 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-md-preview li { margin: 3px 0; }
 .cth-md-preview li::marker { color: var(--cth-ink-500); }
 .cth-md-preview input[type="checkbox"] { accent-color: var(--cth-indigo); margin-inline-end: 6px; }
-.cth-md-preview table {
-  border-collapse: collapse; margin: 0.8em 0; display: block; overflow-x: auto;
-}
+/* A table sits in its own box (MarkdownPreview), which scrolls sideways when
+   the table is too wide and takes Tab, so a keyboard can scroll it too. */
+.cth-md-preview .cth-md-table { margin: 0.8em 0; overflow-x: auto; border-radius: 3px; }
+.cth-md-preview .cth-md-table:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 2px; }
+.cth-md-preview table { border-collapse: collapse; }
 .cth-md-preview th, .cth-md-preview td {
   border: 1px solid var(--cth-ink-100); padding: 5px 10px; text-align: start;
   font-size: 13px;
@@ -444,7 +466,44 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-md-card li { margin: 1px 0; }
 .cth-md-card blockquote { margin: 0.5em 0; padding-inline-start: 10px; }
 .cth-md-card hr { margin: 0.8em 0; }
-.cth-md-card table { margin: 0.5em 0; }
+.cth-md-card .cth-md-table { margin: 0.5em 0; }
+
+/* Michael's replies in the conversation dock (docs/designs/michael-replies.md
+   18A, design review 2026-10-17): the answer first, then lists, small tables
+   or short labelled paragraphs, read in a ~292 px column. */
+.cth-dock-reply .cth-md-card p { margin: 0.6em 0; }
+.cth-dock-reply .cth-md-card p:has(> strong:only-child) { margin: 0.8em 0 0.15em; }
+.cth-dock-reply .cth-md-card ul, .cth-dock-reply .cth-md-card ol { margin: 0.2em 0 0.4em; padding-inline-start: 16px; }
+.cth-dock-reply .cth-md-card li { margin: 1px 0; }
+.cth-dock-reply .cth-md-card li::marker { color: var(--cth-ink-3); }
+.cth-dock-reply .cth-md-card .cth-md-table { margin: 0.3em 0 0.5em; }
+.cth-dock-reply .cth-md-card table { width: 100%; }
+.cth-dock-reply .cth-md-card th, .cth-dock-reply .cth-md-card td {
+  border: none; border-bottom: 1px solid var(--cth-line); padding-block: 4px; padding-inline: 0 8px; font-size: 12.5px;
+}
+.cth-dock-reply .cth-md-card th { background: none; font-size: 11px; font-weight: 600; color: var(--cth-ink-3); }
+.cth-dock-reply .cth-md-card tr:last-child td { border-bottom: none; }
+.cth-dock-reply .cth-md-card .cth-md-num { padding-inline-end: 0; }
+/* Amounts the owner scans are mono (DESIGN.md 4.1); headers stay Sora. */
+.cth-dock-reply .cth-md-card td.cth-md-num {
+  font-family: var(--cth-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+/* The wide 1:1 (design review 2026-10-17): text at t-read 14 / 22 (5A);
+   tables as wide as their columns need, up to the bubble, 24 px apart (4A). */
+.cth-dock-wide .cth-dock-reply { font-size: 14px; line-height: 22px; }
+.cth-dock-wide .cth-dock-reply .cth-md-card table { width: auto; }
+.cth-dock-wide .cth-dock-reply .cth-md-card th, .cth-dock-wide .cth-dock-reply .cth-md-card td {
+  font-size: 14px; padding-block: 6px; padding-inline: 24px 0;
+}
+.cth-dock-wide .cth-dock-reply .cth-md-card th:first-child,
+.cth-dock-wide .cth-dock-reply .cth-md-card td:first-child { padding-inline-start: 0; }
+.cth-dock-wide .cth-dock-reply .cth-md-card th { font-size: 12px; }
+.cth-dock-wide .cth-dock-reply .cth-md-card td.cth-md-num { font-size: 13px; }
+/* The fold's fade, into the bubble's own background (card, or card-2 for notes). */
+.cth-dock-fade {
+  position: absolute; inset-inline: 0; bottom: 0; height: 24px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--dock-reply-bg, var(--cth-card)));
+}
 .cth-md-card th, .cth-md-card td { padding: 3px 7px; font-size: 0.9em; }
 
 /* Toasts (DESIGN.md 7.23): card, line, r-xl, shadow-lg, 360px max. */
@@ -537,6 +596,14 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 @keyframes cth-col-out { from { transform: none; opacity: 1; } to { transform: translateX(var(--cth-col-shift, 100%)); opacity: 0; } }
 [dir="rtl"] .cth-col-in, [dir="rtl"] .cth-col-out { --cth-col-shift: -100%; }
 @media (prefers-reduced-motion: reduce) { .cth-col-in, .cth-col-out { animation: none; } }
+/* The wide panel (wide panel WD2, WD8): its text at most 720 px across and
+   centered, the terminal across the whole panel; the office dims behind it.
+   Padding, not a max width, so a tab's own ground still fills the panel; it
+   wins over the tab's inline padding. */
+[data-wide-panel] [data-panel-body]:not([data-tab="terminal"]) > * { padding-inline: max(16px, calc((100% - 720px) / 2)) !important; }
+.cth-wide-scrim { animation: cth-wide-fade 200ms var(--cth-ease) both; }
+@keyframes cth-wide-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .cth-wide-scrim { animation: none; } }
 /* A pod's "for you" chip is a button (D11). */
 .cth-for-you { background: var(--cth-coral-soft); }
 .cth-for-you:hover { background: color-mix(in srgb, var(--cth-coral-base) 22%, var(--cth-card)); }
@@ -563,15 +630,43 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-closing-list:focus-visible { outline-offset: -2px; }
 .cth-askme-card:not(.is-open):hover { box-shadow: inset 0 0 0 1px var(--cth-line-2), var(--cth-shadow-md) !important; }
 .cth-askme-card:hover .cth-askme-chevron, .cth-askme-chevron:hover { background: var(--cth-neutral-soft); color: var(--cth-ink) !important; }
+/* Option rows and chips on an Ask me card (DESIGN.md §7.8, ask-me-options.md). */
+.cth-askme-opt {
+  display: flex; align-items: flex-start; gap: 9px; padding: 8px 10px; border-radius: var(--cth-r-md);
+  background: var(--cth-card); box-shadow: inset 0 0 0 1px var(--cth-line-2); cursor: pointer;
+  font-size: 12.5px; line-height: 18px; color: var(--cth-ink); outline: none;
+  transition: box-shadow 120ms var(--cth-ease), background 120ms var(--cth-ease);
+}
+.cth-askme-opt:hover { background: var(--cth-card-2); box-shadow: inset 0 0 0 1px var(--cth-line-input); }
+.cth-askme-opt.is-on { background: var(--cth-indigo-soft); box-shadow: inset 0 0 0 1.5px var(--cth-indigo); }
+.cth-askme-opt:focus-visible { box-shadow: inset 0 0 0 2px var(--cth-indigo); }
+.cth-askme-dot {
+  flex-shrink: 0; width: 16px; height: 16px; margin-top: 1px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--cth-line-input); display: grid; place-items: center;
+}
+.cth-askme-opt.is-on .cth-askme-dot { box-shadow: inset 0 0 0 1.5px var(--cth-indigo); }
+.cth-askme-opt.is-on .cth-askme-dot::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cth-indigo); }
+.cth-askme-chip {
+  display: inline-flex; align-items: center; height: 26px; padding: 0 9px; border: none; border-radius: var(--cth-r-pill);
+  background: var(--cth-card); box-shadow: inset 0 0 0 1px var(--cth-line-2); cursor: pointer;
+  font-family: var(--cth-font-ui); font-size: 11.5px; color: var(--cth-ink);
+}
+.cth-askme-chip:hover { background: var(--cth-card-2); box-shadow: inset 0 0 0 1px var(--cth-line-input); }
+.cth-askme-chip.is-on { background: var(--cth-indigo-soft); box-shadow: inset 0 0 0 1.5px var(--cth-indigo); }
+.cth-askme-chip:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--cth-indigo); }
 .cth-askme-q p:first-child { margin-top: 0; }
 .cth-askme-q p:last-child { margin-bottom: 0; }
 .cth-splitter .cth-splitter-grip { opacity: 0; transition: opacity 120ms var(--cth-ease); }
-.cth-splitter:hover .cth-splitter-grip { opacity: .9; }
+.cth-splitter:hover .cth-splitter-grip,
+.cth-splitter:focus-visible .cth-splitter-grip { opacity: .9; }
 
 /* Talk to Michael (DESIGN.md 7.19): its ring, and a focus ring around the whole
    composer while its message box has focus. */
 .cth-composer { box-shadow: inset 0 0 0 1px var(--cth-line-2), var(--cth-shadow-lg); }
 .cth-composer:focus-within { box-shadow: inset 0 0 0 2px var(--cth-indigo), var(--cth-shadow-lg); }
+/* In the wide 1:1 the box sits inside the sheet: its ring only, no shadow. */
+.cth-dock-sheet .cth-composer { box-shadow: inset 0 0 0 1px var(--cth-line-2); }
+.cth-dock-sheet .cth-composer:focus-within { box-shadow: inset 0 0 0 2px var(--cth-indigo); }
 
 /* Michael's conversation dock (docs/designs/michael-replies.md, 21A): slides
    180 ms up from the composer's top edge; reduced motion snaps. */
@@ -622,4 +717,8 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 /* File chips in replies and Ask me cards (docs/designs/open-file-tab.md, DD1). */
 .cth-file-chip:hover:not(:disabled) { background: var(--cth-indigo-soft) !important; }
 .cth-file-chip:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 1px; }
+.cth-file-action { min-height: 32px; padding: 0 10px; border: none; border-radius: var(--cth-r-md); cursor: pointer; text-align: start; font-family: var(--cth-font-ui); font-size: 13px; color: var(--cth-ink); background: transparent; }
+.cth-file-action:hover, .cth-file-action:focus-visible { background: var(--cth-neutral-soft); }
+.cth-file-action:focus-visible { outline: 2px solid var(--cth-indigo); }
+.cth-file-action[aria-disabled="true"] { cursor: default; color: var(--cth-ink-3); }
 .cth-file-tab-close:hover { background: var(--cth-neutral-soft) !important; color: var(--cth-ink) !important; opacity: 1 !important; }

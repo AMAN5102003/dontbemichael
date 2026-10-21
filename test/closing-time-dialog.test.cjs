@@ -72,6 +72,8 @@ test('the clock restarts on hook events only, never from the terminal parser', (
 test('a terminal ending mid-close refreshes the rows, guarded for startup order', () => {
   const main = read('src/main/index.ts');
   assert.match(main, /try \{ if \(agentId\) closingTime\.refresh\(agentId\); \} catch \(e\) \{ console\.error\('\[closing-time\] refresh:', e\); \}/, 'a refresh failure is logged, never hidden, and never breaks teardown');
+  // And one that comes back is waited on again, once its terminal really started.
+  assert.match(main, /try \{ if \(res\.ok && opts\.hive\?\.id\) closingTime\.revive\(opts\.hive\.id\); \} catch \(e\) \{ console\.error\('\[closing-time\] revive:', e\); \}/);
 });
 
 test('Remind and Close without them reach main on the channels main handles', () => {
@@ -97,10 +99,10 @@ test('every closing-time string the dialog shows exists in English', () => {
 test('a finished tool call leaves the row: its detail clears and the clock restarts', () => {
   // Value: protects=the owner never judges an agent by a tool call that already ended; fails_when=PostToolUse keeps the previous actionDetail; why_new=review run 2 pass B (red team); seam=none
   const hive = read('src/renderer/src/hooks/useHive.ts');
-  assert.match(hive, /e\.event === 'PostToolUse' \|\| e\.event === 'UserPromptSubmit'[\s\S]{0,400}updateAgent\(e\.agentId, \{ status: 'working', actionDetail: undefined, actionAt: Date\.now\(\) \}\)/);
+  assert.match(hive, /e\.event === 'PostToolUse' \|\| e\.event === 'PostToolUseFailure' \|\| e\.event === 'PostToolBatch' \|\| e\.event === 'UserPromptSubmit'[\s\S]{0,400}updateAgent\(e\.agentId, \{ status: 'working', actionDetail: undefined, actionAt: Date\.now\(\) \}\)/);
   assert.match(hive, /action: 'thinking', actionDetail: undefined, actionAt: Date\.now\(\)/);
   // Value: protects=a finished tool is not named as still running; fails_when=PostToolUse with nothing running keeps "using <tool>"; why_new=TODOS "Row still names a finished tool"; seam=source pin
-  assert.match(hive, /else if \(e\.event === 'PostToolUse' && !breakerArmed\) updateAgent\(e\.agentId, \{ action: 'thinking' \}\);/);
+  assert.match(hive, /else if \(toolEnded && !breakerArmed\) updateAgent\(e\.agentId, \{ action: 'thinking' \}\);/);
 });
 
 test('the non-English "terminal ended" hint names the buttons as they appear on screen', () => {
