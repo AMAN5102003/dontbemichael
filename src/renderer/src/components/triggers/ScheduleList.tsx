@@ -14,6 +14,8 @@ import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTim
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
 import { cannotCheckEmail, cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
+import { remainingStarterMissions, starterSuggestionsFor, type StarterSuggestion } from '@shared/starterJobs';
+import type { OfficePack } from '@shared/officePack';
 import { gmailConnectorOn } from '@shared/claudeConnectors';
 import { useRtl } from '@/i18n/useDirection';
 import i18n from '@/i18n';
@@ -599,7 +601,9 @@ function useNameOf(): (id: string) => string {
 }
 
 /** One agent's own schedules, editable. `agentId` is its floor id. */
-export function AgentSchedules({ agentId, agentName }: { agentId: string; agentName: string }) {
+export function AgentSchedules({ agentId, agentName, businessType, sourceCard }: {
+  agentId: string; agentName: string; businessType?: string; sourceCard?: string;
+}) {
   const { t } = useTranslation();
   const { missions, status, retry } = useMissions();
   const godId = useGodId();
@@ -610,6 +614,51 @@ export function AgentSchedules({ agentId, agentName }: { agentId: string; agentN
   const isGod = agentId === godId;
   // Michael's schedules keep the 'god' alias the router understands.
   const to = isGod ? GOD_ALIAS : agentId;
+  const [suggestionData, setSuggestionData] = useState<{ key: string; items: StarterSuggestion[] } | null>(null);
+  const { busy: suggestionBusy, failed: suggestionFailed, run: saveSuggestion } = useSaveOp();
+  const suggestionKey = `${agentId}:${businessType ?? ''}:${sourceCard ?? ''}`;
+  const starterItems = suggestionData?.key === suggestionKey ? suggestionData.items : [];
+  const suggestionSaving = useRef(false);
+  const suggestions = isGod ? [] : remainingStarterMissions(
+    starterItems, to, missions, godId, (i) => `suggestion_${agentId}_${i}`
+  );
+
+  useEffect(() => {
+    let alive = true;
+    setSuggestionData(null);
+    if (status !== 'ready' || isGod) return;
+    void window.cth.packsList()
+      .then(({ packs, core }) => {
+        const available = [...packs.map((p) => p.pack), core].filter((p): p is OfficePack => !!p);
+        if (alive) setSuggestionData({
+          key: suggestionKey,
+          // Keep all definitions for recognizing existing starter jobs; the
+          // remaining list is capped after excluding jobs already added.
+          items: starterSuggestionsFor(available, businessType, agentId, sourceCard, Infinity)
+        });
+      })
+      .catch(() => { /* The manual add button still works if packs cannot load. */ });
+    return () => { alive = false; };
+  }, [agentId, businessType, sourceCard, suggestionKey, status, isGod]);
+
+  const addSuggestion = (suggestion: ScheduledMission): void => {
+    if (suggestionSaving.current || suggestionBusy) return;
+    // Recheck the current store: another view may have added a custom job or
+    // this starter since the row was rendered.
+    const mission = remainingStarterMissions(
+      starterItems, to, useStore.getState().missions, godId,
+      (i) => `m_${Date.now().toString(36)}_${agentId}_${i}`
+    ).find((m) => m.label === suggestion.label);
+    if (!mission) return;
+    suggestionSaving.current = true;
+    void saveSuggestion(() => window.cth.upsertMission(mission), () => {
+      const current = useStore.getState();
+      if (!current.missions.some((m) => m.id === mission.id)) {
+        current.setMissions([...current.missions, mission], 'ready');
+      }
+      refreshMissions();
+    }).finally(() => { suggestionSaving.current = false; });
+  };
 
   const waiting = loadState(status, missions.length === 0, t('schedulesSection.loadError', { name: agentName }), retry, t);
   if (waiting) return waiting;
@@ -645,6 +694,28 @@ export function AgentSchedules({ agentId, agentName }: { agentId: string; agentN
           />
         ))}
       </div>
+      {suggestions.length > 0 && (
+        <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0' }}>
+          {suggestions.map((suggestion) => (
+            <li key={suggestion.id} style={{
+              display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
+              padding: '8px 0', borderTop: '1px solid var(--cth-ink-100)'
+            }}>
+              <span style={{ flex: '1 1 200px', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
+                {t('schedulesSection.suggestedJob', { title: suggestion.label, schedule: whenText(suggestion, t) })}
+              </span>
+              <PixelButton
+                variant="secondary"
+                size="sm"
+                disabled={suggestionBusy}
+                ariaLabel={t('schedulesSection.addSuggestedJob', { title: suggestion.label })}
+                onClick={() => addSuggestion(suggestion)}
+              >{t('common.add')}</PixelButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {suggestionFailed && <Line tone="error">{t('schedulesSection.saveFailed')}</Line>}
       <AddSchedule to={to} ownerName={agentName} focusOwner={focusOwner} />
     </div>
   );

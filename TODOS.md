@@ -490,18 +490,6 @@
 
 ## Schedules
 
-### Starter jobs in an agent's empty Schedules tab
-
-**What:** Show up to three suggested jobs from the office pack's `starterMissions` in an agent's empty Schedules tab, each added paused with one click (design decision 5A in `docs/designs/per-agent-schedules.md`).
-
-**Why:** An empty tab is where an owner first learns an agent can run jobs on its own. A suggestion turns that into one click instead of inventing a job.
-
-**Context:** Deferred while building per-agent schedules (2026-09-25) because no shipped pack in `resources/packs/` has `starterMissions`, and its `schedule` field is a free string with no defined format (`src/shared/officePack.ts:76`). The empty tab ships with its copy and add button. To build: define the schedule format (reuse `parseWhen` in `src/shared/missions.ts`), write starters into the packs, map pack agent ids to hive agent ids, and add the suggestion rows.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** starter jobs written into the shipped packs.
-
 ### Michael turns repeated work into a routine (issue #41)
 
 **What:** When the same kind of work keeps getting done (for example chasing overdue invoices three weeks running), Michael sets it up as a scheduled job for the team member who does it, with its how in that member's Work style.
