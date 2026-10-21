@@ -389,15 +389,6 @@
 **Effort:** M
 **Priority:** P1
 
-### Base the QuickBooks default on the role, not the agent id
-
-**What:** Give hired agents with a books role the on + Read only default.
-
-**Why:** Only an agent whose id is literally `oscar` gets it (`booksReadRoleIds` in `src/main/index.ts`); a bookkeeper hired later starts off.
-
-**Effort:** S
-**Priority:** P3
-
 ## Closing time (deferred from ship of feat/closing-time-progress, 2026-09-29)
 
 ### Rows in a second window
