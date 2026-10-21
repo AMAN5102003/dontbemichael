@@ -1696,7 +1696,9 @@
     "ageDays": "{{count}} d",
     "closedByOwner": "Closed by owner",
     "nothingAsked": "Nothing asked",
-    "nothingAskedTitle": "Blocked, but nothing on it waits on you. {{godName}} is told to ask you or move it."
+    "nothingAskedTitle": "Blocked, but nothing on it waits on you. {{godName}} is told to ask you or move it.",
+    "showingFiltered": "Showing {{count}} of {{total}} tasks",
+    "noMatchingTasks": "No tasks match your search or filters"
   },
   "queueComposer": {
     "recording": "● recording. Click stop to transcribe",

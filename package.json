@@ -26,6 +26,7 @@
     "test": "node tools/run-tests.cjs",
     "test:focused": "node tools/run-tests.cjs",
     "check:links": "node tools/check-release-links.cjs",
+    "check:leadins": "node tools/check-release-leadins.cjs",
     "lab": "node tools/studio-lab/build.mjs",
     "shoot": "node tools/studio-lab/shoot.mjs",
     "dist": "npm run build && electron-builder",
