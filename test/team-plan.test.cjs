@@ -177,3 +177,11 @@ test('Michael hears who did not start, by name, and that the app tries again', (
   assert.equal(two.subject, 'Team members did not start');
   assert.match(two.body, /^Pam, Jim and Oscar did not start again on this launch and are not on the floor\./);
 });
+
+test("Michael's briefing names a business or city with a dollar sign as typed", () => {
+  // Value: protects=Michael is told the business's real name; fails_when=String.replace reads $$, $& or $' in the name as a pattern; why_new=the same fill as fillBusiness, in hive.ts; seam=none
+  const { michaelInstructions } = loadTs('src/main/hive.ts');
+  const paths = { inbox: 'i', inboxDone: 'd', outbox: 'o', protocol: 'p', hiveRoot: 'h' };
+  const text = michaelInstructions('Michael', { name: 'Ca$$h Cuts', city: "Austin$'", briefing: 'Welcome to {Business} in {City}. {City} is home.' }, paths);
+  assert.match(text, /Welcome to Ca\$\$h Cuts in Austin\$'\. Austin\$' is home\./);
+});
