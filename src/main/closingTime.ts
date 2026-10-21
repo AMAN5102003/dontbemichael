@@ -34,7 +34,7 @@
 import type { WebContents } from 'electron';
 import type { HiveManager, HiveMessage } from './hive';
 import type { ControlRegistry } from './control';
-import { CLOSING_COMPLETE_RE, CLOSING_TIME_REMIND_MS } from '../shared/closingTime';
+import { CLOSING_ACK_RE, CLOSING_COMPLETE_RE, CLOSING_TIME_REMIND_MS } from '../shared/closingTime';
 import { RESEARCH_ID } from '../shared/research';
 
 export type ClosingTimePhase =
@@ -70,7 +70,7 @@ export type ClosingTimeActionResult = { ok: true } | { ok: false; error: string 
 /** Subject markers. Deliberately forgiving (case, -/_/space) — agents write
  *  these by hand, so "Closing Time Ack" must count as well as the canonical
  *  CLOSING-TIME-ACK the brief asks for. */
-const ACK_RE = /CLOSING[-_\s]*TIME[-_\s]*ACK/i;
+const ACK_RE = CLOSING_ACK_RE;
 const COMPLETE_RE = CLOSING_COMPLETE_RE;
 
 /** How long to wait before surfacing "this is taking long — force quit?".

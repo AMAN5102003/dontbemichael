@@ -117,6 +117,24 @@ function writeFixture(dir, name, content) {
     assert.ok(titled > body, 'title match boosts above body-only');
   });
 
+  test('scoreChunk: title matching does not match partial words', () => {
+    const terms = kg.tokenize('art');
+
+    const partial = kg.scoreChunk(
+      { title: 'Article Guide', text: 'art is discussed here' },
+      terms,
+      'art'
+    );
+
+    const exact = kg.scoreChunk(
+      { title: 'Art Guide', text: 'art is discussed here' },
+      terms,
+      'art'
+    );
+
+    assert.ok(exact > partial, 'whole-word title match should receive a boost');
+  });
+
   // ─── ingest → search round-trip: TEXT modality ──────────────────────────
   test('ingest a markdown doc, then search finds it with a snippet', () => {
     const root = tmpRoot();

@@ -1,6 +1,16 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
+
+// hooks.ts imports Electron's Notification class; give it the tiny surface it needs.
+const electron = require.resolve('electron');
+require.cache[electron] = {
+  id: electron, filename: electron, loaded: true,
+  exports: { Notification: class { show() {} static isSupported() { return false; } } }
+};
+const { HookServer } = loadTs('src/main/hooks.ts');
 
 const {
   WorkerWakeWatchdog,
@@ -91,8 +101,8 @@ test('never nudges while delivery is paused, agent paused, or halted', () => {
   assert.deepEqual(out, []);
 });
 
-test('an open permission prompt blocks nudges until the agent moves on, however long it waits', () => {
-  // Value: protects=the nudge's Enter never answers a permission prompt; fails_when=the hold expires on a timer; why_new=owner 2026-10-15, Pete's prompts were approved by the nudge after 5 minutes; seam=none
+test('an open permission prompt blocks nudges until the agent moves on, even an hour later', () => {
+  // Value: protects=the nudge's Enter never answers a permission prompt; fails_when=the hold expires on a short timer; why_new=owner 2026-10-15, Pete's prompts were approved by the nudge after 5 minutes; seam=none
   const w = new WorkerWakeWatchdog();
   w.noteSpawn('pty-alice', 0);
   const now = 200_000;
@@ -116,6 +126,31 @@ test('a new session releases a prompt hold', () => {
   w.noteHook('alice', 'Notification', 'Claude needs your permission', 100_000);
   w.noteHook('alice', 'SessionStart', undefined, 150_000);
   assert.deepEqual(w.decide([fact()], 200_000), ['alice']);
+});
+
+test("a subagent's tool calls do not release a prompt hold, the main session's do", () => {
+  // Value: protects=a prompt still on screen is never typed into; fails_when=a Task subagent's PostToolUse ends the hold; why_new=ship review 2026-10-16; seam=none
+  const w = new WorkerWakeWatchdog();
+  w.noteSpawn('pty-alice', 0);
+  w.noteHook('alice', 'Notification', 'Needs your permission to use Bash.', 100_000);
+  w.noteHook('alice', 'PreToolUse', undefined, 110_000, true);
+  w.noteHook('alice', 'PostToolUse', undefined, 120_000, true);
+  assert.deepEqual(w.decide([fact()], 200_000), []);
+  w.noteHook('alice', 'PostToolUse', undefined, 130_000);
+  assert.deepEqual(w.decide([fact()], 200_000), ['alice']);
+});
+
+test("the hook server tells the watchdog which frames are a subagent's", () => {
+  // Value: protects=the watchdog learns a frame is a subagent's in the running app; fails_when=hooks.ts or index.ts drops the flag; why_new=ship review 2026-10-16; seam=none
+  const seen = [];
+  const hive = { recordSession() {}, isGod() { return false; }, root() { return null; } };
+  const server = new HookServer(hive, () => null, () => ({ notifications: false }), undefined, undefined, undefined,
+    (agentId, event, message, toolName, subagent) => seen.push(subagent));
+  server.handle({ agent_id: 'alice', subagent_id: 'task-1', hook_event_name: 'PostToolUse', tool_name: 'Read' });
+  server.handle({ agent_id: 'alice', hook_event_name: 'PostToolUse', tool_name: 'Read' });
+  assert.deepEqual(seen, [true, false]);
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8');
+  assert.match(main, /\(agentId, event, message, toolName, subagent\) => \{[\s\S]{0,600}workerWake\.noteHook\(agentId, event, message, Date\.now\(\), subagent\);/);
 });
 
 test('an idle-waiting notification does NOT count as a HITL hold', () => {

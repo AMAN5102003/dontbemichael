@@ -19,7 +19,7 @@ const read = (rel) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8'
 test('the main process feeds the watch every hook event, the fleet beat and the owner\'s keystrokes, and restores it after the store opens', () => {
   // Value: protects=the watch hears check ins, sees members and leaves typing alone; fails_when=one feed is dropped or the restore runs before the store opens; why_new=new wiring; seam=source pin; no_claim=runtime timing (e2e covers the socket path)
   const main = read('src/main/index.ts');
-  assert.match(main, /workerWake\.noteHook\(agentId, event, message\);\n\s*\/\/ Any event, a Claude status tick included, is a check in \(issue #326\);\n[^\n]*\n\s*silentWatch\?\.noteHook\(agentId, event\);/);
+  assert.match(main, /workerWake\.noteHook\(agentId, event, message, Date\.now\(\), subagent\);\n\s*\/\/ Any event, a Claude status tick included, is a check in \(issue #326\);\n[^\n]*\n\s*silentWatch\?\.noteHook\(agentId, event\);/);
   assert.match(main, /writeFleetSnapshot\(\);\n\s*try \{ silentBeat\(\); \}/);
   assert.match(main, /ptyInputAt\.set\(id, Date\.now\(\)\);\n\s*return ptyManager\.write\(id, data\);/);
   const open = main.indexOf('try { persist.open(); }');
@@ -109,7 +109,7 @@ test('the card, the tag and the panel line are placed where the design says (SD1
   // Value: protects=placement on the board, the pods, the panel header and above the tabs; fails_when=a piece is dropped or All clear shows beside a card; why_new=new UI; seam=source pin; no_claim=the look (live check against silent-engine-v2.html)
   const ask = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(ask, /<OfficeBreakCard \/>\s*<SilentEngineCards \/>/);
-  assert.match(ask, /!engineCard && !onBreak && !researchNotice && !silentShown &&/);
+  assert.match(ask, /!engineCard && !onBreak && !researchNotice && !knowledgeNotice && !silentShown &&/);
   assert.match(read('src/renderer/src/shell/PanelChrome.tsx'), /\{silent \? <NotReportingTag/);
   const stage = read('src/renderer/src/scene/studio/StudioStage.tsx');
   assert.equal((stage.match(/<NotReportingTag/g) ?? []).length, 2, 'member pods and Michael\'s');
