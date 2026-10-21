@@ -752,20 +752,6 @@ Deferred from plan: `docs/designs/business-mode-office-packs.md` (owner chose "s
 **Priority:** P1
 **Depends on:** nothing.
 
-## Schedules
-
-### Make the heartbeat's description honest
-
-**What:** The heartbeat card in Schedules shows an editable description box, but the heartbeat never sends that text. It sends a summary it builds itself (`buildHeartbeatDigest`, `src/main/index.ts`). Either show the heartbeat's description as fixed text, or send the owner's text ahead of the summary.
-
-**Why:** An owner who edits the box expects Michael to receive it. Every other schedule stopped carrying a prompt on 2026-09-25 (the label names the job and the agent's Work style says how), so the heartbeat is the one card left with a box, and it's a box that does nothing.
-
-**Context:** Found in the 2026-09-25 agent instructions audit; the owner chose to leave the heartbeat as it is for now (it ships off). `src/renderer/src/components/triggers/ScheduleList.tsx` keeps the box for `kind: 'heartbeat'` only.
-
-**Effort:** S
-**Priority:** P3
-**Depends on:** nothing.
-
 ## Engines
 
 ### Run Gemini members in Gemini's own sandbox

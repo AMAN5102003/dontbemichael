@@ -163,6 +163,16 @@ export const HEARTBEAT_MISSION: ScheduledMission = {
   quietThresholdMs: 300_000
 };
 
+/** What a heartbeat sends Michael: the summary, with the owner's text from the
+ *  heartbeat box ahead of it when the owner wrote some. The shipped default is
+ *  not sent: it says the team has gone quiet and points to a digest in the
+ *  inbox, which is wrong on a beat for waiting mail and when the digest is in
+ *  the same message. */
+export function heartbeatMessage(body: string | undefined, digest: string): string {
+  const own = body?.trim();
+  return own && own !== HEARTBEAT_MISSION.body.trim() ? `${own}\n\n${digest}` : digest;
+}
+
 /** The dedicated auto-compact MAINTENANCE schedule (maint-1). DECOUPLED from the
  *  ops standup so editing/replacing a standup can never silently disable
  *  compaction again (the bug this fixes). It fires ONLY the auto-compact signal —
