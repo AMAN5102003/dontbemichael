@@ -489,7 +489,7 @@ const hookServer = new HookServer(
     // Any event, a Claude status tick included, is a check in (issue #326);
     // the event name tells it when a long tool call starts and ends.
     silentWatch?.noteHook(agentId, event);
-    safeClearer.noteHook(agentId, event, message);
+    safeClearer.noteHook(agentId, event, message, subagent);
     if (agentId && event === 'UserPromptSubmit') promptSubmits.note(agentId);
     if (agentId && (event === 'Notification' || event === 'PermissionRequest')) promptSubmits.noteAttention(agentId);
   },

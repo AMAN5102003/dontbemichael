@@ -27,6 +27,11 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - Restoring an older office on Windows keeps its team when the folder paths differ only in letter case, such as `C:\Biz` and `c:\biz`, and a bare network share is never taken as the business folder (contributed in #477).
 - A file link whose path has parentheses, such as `Q3 (final)/report.md`, opens instead of staying greyed out (contributed in #478).
 - A message that only mentions closing time, such as "What is the closing time for this deal?", shows in Messages instead of being filed with the closing time notices; every note closing time itself sends is still filed there (contributed in #479).
+- A team member waiting on you at a permission prompt is never typed into while a helper it started keeps working: only the member's own next step ends the wait, for the wake up nudge (contributed in #507) and for the conversation clear's handoff request alike. Either one ends with Enter, which would answer the prompt "Yes".
+- Zooming a terminal with a bad value, such as one left by a damaged setting, keeps the current size instead of breaking it (contributed in #480).
+- A Claude command whose path is in quotes and has spaces, such as `"/Applications/My Tools/claude"`, now works for the app's background tasks too, not only for team members (contributed in #484).
+- The last small text in setup is raised to the 14px minimum, like the rest of setup (contributed in #491).
+- Company knowledge search ranks a whole word in a document's title above part of one, so a search for `art` puts "Art Guide" ahead of "Article Guide" (contributed in #494).
 - A file name with a long extension, such as `application.properties`, opens whole from an agent's output instead of being cut short (contributed in #190).
 - A schedule an agent asks for with `monthly` or `sunset` is refused instead of becoming a Monday or Sunday job; `Mondays`, `weds` and `mon.` still work (contributed in #193).
 - A team member's name, role or business name with a dollar sign, such as `Ca$$h Cuts`, is written as typed in Work styles, the first task and Michael's briefing (contributed in #198).

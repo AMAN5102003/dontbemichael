@@ -200,7 +200,7 @@ test('wiring: a beat each minute, the handoff at session start, undo through the
   const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
   const main = read('src/main/index.ts');
   assert.match(main, /safeClearTimer = setInterval\(\(\) => \{ try \{ safeClearer\.beat\(\); \}/);
-  assert.match(main, /safeClearer\.noteHook\(agentId, event, message\)/);
+  assert.match(main, /safeClearer\.noteHook\(agentId, event, message, subagent\)/);
   assert.match(main, /hive\.restoreSession\(id, state\.oldSession\);/);
   assert.match(main, /send\('power:resume', \{ reason: 'restore-conversation', awayMs: 0, dead: \[ptyId\], total: 1 \}\)/);
   const hooks = read('src/main/hooks.ts');
