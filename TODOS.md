@@ -39,18 +39,6 @@
 **Priority:** P1
 **Depends on:** None
 
-### Keep Claude Code's transcripts and history out of agents' reach
-
-**What:** Wall every agent's file tools and shell from Claude Code's projects folder and `history.jsonl` (under `CLAUDE_CONFIG_DIR` or `~/.claude`), apart from what the app itself needs.
-
-**Why:** Any team member can read the other team members' Claude Code conversations there, and the prompts hidden checks send, which can quote what a teammate asked Pete before the trust layer cleaned it. The trust layer now removes each check's transcript as it ends and sweeps leftovers at launch (`src/main/hiddenClaude.ts` dropTranscript), but a check's prompt may also be kept in Claude Code's history.
-
-**Context:** Found by the security review and Codex in the third ship. Pete is already walled from both. Adding `claudeProjectsRoot()` to every agent's read walls needs care: Michael reads his own transcript through the app, not his tools.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** None
-
 ### Take the internet from team members' shells on Windows
 
 **What:** Hold team members' shell commands off the internet on Windows, where the engine has no sandbox. Until then, the Research screen says so on Windows (done 2026-10-18).
