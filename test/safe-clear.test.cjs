@@ -125,6 +125,21 @@ test('nothing is typed while the agent waits on the owner at a prompt', (t) => {
   assert.equal(r.typed.length, 2, 'a new session means the prompt is gone');
 });
 
+test("a subagent's tool calls do not end the wait at a prompt, the agent's own do", (t) => {
+  // Value: protects=the handoff's Enter never answers a prompt still on screen; fails_when=a Task subagent's PostToolUse counts as moving on; why_new=review of #507, 2026-10-21, the same rule as the worker wake hold; seam=none
+  const r = rig(t);
+  r.clearer.noteHook('oscar', 'Notification', 'Claude needs your permission to use Bash');
+  r.clearer.noteHook('oscar', 'PreToolUse', undefined, true);
+  r.clearer.noteHook('oscar', 'PostToolUse', undefined, true);
+  r.tick(45 * 60_000);
+  r.clearer.beat();
+  assert.equal(r.typed.length, 0, 'no handoff typed while the prompt is still open');
+  r.clearer.noteHook('oscar', 'PostToolUse');
+  r.tick(45 * 60_000);
+  r.clearer.beat();
+  assert.equal(r.typed.length, 1, 'the agent moving on frees it');
+});
+
 test('someone speaking to the agent after its handoff keeps the conversation', (t) => {
   const r = rig(t);
   r.clearer.beat();

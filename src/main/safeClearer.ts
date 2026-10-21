@@ -55,8 +55,10 @@ export class SafeClearer {
 
   private now(): number { return this.deps.now?.() ?? Date.now(); }
 
-  /** Fed by the hook server for every event. */
-  noteHook(agentId: string | undefined, event: string, message?: string): void {
+  /** Fed by the hook server for every event. `subagent` is true for a Task
+   *  subagent's frame: it counts as activity, but its tool calls go on under an
+   *  open prompt, so they never count as moving on. */
+  noteHook(agentId: string | undefined, event: string, message?: string, subagent = false): void {
     if (!agentId) return;
     const t = this.now();
     this.lastHookAt.set(agentId, t);
@@ -67,7 +69,7 @@ export class SafeClearer {
     // A new session means the prompt is gone too (a dismissed one ends the
     // turn with no Stop). An idle notice doesn't: Claude Code can send one
     // while a permission prompt is still open.
-    else if (event === 'SessionStart' || event === 'PreToolUse' || event === 'PostToolUse' || event === 'UserPromptSubmit' || event === 'Stop') {
+    else if (!subagent && (event === 'SessionStart' || event === 'PreToolUse' || event === 'PostToolUse' || event === 'UserPromptSubmit' || event === 'Stop')) {
       this.lastMovedOnAt.set(agentId, t);
     }
   }
