@@ -105,14 +105,13 @@ export function App() {
   // between, matching the existing `cth:` CustomEvent convention.
   useEffect(() => {
     const onOpenSettings = (e: Event): void => {
-      const section = (e as CustomEvent<{ section?: string }>).detail?.section;
-      setSettingsSection(section as SettingsSection | undefined);
+      const section = (e as CustomEvent<{ section?: SettingsSection }>).detail?.section;
+      setSettingsSection(section);
       setSettingsOpen(true);
     };
     window.addEventListener('cth:open-settings', onOpenSettings);
     return () => window.removeEventListener('cth:open-settings', onOpenSettings);
   }, []);
-
 
   // Initial config load
   useEffect(() => {
