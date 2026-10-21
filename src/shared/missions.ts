@@ -300,9 +300,13 @@ function parseDays(raw: unknown): number[] | null {
     else if (d === 'weekends') [0, 6].forEach((x) => days.add(x));
     else if (d === 'daily' || d === 'every day') [0, 1, 2, 3, 4, 5, 6].forEach((x) => days.add(x));
     else {
-      // "mon", "tues", "Friday": a start of a real day name, never just its
-      // first three letters, so "monthly" or "sunset" is not read as a day.
-      const day = d.length >= 3 ? DAY_NAMES.findIndex((n) => n.startsWith(d)) : -1;
+      // "mon", "tues", "Friday", "Mondays", "weds", "mon.": a start of a real
+      // day name, never just its first three letters, so "monthly" or
+      // "sunset" is not read as a day.
+      const w = d.replace(/\.$/, '');
+      const day = w.length >= 3
+        ? DAY_NAMES.findIndex((n) => n.startsWith(w) || w === `${n}s` || (w === 'weds' && n === 'wednesday'))
+        : -1;
       if (day < 0) return null;
       days.add(day);
     }
