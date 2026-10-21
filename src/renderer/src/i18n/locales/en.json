@@ -1332,6 +1332,7 @@
     "pickDayHint": "Pick at least one day, or this will never run.",
     "addTime": "add another time",
     "removeTime": "remove",
+    "everyCapped": "Now every 1 day: with more than one time, a line repeats at most once a day.",
     "onlyBetween": "only between",
     "and": "and",
     "windowHint": "The end time is before the start time.",

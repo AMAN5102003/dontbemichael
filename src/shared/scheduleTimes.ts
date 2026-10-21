@@ -117,6 +117,11 @@ export function capEveryLines<L extends { kind: 'every' | 'at'; everyMs?: number
   return lines.map((l) => (l.kind === 'every' && (l.everyMs ?? 0) > DAY ? { ...l, everyMs: DAY } : l));
 }
 
+/** The line capEveryLines shortened, or -1, so the owner can be told under it. */
+export function cappedLine(before: { kind: 'every' | 'at'; everyMs?: number }[], after: { kind: 'every' | 'at'; everyMs?: number }[]): number {
+  return before.findIndex((l, i) => l.everyMs !== after[i]?.everyMs);
+}
+
 /** Every line made canonical, or null when there are none, any is unusable
  *  (a schedule with one bad line would run on a clock nobody set), or two
  *  lines claim a day an "every" line runs on. */

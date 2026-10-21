@@ -1,8 +1,8 @@
-import { type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IntervalPicker, MiniButton, WeeklyPicker, Hint, inputStyle } from './ui';
 import { WEEKDAY_INITIALS, WEEKDAY_LABELS, formatMinute, normalizeWeekly } from '@shared/weeklySchedule';
-import { capEveryLines, clashingDays, daysTakenFor, normalizeTimes, simpleTimes, MAX_LINES, type ScheduleLine } from '@shared/scheduleTimes';
+import { capEveryLines, cappedLine, clashingDays, daysTakenFor, normalizeTimes, simpleTimes, MAX_LINES, type ScheduleLine } from '@shared/scheduleTimes';
 import type { ScheduledMission } from '@shared/missions';
 
 /**
@@ -70,8 +70,14 @@ export function sameLines(a: LineDraft[], b: LineDraft[]): boolean {
 export function WhenLines({ lines, onChange: emit }: { lines: LineDraft[]; onChange: (lines: LineDraft[]) => void }) {
   const { t } = useTranslation();
   // Leaving the plain shape (a second line, a window, fewer days) shortens a
-  // long "every" to a day, the most a line in that shape can run.
-  const onChange = (next: LineDraft[]) => emit(isPlainEvery(next) ? next : capEveryLines(next));
+  // long "every" to a day, the most a line in that shape can run. The line it
+  // shortened says so until the next edit.
+  const [cappedAt, setCappedAt] = useState(-1);
+  const onChange = (next: LineDraft[]) => {
+    const kept = isPlainEvery(next) ? next : capEveryLines(next);
+    setCappedAt(cappedLine(next, kept));
+    emit(kept);
+  };
   const set = (i: number, next: LineDraft) => onChange(lines.map((l, j) => (j === i ? next : l)));
   const remove = (i: number) => onChange(lines.filter((_, j) => j !== i));
   const plain = isPlainEvery(lines);
@@ -119,6 +125,7 @@ export function WhenLines({ lines, onChange: emit }: { lines: LineDraft[]; onCha
           {line.kind === 'at'
             ? <WeeklyPicker value={{ days: line.days, minute: line.minute }} taken={taken(i)} onChange={(w) => set(i, { kind: 'at', days: w.days, minute: w.minute })} />
             : <EveryLine line={line} longRange={plain} taken={taken(i)} onChange={(next) => set(i, next)} />}
+          {cappedAt === i && <Hint>{t('triggersUi.everyCapped')}</Hint>}
         </div>
       ))}
       {lines.length < MAX_LINES && (
