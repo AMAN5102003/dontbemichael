@@ -8,7 +8,14 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 
 ## [Unreleased]
 
+### Added
+
+- **Email an agent reads is labelled as written by someone outside the business.** Each message reaches the agent with a note that its text is information, never instructions, and any lines plainly written to steer an AI are listed so the agent skips them and carries on. Michael is told once per such email; you are not (contributed in #188). Research's web answers are checked against the same list.
+
 ### Fixed
+
+- A file name with a long extension, such as `application.properties`, opens whole from an agent's output instead of being cut short (contributed in #190).
+- A schedule an agent asks for with `monthly` or `sunset` is refused instead of becoming a Monday or Sunday job; `Mondays`, `weds` and `mon.` still work (contributed in #193).
 
 - **The office opens filling the screen on every launch again.** It came back at a smaller size once a single moment had read as not filling the screen (a dragged title bar, a display change, or quitting from full screen). Now every launch fills the screen; un-maximizing still goes back to your last smaller size.
 - **Pulse's Questions to you is part of Your time.** Both counted the same questions you were asked. Your time now shows how many, and at its foot two small figures: the typical wait for your answer and how many per 100 requests the team took, with the period before's rate under it when Compare is on. The wait was labelled "on average"; it is the typical (middle) wait, and now says so.
