@@ -80,6 +80,9 @@ test('an attack after a long run with no line break is flagged, and Michael is t
   const split = `${'x'.repeat(480)} ${attack}`;
   assert.deepEqual(flagInstructionLike(split), [attack]);
 
+  // An attack partway into a line's first piece shows from the attack, not the words before it.
+  assert.deepEqual(flagInstructionLike(`Thanks for the call today. ${attack}`), [attack]);
+
   // A role line counts only at the real start of a line, not deep inside one.
   assert.deepEqual(flagInstructionLike(`${'x'.repeat(600)} system: hello`), []);
 

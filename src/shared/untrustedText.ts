@@ -62,9 +62,9 @@ export function flagInstructionLike(text: string): string[] {
 /** The text to show for the first marker in `line`, or undefined when there is none. */
 function findMarker(line: string): string | undefined {
   const head = line.slice(0, PIECE_CHARS);
-  if (ROLE_LINE.test(head) || INSTRUCTION_PATTERNS.some((p) => p.test(head))) return head;
-  for (let start = PIECE_CHARS; start < line.length; start += PIECE_CHARS) {
-    const piece = line.slice(start - PIECE_OVERLAP, start + PIECE_CHARS);
+  if (ROLE_LINE.test(head)) return head;
+  for (let start = 0; start < line.length; start += PIECE_CHARS) {
+    const piece = line.slice(Math.max(0, start - PIECE_OVERLAP), start + PIECE_CHARS);
     for (const p of INSTRUCTION_PATTERNS) {
       const m = p.exec(piece);
       // Show the marker onward, not the padding in front of it.
