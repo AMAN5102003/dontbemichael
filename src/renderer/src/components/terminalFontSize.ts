@@ -34,6 +34,7 @@ export function getTerminalFontSize(): number {
 /** Set the shared zoom level (clamped) and persist it. No-op when unchanged, so
  *  a redundant set can't churn every subscriber's effects. */
 export function setTerminalFontSize(next: number): number {
+  if (!Number.isFinite(next)) return current;
   const clamped = Math.min(MAX_TERMINAL_FONT_SIZE, Math.max(MIN_TERMINAL_FONT_SIZE, Math.round(next)));
   if (clamped === current) return current;
   current = clamped;
