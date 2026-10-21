@@ -104,10 +104,9 @@ function writeFixture(dir, name, content) {
     const b = kg.chunkText(text, { size: 800, overlap: 120 });
     assert.deepStrictEqual(a, b, 'deterministic');
     assert.ok(a.join(' ').includes('word'), 'covers content');
-  }); 
-  
+  });
 
-  // ─── scoreChunk ───────────────────────────────────────────────────────────
+  // ─── scoreChunk ─────────────────────────────────────────────────────────
   test('scoreChunk: 0 when no term matches, higher for title + phrase matches', () => {
     const terms = kg.tokenize('refund policy');
     const none = kg.scoreChunk({ title: 'Holidays', text: 'office closed friday' }, terms, 'refund policy');
@@ -135,7 +134,6 @@ function writeFixture(dir, name, content) {
 
     assert.ok(exact > partial, 'whole-word title match should receive a boost');
   });
-
 
   // ─── ingest → search round-trip: TEXT modality ──────────────────────────
   test('ingest a markdown doc, then search finds it with a snippet', () => {
