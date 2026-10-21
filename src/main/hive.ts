@@ -363,7 +363,7 @@ const where = (b: PromptBusiness): string =>
 export function michaelInstructions(name: string, b: PromptBusiness, p: PromptPaths): string {
   const type = b.typeName ? `, a ${b.typeName.toLowerCase()} business` : '';
   const briefing = b.briefing
-    ? b.briefing.replace(/\{Business\}/g, b.name?.trim() || 'the business').replace(/ in \{City\}/g, b.city?.trim() ? ` in ${b.city.trim()}` : '').replace(/\{City\}/g, b.city?.trim() || '')
+    ? b.briefing.replace(/\{Business\}/g, () => b.name?.trim() || 'the business').replace(/ in \{City\}/g, () => (b.city?.trim() ? ` in ${b.city.trim()}` : '')).replace(/\{City\}/g, () => b.city?.trim() || '')
     : '';
   return [
     '## Who you are',
