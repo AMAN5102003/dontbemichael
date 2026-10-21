@@ -2944,6 +2944,20 @@
       "with": "有了之后",
       "proofLine": "原样采用的工作，回答之前与之后。",
       "openQuestion": "打开“{{what}}”问题"
+    },
+    "organized": {
+      "open": "查看这些邮件",
+      "openOne": "查看 {{name}} 整理的邮件",
+      "title": "已整理的邮件",
+      "titleOne": "{{name}} 整理的邮件",
+      "noSubject": "无主题",
+      "archived": "已归档",
+      "archivedTo": "已归档到 {{folder}}",
+      "markedRead": "已标为已读",
+      "movedToJunk": "已移到垃圾邮件",
+      "byWho": "{{name}}：{{where}}",
+      "none": "这段时间没有整理邮件。",
+      "earlier": "还有 {{count}} 封是在应用开始记录名称之前整理的。"
     }
   },
   "foundations": {

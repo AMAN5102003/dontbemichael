@@ -15,6 +15,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **A change an agent makes in a connected app goes out once.** Writes to QuickBooks and other connected apps are recorded before they are sent, so an agent's retry, or a restart before the answer came back, never creates a second invoice, booking or contact. A write that may already have gone out is refused, and the agent tells Michael (contributed in #212).
 - **Team members can no longer read each other's conversations.** The engine's session records and prompt history are closed to every member's tools and shell, Michael included, even when the Claude folder is a link. The app still reads them itself (contributed in #387).
 - **Closing time shows what each waiting agent last said, and how long ago,** so a long job reads differently from a stuck one (contributed in #390).
+- **Pulse shows which emails were organized.** "See the emails" on the emails organized tile lists each email archived, marked read or moved to junk in the period: its subject, its sender, where it went, who moved it and when. A name under the bar lists only that member's. Senders and subjects are kept in the office's private folder for 62 days, then in a monthly archive that only a reset erases; mail organized before this update is counted as having no details.
 
 ### Fixed
 

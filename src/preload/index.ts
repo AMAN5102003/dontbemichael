@@ -2,6 +2,7 @@ import type { Period } from '../shared/teamPerformance';
 import type { HeldRow } from '../shared/heldRecord';
 import type { LearnedNote } from '../shared/teamLearning';
 import type { CheckedList } from '../shared/checkedRecord';
+import type { OrganizedList } from '../shared/organizedRecord';
 import type { PulseView } from '../shared/pulseView';
 import type { FoundationsView } from '../shared/foundations';
 import type { ResearchConfig } from '../shared/research';
@@ -1436,6 +1437,8 @@ const api = {
   /** The new notes behind Learning's number, for two local days (YYYY-MM-DD). */
   pulseLearned: (from: string, to: string): Promise<LearnedNote[]> => ipcRenderer.invoke('pulse:learned', from, to),
   pulseChecked: (fromMs: number, toMs: number, way: 'in' | 'out'): Promise<CheckedList> => ipcRenderer.invoke('pulse:checked', fromMs, toMs, way),
+  /** The emails organized in a span, all members or one (owner, 2026-10-21). */
+  pulseOrganized: (fromMs: number, toMs: number, agentId?: string): Promise<OrganizedList> => ipcRenderer.invoke('pulse:organized', fromMs, toMs, agentId),
   /** The Claude plan found in the owner's Claude account, and its list price a month. */
   claudePlan: (): Promise<{ label: string | null; listMonthly: number | null }> => ipcRenderer.invoke('claude:plan'),
   /** The owner's Apply on a way to save. A model change comes back for the store to make. */

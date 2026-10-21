@@ -48,6 +48,7 @@ import {
   agentMcpDir, legacyMdMailMcpPath, mdMailMcpPath, privateRoot
 } from '../shared/agentPrivatePaths';
 import { CHECKED_FILE } from '../shared/checkedRecord';
+import { ORGANIZED_FILE } from '../shared/organizedRecord';
 import { HELD_FILE } from '../shared/heldRecord';
 import { ensureCheckedBackfill } from './checkedBackfill';
 import { normalizeWeekly, weeklyDelayMs } from '../shared/weeklySchedule';
@@ -854,6 +855,12 @@ const pulse = new PulseService({
     // No file yet is an empty record; any other failure is the list's error (DD5).
     // Read without blocking the main process (ship review 2026-10-17).
     return fsPromises.readFile(join(privateRoot(home), CHECKED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
+  },
+  readOrganized: () => {
+    const home = readConfig().harnessHome;
+    if (!home) return '';
+    // No file yet is an empty record; any other failure is the list's error.
+    return fsPromises.readFile(join(privateRoot(home), ORGANIZED_FILE), 'utf8').catch((e: unknown) => { if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') return ''; throw e; });
   }
 });
 // The office log kinds Pulse counts, and the board each tick reads.
@@ -1086,7 +1093,7 @@ const integrationBroker = new IntegrationBroker({
   getSecret: integrations.getSecret,
   // Same folder as the mail send journal, never the hive agents can read.
   journalPath: join(app.getPath('userData'), 'broker-write-journal.json'),
-  mail: SHOW_MAILBOXES ? (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line), tellMichael: (subject, text) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body: text }, 'mail'); } }, agentId, op, body) : undefined
+  mail: SHOW_MAILBOXES ? (agentId, op, body) => handleMailRequest(mailService, { getConfig: () => readConfig(), audit: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }, organized: (moved) => hive.recordOrganized(moved), proposals: mailApprovals, fitCheck: standingFit, present: memberPresent, log: (line) => console.log(line), tellMichael: (subject, text) => { if (hive.enabled()) hive.send({ to: hiveGodId(), act: 'inform', subject, body: text }, 'mail'); } }, agentId, op, body) : undefined
 });
 
 /** Absolute path to the bundled md-mail MCP server (same resolution as the
@@ -6767,6 +6774,11 @@ ipcMain.handle('pulse:learned', (_evt, from: unknown, to: unknown) => {
 // checked here. A record that can't be read rejects, so the list says so.
 ipcMain.handle('pulse:checked', (_evt, fromMs: unknown, toMs: unknown, way: unknown) =>
   (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs) && (way === 'in' || way === 'out') ? pulse.checked(fromMs, toMs, way) : { rows: [], since: null }));
+// The emails organized list (owner, 2026-10-21): two times and, for one
+// member's list, their id, checked here. A record that can't be read rejects.
+ipcMain.handle('pulse:organized', (_evt, fromMs: unknown, toMs: unknown, agentId: unknown) =>
+  (typeof fromMs === 'number' && typeof toMs === 'number' && Number.isFinite(fromMs) && Number.isFinite(toMs)
+    ? pulse.organized(fromMs, toMs, typeof agentId === 'string' && agentId ? agentId : undefined) : { rows: [], since: null }));
 // Company foundations (office-foundations.md): the foundation card reads the
 // record and writes the owner's answer, a draft request or Not now.
 ipcMain.handle('foundations:get', () => foundations.view());

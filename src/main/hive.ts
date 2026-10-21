@@ -50,6 +50,7 @@ import { randomBytes, createHash, createHmac } from 'node:crypto';
 import { readMessageFile, researchDeliveredId } from './messageFile';
 import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
 import { CHECKED_ARCHIVE_DIR, CHECKED_FILE, keepText, splitForArchive, type CheckedOutcome, type CheckedRow } from '../shared/checkedRecord';
+import { ORGANIZED_ARCHIVE_DIR, ORGANIZED_FILE, organizedText, parseOrganized, type OrganizeAction, type OrganizedRow } from '../shared/organizedRecord';
 import { isAnyFixedUpkeep, isFixedUpkeep, type UpkeepKind } from '../shared/upkeep';
 import { heldWaits, heldWhy, tidy, HELD_FILE, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
@@ -2767,6 +2768,39 @@ export class HiveManager {
     } catch { /* best effort: the count still shows, and the list says how many have no details */ }
   }
   private checkedArchivedAt = 0;
+
+  /** One row per email a member archived, marked read or moved to junk, with
+   *  its sender and subject, in the owner's private folder (owner, 2026-10-21:
+   *  "how to see which emails were organized?"). The office log keeps only
+   *  the inbox numbers. Rows past 62 days move to the archive once a day, as
+   *  the checks record's do. */
+  recordOrganized(moved: { agentId: string; mailbox: string; action: OrganizeAction; folder: string | null; messages: ReadonlyArray<{ from?: unknown; subject?: unknown }> }): void {
+    const home = this.getHome();
+    if (!home || !moved.messages.length) return;
+    const at = Date.now();
+    const agentName = this.registry().agents[moved.agentId]?.name?.trim() || null;
+    const rows: OrganizedRow[] = moved.messages.map((m) => ({
+      at, agentId: moved.agentId, agentName, mailbox: moved.mailbox, action: moved.action, folder: moved.folder,
+      subject: organizedText(m.subject), from: organizedText(m.from)
+    }));
+    const file = join(privateRoot(home), ORGANIZED_FILE);
+    try {
+      mkdirSync(privateRoot(home), { recursive: true });
+      appendFileSync(file, rows.map((r) => `${JSON.stringify(r)}\n`).join(''), 'utf8');
+      if (at - this.organizedArchivedAt > 86_400_000) {
+        this.organizedArchivedAt = at;
+        const { keep: live, archive } = splitForArchive(readFileSync(file, 'utf8').split('\n'), at, parseOrganized);
+        if (archive.size) {
+          // The archive first: a stop in between leaves a row in both, never in neither.
+          const dir = join(privateRoot(home), ORGANIZED_ARCHIVE_DIR);
+          mkdirSync(dir, { recursive: true });
+          for (const [month, lines] of archive) appendFileSync(join(dir, `${month}.jsonl`), `${lines.join('\n')}\n`, 'utf8');
+          writeFileSync(file, live.length ? `${live.join('\n')}\n` : '', 'utf8');
+        }
+      }
+    } catch { /* best effort: the move stands, and the count still shows */ }
+  }
+  private organizedArchivedAt = 0;
 
   /** Start a check, or read the one under way. `key` is the content hash. */
   private trustCheck(key: string, start: () => Promise<InboundVerdict | OutboundVerdict>): InboundVerdict | OutboundVerdict | 'hold' {

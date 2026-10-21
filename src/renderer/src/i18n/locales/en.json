@@ -2944,6 +2944,20 @@
       "with": "With it",
       "proofLine": "Work kept as is, before and after the answer.",
       "openQuestion": "Open the {{what}} question"
+    },
+    "organized": {
+      "open": "See the emails",
+      "openOne": "See the emails {{name}} organized",
+      "title": "Emails organized",
+      "titleOne": "Emails {{name}} organized",
+      "noSubject": "No subject",
+      "archived": "Archived",
+      "archivedTo": "Archived to {{folder}}",
+      "markedRead": "Marked read",
+      "movedToJunk": "Moved to junk",
+      "byWho": "{{name}}: {{where}}",
+      "none": "No emails organized in this period.",
+      "earlier": "{{count}} more organized before the app kept their names."
     }
   },
   "foundations": {

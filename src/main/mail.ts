@@ -246,6 +246,15 @@ export interface SmtpLike {
   close?(): void;
 }
 
+/** One organize call's moved mail, for the owner's private list of it. */
+export interface OrganizedMove {
+  agentId: string;
+  mailbox: string;
+  action: 'archive' | 'mark_read' | 'mark_junk';
+  folder: string | null;
+  messages: Array<{ id: string; from: string; subject: string }>;
+}
+
 export interface MailDeps {
   getConfig(): MailAccessConfig;
   getPassword(mailboxId: string): string | undefined;
@@ -639,7 +648,9 @@ export class MailService {
    * with a label, to that label (a Gmail label, or a folder of that name on
    * other servers, made when missing). `mark_junk` marks them read and moves
    * them to the junk folder. `mark_read` leaves them where they are. Every
-   * outcome can be undone in the mailbox.
+   * outcome can be undone in the mailbox. `about` is each moved message's
+   * sender and subject, read just before the move, for the owner's list of
+   * organized mail; `folder` is where archived mail went (null: All Mail).
    */
   async organize(id: string, action: 'archive' | 'mark_read' | 'mark_junk', uids: number[], label?: string) {
     if (!uids.length) throw new MailError('bad-request', `${action} needs the message ids from search.`);
@@ -652,9 +663,19 @@ export class MailService {
       const found = uids.filter((u) => present.has(u));
       const missing = uids.filter((u) => !present.has(u));
       if (!found.length) throw new MailError('not-found', 'None of those messages are in the inbox any more.');
+      // Who sent each one and what it said, before it leaves the inbox. A
+      // mailbox that cannot say still has its mail moved; the list then shows
+      // the move without the words.
+      const words = new Map<number, { from: string; subject: string }>();
+      try {
+        for await (const m of c.fetch(found, { uid: true, envelope: true }, { uid: true })) {
+          words.set(Number(m.uid), { from: addrText(m.envelope?.from), subject: m.envelope?.subject ?? '' });
+        }
+      } catch { /* the move stands without the words */ }
+      const about = found.map((u) => ({ id: String(u), from: words.get(u)?.from ?? '', subject: words.get(u)?.subject ?? '' }));
       if (action === 'mark_read') {
         await c.messageFlagsAdd(found, ['\\Seen'], { uid: true });
-        return { done: found.map(String), missing: missing.map(String) };
+        return { done: found.map(String), missing: missing.map(String), about, folder: null };
       }
       // Where they go is settled before anything changes, so a mailbox with no
       // junk folder leaves the messages exactly as they were.
@@ -687,7 +708,8 @@ export class MailService {
       }
       await c.messageFlagsAdd(found, ['\\Seen'], { uid: true });
       await c.messageMove(found, destination, { uid: true });
-      return { done: found.map(String), missing: missing.map(String), ...(label ? { label } : {}) };
+      const folder = action === 'archive' ? (gmail ? label ?? null : destination) : null;
+      return { done: found.map(String), missing: missing.map(String), ...(label ? { label } : {}), about, folder };
     }, action === 'mark_read' ? 'Marking mail read' : action === 'mark_junk' ? 'Moving mail to junk' : 'Archiving mail');
   }
 
@@ -1077,7 +1099,7 @@ function ref(v: unknown): MailRef | undefined {
   return typeof o.mailbox === 'string' && (typeof o.id === 'string' || typeof o.id === 'number') ? { mailbox: o.mailbox, id: String(o.id) } : undefined;
 }
 
-type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean; tellMichael?: (subject: string, body: string) => void };
+type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; organized?: (moved: OrganizedMove) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean; tellMichael?: (subject: string, body: string) => void };
 
 /** Messages Michael has already heard were flagged, so a re-read does not tell him twice. */
 const flaggedTold = new Set<string>();
@@ -1410,10 +1432,13 @@ async function runMailRequest(
       const label = op === 'archive' ? str(body.label, 60)?.trim().replace(/[\r\n]/g, ' ') : undefined;
       const problem = label ? labelProblem(label) : null;
       if (problem) return { status: 400, body: { error: problem } };
-      const done = await svc.organize(mailbox!, op, uids, label);
+      const { about, folder, ...done } = await svc.organize(mailbox!, op, uids, label);
       // Every move is written to the office log, so the owner can see what an
       // agent cleared from the inbox and where it went.
       try { deps.audit?.({ kind: 'mail-organize', agentId, mailbox, action: op, ids: done.done, ...(label ? { label } : {}) }); } catch { /* the move stands */ }
+      // And each email's sender and subject to the owner's private list (the
+      // agent's answer stays as it was: it already read them).
+      try { deps.organized?.({ agentId, mailbox: mailbox!, action: op, folder, messages: about }); } catch { /* the move stands */ }
       return { status: 200, body: done };
     }
     if (!input.to || !input.subject) return { status: 400, body: { error: `${op} needs "to" and "subject".` } };

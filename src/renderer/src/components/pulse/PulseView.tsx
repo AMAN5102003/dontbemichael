@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import type { PulseView as PulseData } from '@shared/pulseView';
 import type { Advice } from '@shared/teamAdvice';
 import type { LearnedNote } from '@shared/teamLearning';
+import type { OrganizedList, OrganizedRow } from '@shared/organizedRecord';
 import { dayKey, teamAtWork, PERIODS, type Outcome, type Period, type WorkChip, type WorkKind } from '@shared/teamPerformance';
 import { keptSafe, REFUSAL_GATES, type KeptSafe, type RefusalGate } from '@shared/pulseSafety';
 import { pulseTiles, type PulseTile } from '@shared/pulseTiles';
@@ -184,7 +185,7 @@ function Section({ title, tip, children }: { title: string; tip?: string; childr
 }
 
 /** A bar of who did it, members of one department in its acc, m then d shades (D13). */
-function WhoBar({ by, colorOf, nameOf, height = 10, aria }: { by: Array<{ agentId: string; count: number }>; colorOf: (id: string, nth: number) => string; nameOf: (id: string) => string; height?: number; aria: string }) {
+function WhoBar({ by, colorOf, nameOf, height = 10, aria, onPick, pickLabel }: { by: Array<{ agentId: string; count: number }>; colorOf: (id: string, nth: number) => string; nameOf: (id: string) => string; height?: number; aria: string; onPick?: (id: string) => void; pickLabel?: (name: string) => string }) {
   const total = by.reduce((s, b) => s + b.count, 0) || 1;
   const seen = new Map<string, number>();
   const shades = by.map((b) => {
@@ -198,13 +199,18 @@ function WhoBar({ by, colorOf, nameOf, height = 10, aria }: { by: Array<{ agentI
       <div role="img" aria-label={aria} style={{ display: 'flex', height, borderRadius: 'var(--cth-r-pill)', overflow: 'hidden', gap: 2 }}>
         {by.map((b, i) => <i key={b.agentId} style={{ display: 'block', width: `${(b.count / total) * 100}%`, background: shades[i] }} />)}
       </div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: 'var(--cth-ink-2)' }} aria-hidden>
-        {by.map((b, i) => (
-          <span key={b.agentId} style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', fontSize: 11, color: 'var(--cth-ink-2)' }} aria-hidden={onPick ? undefined : true}>
+        {by.map((b, i) => {
+          const inner = <>
             <b style={{ width: 8, height: 8, borderRadius: '50%', background: shades[i], display: 'inline-block' }} />
             {nameOf(b.agentId)} <span style={mono}>{b.count}</span>
-          </span>
-        ))}
+          </>;
+          // A name opens that member's own list, where the tile has one.
+          return onPick
+            ? <button key={b.agentId} type="button" onClick={() => onPick(b.agentId)} aria-label={pickLabel?.(nameOf(b.agentId))}
+                style={{ display: 'inline-flex', gap: 5, alignItems: 'center', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 11, color: 'inherit', cursor: 'pointer' }}>{inner}</button>
+            : <span key={b.agentId} style={{ display: 'inline-flex', gap: 5, alignItems: 'center' }}>{inner}</span>;
+        })}
       </div>
     </div>
   );
@@ -231,6 +237,8 @@ export function PulseView() {
   const [heldOpen, setHeldOpen] = useState(false);
   // The new notes behind Learning's number (owner, 2026-10-18).
   const [learnedOpen, setLearnedOpen] = useState(false);
+  // The emails behind the organized count, everyone's or one member's (owner, 2026-10-21).
+  const [organizedOpen, setOrganizedOpen] = useState<{ agentId: string | null } | null>(null);
   // Quiet tiles opened from their chips, and the folded quiet members, until the
   // period changes; leaving Pulse unmounts the view (pulse-smart-view.md 2A, 1C).
   const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
@@ -421,7 +429,9 @@ export function PulseView() {
                 {pv ? pair(pv.outcomes.find((x) => x.kind === o.kind)?.total ?? 0, o.total, outcomeLabel(o))
                   : o.kind === 'check'
                   ? <WhoBar by={[{ agentId: '__work', count: o.sub ?? 0 }, { agentId: '__none', count: o.total - (o.sub ?? 0) }]} colorOf={(id) => (id === '__work' ? 'var(--cth-ink-2)' : 'var(--cth-line-2)')} nameOf={(id) => t(id === '__work' ? 'pulse.foundWork' : 'pulse.nothingToDo')} aria={outcomeLabel(o)} />
-                  : <WhoBar by={o.by} colorOf={colorOf} nameOf={nameOf} aria={outcomeAria(o)} />}
+                  : <WhoBar by={o.by} colorOf={colorOf} nameOf={nameOf} aria={outcomeAria(o)}
+                      {...(o.kind === 'email' && o.total > 0 ? { onPick: (id: string) => setOrganizedOpen({ agentId: id }), pickLabel: (name: string) => t('pulse.organized.openOne', { name }) } : {})} />}
+                {o.kind === 'email' && o.total > 0 && <button type="button" onClick={() => setOrganizedOpen({ agentId: null })} style={{ ...linkBtn, color: 'var(--cth-indigo-text)' }}>{t('pulse.organized.open')}</button>}
               </div>
     );
     const oTile = (k: WorkKind): ReactNode => { const o = s.outcomes.find((x) => x.kind === k); return o ? outcomeTile(o) : null; };
@@ -764,6 +774,11 @@ export function PulseView() {
       })()}
       {heldOpen && view && <HeldDetail from={view.snapshot.from} to={view.snapshot.to} count={(view.keptSafe ?? keptSafe([])).held} onClose={() => setHeldOpen(false)} />}
       {learnedOpen && view && <LearnedDetail from={view.snapshot.from} to={view.snapshot.to} nameOf={nameOf} onClose={() => setLearnedOpen(false)} />}
+      {organizedOpen && view && (() => {
+        const o = view.snapshot.outcomes.find((x) => x.kind === 'email');
+        const count = organizedOpen.agentId ? o?.by.find((b) => b.agentId === organizedOpen.agentId)?.count ?? 0 : o?.total ?? 0;
+        return <OrganizedDetail from={view.snapshot.from} to={view.snapshot.to} agentId={organizedOpen.agentId} count={count} nameOf={nameOf} onClose={() => setOrganizedOpen(null)} />;
+      })()}
     </div>
   );
 }
@@ -981,6 +996,42 @@ function HeldDetail({ from, to, count, onClose }: { from: string; to: string; co
           );
         })}
         {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.held.earlier', { count: earlier })}</div>}
+      </div>
+    </ListFrame>
+  );
+}
+
+/** The emails the organized tile counted (owner, 2026-10-21), newest first:
+ *  the subject and sender, where each went, who moved it and when. Read on
+ *  open from the owner's private record; moves made before the app kept the
+ *  words are counted as having no details. */
+function OrganizedDetail({ from, to, agentId, count, nameOf, onClose }: { from: string; to: string; agentId: string | null; count: number; nameOf: (id: string) => string; onClose: () => void }) {
+  const { t, i18n } = useTranslation();
+  const [fromMs, toMs] = spanMs(from, to);
+  const { data, failed, retry } = useListRows<OrganizedList>(() => window.cth.pulseOrganized(fromMs, toMs, agentId ?? undefined).then((r) => (r && Array.isArray(r.rows) ? r : { rows: [], since: null })), [from, to, agentId]);
+  const when = whenOf(i18n.language);
+  const rows = data?.rows ?? null;
+  const where = (r: OrganizedRow): string => r.action === 'mark_read' ? t('pulse.organized.markedRead')
+    : r.action === 'mark_junk' ? t('pulse.organized.movedToJunk')
+    : r.folder ? t('pulse.organized.archivedTo', { folder: r.folder }) : t('pulse.organized.archived');
+  const earlier = rows ? Math.max(0, count - rows.length) : 0;
+  return (
+    <ListFrame icon="mail" title={agentId ? t('pulse.organized.titleOne', { name: nameOf(agentId) }) : t('pulse.organized.title')} failed={failed} reading={!rows} onRetry={retry} onClose={onClose}>
+      <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {(rows ?? []).map((r, i) => (
+          <div key={`${r.at}-${i}`} role="listitem" style={{ ...rowBox, gap: 4 }}>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
+              <span dir="auto" style={{ fontSize: 13, fontWeight: 600, lineHeight: '18px', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.subject || t('pulse.organized.noSubject')}</span>
+              <span style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginInlineStart: 'auto', whiteSpace: 'nowrap' }}>{when(r.at)}</span>
+            </div>
+            {r.from && <div dir="auto" style={{ fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '17px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.from}</div>}
+            <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', lineHeight: '17px' }}>
+              {agentId ? where(r) : t('pulse.organized.byWho', { name: r.agentName ?? nameOf(r.agentId), where: where(r) })}
+            </div>
+          </div>
+        ))}
+        {rows && rows.length === 0 && earlier === 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.organized.none')}</div>}
+        {earlier > 0 && <div style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('pulse.organized.earlier', { count: earlier })}</div>}
       </div>
     </ListFrame>
   );

@@ -88,13 +88,14 @@ export function archiveMonth(at: number): string {
 
 /** Split the live file's lines into those kept and those archived, by month.
  *  A line that is not a row stays in the live file (the reader skips it), so
- *  nothing is ever dropped. */
-export function splitForArchive(lines: string[], now: number): { keep: string[]; archive: Map<string, string[]> } {
+ *  nothing is ever dropped. The organized mail list keeps its file the same
+ *  way, with its own reader. */
+export function splitForArchive(lines: string[], now: number, parse: (line: string) => { at: number } | null = parseChecked): { keep: string[]; archive: Map<string, string[]> } {
   const keep: string[] = [];
   const archive = new Map<string, string[]>();
   for (const l of lines) {
     if (!l.trim()) continue;
-    const r = parseChecked(l);
+    const r = parse(l);
     if (!r || r.at >= now - CHECKED_KEEP_MS) { keep.push(l); continue; }
     const m = archiveMonth(r.at);
     const list = archive.get(m);
