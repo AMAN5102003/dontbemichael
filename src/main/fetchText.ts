@@ -15,12 +15,19 @@ import { request as httpsRequest } from 'node:https';
  *  third-party pages, and a redirect loop there would otherwise never settle. */
 export const MAX_REDIRECTS = 5;
 
-export function getText(url: string, opts: { timeoutMs?: number } = {}): Promise<string> {
+/** Largest body read before giving up. Every caller fetches a small document
+ *  (the biggest, the skills catalog, is about 60 KB; skill installs refuse
+ *  more than 2 MB in all), and some URLs are scraped from third-party pages,
+ *  so an endless or huge body must not fill memory. */
+export const MAX_BYTES = 8 * 1024 * 1024;
+
+export function getText(url: string, opts: { timeoutMs?: number; maxBytes?: number } = {}): Promise<string> {
   return getBuffer(url, opts).then((body) => body.toString('utf8'));
 }
 
-export function getBuffer(url: string, opts: { timeoutMs?: number } = {}, redirects = 0): Promise<Buffer> {
+export function getBuffer(url: string, opts: { timeoutMs?: number; maxBytes?: number } = {}, redirects = 0): Promise<Buffer> {
   const timeoutMs = opts.timeoutMs ?? 12000;
+  const maxBytes = opts.maxBytes ?? MAX_BYTES;
   return new Promise((resolve, reject) => {
     const req = httpsRequest(url, { method: 'GET', headers: { 'user-agent': 'dontbemichael' } }, (res) => {
       // Follow a redirect once per hop; raw.githubusercontent does this for
@@ -37,8 +44,15 @@ export function getBuffer(url: string, opts: { timeoutMs?: number } = {}, redire
         return;
       }
       if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
+      // Counted in bytes as data arrives: a declared Content-Length can be
+      // missing or wrong.
       const chunks: Buffer[] = [];
-      res.on('data', (c: Buffer) => { chunks.push(c); });
+      let size = 0;
+      res.on('data', (c: Buffer) => {
+        size += c.length;
+        if (size > maxBytes) { reject(new Error('response too large')); req.destroy(); return; }
+        chunks.push(c);
+      });
       res.on('end', () => resolve(Buffer.concat(chunks)));
     });
     req.on('error', reject);
