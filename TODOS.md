@@ -118,19 +118,6 @@
 **Priority:** P2
 **Depends on:** The team performance build
 
-### A health readout for the Pulse telemetry (T9)
-
-**What:** Add `telemetry:health` (last batch time, events per batch, failed writes, refused hook frames per member from `HookServer.rejectedFrames()`), one log line per processor batch, and a single warning when the processor stalls.
-
-**Why:** When a Pulse number looks wrong there is no way to see whether points stopped flowing, writes failed or frames were refused; today nothing reads `rejectedFrames()`.
-
-**Context:** Deferred from plan: docs/designs/team-performance.md (T9, E3), owner choice at /ship of mit/delete-team-member, 2026-10-16. The store already counts failed writes per day (D15); the processor runs every 30 s from `index.ts`.
-
-**Effort:** S (human) / S (CC)
-**Priority:** P1
-**Depends on:** None
-
-### Keep Pulse's heavy reads off the main thread
 
 **What:** Read transcripts for the backfill line by line with a yield every few hundred lines, skip lines before the window before parsing tool results, and let the 30 s tick drain backfilled points instead of folding up to 100,000 at once; prune `telemetry_runs` with the events.
 

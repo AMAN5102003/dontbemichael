@@ -81,6 +81,7 @@ import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { TelemetryStore } from './telemetryStore';
 import { TelemetryProcessor } from './telemetryProcessor';
+import { PulseHealth } from '../shared/pulseHealth';
 import { PulseService } from './pulse';
 import { knownPrice } from './pricing';
 import bakedModelCatalog from '../shared/modelCatalog.json';
@@ -772,6 +773,18 @@ function foundationsForAgent(agentId: string): string | null {
   if (agentId === team.godId || agentId === 'god') return michaelFoundations(foundations.read(), team.office, team.nameOf);
   return sectionFor(foundations.read(), team.jobs[agentId] ?? [], team.nameOf);
 }
+// Whether points are flowing, for telemetry:health and the stall warning (T9).
+const pulseHealth = new PulseHealth();
+pulseTelemetry.onRecord = (office) => pulseHealth.point(office);
+/** One processor pass, noted for the health readout; a pass that read
+ *  something logs one line. */
+function pulseTick(office: string): number {
+  const started = Date.now();
+  const n = pulseProcessor.tick(office);
+  const line = pulseHealth.batch(n, Date.now() - started);
+  if (line) console.log(line);
+  return n;
+}
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
  *  ledger. The view refreshes when it lands. */
@@ -785,7 +798,7 @@ function pulseBackfillOnce(office: string): void {
   void runBackfill({ db, office, hiveRoot: root, projectsRoot: claudeProjectsRoot(), members: new Set(Object.keys(hive.registry().agents ?? {})), now: Date.now() })
     .then((n) => {
       console.log(`[pulse] backfill wrote ${n} points for ${office}`);
-      if (n > 0 && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
+      if (n > 0 && pulseTick(office) > 0) liveWebContents()?.send('pulse:updated');
     })
     .catch((e) => console.error('[pulse] backfill:', e))
     .finally(() => { if (pulseBackfilling === office) pulseBackfilling = null; });
@@ -6781,8 +6794,14 @@ ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {
   // Opening Pulse starts the backfill too, not only the 30 s beat, so a first
   // look right after an update gets the past weeks (the view refreshes when
   // they land).
-  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) { pulseBackfillOnce(office); pulseProcessor.tick(office); } } catch (e) { console.error('[pulse] snapshot tick', e); }
+  try { pulseTelemetry.flush(); const office = pulseOffice(); if (office) { pulseBackfillOnce(office); pulseTick(office); } } catch (e) { console.error('[pulse] snapshot tick', e); }
   return pulse.snapshot(isPeriod(period) ? period : 'this-week', compare === true);
+});
+// Whether Pulse's points are flowing (T9): the last batch, failed writes by
+// day and hook frames refused per member.
+ipcMain.handle('telemetry:health', () => {
+  const office = pulseOffice();
+  return pulseHealth.view(office, office ? pulseTelemetry.failedWrites(office) : {}, hookServer.rejectedFrames());
 });
 ipcMain.handle('pulse:apply', (_evt, id: unknown, expected: unknown) => (typeof id === 'string' ? pulse.apply(id, expected) : { ok: false, error: 'stale' }));
 ipcMain.handle('pulse:modelApplied', (_evt, id: unknown, agentId: unknown, from: unknown, to: unknown) =>
@@ -8208,11 +8227,15 @@ function armAlwaysOnBeats(): void {
   pulseFlushTimer = setInterval(() => { try { pulseTelemetry.flush(); } catch (e) { console.error('[pulse] flush', e); } }, 1_000);
   if (pulseTickTimer) clearInterval(pulseTickTimer);
   pulseTickTimer = setInterval(() => {
+    let office: string | null = null;
     try {
-      const office = pulseOffice();
+      office = pulseOffice();
       if (office) pulseBackfillOnce(office);
-      if (office && pulseProcessor.tick(office) > 0) liveWebContents()?.send('pulse:updated');
+      if (office && pulseTick(office) > 0) liveWebContents()?.send('pulse:updated');
     } catch (e) { console.error('[pulse] tick', e); }
+    // Points unread for 5 minutes: warned once, until a batch reads them.
+    const stalled = pulseHealth.stallWarning(office);
+    if (stalled) console.warn(stalled);
   }, 30_000);
   if (pulsePresenceTimer) clearInterval(pulsePresenceTimer);
   pulsePresenceTimer = setInterval(() => { try { pulseTelemetry.presence(powerMonitor.getSystemIdleTime(), false); } catch { /* presence is best-effort */ } }, 60_000);

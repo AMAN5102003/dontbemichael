@@ -17,9 +17,9 @@ test('the snapshot starts the backfill before it folds, and the view refreshes w
   const at = main.indexOf("ipcMain.handle('pulse:snapshot'");
   assert.ok(at > 0);
   const handler = main.slice(at, main.indexOf('\n});', at));
-  assert.match(handler, /if \(office\) \{ pulseBackfillOnce\(office\); pulseProcessor\.tick\(office\); \}/);
+  assert.match(handler, /if \(office\) \{ pulseBackfillOnce\(office\); pulseTick\(office\); \}/);
   // Once per office: a second open while it runs, or after it landed, starts nothing.
   assert.match(main, /if \(!db \|\| !root \|\| pulseBackfilling === office \|\| backfilled\(db, office\)\) return;/);
-  assert.match(main, /if \(n > 0 && pulseProcessor\.tick\(office\) > 0\) liveWebContents\(\)\?\.send\('pulse:updated'\);/);
+  assert.match(main, /if \(n > 0 && pulseTick\(office\) > 0\) liveWebContents\(\)\?\.send\('pulse:updated'\);/);
   assert.match(read('src/renderer/src/components/pulse/PulseView.tsx'), /window\.cth\.onPulseUpdated\(\(\) => \{ void load\(\); \}\)/);
 });
