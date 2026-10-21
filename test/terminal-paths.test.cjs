@@ -129,6 +129,14 @@ test('quoted prose keeps linking the file name inside it', () => {
   assert.deepEqual(tokensIn("Michael's notes: see plan.md' later"), ['plan.md']);
 });
 
+test('quoted prose that starts with a slash links only the file name inside it', () => {
+  assert.deepEqual(tokensIn('note: "/ see notes.md"'), ['notes.md']);
+  assert.deepEqual(tokensIn("note: '/ see notes.md'"), ['notes.md']);
+  assert.deepEqual(tokensIn('note: `./ then open plan.md`'), ['plan.md']);
+  // a real path with spaces inside its folder names still links whole
+  assert.deepEqual(tokensIn('saved "/Users/Jane/Business Reports/summary.md"'), ['/Users/Jane/Business Reports/summary.md']);
+});
+
 test('quoted versions and prose do not become file paths', () => {
   assert.deepEqual(tokensIn('version "v0.4.5", cost \'0.92\', called `spring.thaw`'), []);
 });

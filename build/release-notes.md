@@ -1,4 +1,5 @@
-- **Pete joins** the office's idle chatter.
-- **Reset & start over** starts truly fresh.
-- **Webhooks** hold all but a plain status question.
-- **Michael hears** what the privacy check stops.
+- **Company foundations** for every job.
+- **Company knowledge** you can open and edit.
+- **No switches** for knowledge search.
+- **Pulse** shows what it sees early.
+- **Windows** reads scans and photos.

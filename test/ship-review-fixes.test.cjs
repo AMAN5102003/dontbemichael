@@ -33,7 +33,7 @@ test('the task detail is a real dialog: Esc from a field stays in the field, foc
 
 test('the Done column reads newest first, folded or not', () => {
   // Value: protects=order stays the same when "N more" opens; fails_when=the expanded list goes back to file order; why_new=core review; seam=none
-  assert.match(read('src/renderer/src/components/TasksKanban.tsx'), /col\.key === 'done' \? \(showAllDone \|\| filtering \? \[\.\.\.all\]\.reverse\(\) : all\.slice\(-DONE_SHOWN\)\.reverse\(\)\) : all/);
+  assert.match(read('src/renderer/src/components/TasksKanban.tsx'), /col\.key === 'done' \? \(showAllDone \|\| filtering \? \[\.\.\.all\]\.reverse\(\) : all\.slice\(-DONE_SHOWN\)\.reverse\(\)\) : byNext\(all\)/, 'Done newest first; open columns by Next (task-board-order.test.cjs)');
 });
 
 test('a half written note never saves onto the next person', () => {
@@ -124,5 +124,5 @@ test('closing time: Cancel always stops it, and the bottom bar keeps its files, 
   assert.doesNotMatch(main, /\bfloorWindows\b|\bisFloor\b|window:newFloor/, 'the second window is gone (ship 2026-10-03)');
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /if \(closing\?\.phase !== 'error'\) cancelClosingTime\(\);/);
-  assert.match(app, /<div style=\{\{ display: closingOpen \? 'none' : 'contents' \}\}>\n\s+<BottomBar \/>/);
+  assert.match(app, /<div style=\{\{ display: closingOpen \|\| barHidden \? 'none' : 'contents' \}\}>\n\s+<BottomBar \/>/);
 });

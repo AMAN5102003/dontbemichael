@@ -36,7 +36,7 @@ test('an open panel on someone who goes home closes, to Needs you while anything
 test('the store, the stage and the app follow the rule, and Cancel brings everything back', () => {
   // Value: protects=5A 6A 7A 8A wiring; fails_when=select ignores the list, Cancel leaves people gone, the chip stays clickable, or mail tags keep full strength; why_new=new; seam=source pins, the renderer has no DOM harness
   const store = read('src/renderer/src/store/store.ts');
-  assert.match(store, /select: \(id\) => set\(\(s\) => \{\n\s*if \(!canOpen\(id, s\.goneHome\)\) return \{\};/);
+  assert.match(store, /select: \(id\) => \{ attemptLeave\(canOpen\(id, get\(\)\.goneHome\) \? \{ selectedId: id, rightColumn: 'person' \} : null, \(\) => set\(\(s\) => \{\n\s*if \(!canOpen\(id, s\.goneHome\)\) return \{\};/);
   assert.match(store, /: s\.selectedId && !canOpen\(s\.selectedId, s\.goneHome\)/);
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /setGoneHome\(r\.phase === 'cancelled' \? \[\] : \[\.\.\.\(r\.confirmed \?\? \[\]\), \.\.\.\(r\.excused \?\? \[\]\)\]\)/, 'Cancel empties it (7A)');

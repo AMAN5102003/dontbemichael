@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
 import { EditorView } from '@codemirror/view';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
@@ -11,33 +12,38 @@ import { html } from '@codemirror/lang-html';
 import { css } from '@codemirror/lang-css';
 import { yaml } from '@codemirror/lang-yaml';
 import { Icon } from './Icon';
-import { PixelButton } from './PixelButton';
+import { useAppTheme, type AppTheme } from '@/design/theme';
 
 // ─── Theme matching CTH palette ─────────────────────────────────────────────
-const cthEditorTheme = EditorView.theme({
-  '&': {
-    background: '#FCFAF0',
-    color: '#1A1320',
-    height: '100%',
-    fontFamily: 'var(--cth-font-terminal)',
-    fontSize: '16px'
-  },
-  '.cm-content': { caretColor: '#FF6B6B', padding: '8px 0' },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#FF6B6B', borderLeftWidth: '2px' },
-  '.cm-scroller': { fontFamily: 'inherit', overflow: 'auto' },
-  '.cm-gutters': {
-    background: '#F0EAD2',
-    color: '#6B5878',
-    borderRight: '1px solid #D9CFE0'
-  },
-  '.cm-activeLineGutter': { background: '#FFEC99' },
-  '.cm-activeLine': { background: 'rgba(255, 217, 61, 0.10)' },
-  '.cm-selectionBackground, ::selection': { background: '#FFEC99 !important' },
-  '.cm-searchMatch': { background: '#A8E6E0', outline: '1px solid #1A1320' },
-  '.cm-searchMatch.cm-searchMatch-selected': { background: '#FFD93D' }
-}, { dark: false });
+// CodeMirror injects real CSS, so chrome colours are --cth-* tokens and flip
+// with data-cth-theme. Syntax colours still need a light and a dark set: near
+// black ink (#1A1320) is invisible on the dark card.
+function editorChrome(dark: boolean) {
+  return EditorView.theme({
+    '&': {
+      background: 'var(--cth-paper-100)',
+      color: 'var(--cth-ink)',
+      height: '100%',
+      fontFamily: 'var(--cth-font-terminal)',
+      fontSize: '16px'
+    },
+    '.cm-content': { caretColor: 'var(--cth-coral-base)', padding: '8px 0' },
+    '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--cth-coral-base)', borderLeftWidth: '2px' },
+    '.cm-scroller': { fontFamily: 'inherit', overflow: 'auto' },
+    '.cm-gutters': {
+      background: 'var(--cth-cream-200)',
+      color: 'var(--cth-ink-500)',
+      borderRight: '1px solid var(--cth-ink-100)'
+    },
+    '.cm-activeLineGutter': { background: 'var(--cth-amber-soft)' },
+    '.cm-activeLine': { background: 'color-mix(in srgb, var(--cth-amber) 12%, transparent)' },
+    '.cm-selectionBackground, ::selection': { background: 'var(--cth-amber-soft) !important' },
+    '.cm-searchMatch': { background: 'var(--cth-indigo-soft)', outline: '1px solid var(--cth-ink)' },
+    '.cm-searchMatch.cm-searchMatch-selected': { background: 'var(--cth-amber)' }
+  }, { dark });
+}
 
-const cthSyntax = HighlightStyle.define([
+const lightSyntax = HighlightStyle.define([
   { tag: tags.keyword,        color: '#B197FC' },
   { tag: tags.operator,       color: '#6B5878' },
   { tag: [tags.string, tags.regexp], color: '#6BCF7F' },
@@ -50,6 +56,21 @@ const cthSyntax = HighlightStyle.define([
   { tag: tags.heading,        color: '#1A1320', fontWeight: 'bold' as any },
   { tag: tags.link,           color: '#4ECDC4', textDecoration: 'underline' as any },
   { tag: tags.meta,           color: '#6B5878' }
+]);
+
+const darkSyntax = HighlightStyle.define([
+  { tag: tags.keyword,        color: '#B197FC' },
+  { tag: tags.operator,       color: '#A5A2B8' },
+  { tag: [tags.string, tags.regexp], color: '#6BCF7F' },
+  { tag: [tags.number, tags.bool, tags.null], color: '#FF8C90' },
+  { tag: tags.comment,        color: '#A5A2B8', fontStyle: 'italic' },
+  { tag: tags.variableName,   color: '#ECEAF4' },
+  { tag: tags.function(tags.variableName), color: '#FFA07A' },
+  { tag: [tags.typeName, tags.className], color: '#4ECDC4' },
+  { tag: tags.propertyName,   color: '#CFCCDD' },
+  { tag: tags.heading,        color: '#ECEAF4', fontWeight: 'bold' as any },
+  { tag: tags.link,           color: '#4ECDC4', textDecoration: 'underline' as any },
+  { tag: tags.meta,           color: '#A5A2B8' }
 ]);
 
 function extensionsFor(filename: string) {
@@ -65,6 +86,16 @@ function extensionsFor(filename: string) {
   return [];
 }
 
+/** CodeMirror extensions for the current app theme. */
+function codeEditorExtensions(theme: AppTheme, filePath: string | null) {
+  const dark = theme === 'dark';
+  return [
+    editorChrome(dark),
+    syntaxHighlighting(dark ? darkSyntax : lightSyntax),
+    ...(filePath ? extensionsFor(filePath) : [])
+  ];
+}
+
 export interface CodeEditorProps {
   root: string;
   /** Relative file path within `root` */
@@ -78,6 +109,8 @@ export interface CodeEditorProps {
 export function CodeEditor({
   root, filePath, onOpenInIde, onCopyPath
 }: CodeEditorProps) {
+  const { t } = useTranslation();
+  const appTheme = useAppTheme();
   const [content, setContent] = useState<string>('');
   const [originalContent, setOriginalContent] = useState<string>('');
   const [loading, setLoading] = useState(false);
@@ -142,8 +175,8 @@ export function CodeEditor({
   }, [save]);
 
   const extensions = useMemo(
-    () => [cthEditorTheme, syntaxHighlighting(cthSyntax), ...(filePath ? extensionsFor(filePath) : [])],
-    [filePath]
+    () => codeEditorExtensions(appTheme, filePath),
+    [appTheme, filePath]
   );
 
   if (!filePath) {
@@ -196,23 +229,23 @@ export function CodeEditor({
         {onCopyPath && (
           <button
             onClick={onCopyPath}
-            title="Copy absolute path"
+            title={t('idePanel.copyAbsolutePath')}
             style={editorBtn}
-          >copy path</button>
+          >{t('idePanel.copyPath')}</button>
         )}
         <button
           onClick={save}
           disabled={!dirty || saveState === 'saving'}
-          title="Save (Cmd-S)"
+          title={t('idePanel.saveTitle')}
           style={{ ...editorBtn, opacity: dirty ? 1 : 0.5 }}
         >
-          {saveState === 'saving' ? '...' : saveState === 'saved' ? 'saved' : saveState === 'error' ? 'err' : 'save'}
+          {saveState === 'saving' ? '...' : saveState === 'saved' ? t('idePanel.saved') : saveState === 'error' ? t('idePanel.saveFailed') : t('idePanel.save')}
         </button>
         {onOpenInIde && (
           <button
             onClick={onOpenInIde}
-            title="Open in the IDE"
-            aria-label="Open in the IDE"
+            title={t('idePanel.openInIde')}
+            aria-label={t('idePanel.openInIde')}
             style={editorBtn}
           >
             <Icon name="code" />
@@ -223,16 +256,16 @@ export function CodeEditor({
       {/* Body */}
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: 12, color: 'var(--cth-ink-500)' }}>loading…</div>
+          <div style={{ padding: 12, color: 'var(--cth-ink-500)' }}>{t('idePanel.loading')}</div>
         ) : error ? (
-          <div style={{ padding: 12, color: 'var(--cth-coral)' }}>{error}</div>
+          <div style={{ padding: 12, color: 'var(--cth-coral-text)' }}>{error}</div>
         ) : (
           <CodeMirror
             value={content}
             onChange={(v) => setContent(v)}
             extensions={extensions}
             height="100%"
-            theme="light"
+            theme={appTheme}
             basicSetup={{
               lineNumbers: true,
               highlightActiveLine: true,
