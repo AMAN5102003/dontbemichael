@@ -21,11 +21,21 @@ test('the backdrop closes only when the press and the click are both on it', () 
   // Every v2 dialog frame closes through it (shell/Dialog.tsx).
   const frame = read('src/renderer/src/shell/Dialog.tsx');
   assert.match(frame, /const backdrop = useBackdropClose\(close\);/);
-  assert.match(frame, /<div \{\.\.\.backdrop\} style=\{\{\n      position: 'fixed', inset: 0,/);
+  assert.match(frame, /<div \{\.\.\.\(below \? \{\} : backdrop\)\} style=\{\{\n      position: 'fixed', inset: below \? '56px 0 0 0' : 0,/, 'only a wide panel\'s dialog (below) ignores margin clicks (wide panel WD4)');
   for (const f of ['AddAgentModal', 'EditAgentModal']) {
     const src = read(`src/renderer/src/components/${f}.tsx`);
     assert.ok(/<Dialog\b/.test(src) || /const backdrop = useBackdropClose\((?:onClose|close)\);/.test(src), f);
   }
+});
+
+// A click outside Settings closed it straight away and dropped staged changes,
+// while Esc and the close button asked first.
+test('the Settings backdrop asks before dropping unsaved changes, like Esc and close', () => {
+  const src = read('src/renderer/src/components/SettingsModal.tsx');
+  assert.match(src, /const backdrop = useBackdropClose\(\(\) => closeFnRef\.current\(\)\);/);
+  assert.match(src, /<div\n      \{\.\.\.backdrop\}\n      style=\{\{\n        position: 'fixed', inset: 0,/);
+  assert.doesNotMatch(src, /onClick=\{busy \? undefined : onClose\}/, 'the backdrop must not skip the unsaved changes check');
+  assert.match(src, /closeFnRef\.current = busy \? \(\) => \{\} : requestClose;/, 'busy still blocks every close');
 });
 
 test('Escape in a field, list or info bubble does not close a dialog', () => {

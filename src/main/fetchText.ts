@@ -12,6 +12,10 @@
 import { request as httpsRequest } from 'node:https';
 
 export function getText(url: string, opts: { timeoutMs?: number } = {}): Promise<string> {
+  return getBuffer(url, opts).then((body) => body.toString('utf8'));
+}
+
+export function getBuffer(url: string, opts: { timeoutMs?: number } = {}): Promise<Buffer> {
   const timeoutMs = opts.timeoutMs ?? 12000;
   return new Promise((resolve, reject) => {
     const req = httpsRequest(url, { method: 'GET', headers: { 'user-agent': 'dontbemichael' } }, (res) => {
@@ -19,14 +23,13 @@ export function getText(url: string, opts: { timeoutMs?: number } = {}): Promise
       // branch aliases and the request just fails without it.
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
-        getText(res.headers.location, opts).then(resolve, reject);
+        getBuffer(res.headers.location, opts).then(resolve, reject);
         return;
       }
       if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (c) => { body += c; });
-      res.on('end', () => resolve(body));
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => { chunks.push(c); });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
     });
     req.on('error', reject);
     req.setTimeout(timeoutMs, () => req.destroy(new Error('timed out')));

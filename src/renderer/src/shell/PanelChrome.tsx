@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useStore, actionText, type Agent } from '@/store/store';
+import { useDockCentered } from '@/hooks/useCenter';
 import { PixelBadge, type StatusKind } from '@/components/PixelBadge';
 import { useRtl } from '@/i18n/useDirection';
 import { isComposingKey } from '@shared/imeGuard';
 import { PersonAvatar } from '@/scene/office/props';
+import { Icon } from '@/components/Icon';
+import { NotReportingTag, useSilentEpisode } from '@/components/SilentEngine';
 import { closeTarget, columnLocked, focusNeedsYouPill } from './rightColumn';
 import { getNeedsYouFeed } from './useNeedsYou';
 
@@ -20,6 +23,8 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
 }) {
   const { t } = useTranslation();
   const raw = agent.action?.trim() ? actionText(agent.action.trim(), t) : '';
+  // Not reporting: the app can't vouch for its status, so the tag replaces it (SD14).
+  const silent = useSilentEpisode(agent.id);
   const caption = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
   return (
     <div style={{ flexShrink: 0, padding: '14px 14px 10px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -28,7 +33,7 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
             <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agent.name}</span>
-            <PixelBadge status={agent.status as StatusKind} style={{ fontSize: 10.5, lineHeight: '14px', padding: '1px 8px' }} />
+            {silent ? <NotReportingTag style={{ fontSize: 10.5, lineHeight: '14px', padding: '1px 8px' }} /> : <PixelBadge status={agent.status as StatusKind} style={{ fontSize: 10.5, lineHeight: '14px', padding: '1px 8px' }} />}
           </div>
           <div style={{ fontSize: 12, color: 'var(--cth-ink-3)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{role}</div>
           {caption && (
@@ -45,6 +50,7 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
               <PencilGlyph /> {t('panel.edit')}
             </button>
           )}
+          <WideButton />
           <button onClick={() => { const f = getNeedsYouFeed(); const to = closeTarget(columnLocked(f.status, f.count)); useStore.getState().setRightColumn(to); if (to === 'closed') focusNeedsYouPill(); }} aria-label={t('panel.close')} title={t('panel.close')} style={{ ...headerBtn, width: 32, padding: 0, justifyContent: 'center' }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
           </button>
@@ -53,6 +59,36 @@ export function PanelHeader({ agent, role, onEdit, extra, withNote = true }: {
       {/* Keyed by person, so a half written note never saves onto whoever is picked next. */}
       {withNote && !agent.isGod && <NoteRow key={agent.id} agent={agent} />}
     </div>
+  );
+}
+
+/** Opens the panel wide in the center of the window and back (wide panel WD6,
+ *  WD7). The choice is remembered; the button keeps focus as it switches. */
+/** `size` matches the header it sits in: 32 in a panel header, 30 beside a
+ *  dialog's close button (design review). `on` and `onToggle` let the 1:1 with
+ *  Michael use it for its own choice; a panel shows wide only while the 1:1
+ *  does not hold the center (8A). */
+export function WideButton({ disabled = false, size = 32, on, onToggle }: {
+  disabled?: boolean; size?: number; on?: boolean; onToggle?: () => void;
+}) {
+  const { t } = useTranslation();
+  const dockWide = useDockCentered();
+  const panelWide = useStore((s) => s.panelWide) && !dockWide;
+  const wide = on ?? panelWide;
+  const label = wide ? t('panel.backToSide') : t('panel.openWide');
+  return (
+    <button
+      type="button"
+      data-wide-button
+      onClick={onToggle ?? (() => useStore.getState().setPanelWide(!wide))}
+      disabled={disabled}
+      aria-label={label}
+      aria-pressed={wide}
+      title={label}
+      style={{ ...headerBtn, width: size, height: size, padding: 0, justifyContent: 'center', color: 'var(--cth-ink-2)', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+    >
+      <Icon name={wide ? 'minimize' : 'expand'} />
+    </button>
   );
 }
 

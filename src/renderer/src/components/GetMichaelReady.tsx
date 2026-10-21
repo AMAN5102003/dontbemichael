@@ -30,6 +30,7 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
   const { t } = useTranslation();
   const godName = useResolvedGodName();
   const [status, setStatus] = useState<EngineSetupStatus | undefined>();
+  const [statusFailed, setStatusFailed] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installFailed, setInstallFailed] = useState(false);
   const [browser, setBrowser] = useState(false);
@@ -50,9 +51,13 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
     const mine = ++reads.current;
     try {
       const s = await window.cth.engineSetupStatus(provider);
-      if (mine === reads.current) setStatus(s);
+      if (mine === reads.current) {
+        setStatus(s);
+        setStatusFailed(false);
+      }
       return s;
     } catch {
+      if (mine === reads.current) setStatusFailed(true);
       return undefined;
     }
   }, [provider]);
@@ -136,7 +141,7 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
     return () => clearInterval(iv);
   }, [browser, read]);
 
-  const phase = engineSetupPhase(status, { installing, installFailed, browser });
+  const phase = engineSetupPhase(status, { installing, installFailed, browser, statusFailed });
   // From a stop card, ready means the fix is done too: a new key saved, or a
   // fresh sign in finished.
   const fixPending = (fix === 'key' && keyForm) || (fix === 'signin' && status?.method !== 'apiKey' && !signedInAgain);
@@ -161,6 +166,13 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
   const claudeRow = (() => {
     switch (phase) {
       case 'checking': return <Row glyph={<Spinner />} tone="wait" label={t('engineSetup.claude')} status={t('engineSetup.checking')} />;
+      case 'checkFailed': return (
+        <Row icon="x" tone="bad" label={t('engineSetup.claude')} status={t('engineSetup.checkFailed')} bad>
+          <div style={actions}>
+            <PixelButton variant="primary" size="sm" onClick={() => { setStatusFailed(false); void read(); }}>{t('engineSetup.tryAgain')}</PixelButton>
+          </div>
+        </Row>
+      );
       case 'installing': return (
         <Row glyph={<Spinner />} tone="wait" label={t('engineSetup.claude')} status={t('engineSetup.installing')}>
           <div className="cth-engine-bar" aria-hidden><i /></div>
@@ -204,6 +216,7 @@ export function GetMichaelReady({ provider, onReadyChange, fix }: {
   const accountRow = (() => {
     switch (phase) {
       case 'checking':
+      case 'checkFailed':
       case 'installing':
       case 'installFailed':
         return <Row icon="clock" tone="idle" label={t('engineSetup.account')} status={t('engineSetup.waitingInstall')} dim />;

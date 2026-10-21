@@ -8,8 +8,7 @@ const {
   WORKER_WAKE_NUDGE,
   WORKER_WAKE_IDLE_MS,
   WORKER_WAKE_BOOT_GRACE_MS,
-  WORKER_WAKE_COOLDOWN_MS,
-  WORKER_WAKE_HITL_REARM_MS
+  WORKER_WAKE_COOLDOWN_MS
 } = loadTs('src/main/workerWake.ts');
 
 /** A permissive fact; tests override the fields they care about. */
@@ -92,15 +91,31 @@ test('never nudges while delivery is paused, agent paused, or halted', () => {
   assert.deepEqual(out, []);
 });
 
-test('a recent permission/HITL notification blocks nudges', () => {
+test('an open permission prompt blocks nudges until the agent moves on, however long it waits', () => {
+  // Value: protects=the nudge's Enter never answers a permission prompt; fails_when=the hold expires on a timer; why_new=owner 2026-10-15, Pete's prompts were approved by the nudge after 5 minutes; seam=none
   const w = new WorkerWakeWatchdog();
   w.noteSpawn('pty-alice', 0);
   const now = 200_000;
   w.noteHook('alice', 'Notification', 'Claude needs your permission to use Bash.', now - 1_000);
   assert.deepEqual(w.decide([fact()], now), []);
-  // after the rearm window the block expires
-  const later = now + WORKER_WAKE_HITL_REARM_MS + 1;
-  assert.deepEqual(w.decide([fact({ lastOutputAt: later - WORKER_WAKE_IDLE_MS - 1 })], later), ['alice']);
+  // An hour later, still open: still never typed into.
+  const later = now + 60 * 60_000;
+  assert.deepEqual(w.decide([fact({ lastOutputAt: later - WORKER_WAKE_IDLE_MS - 1 })], later), []);
+  // An idle notice while it is open does not release it.
+  w.noteHook('alice', 'Notification', 'Claude is waiting for your input', later + 1);
+  assert.deepEqual(w.decide([fact({ lastOutputAt: later - WORKER_WAKE_IDLE_MS - 1 })], later + 2), []);
+  // The tool ran (the prompt was answered): nudges resume.
+  w.noteHook('alice', 'PostToolUse', undefined, later + 3);
+  const after = later + 70_000;
+  assert.deepEqual(w.decide([fact({ lastOutputAt: after - WORKER_WAKE_IDLE_MS - 1 })], after), ['alice']);
+});
+
+test('a new session releases a prompt hold', () => {
+  const w = new WorkerWakeWatchdog();
+  w.noteSpawn('pty-alice', 0);
+  w.noteHook('alice', 'Notification', 'Claude needs your permission', 100_000);
+  w.noteHook('alice', 'SessionStart', undefined, 150_000);
+  assert.deepEqual(w.decide([fact()], 200_000), ['alice']);
 });
 
 test('an idle-waiting notification does NOT count as a HITL hold', () => {

@@ -36,7 +36,7 @@ test('an open panel on someone who goes home closes, to Needs you while anything
 test('the store, the stage and the app follow the rule, and Cancel brings everything back', () => {
   // Value: protects=5A 6A 7A 8A wiring; fails_when=select ignores the list, Cancel leaves people gone, the chip stays clickable, or mail tags keep full strength; why_new=new; seam=source pins, the renderer has no DOM harness
   const store = read('src/renderer/src/store/store.ts');
-  assert.match(store, /select: \(id\) => set\(\(s\) => \{\n\s*if \(!canOpen\(id, s\.goneHome\)\) return \{\};/);
+  assert.match(store, /select: \(id\) => \{ attemptLeave\(canOpen\(id, get\(\)\.goneHome\) \? \{ selectedId: id, rightColumn: 'person' \} : null, \(\) => set\(\(s\) => \{\n\s*if \(!canOpen\(id, s\.goneHome\)\) return \{\};/);
   assert.match(store, /: s\.selectedId && !canOpen\(s\.selectedId, s\.goneHome\)/);
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /setGoneHome\(r\.phase === 'cancelled' \? \[\] : \[\.\.\.\(r\.confirmed \?\? \[\]\), \.\.\.\(r\.excused \?\? \[\]\)\]\)/, 'Cancel empties it (7A)');
@@ -76,5 +76,5 @@ test('nobody who has gone home trades banter, and a closed office has none', () 
   assert.deepEqual(ids(['pam', 'jim', 'oscar', 'kevin', 'toby']), []);
   const stage = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/scene/studio/StudioStage.tsx'), 'utf8');
   assert.match(stage, /const closing = useClosingLights\(\);\n\s+const quote = useIdleQuote\(plan\.pods, paused \|\| !!closing\?\.all, life\.throwNote, accentOf, closing\?\.out \?\? NOBODY\);/);
-  assert.match(stage, /const quietPeople = \(\) => chatCandidates\(live\.current\.pods, live\.current\.gone, ACTIVE, ACTION_CLOCKING_IN\)\.filter\(\(p\) => p\.id !== RESEARCH_ID\);/);
+  assert.match(stage, /const quietPeople = \(\) => chatCandidates\(live\.current\.pods, live\.current\.gone, ACTIVE, ACTION_CLOCKING_IN\);/);
 });

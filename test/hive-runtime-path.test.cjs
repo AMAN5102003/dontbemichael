@@ -45,7 +45,7 @@ test('bootstrap materializes a PATH-visible `node`', async (t) => {
 
   const body = fs.readFileSync(shim, 'utf8');
   assert.match(body, /ELECTRON_RUN_AS_NODE=1/, 'without this the binary opens a second app window');
-  assert.ok(body.includes(process.execPath), 'execPath is re-baked each bootstrap so an app move/update heals');
+  assert.ok(body.includes(process.execPath), 'execPath is re-baked when it differs, so an app move/update heals');
   if (POSIX) assert.ok(fs.statSync(shim).mode & 0o111, 'must be executable');
 });
 

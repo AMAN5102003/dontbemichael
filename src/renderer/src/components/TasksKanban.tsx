@@ -1,5 +1,5 @@
 import { askTitle, askedAgo } from './askHeadline';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
@@ -13,10 +13,10 @@ import { useBackdropClose } from '@/hooks/useBackdropClose';
 
 export { openQuestion, openQuestions, waitsOnHuman, parseTasks, type HiveTask, type HumanQA } from './hiveTasks';
 import { refreshNeedsYou, updateNeedsYouTasks, useNeedsYou } from '@/shell/useNeedsYou';
-import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches } from './hiveTasks';
+import { resultHeadline, waitsOnHuman, type HiveTask, type TaskStatus, nextAtLabel, filterActive, taskMatches, byNext, nextGroup, type NextGroup } from './hiveTasks';
 import { FileText, useAskFileChecks } from './FileChip';
 import { blockedWithNothingAsked, michaelCardState, type WorkHours } from '@shared/ownerRequests';
-import { isAnswered, isWithdrawn } from '@shared/askMeRouting';
+import { askAsText, isAnswered, isWithdrawn, readAskShape } from '@shared/askMeRouting';
 
 type Status = TaskStatus;
 
@@ -124,6 +124,10 @@ export function TasksKanban() {
       : undefined, [agents, restorableAgents, godName]);
 
   const [showAllDone, setShowAllDone] = useState(false);
+  // A render a minute, so the time groups move with the clock (Today becomes
+  // Overdue, Tomorrow becomes Today); `now` above is read on each render.
+  const [, setTick] = useState(0);
+  useEffect(() => { const tick = setInterval(() => setTick((n) => n + 1), 60_000); return () => clearInterval(tick); }, []);
   // Search and one team member (issue 158). While either is set every match
   // shows, Done included, and the counts are of the matches.
   const [query, setQuery] = useState('');
@@ -224,8 +228,9 @@ export function TasksKanban() {
         {visibleColumns.map((col) => {
           const all = shown.filter((x) => x.status === col.key);
           // Done reads newest first, folded or not (it is kept in creation order).
-          // A filter shows every match, so an old Done card can be found.
-          const cards = col.key === 'done' ? (showAllDone || filtering ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : all;
+          // A filter shows every match, so an old Done card can be found. Every
+          // open column reads earliest Next first (owner, 2026-10-17).
+          const cards = col.key === 'done' ? (showAllDone || filtering ? [...all].reverse() : all.slice(-DONE_SHOWN).reverse()) : byNext(all);
           return (
             <div key={col.key} style={{
               flex: status ? '0 0 360px' : '1 1 0', minWidth: 200, maxWidth: status ? 480 : undefined, display: 'flex', flexDirection: 'column', borderRadius: 'var(--cth-r-xl)',
@@ -242,7 +247,14 @@ export function TasksKanban() {
                     {isFiltered ? t('kanban.noMatchingTasks') : t('kanban.empty')}
                   </div>
                 )}
-                {cards.map((x) => (
+                {(() => { const dated = cards.some((c) => nextGroup(c.nextAt, now) !== 'none'); return cards.map((x, i) => {
+                  // Open lanes are cut into time groups, each with its heading
+                  // (owner, 2026-10-17); Done is not.
+                  // A lane with no dated card shows no headings: a lone "No date" says nothing.
+                  const group = col.key === 'done' || !dated ? null : nextGroup(x.nextAt, now);
+                  const heading = group && (i === 0 || group !== nextGroup(cards[i - 1].nextAt, now))
+                    ? <GroupHeading key={`g-${group}`} group={group} first={i === 0} /> : null;
+                  return [heading, (
                   <TaskCard
                     key={x.id}
                     task={x}
@@ -255,7 +267,8 @@ export function TasksKanban() {
                     onOpen={() => openTaskDetail(x.id)}
                     onDismiss={() => dismissTask(x.id)}
                   />
-                ))}
+                  )];
+                }); })()}
                 {col.key === 'done' && !filtering && all.length > DONE_SHOWN && (
                   <button onClick={() => setShowAllDone((v) => !v)} style={{
                     alignSelf: 'flex-start', padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
@@ -268,6 +281,18 @@ export function TasksKanban() {
         })}
       </div>
     </div>
+  );
+}
+
+/** A time group's heading in an open lane: 11.5 px 600 `ink-3`, Overdue in
+ *  `coral-text` (DESIGN.md 7.20). */
+function GroupHeading({ group, first }: { group: NextGroup; first: boolean }) {
+  const { t } = useTranslation();
+  return (
+    <div role="heading" aria-level={3} data-next-group={group} style={{
+      margin: first ? '2px 2px -4px' : '6px 2px -4px', fontSize: 11.5, fontWeight: 600,
+      color: group === 'overdue' ? 'var(--cth-coral-text)' : 'var(--cth-ink-3)'
+    }}>{t(`kanban.group.${group}`)}</div>
   );
 }
 
@@ -417,7 +442,10 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
   const detailGodName = useResolvedGodName();
   // Every file the Q&A trail names, checked in one go rather than per question.
   const qaAssignee = typeof task.assignee === 'string' ? task.assignee : undefined;
-  const qaFiles = useAskFileChecks(task.humanQA, qaAssignee);
+  // Each question as the card shows it, options and parts included, so a file
+  // named in an option gets its chip checked too (ask-me-options.md).
+  const qaShown = useMemo(() => task.humanQA?.map((e) => ({ ...e, q: askAsText(e.q, readAskShape(e)) })), [task.humanQA]);
+  const qaFiles = useAskFileChecks(qaShown, qaAssignee);
   const col = COLUMNS.find((c) => c.key === task.status) ?? COLUMNS[0];
   // Belt + suspenders: parseTasks normalizes these, but the ledger is a
   // hand-written file — never trust a card's shape at the point of use.
@@ -572,7 +600,8 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
                         {ago && <span style={{ fontSize: 11, color: 'var(--cth-ink-3)' }}>{ago}</span>}
                         {open && <span style={{ marginInlineStart: 'auto', padding: '1px 8px', borderRadius: 999, background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)', fontSize: 10.5, fontWeight: 600 }}>{t('kanban.awaitingAnswer')}</span>}
                       </div>
-                      <FileText source={e.q} who={{ raisedBy: e.raisedBy, assignee: qaAssignee }} checks={qaFiles[e.raisedBy ?? ''] ?? {}} />
+                      {/* With its options or questions, which no longer sit in the text (ask-me-options.md). */}
+                      <FileText source={qaShown?.[i]?.q ?? e.q} who={{ raisedBy: e.raisedBy, assignee: qaAssignee }} checks={qaFiles[e.raisedBy ?? ''] ?? {}} />
                       {isAnswered(e) ? (
                         <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--cth-line)' }}>
                           <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--cth-green-text)', marginBottom: 2 }}>{t('kanban.answer')}</div>
@@ -584,6 +613,8 @@ export function TaskDetail({ task, all, assigneeName, onMove, onReopen, onAssign
                         <div dir={rtl ? 'auto' : undefined} style={{ marginTop: 6, fontSize: 12, color: 'var(--cth-ink-3)' }}>
                           {e.dismissedBy === 'card-closed'
                             ? t('kanban.askWithdrawnCardClosed')
+                            : e.dismissedBy === 'member-deleted'
+                            ? t('kanban.askWithdrawnMemberDeleted')
                             : e.dismissedReason?.trim()
                               ? t('kanban.askWithdrawnBecause', { reason: `\u2068${e.dismissedReason.trim()}\u2069` })
                               : t('kanban.askWithdrawn')}

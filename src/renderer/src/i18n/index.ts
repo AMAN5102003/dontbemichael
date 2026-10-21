@@ -89,6 +89,13 @@ export function setGodName(name: string | undefined | null): void {
   i18n.emit('languageChanged', i18n.language);
 }
 
+/** The name strings get as {{godName}}, for a name used as a value (a list
+ *  row addressed to Michael) rather than inside a sentence. */
+export function godNameNow(): string {
+  const v = i18n.options.interpolation?.defaultVariables as { godName?: unknown } | undefined;
+  return typeof v?.godName === 'string' && v.godName ? v.godName : DEFAULT_GOD_NAME;
+}
+
 /** The saved choice, or English. Never the OS locale — see the note above. */
 function detectLanguage(): string {
   try {

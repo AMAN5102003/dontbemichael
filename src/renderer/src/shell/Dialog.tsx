@@ -17,7 +17,7 @@ import { useBackdropClose } from '@/hooks/useBackdropClose';
  * animation holding one becomes the containing block for `position: fixed`,
  * so the dialog sized to the panel and its overflow clipped the footer.
  */
-export function Dialog({ title, onClose, busy = false, width = 520, footer, children, bodyStyle, zIndex = 300, closable = true, fill = false, align = 'center', over }: {
+export function Dialog({ title, onClose, busy = false, width = 520, footer, children, bodyStyle, zIndex = 300, closable = true, fill = false, align = 'center', over, actions, below = false, dim = true, label }: {
   title: ReactNode;
   onClose: () => void;
   busy?: boolean;
@@ -38,6 +38,15 @@ export function Dialog({ title, onClose, busy = false, width = 520, footer, chil
    *  resizes), like a sheet on the panel it edits. A stable function; when it
    *  finds nothing, `width`, `fill` and `align` apply. */
   over?: () => HTMLElement | null;
+  /** Buttons in the header, before close (Edit agent's open wide). */
+  actions?: ReactNode;
+  /** The backdrop starts under the 56 px top bar, so the Needs you pill stays
+   *  live, and a click on it never closes the dialog (wide panel WD4, WD8). */
+  below?: boolean;
+  /** False when something under it already dims the window (the wide panel). */
+  dim?: boolean;
+  /** The screen reader name when `title` is not plain text. */
+  label?: string;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement | null>(null);
@@ -56,19 +65,34 @@ export function Dialog({ title, onClose, busy = false, width = 520, footer, chil
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
+    // The panel moving to or from the center animates a transform, which
+    // neither observer sees: follow it frame by frame while it moves.
+    let frame = 0;
+    let until = 0;
+    const follow = (): void => { measure(); frame = performance.now() < until ? requestAnimationFrame(follow) : 0; };
+    const onMove = (e: Event): void => {
+      until = performance.now() + ((e as CustomEvent<{ ms?: number }>).detail?.ms ?? 0) + 60;
+      if (!frame) frame = requestAnimationFrame(follow);
+    };
     window.addEventListener('resize', measure);
-    return () => { ro.disconnect(); window.removeEventListener('resize', measure); };
+    window.addEventListener(PANEL_MOVE_EVENT, onMove);
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(frame);
+      window.removeEventListener('resize', measure);
+      window.removeEventListener(PANEL_MOVE_EVENT, onMove);
+    };
   }, [over]);
   return createPortal((
-    <div {...backdrop} style={{
-      position: 'fixed', inset: 0, zIndex, background: 'var(--cth-backdrop)',
+    <div {...(below ? {} : backdrop)} style={{
+      position: 'fixed', inset: below ? '56px 0 0 0' : 0, zIndex, background: dim ? 'var(--cth-backdrop)' : 'transparent',
       display: 'flex', alignItems: 'center', justifyContent: align === 'end' ? 'flex-end' : 'center', padding: 16
     }}>
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
-        aria-label={typeof title === 'string' ? title : undefined}
+        aria-label={label ?? (typeof title === 'string' ? title : undefined)}
         tabIndex={-1}
         style={{
           ...(box
@@ -82,10 +106,9 @@ export function Dialog({ title, onClose, busy = false, width = 520, footer, chil
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px 14px 22px', borderBottom: '1px solid var(--cth-line)', flexShrink: 0 }}>
           <h2 style={{ margin: 0, flex: 1, minWidth: 0, fontSize: 16, fontWeight: 600, letterSpacing: '-0.02em', color: 'var(--cth-ink)' }}>{title}</h2>
+          {actions}
           {closable && (
-            <button type="button" onClick={close} disabled={busy} aria-label={t('common.close')} style={closeBtn}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
-            </button>
+            <CloseButton onClose={close} busy={busy} label={t('common.close')} />
           )}
         </div>
         <div style={{ padding: '18px 22px', overflowY: 'auto', minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column', gap: 14, ...bodyStyle }}>
@@ -99,6 +122,35 @@ export function Dialog({ title, onClose, busy = false, width = 520, footer, chil
       </div>
     </div>
   ), document.body);
+}
+
+/** Sent on window when the right column starts moving between the side and
+ *  the center; `detail.ms` is how long the move takes (App.tsx). */
+export const PANEL_MOVE_EVENT = 'cth:panel-move';
+/** How long that move takes: --cth-dur-slow in tokens.css (keep the two equal). */
+export const PANEL_MOVE_MS = 320;
+
+/** Extracted so it can hold its own hover state without polluting Dialog. */
+function CloseButton({ onClose, busy, label }: { onClose: () => void; busy: boolean; label: string }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      disabled={busy}
+      aria-label={label}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        ...closeBtn,
+        background: hover && !busy ? 'var(--cth-neutral-soft)' : 'var(--cth-card)',
+        color: hover && !busy ? 'var(--cth-ink)' : 'var(--cth-ink-2)',
+        transition: 'background var(--cth-dur-fast) var(--cth-ease), color var(--cth-dur-fast) var(--cth-ease)'
+      }}
+    >
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+    </button>
+  );
 }
 
 const closeBtn: CSSProperties = {

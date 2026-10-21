@@ -32,7 +32,7 @@ test('the view tabs sit in the top bar, and the board covers the office above th
   const board = app.indexOf("{floorView !== 'office' && (");
   const bottom = app.indexOf('<BottomBar />');
   assert.ok(office > 0 && board > office && bottom > board, 'office, then the board over it, then the bottom bar over both');
-  assert.match(app.slice(board, board + 700), /position: 'absolute', inset: 0, zIndex: 50,[\s\S]*paddingBottom: 96,[\s\S]*\{floorView === 'tasks' && <TasksKanban \/>\}/);
+  assert.match(app.slice(board, board + 700), /position: 'absolute', inset: 0, zIndex: 50,[\s\S]*paddingBottom: barHidden \? 0 : 96,[\s\S]*\{floorView === 'tasks' && <TasksKanban \/>\}/);
   assert.match(read('src/renderer/src/shell/TopBar.tsx'), /<ViewTabs \/>/);
   assert.doesNotMatch(app, /<FloorViewToggle \/>/);
 });
@@ -116,13 +116,15 @@ test('Tasks and Who talks to whom take the whole window: the right column hides 
   const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
   const app = read('src/renderer/src/App.tsx');
   // A file tab keeps the column beside it (open-file-tab.md, F1); Tasks and the graph still hide it.
-  assert.match(app, /const columnShown = columnOpen && \(floorView === 'office' \|\| floorView === 'file'\);/);
+  // Pulse hides it like Tasks (owner, 2026-10-15).
+  assert.match(app, /const columnView = floorView === 'office' \|\| floorView === 'file';\s*const columnShown = columnOpen && columnView;/);
   assert.match(app, /\{columnShown && \(\n\s+<SidebarSplitter/);
-  assert.match(app, /display: floorView === 'office' \|\| floorView === 'file' \? 'flex' : 'none', flexDirection: 'column'/);
+  assert.match(app, /display: columnView \? 'flex' : 'none', flexDirection: 'column'/);
   assert.match(app, /\{\(columnOpen \|\| exiting\) && \(/, 'the column stays mounted while hidden');
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /function officeView\(view: FloorView\): \{ floorView\?: FloorView \} \{\n\s+if \(view === 'office' \|\| view === 'file'\) return \{\};\n\s+try \{ window\.localStorage\.setItem\(LS_FLOOR_VIEW, 'office'\); \}/);
-  assert.equal((store.match(/\.\.\.officeView\(s\.floorView\)/g) || []).length, 5, 'select, openAgentMemory, openNeedsYou and both Michael tab requests');
-  assert.match(store, /rightColumn: 'person', \.\.\.officeView\(s\.floorView\) \};/);
-  assert.match(store, /rightColumn: 'board',\n\s+\.\.\.officeView\(s\.floorView\),/);
+  assert.equal((store.match(/\.\.\.officeView\(s\.floorView\)/g) || []).length, 6, 'select, openAgentMemory, openAgentProfile (Pulse), openNeedsYou and both Michael tab requests');
+  // Each also claims the center from the wide 1:1 (wide-dock.test.cjs, 8A).
+  assert.match(store, /rightColumn: 'person', centerClaim: 'column', \.\.\.officeView\(s\.floorView\) \};/);
+  assert.match(store, /rightColumn: 'board',\n\s+centerClaim: 'column',\n\s+\.\.\.officeView\(s\.floorView\),/);
 });

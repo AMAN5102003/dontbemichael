@@ -1,4 +1,5 @@
-- **Pete** is the one teammate on the internet.
-- **A trust layer** checks what reaches Pete.
-- **The office stops** when your account can't run.
-- **Links name** the site they open.
+- **Company foundations** for every job.
+- **Company knowledge** you can open and edit.
+- **No switches** for knowledge search.
+- **Pulse** shows what it sees early.
+- **Windows** reads scans and photos.

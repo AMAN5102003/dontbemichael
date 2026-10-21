@@ -74,8 +74,9 @@ export function ThreadsPanel({ agentId }: ThreadsPanelProps) {
   };
   const dayLabel = (day: string) => {
     if (!day) return t('threads.undated');
-    const today = localDay(new Date().toISOString());
-    const yesterday = localDay(new Date(Date.now() - 86_400_000).toISOString());
+    const now = new Date().toISOString();
+    const today = localDay(now);
+    const yesterday = localDay(now, -1);
     if (day === today) return t('threads.today');
     if (day === yesterday) return t('threads.yesterday');
     const [y, m, d] = day.split('-').map(Number);

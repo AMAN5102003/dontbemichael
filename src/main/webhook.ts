@@ -74,7 +74,8 @@ export interface WebhookEndpointRef {
 export interface WebhookInbound {
   message: string;
   title?: string;
-  /** Declared by the caller when they bothered to; the handler classifies when not. */
+  /** Declared by the caller. Only 'directive' is taken as given; a 'communication'
+   *  label is checked like an unlabeled message (index.ts handleWebhookMessage). */
   kind?: InboundKind;
   /** Who is sending, for the trigger history. Falls back to the endpoint name. */
   from?: string;

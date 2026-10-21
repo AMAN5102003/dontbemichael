@@ -23,7 +23,7 @@ export const RESEARCH_ROLE = 'Research';
 
 /** Words the hive routes by, and the app's own senders: never a name for
  *  Research, or messages meant for them would go its way (ship review). */
-export const ROUTING_WORDS: readonly string[] = ['human', 'owner', 'god', 'michael', 'broadcast', 'all', 'everyone', 'team', 'scheduler', 'heartbeat', 'mail', 'system', 'privacy-check', 'app'];
+export const ROUTING_WORDS: readonly string[] = ['human', 'owner', 'god', 'michael', 'broadcast', 'all', 'everyone', 'team', 'scheduler', 'heartbeat', 'mail', 'system', 'privacy-check', 'app', 'foundations'];
 
 /** A name the owner may give Research, or undefined: one short line of
  *  letters (any language), digits, spaces and . ' -, never a routing word.
@@ -90,7 +90,13 @@ export function refusalForClass(id: DataClassId): string {
 }
 export const REFUSAL_FILES = `Not sent to ${RESEARCH_NAME}: files can't be sent to ${RESEARCH_NAME}. Put the question in the message.`;
 export const REFUSAL_OFF = `Not sent: ${RESEARCH_NAME} is off, so nobody can look this up. Work without it.`;
-export const REFUSAL_UNSURE = `Not sent to ${RESEARCH_NAME}: the trust layer could not confirm it holds no private details. Ask again in plainer words, without names, contact details or figures.`;
+export const REFUSAL_UNSURE = `Not sent to ${RESEARCH_NAME}: the privacy check could not confirm it holds no private details. Ask again in plainer words, without names, contact details or figures.`;
+/** The check itself could not run (no answer, an answer it could not read,
+ *  too slow, settings it could not read): still not sent, and not the wording. */
+export const REFUSAL_CHECK_FAILED = `Not sent to ${RESEARCH_NAME}: the privacy check could not run. This is not about the wording, so send it again later.`;
+/** The check passed, but the app could not write the clean copy to Research's
+ *  inbox (a disk error) on any of its tries: not the wording either. */
+export const REFUSAL_NOT_DELIVERED = `Not sent to ${RESEARCH_NAME}: the app could not deliver it after its privacy check. This is not about the wording, so send it again later.`;
 export const REFUSAL_TOO_LONG = `Not sent to ${RESEARCH_NAME}: it is too long to check. Send the question, not the whole text.`;
 
 /** The subject of the note telling a sender what Research was asked. */

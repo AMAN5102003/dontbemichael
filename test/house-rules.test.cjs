@@ -142,7 +142,7 @@ test('team members file once in the triage folder, Michael alone writes the boar
   // Value: protects=the owner's card model and the single writer reach every agent; fails_when=a prompt drops the triage folder, write once, the numbered bundle, the split by who answers, the partial re-ask, the done rule, or still lets a team member write tasks.json; why_new=owner decisions 2026-10-11 and review D8; seam=prompt text
   const hive = fs.readFileSync(path.resolve(__dirname, '..', 'src/main/hive.ts'), 'utf8');
   assert.match(hive, /file it for \$\{michael\} as one new file in the triage folder \(\$\{join\(p\.hiveRoot, 'triage'\)\}\), named by the time you file it and your id/, 'team member files');
-  assert.match(hive, /Put all the questions one activity raised for the owner in one ask, as a numbered list, and merge the ones that ask the same thing\./);
+  assert.match(hive, /Put all the questions one activity raised for the owner in one ask, one question to a line with any choices you would offer, and merge the ones that ask the same thing\./);
   assert.match(hive, /file a second one naming them in "waitingOn"\./, 'split by who answers');
   assert.match(hive, /Write each filing once and never change it\./);
   assert.match(hive, /You never write tasks\.json, your own cards included: when your work moves, such as finished, waiting on someone, or due again at a set time, tell \$\{michael\} and he moves its card\./);
@@ -153,9 +153,12 @@ test('team members file once in the triage folder, Michael alone writes the boar
   assert.match(hive, /Only Michael writes \\`tasks\.json\\` and \\`board\.md\\`/, 'the protocol');
   assert.doesNotMatch(hive, /Keep your own card's status current/);
   assert.doesNotMatch(hive, /file a card yourself in tasks\.json/);
-  assert.match(hive, /the questions one activity raised go in that ask as a numbered list, answered together/);
+  assert.match(hive, /the questions one activity raised go in that ask\\'s "parts", answered together/);
   assert.match(hive, /Questions from a different activity get a card of their own, never a parked note\./);
-  assert.match(hive, /When the answer leaves any question of the ask unanswered, first add one new ask on the same card holding only those questions and keep the card Blocked, or, when that card is done, make a new card that asks them/);
+  // The owner never has to answer every question (ask-me-options.md, eng review D1).
+  assert.match(hive, /when the answer leaves any unanswered, send those questions to the team member who raised them with the answers; they settle what they can and file back only what they still need, and you ask the owner again only then\./);
+  // No instruction is left telling anyone to write an ask as a list (owner, 2026-10-15).
+  assert.doesNotMatch(hive, /numbered list|numbered options|"1\." number|bullet or/);
   assert.match(hive, /Only the owner takes a card out of Done, to correct one marked done by mistake/);
   assert.doesNotMatch(hive, /never add a different question to a card that already has one open/);
 });
