@@ -90,6 +90,59 @@ test('routine, verbs and the quoted gist', () => {
   assert.equal(gist({ subject: 'x'.repeat(200), body: '' }).length, 160);
 });
 
+test('business questions about closing time remain conversations', () => {
+  const subjects = [
+    'What is the closing time for this deal?',
+    'Closing time for the deal',
+    'Closing time for this shipment?',
+    'Meeting notes mention Closing time: reminder'
+  ];
+  const messages = subjects.map((subject, i) => msg({ id: `business-${i}`, from: i === 1 ? 'human' : 'sales', subject, created_at: at(i + 9) }));
+  const v = messageView(messages);
+  assert.deepEqual(v.days[0].threads.map((t) => t.first.id).sort(), messages.map((m) => m.id));
+  assert.equal(v.notices.closing, 0);
+  for (const m of messages) assert.equal(isRoutine(m), false, m.subject);
+});
+
+test('closing protocol and controller messages count as closing notices', () => {
+  const notices = [
+    ['worker', 'CLOSING-TIME-ACK'],
+    ['worker', 'Closing Time Ack: cards saved'],
+    ['manager-42', 'closing_time_complete'],
+    ['manager-42', 'Closing time — save work'],
+    ['worker', 'Re: CLOSING-TIME-ACK'],
+    ['god', 'Closing time: save your work and send CLOSING-TIME-ACK'],
+    ['human', 'Closing time: close the office now'],
+    ['human', 'Closing time: reminder'],
+    ['human', 'Closing time cancelled'],
+    ['human', 'Closing time: closing without Pam'],
+    ['human', 'Closing time: Pam was archived'],
+    ['human', "Closing time: Pam's terminal ended"],
+    ['human', 'Closing time: still waiting on the team']
+  ].map(([from, subject], i) => msg({ id: `notice-${i}`, from, subject, created_at: at(i + 9) }));
+  const v = messageView([
+    ...notices,
+    msg({ id: 'scheduled', from: 'scheduler', subject: 'Check emails', created_at: at(20) }),
+    msg({ id: 'system', from: 'system', subject: 'Office ready', created_at: at(21) })
+  ]);
+  assert.equal(v.notices.closing, notices.length);
+  assert.equal(v.notices.scheduled, 1);
+  assert.equal(v.notices.other, 1);
+  assert.deepEqual(v.days, []);
+  for (const m of notices) assert.equal(isRoutine(m), true, m.subject);
+});
+
+test('every subject closing time sends is a notice, whatever name it carries', () => {
+  // Value: protects=closing the office never fills Messages with the app's own notes; fails_when=a closing time subject (plain "Closing time" to each member, someone back, not reporting, wait after all) shows as a conversation; why_new=review of #479 found four the first list missed; seam=source scan of src/main/closingTime.ts
+  const src = read('src/main/closingTime.ts');
+  const subjects = [];
+  for (const line of src.split('\n').filter((l) => /subject: /.test(l))) {
+    for (const m of line.matchAll(/(['`])(Closing time[^'`]*)\1/g)) subjects.push(m[2].replace(/\$\{[^}]+\}/g, 'Pam'));
+  }
+  assert.ok(subjects.length >= 10, `found ${subjects.length} subjects`);
+  for (const s of subjects) assert.equal(isRoutine({ from: 'human', subject: s }), true, s);
+});
+
 test('no accordion bars: light rows, day headings, one notices line, plain verbs', () => {
   const src = read('src/renderer/src/components/ThreadsPanel.tsx');
   assert.doesNotMatch(src, /PixelPanel/, 'no boxed panel per conversation');

@@ -29,7 +29,7 @@ import {
   renameSync, rmSync, appendFileSync, openSync, fsyncSync, closeSync
 } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { runHiddenClaude } from './hiddenClaude';
+import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
 import {
   INDEX_BUDGET_TOKENS, INDEX_PRUNE_AT, applyOps, archiveLines, entriesBlock, estimateTokens,
   legacyNotes, parseInbox, parseIndex, renderIndex, validateOps, type MemoryEntry
@@ -64,7 +64,18 @@ export interface TidyResult {
   id: string;
   tidied: boolean;
   reason: string;
-  stats?: { added: number; updated: number; deleted: number; procedures: number; repeats: number };
+  stats?: { added: number; updated: number; deleted: number; procedures: number; repeats: number; dupes: number };
+  /** Model ops the checks dropped, by reason. Absent when none were dropped. */
+  dropped?: Record<string, number>;
+}
+
+/** A held notes file whose notes are now elsewhere (the index or the inbox):
+ *  removed, or emptied when it can't be (Windows can hold a file open), so no
+ *  pass ever reads the same notes back twice. */
+function dropHeld(file: string): void {
+  try { rmSync(file, { force: true }); } catch {
+    try { writeFileSync(file, '', 'utf8'); } catch { /* left as is */ }
+  }
 }
 
 export class MemoryTidy {
@@ -73,11 +84,15 @@ export class MemoryTidy {
 
   /**
    * @param getHome      harnessHome, read lazily so the tidy-up follows the office.
-   * @param getCommand   The base `claude` command (only its binary is used).
+   * @param getCommand   The engine command (only its binary is used).
    * @param getEnv       Extra env for the headless call.
    * @param isIdle       Whether the office is quiet right now.
    * @param nameOf       An agent's display name, for the index heading.
    * @param appendLog    Sink for `memory-tidy` events (hive log.jsonl).
+   * @param onAdded      The notes a pass added to an index, once the index is
+   *                     written: Pulse records each in the app's own store, so
+   *                     an edit never counts as learning and no agent can
+   *                     change its own count (owner, 2026-10-18).
    */
   constructor(
     private getHome: () => string | null,
@@ -85,7 +100,9 @@ export class MemoryTidy {
     private getEnv: () => Record<string, string>,
     private isIdle: () => boolean,
     private nameOf: (id: string) => string,
-    private appendLog: (event: Record<string, unknown>) => void
+    private appendLog: (event: Record<string, unknown>) => void,
+    private getModelEngine: () => HiddenModelEngine = () => ({}),
+    private onAdded: (agentId: string, added: Array<{ id: string; source: string }>) => void = () => {}
   ) {}
 
   start(): void {
@@ -133,7 +150,7 @@ export class MemoryTidy {
     // Notes held by a pass that crashed go back into the inbox first.
     const stranded = join(memDir, 'inbox.processing.md');
     if (existsSync(stranded)) {
-      try { appendFileSync(inboxPath, '\n' + readFileSync(stranded, 'utf8')); rmSync(stranded, { force: true }); } catch { /* next pass */ }
+      try { appendFileSync(inboxPath, '\n' + readFileSync(stranded, 'utf8')); dropHeld(stranded); } catch { /* next pass */ }
     }
     if (!existsSync(indexPath) && !existsSync(inboxPath)) return null;
 
@@ -169,8 +186,9 @@ export class MemoryTidy {
     }
     const restore = () => {
       if (!held) return;
-      try { appendFileSync(inboxPath, (existsSync(inboxPath) ? '\n' : '') + held); rmSync(processing, { force: true }); }
-      catch { /* the processing file stays; the next pass reads it back below */ }
+      try { appendFileSync(inboxPath, (existsSync(inboxPath) ? '\n' : '') + held); }
+      catch { return; /* the processing file stays; the next pass reads it back below */ }
+      dropHeld(processing);
     };
 
     const today = localDay(new Date().toISOString());
@@ -187,7 +205,7 @@ export class MemoryTidy {
       restore();
       return this.abort(id, 'model-failed', 'no list of changes in the response');
     }
-    const ops = validateOps(raw, entries);
+    const { ops, dropped } = validateOps(raw, entries);
     const outcome = applyOps(entries, ops, today);
 
     try {
@@ -209,21 +227,27 @@ export class MemoryTidy {
       for (const p of outcome.procedures) atomicWrite(join(memDir, 'procedures', `${p.slug}.md`), p.content);
       if (outcome.archived.length) appendFileSync(join(memDir, 'archive.md'), archiveLines(outcome.archived, today) + '\n');
       atomicWrite(indexPath, renderIndex(this.nameOf(id), id, outcome.entries));
-      writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8');
-      rmSync(processing, { force: true });
     } catch (e) {
       restore();
       return this.abort(id, 'write-failed', String(e));
     }
+    // The index holds the notes now: handing them back would add them twice,
+    // and count them twice. A state or cleanup step that fails waits for the
+    // next pass.
+    if (outcome.added.length) { try { this.onAdded(id, outcome.added); } catch { /* the notes stand; only the count misses them */ } }
+    try { writeFileSync(statePath, JSON.stringify({ lastTidyAt: Date.now() }), 'utf8'); } catch { /* tidied again sooner */ }
+    dropHeld(processing);
 
     const tokens = estimateTokens(entriesBlock(outcome.entries));
+    const droppedCount = Object.keys(dropped).length;
     try {
       this.appendLog({
         kind: 'memory-tidy', agentId: id, notes: notes.length, migrated: migrating,
-        entries: outcome.entries.length, tokens, overBudget: tokens > INDEX_BUDGET_TOKENS, ...outcome.stats
+        entries: outcome.entries.length, tokens, overBudget: tokens > INDEX_BUDGET_TOKENS, ...outcome.stats,
+        ...(droppedCount ? { dropped } : {})
       });
     } catch { /* logging is best-effort */ }
-    return { id, tidied: true, reason: migrating ? 'migrated' : 'tidied', stats: outcome.stats };
+    return { id, tidied: true, reason: migrating ? 'migrated' : 'tidied', stats: outcome.stats, ...(droppedCount ? { dropped } : {}) };
   }
 
   private abort(id: string, reason: string, detail?: string): TidyResult {
@@ -242,7 +266,8 @@ export class MemoryTidy {
       notes.length ? notes.map((n) => `- ${n}`).join('\n') : '(none)',
       ...(overBudget ? ['', 'The index is over its budget: merge entries or delete the least useful ones that did not come from the owner.'] : [])
     ].join('\n');
-    const result = await runHiddenClaude(prompt, {
+    const result = await runHiddenModel(prompt, {
+      ...this.getModelEngine(),
       model: TIDY_MODEL,
       cwd: home,
       command: this.getCommand(),

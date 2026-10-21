@@ -40,3 +40,16 @@ test('the tool waterfall and worker rows keep their own style across the same bo
   assert.equal(fmtWorkerTokens(999_500), '1.00M');
   assert.equal(fmtWorkerTokens(1_500_000), '1.50M');
 });
+
+test('a count that is not a number reads 0, never "NaN" or "InfinityB"', () => {
+  // Value: protects=a row with a missing or broken token count stays readable; fails_when=compact formats NaN or an infinite count as text; why_new=only whole, finite counts were checked; seam=none
+  for (const bad of [NaN, Infinity, -Infinity, undefined]) {
+    assert.equal(fmtTokens(bad), '0', `fmtTokens(${bad})`);
+    assert.equal(fmtToolTokens(bad), '0', `fmtToolTokens(${bad})`);
+    assert.equal(fmtWorkerTokens(bad), '0', `fmtWorkerTokens(${bad})`);
+  }
+  // Real counts are unchanged.
+  assert.equal(fmtTokens(1540), '1.5K');
+  assert.equal(fmtToolTokens(1500), '2K');
+  assert.equal(fmtWorkerTokens(1500), '1.5k');
+});

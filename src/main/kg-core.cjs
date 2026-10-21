@@ -24,6 +24,14 @@ const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 
 // ─── Tunables ────────────────────────────────────────────────────────────────
+/** Replace a file whole: written beside it, then renamed over it, so a
+ *  reader (an agent's kg search) or a stop never sees half of it. */
+function writeAtomic(file, text) {
+  const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try { fs.writeFileSync(tmp, text, 'utf8'); fs.renameSync(tmp, file); }
+  catch (e) { try { fs.rmSync(tmp, { force: true }); } catch { /* gone */ } throw e; }
+}
+
 const DEFAULT_CHUNK_SIZE = 1200; // chars per chunk (approx; broken on boundaries)
 const DEFAULT_CHUNK_OVERLAP = 150; // chars of overlap between adjacent chunks
 const MAX_INDEX_BYTES = 5 * 1024 * 1024; // per-doc text indexed before truncation
@@ -78,11 +86,49 @@ function detectModality(filePath) {
   return 'text'; // unknown → best-effort treat as text
 }
 
-/** Lowercase alphanumeric tokens, stop-words and 1-char tokens dropped. */
+// Letters and digits of any script, with their combining marks (Hindi vowel
+// signs, Arabic vowel marks), so words in Arabic, Hindi, Cyrillic or accented
+// Latin are searchable, not only a to z.
+const WORD_RE = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu;
+// Chinese and Japanese are written without spaces between words, so a run of
+// these characters is indexed as each character and each overlapping pair.
+const CJK_RUN_RE = /([\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}]+)/u;
+const NON_ASCII_RE = /[^\x00-\x7f]/;
+
+/** Lowercase word tokens in any script, stop-words and 1-char tokens dropped;
+ *  Chinese and Japanese runs become single characters and character pairs. */
 function tokenize(s) {
-  const m = String(s || '').toLowerCase().match(/[a-z0-9]+/g);
-  if (!m) return [];
-  return m.filter((t) => t.length > 1 && !STOPWORDS.has(t));
+  const text = String(s || '').toLowerCase();
+  // Every chunk is tokenized on every search, so ASCII text and ASCII words
+  // skip the Unicode work.
+  if (!NON_ASCII_RE.test(text)) {
+    const m = text.match(/[a-z0-9]+/g);
+    return m ? m.filter((t) => t.length > 1 && !STOPWORDS.has(t)) : [];
+  }
+  // Split on ASCII separators first (cheap); only a piece holding other
+  // characters goes through the Unicode word match.
+  const pieces = text.match(/[a-z0-9\u0080-\uffff]+/g);
+  if (!pieces) return [];
+  const out = [];
+  for (const piece of pieces) {
+    if (!NON_ASCII_RE.test(piece)) {
+      if (piece.length > 1 && !STOPWORDS.has(piece)) out.push(piece);
+      continue;
+    }
+    for (const word of piece.match(WORD_RE) || []) {
+      for (const part of word.normalize('NFC').split(CJK_RUN_RE)) {
+        const chars = Array.from(part);
+        if (!chars.length) continue;
+        if (CJK_RUN_RE.test(part)) {
+          out.push(...chars);
+          for (let i = 0; i + 1 < chars.length; i++) out.push(chars[i] + chars[i + 1]);
+        } else if (chars.length > 1 && !STOPWORDS.has(part)) {
+          out.push(part);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** First markdown heading or first non-empty line, trimmed and length-capped. */
@@ -338,9 +384,58 @@ function removeDoc(kgRoot, docId) {
       if (!s) return false;
       try { return JSON.parse(s).docId !== docId; } catch { return false; }
     });
-    fs.writeFileSync(idxPath, kept.length ? kept.join('\n') + '\n' : '', 'utf8');
+    writeAtomic(idxPath, kept.length ? kept.join('\n') + '\n' : '', 'utf8');
   }
   return true;
+}
+
+/**
+ * Read one artifact again after the owner edited it in place (its stored copy,
+ * opened from Settings): the text and its index lines are replaced, the copy
+ * itself stays. `input.text` is the new text; without it (an image) the title
+ * is indexed, as at ingest. Returns the new meta, or null for an unknown id.
+ */
+function reindex(kgRoot, docId, input = {}) {
+  const docDir = path.join(kgRoot, 'docs', String(docId || ''));
+  if (!docId || !fs.existsSync(docDir)) return null;
+  let meta;
+  try { meta = JSON.parse(fs.readFileSync(path.join(docDir, 'meta.json'), 'utf8')); } catch { return null; }
+  const fullText = String(input.text != null ? input.text : '');
+  fs.writeFileSync(path.join(docDir, 'text.md'), fullText, 'utf8');
+  let indexText = fullText;
+  let truncated = false;
+  if (indexText.length > MAX_INDEX_BYTES) { indexText = indexText.slice(0, MAX_INDEX_BYTES); truncated = true; }
+  let chunks = chunkText(indexText);
+  if (chunks.length === 0) chunks = [String(meta.title)];
+  const idxPath = path.join(kgRoot, 'index.jsonl');
+  const kept = fs.existsSync(idxPath)
+    ? fs.readFileSync(idxPath, 'utf8').split('\n').filter((line) => {
+      const s = line.trim();
+      if (!s) return false;
+      try { return JSON.parse(s).docId !== docId; } catch { return false; }
+    })
+    : [];
+  const lines = chunks.map((c, i) => JSON.stringify({ docId, title: meta.title, source: meta.source, modality: meta.modality, chunkIdx: i, text: c }));
+  writeAtomic(idxPath, [...kept, ...lines].join('\n') + '\n', 'utf8');
+  const next = {
+    ...meta, chunkCount: chunks.length, truncated, updatedAt: nowIso(),
+    ...(typeof input.bytes === 'number' ? { bytes: input.bytes } : {}),
+    ...(input.extractor ? { extractor: input.extractor } : {})
+  };
+  fs.writeFileSync(path.join(docDir, 'meta.json'), JSON.stringify(next, null, 2), 'utf8');
+  return next;
+}
+
+/** The file to open for one artifact: its stored copy of the original, else
+ *  its text. Null for an unknown id. */
+function docFile(kgRoot, docId) {
+  const docDir = path.join(kgRoot, 'docs', String(docId || ''));
+  if (!docId || !fs.existsSync(docDir)) return null;
+  let meta = null;
+  try { meta = JSON.parse(fs.readFileSync(path.join(docDir, 'meta.json'), 'utf8')); } catch { return null; }
+  const original = path.join(docDir, 'original.' + (meta.origExt || 'bin'));
+  if (meta.origExt && fs.existsSync(original)) return { path: original, kind: 'original', meta };
+  return { path: path.join(docDir, 'text.md'), kind: 'text', meta };
 }
 
 /** Corpus counts for the UI/CLI status line. */
@@ -356,7 +451,7 @@ function stats(kgRoot) {
 }
 
 module.exports = {
-  ingest, search, list, getDoc, removeDoc, stats,
+  ingest, search, list, getDoc, removeDoc, reindex, docFile, stats,
   detectModality, extractText, chunkText, tokenize, scoreChunk, makeSnippet, deriveTitle,
   DEFAULT_CHUNK_SIZE, DEFAULT_CHUNK_OVERLAP
 };

@@ -179,6 +179,31 @@ test('reads an image the text reader refuses, with its mime and size', async () 
   }
 });
 
+test('a # in the file or folder name keeps the image mime', async () => {
+  // A path on disk is not a URL: "#" is part of the name. Read by URL rules,
+  // "Invoice #12.svg" lost its extension and came back as octet-stream, and an
+  // SVG with that label shows as a broken image.
+  const { dir, root } = makeWorkspace();
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';
+  try {
+    fs.mkdirSync(path.join(root, 'Shop #2'));
+    fs.writeFileSync(path.join(root, 'Invoice #12.svg'), svg);
+    fs.writeFileSync(path.join(root, 'Shop #2', 'logo.svg'), svg);
+    fs.writeFileSync(path.join(root, 'Shop #2', 'shot.png'), ONE_PIXEL_PNG);
+    for (const [rel, mime] of [
+      ['Invoice #12.svg', 'image/svg+xml'],
+      [path.join('Shop #2', 'logo.svg'), 'image/svg+xml'],
+      [path.join('Shop #2', 'shot.png'), 'image/png']
+    ]) {
+      const res = await readFileBinary(root, rel);
+      assert.equal(res.ok, true, res.ok ? '' : res.error);
+      assert.equal(res.mime, mime, rel);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('path traversal out of the root is rejected', async () => {
   const { dir, root } = makeWorkspace();
   try {

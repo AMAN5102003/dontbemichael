@@ -226,7 +226,7 @@ test('during a break nothing types into a Claude terminal, and schedules still r
   assert.match(read('src/renderer/src/components/OfficeBreakNotice.tsx'), /return known \? view : \{ until: null, checking: false, reason: 'limit', again: false \};/);
   // Shown at the top of Needs you and in the top bar. The plan limit never
   // counts; a stop only the owner can fix does (office-stopped-account.md, D2).
-  assert.match(read('src/renderer/src/components/AskMeTab.tsx'), /<OfficeBreakCard \/>\s*<EngineSetupCard status=\{engineCard \? engineSetup : null\} \/>/);
+  assert.match(read('src/renderer/src/components/AskMeTab.tsx'), /<OfficeBreakCard \/>\s*<SilentEngineCards \/>\s*<EngineSetupCard status=\{engineCard \? engineSetup : null\} \/>/);
   assert.match(read('src/renderer/src/shell/TopBar.tsx'), /<CliUpdateBadge \/>\s*<OfficeBreakChip \/>/);
   assert.match(read('src/renderer/src/shell/useNeedsYou.ts'), /if \(stopNeedsOwner\(merged\.stop\)\) feed = \{ \.\.\.feed, count: feed\.count \+ 1 \};/);
   assert.equal(stopNeedsOwner({ until: null, checking: false, reason: 'limit', again: false }), false, 'the plan limit never counts');
@@ -304,6 +304,53 @@ test('a key that stopped working waits for the owner; an expired account login r
   assert.equal(account.current().manual, false);
 });
 
+test('a credit or sign in stop ends only on a finished turn, never on a check that heard nothing', () => {
+  // Value: protects=the team is not handed work on an account that still cannot run it; fails_when=a silent check ends a credit or sign in stop; why_new=TODOS "End a credit or sign in stop only on a finished turn"; seam=injected clock
+  for (const reason of ['credit', 'signin']) {
+    const c = clock();
+    const { box, store } = memoryStore();
+    const b = new OfficeBreak(store, c.now);
+    b.limitReached('god', reason);
+    c.t = T0 + RETRY_MS;
+    assert.deepEqual(b.tick(), { step: 'check' });
+    c.t += CHECK_TIMEOUT_MS;
+    assert.deepEqual(b.tick(), { step: 'wait' }, `${reason}: silence says nothing about the account`);
+    assert.equal(b.holding(), true, 'terminals are held again');
+    assert.equal(box.state.due, c.t + RETRY_MS, 'and checked again later');
+    // After a restart the stop is still there, and a finished turn ends it.
+    const restarted = new OfficeBreak(store, c.now);
+    assert.equal(restarted.view().reason, reason);
+    c.t += RETRY_MS;
+    assert.deepEqual(restarted.tick(), { step: 'check' });
+    assert.equal(restarted.turnFinished('god').reason, reason);
+    assert.equal(restarted.view(), null);
+  }
+});
+
+test('a plan limit check that hears nothing still ends the break, and a key check waits for the owner again', () => {
+  // Value: protects=the plan limit keeps its old ending, and an owner's key check never loops; fails_when=the wait applies to the plan limit or clears manual; why_new=same TODO; seam=injected clock
+  const c = clock();
+  const limit = new OfficeBreak(memoryStore().store, c.now);
+  limit.limitReached('god');
+  c.t = T0 + RETRY_MS;
+  assert.deepEqual(limit.tick(), { step: 'check' });
+  c.t += CHECK_TIMEOUT_MS;
+  assert.equal(limit.tick().step, 'over');
+  const key = new OfficeBreak(memoryStore().store, c.now);
+  key.limitReached('god', 'signin', false);
+  assert.equal(key.ownerRetry(), true);
+  c.t += CHECK_TIMEOUT_MS;
+  assert.deepEqual(key.tick(), { step: 'wait' });
+  assert.equal(key.current().manual, true);
+  c.t += 10 * RETRY_MS;
+  assert.equal(key.tick(), null, 'only the owner checks again');
+});
+
+test('the app keeps the stop on screen when a check heard nothing', () => {
+  // Value: protects=main republishes the stop and arms the next check; fails_when=runOfficeBreakTick ignores the wait step; why_new=index.ts needs Electron; seam=source pin
+  assert.match(read('src/main/index.ts'), /if \(r\.step === 'wait'\) \{[\s\S]{0,250}armOfficeBreak\(\);\s*publishOfficeBreak\(\);\s*return;\s*\}/);
+});
+
 test('a stop only the owner can fix is never hidden behind a plan limit', () => {
   // Value: protects=eng R4; fails_when=the latest reason always wins; why_new=new rule; seam=none; no_claim=none beyond protects
   const limitFirst = new OfficeBreak(memoryStore().store, clock().now);
@@ -331,9 +378,12 @@ test('the office says the real cause to the owner, Michael and the team, and res
   assert.match(index, /start: 'The office stopped\. Your Anthropic account is out of credit\.'/);
   assert.match(index, /start: 'The office stopped\. The Anthropic API key stopped working\.'/);
   assert.match(index, /start: 'The office stopped\. Your Claude account needs you to sign in again\.'/);
-  assert.match(index, /const carry = 'Continue the task you were working on when it stopped; do not repeat work that is already done\.';/);
-  assert.match(index, /subject: 'Usage limit reset'/, 'the plan limit words stay');
-  assert.match(index, /hive\.send\(\{ to: id, act: 'inform', subject: words\.subject, body: words\.carryOn \}, 'system'\);/);
+  // The carry on words are the app's fixed upkeep notes (shared/upkeep.ts), sent stamped as upkeep.
+  const upkeep = read('src/shared/upkeep.ts');
+  assert.match(upkeep, /const CARRY = 'Continue the task you were working on when it stopped; do not repeat work that is already done\.';/);
+  assert.match(upkeep, /subject: 'Usage limit reset'/, 'the plan limit words stay');
+  assert.match(index, /subject: CARRY_ON_NOTES\.limit\.subject,/);
+  assert.match(index, /hive\.send\(\{ to: id, act: 'inform', subject: words\.subject, body: words\.carryOn \}, 'system', 'carry-on'\);/);
   assert.match(index, /const ANTHROPIC_BILLING_URL = 'https:\/\/platform\.claude\.com\/settings\/billing';/);
   assert.match(index, /ipcMain\.handle\('office:addCredit', \(\) => \{ void shell\.openExternal\(ANTHROPIC_BILLING_URL\); return \{ ok: true \}; \}\);/, 'no address from the page');
   assert.match(index, /ipcMain\.handle\('office:retry', \(\) => \(\{ ok: ownerRetryOffice\(\) \}\)\);/);

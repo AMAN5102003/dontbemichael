@@ -19,11 +19,37 @@ const day = (agentId, d, o = {}) => ({ agentId, day: d, usd: 0, runUsd: 0, email
 // Thursday 16 Oct 2026, noon local.
 const NOW = new Date(2026, 9, 16, 12).getTime();
 
-test('weeks start on Monday and the three periods cover what they say', () => {
-  // Value: protects=D8 periods; fails_when=a week starts on Sunday or 4 weeks drops a week; why_new=new; seam=none; no_claim=time zones other than the test machine's
-  assert.deepEqual([P.periodRange('this-week', NOW).from, P.periodRange('this-week', NOW).to], ['2026-10-12', '2026-10-18']);
-  assert.deepEqual([P.periodRange('last-week', NOW).from, P.periodRange('last-week', NOW).to], ['2026-10-05', '2026-10-11']);
-  assert.equal(P.periodRange('4-weeks', NOW).from, '2026-09-21');
+test('Today, this week and this month cover what they say, and Compare sets each against the same days before', () => {
+  // Value: protects=D5 periods and D7 spans (owner, 2026-10-16); fails_when=a week starts on Sunday, a month overruns, the span before is not cut at the same day, the cap or the year wrap is wrong, or a DST week loses a day; why_new=new periods; seam=none; no_claim=time zones other than the test machine's
+  const r = (p, now) => [P.periodRange(p, now).from, P.periodRange(p, now).to];
+  const b = (p, now) => [P.previousRange(p, now).from, P.previousRange(p, now).to];
+  const at = (y, m, d) => new Date(y, m - 1, d, 12).getTime();
+  assert.deepEqual(P.PERIODS, ['today', 'this-week', 'this-month']);
+  assert.deepEqual(r('today', NOW), ['2026-10-16', '2026-10-16']);
+  assert.deepEqual(r('this-week', NOW), ['2026-10-12', '2026-10-18']);
+  assert.deepEqual(r('this-month', NOW), ['2026-10-01', '2026-10-31']);
+  assert.deepEqual(b('today', NOW), ['2026-10-15', '2026-10-15'], 'all of yesterday');
+  assert.deepEqual(b('this-week', NOW), ['2026-10-05', '2026-10-09'], 'Monday to the same weekday, a Friday');
+  assert.deepEqual(b('this-week', at(2026, 10, 12)), ['2026-10-05', '2026-10-05'], 'on a Monday, only last Monday');
+  assert.deepEqual(b('this-month', NOW), ['2026-09-01', '2026-09-16']);
+  assert.deepEqual(b('this-month', at(2026, 10, 31)), ['2026-09-01', '2026-09-30'], 'the 31st is capped at a 30 day month');
+  assert.deepEqual(b('this-month', at(2026, 3, 31)), ['2026-02-01', '2026-02-28']);
+  assert.deepEqual(b('this-month', at(2028, 3, 30)), ['2028-02-01', '2028-02-29'], 'a leap year');
+  assert.deepEqual(b('today', at(2027, 1, 1)), ['2026-12-31', '2026-12-31']);
+  assert.deepEqual(b('this-month', at(2027, 1, 1)), ['2026-12-01', '2026-12-01']);
+  assert.deepEqual(r('this-week', at(2026, 3, 8)), ['2026-03-02', '2026-03-08'], 'a week ending on a DST change (US)');
+  assert.deepEqual(r('this-week', at(2026, 3, 29)), ['2026-03-23', '2026-03-29'], 'a week ending on a DST change (EU)');
+  const busyDays = (now) => P.pulseSnapshot({ period: 'this-month', now, days: [], cards: [], decisions: [], asks: [], members: ['pam'] }).members[0].dayBusy.length;
+  assert.equal(busyDays(at(2026, 10, 15)), 31, 'October keeps 31 days across a DST change');
+  assert.equal(busyDays(at(2026, 11, 15)), 30, 'November keeps 30 days across a DST change');
+});
+
+test('Compare waits until the span before starts on or after the first live recorded day', () => {
+  // Value: protects=D8 (owner, 2026-10-16); fails_when=a period compares against days Pulse never recorded, or waits longer than it must; why_new=new rule; seam=none; no_claim=backfilled data
+  assert.equal(P.compareFrom('today', '2026-10-15'), '2026-10-16');
+  assert.equal(P.compareFrom('this-week', '2026-10-15'), '2026-10-26');
+  assert.equal(P.compareFrom('this-month', '2026-10-15'), '2026-12-01');
+  assert.equal(P.compareFrom('this-month', '2026-10-01'), '2026-11-01', 'live from the 1st: the next month compares');
 });
 
 test('cost for the work compares like with like, and needs five pieces of a kind', () => {

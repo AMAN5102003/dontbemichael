@@ -30,7 +30,7 @@ function socketPath(base) {
     : path.join(base, `hooks-${id}.sock`);
 }
 
-async function openServer(t) {
+async function openServer(t, options = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'md-hooks-frame-'));
   const sock = socketPath(base);
   const routed = [];
@@ -44,11 +44,13 @@ async function openServer(t) {
   const server = new HookServer(hive, () => null, () => ({ notifications: false }));
 
   // Exercise the real net.Server framing path while isolating these tests from
-  // HookServer's unrelated routing behavior.
-  server.handle = (payload) => {
+  // HookServer's unrelated routing behavior. A test can pass its own `handle`
+  // (for example one that throws, as the real gate does on a non-object) to
+  // cover the connection's error path.
+  server.handle = options.handle || ((payload) => {
     routed.push(payload);
     return {};
-  };
+  });
 
   server.start();
   assert.ok(server.server, 'HookServer did not create its net.Server');
@@ -165,6 +167,31 @@ test('payload exactly at the byte limit is accepted', async (t) => {
   assert.equal(result.didClose, true);
   assert.equal(routed.length, 1);
   assert.equal(routed[0].message.length > 0, true);
+  assert.equal(result.response, '{}');
+});
+
+test('a bare null frame is normalized to an object payload', async (t) => {
+  const { sock, routed } = await openServer(t);
+
+  const result = await sendChunks(sock, [Buffer.from('null\n', 'utf8')], 0, 400);
+
+  assert.equal(result.didClose, true, 'server left the connection open on a null frame');
+  assert.equal(result.response, '{}');
+  // The frame becomes an empty object, then the sender check names it by its
+  // secret's owner (the stub's 'a1').
+  assert.deepEqual(routed, [{ agent_id: 'a1' }], 'a non-object JSON frame must reach handle() as an empty object');
+});
+
+test('a frame that makes the gate throw still answers and closes', async (t) => {
+  // The real handle() dereferences the payload (p.agent_id, etc.), so a bare
+  // `null` frame threw there and again in the catch below it. Simulate a
+  // throwing gate and confirm the connection is still answered and closed
+  // instead of hanging with an uncaught exception.
+  const { sock } = await openServer(t, { handle: () => { throw new Error('gate blew up'); } });
+
+  const result = await sendChunks(sock, [Buffer.from('null\n', 'utf8')], 0, 400);
+
+  assert.equal(result.didClose, true, 'a throwing gate left the connection open');
   assert.equal(result.response, '{}');
 });
 

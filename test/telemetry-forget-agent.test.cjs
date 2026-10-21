@@ -29,10 +29,10 @@ function tokenBatch(agentId, sessionId, output) {
   };
 }
 
-async function postMetrics(endpoint, body) {
+async function postMetrics(endpoint, body, token) {
   const response = await fetch(`${endpoint}/v1/metrics`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', 'x-dbm-telemetry-token': token },
     body: JSON.stringify(body)
   });
   assert.equal(response.status, 200);
@@ -45,12 +45,12 @@ test('forgetAgent resets usage before the same agent id is respawned', async (t)
   t.after(() => telemetry.stop());
   const endpoint = telemetry.endpoint();
 
-  await postMetrics(endpoint, tokenBatch('agent-1', 'dead-session', 900));
+  await postMetrics(endpoint, tokenBatch('agent-1', 'dead-session', 900), telemetry.tokenFor('agent-1'));
   assert.equal(telemetry.getAgentUsage('agent-1').output, 900);
 
   telemetry.forgetAgent('agent-1');
 
-  await postMetrics(endpoint, tokenBatch('agent-1', 'respawn-session', 10));
+  await postMetrics(endpoint, tokenBatch('agent-1', 'respawn-session', 10), telemetry.tokenFor('agent-1'));
   assert.equal(telemetry.getAgentUsage('agent-1').output, 10);
 });
 
@@ -60,7 +60,7 @@ test('forgetAgent drops the dead session so its total cannot resurrect', async (
   t.after(() => telemetry.stop());
   const endpoint = telemetry.endpoint();
 
-  await postMetrics(endpoint, tokenBatch('agent-1', 'dead-session', 900));
+  await postMetrics(endpoint, tokenBatch('agent-1', 'dead-session', 900), telemetry.tokenFor('agent-1'));
   assert.equal(telemetry.getAgentUsage('agent-1').output, 900);
 
   telemetry.forgetAgent('agent-1');
@@ -70,7 +70,7 @@ test('forgetAgent drops the dead session so its total cannot resurrect', async (
   // leaving the sessions entry behind would let the dead total resurrect the
   // moment any further metric arrives for that session — reinstating the very
   // inherited usage this reset exists to clear.
-  await postMetrics(endpoint, tokenBatch('agent-1', 'dead-session', 10));
+  await postMetrics(endpoint, tokenBatch('agent-1', 'dead-session', 10), telemetry.tokenFor('agent-1'));
   assert.equal(telemetry.getAgentUsage('agent-1').output, 10);
 });
 
@@ -80,8 +80,8 @@ test('forgetAgent keeps usage for other agents', async (t) => {
   t.after(() => telemetry.stop());
   const endpoint = telemetry.endpoint();
 
-  await postMetrics(endpoint, tokenBatch('agent-1', 'session-1', 500));
-  await postMetrics(endpoint, tokenBatch('agent-2', 'session-2', 700));
+  await postMetrics(endpoint, tokenBatch('agent-1', 'session-1', 500), telemetry.tokenFor('agent-1'));
+  await postMetrics(endpoint, tokenBatch('agent-2', 'session-2', 700), telemetry.tokenFor('agent-2'));
 
   telemetry.forgetAgent('agent-1');
 

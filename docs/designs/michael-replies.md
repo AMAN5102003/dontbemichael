@@ -194,7 +194,9 @@ still only ever means "your turn".
   there. When an owner's dock reply also settles an open Ask me card, Michael clears that
   card and routes the answer. The app records the owner's dock reply word for word, so it
   can be relayed as the owner's (the same rule as Ask me answers, `answerKey`).
-- **16. Michael's questions in the dock (16A).** The status line reads "Waiting for you" in
+- **16. Michael's questions in the dock (16A).** Reply shows under his question back while it
+  waits, and under his latest answer to an answered question, so an offer he ends with is
+  taken up in its thread (2026-10-17). The status line reads "Waiting for you" in
   `coral-text`. While any dock question waits on the owner the composer count is
   `coral-strong` instead of `indigo`, and clicking it opens the dock at the oldest such
   question. One desktop notification: "Has a question about <request, clipped>". The Needs
@@ -211,8 +213,11 @@ still only ever means "your turn".
   into Michael's terminal stay possible on the Work tab but are not tracked. The false
   `needsHuman` plane for `to: "human"` goes.
 - **18. Long answers (18A).** Michael's bubbles render markdown at 12.5 / 18 `ink` (as the
-  open Ask me card), 4 lines then a quiet "More" that expands in place, the first sentence
-  bold (`askHeadline`). Files named in a reply show as §7.8 file rows with their "Not
+  open Ask me card), folded at 8 lines of height (notes 6) with a fade, then a quiet "More" that
+  expands in place, the first sentence bold (`askHeadline`). A longer answer is laid out by
+  Michael: the answer in the first sentence, then a list, a small table of 2 or 3 columns, or
+  short paragraphs under a bold label, and the next step last, an offer as a question; he copies
+  a team member's figures exactly, with their currency (reply readability review, 2026-10-17). Files named in a reply show as §7.8 file rows with their "Not
   found" state.
 - **19. Small windows (19A).** Up to 430 px tall, never taller than the room between the
   top bar and the bottom bar minus 24 px; with under 280 px it scrolls to the latest
@@ -224,7 +229,7 @@ still only ever means "your turn".
   The count is a button named "N new from Michael" or "Michael is waiting for you". More,
   Ask again, Nudge, the example chips and the quoted question take the §12 focus ring.
   All text 4.5:1 or better in both themes.
-- **21. Open and close (21A).** Opens only on the owner's action: Send, the count, the conversation button (shown whenever there is saved history), a
+- **21. Open and close (21A).** Opens only on the owner's action: Send, the count, the conversation button (a chevron, up to open and down to close, shown whenever there is saved history), a
   notification, or focusing the composer while replies are unread. Never by itself, never
   at launch. Closes on ✕, Esc with focus inside, or a click on the office floor while the
   composer is empty. Selecting a person or opening Needs you leaves it open. The draft is
@@ -232,6 +237,19 @@ still only ever means "your turn".
 - **22. History (22A).** Opens scrolled to the latest with "Today", "Yesterday", then dates
   as dividers (`t-meta` `ink-3`). Open requests always show. Answered exchanges older than
   30 days fold under a quiet "Earlier" link at the top that loads them.
+- **23. Wide 1:1 (design and eng reviews, 2026-10-17).** Open wide, beside ✕ (the panels'
+  `expand` / `minimize` button, "Open wide" / "Back to the side"), moves the conversation and
+  the message box to the center, the office dimmed and out of reach. It never covers the right
+  column (owner, 2026-10-17): with Needs you or a panel at the side open, it fills the office's
+  width beside it and the column stays live, since a question there may be what the owner asks
+  Michael; with the column closed it takes the wide panel's frame. Its own choice, remembered on this computer and changed only by that button
+  (1A, 7A). Wide, questions and replies read at `t-read` 14 / 22 in a 720 px column, nothing
+  folds (2A), tables are as wide as their columns, 24 px apart (4A). Esc goes back to the side
+  for now, a second Esc closes (6B); the next open is wide again. One thing holds the center:
+  whichever the owner opened last, the 1:1 or a wide panel, the other back to the side for now
+  (8A); the board never moves it. It is drawn outside the office (a portal into a host beside the column), so the
+  draft, files, reply target, opened replies and the reading spot survive the move; caret and
+  undo reset (eng R1). Rules in `shell/wideCenter.ts`, tests in `test/wide-dock.test.cjs`.
 
 ## What already exists (reuse)
 

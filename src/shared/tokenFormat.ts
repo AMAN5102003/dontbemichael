@@ -5,6 +5,9 @@ interface Unit {
 }
 
 function compact(n: number, units: Unit[]): string {
+  // A count that is not a number (a missing field becomes NaN) reads 0, never
+  // "NaN" or "InfinityB" on a row; formatUsd does the same.
+  if (!Number.isFinite(n)) return '0';
   const whole = Math.round(n);
   let i = -1;
   units.forEach((u, j) => { if (whole >= u.size) i = j; });

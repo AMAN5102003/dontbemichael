@@ -283,7 +283,10 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // `grok [PROMPT]` accepts the initial hive protocol as a positional prompt.
     positionalInitialPrompt: true,
     // Grok resumes interactively with `grok --resume <session-id-or-title>`.
-    resumeFlag: '--resume'
+    resumeFlag: '--resume',
+    // No npm package: xAI ships a curl|bash / PowerShell installer only, so the
+    // missing-CLI path shows this link rather than running anything.
+    docsUrl: 'https://docs.x.ai/build/overview'
   },
   {
     id: 'kimi',
@@ -300,7 +303,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // Kimi's interactive TUI has no positional initial-prompt form. It supports
     // lifecycle hooks, but Munder Difflin does not yet install a Kimi hook bridge,
     // so mail must bounce rather than being delivered with no drain path.
-    canReceiveInbox: false
+    canReceiveInbox: false,
+    docsUrl: 'https://github.com/MoonshotAI/kimi-code'
   },
   {
     // Google's official Gemini CLI. Unlike Antigravity (`agy`), this is the
@@ -339,7 +343,9 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     canReceiveInbox: true, // via the agy-hook bridge (Stop→drain); verified agy honors hook decisions
     initialPromptFlag: '-i', // agy --prompt-interactive: orient the session, then continue
     recommendedOrchestratorModel: 'Gemini 3.1 Pro (High)', // agy takes the display-name label
-    resumeFlag: '--conversation' // agy: resume a previous conversation by ID
+    resumeFlag: '--conversation', // agy: resume a previous conversation by ID
+    // agy is a native binary with no npm package; manual install from the docs.
+    docsUrl: 'https://antigravity.google/docs/getting-started?tab=cli'
   },
   {
     // qwen-code — the Qwen CLI (a gemini-cli fork) driving any OpenAI-compatible
@@ -363,7 +369,10 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     initialPromptFlag: '-i',
     // Qwen's long-context coder model for the orchestrator. // TODO-verify
     recommendedOrchestratorModel: 'qwen3-coder-plus',
-    resumeFlag: undefined
+    resumeFlag: undefined,
+    // Official qwen-code install (npm global, needs Node 22+). Used by the missing-CLI auto-install.
+    installCommand: 'npm install -g @qwen-code/qwen-code@latest',
+    docsUrl: 'https://github.com/QwenLM/qwen-code'
   },
   {
     // OpenCode — the TypeScript AI coding agent (opencode.ai / anomalyco/opencode,
@@ -588,7 +597,7 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // a node-free machine can still self-heal. Trusted hardcoded constants only.
     nativeInstallCommand: {
       posix: 'curl https://cursor.com/install -fsS | bash',
-      win32: 'irm https://cursor.com/install?win32=true | iex'
+      win32: 'powershell -c irm https://cursor.com/install?win32=true ^| iex'
     },
     docsUrl: 'https://cursor.com/docs/cli/install'
   },
@@ -718,13 +727,14 @@ export function argsWithAutoModeFlag(args: string[], autoMode: boolean, provider
 
 /** True when argv already states a permission posture for this provider: the
  *  auto flag's leading token, or any of the preset's `autoStanceTokens`. Token
- *  match, not substring — copilot's flag starts with `-s`. */
+ *  match, not substring — copilot's flag starts with `-s`. A flag written with
+ *  its value (`--permission-mode=plan`) counts by its name. */
 export function hasAutoModeStance(args: string[], provider: AgentProvider): boolean {
   const preset = providerPreset(provider);
   const flag = preset.autoModeFlag ?? '';
   const lead = flag.trim().split(/\s+/)[0];
   const stance = new Set([...(lead ? [lead] : []), ...(preset.autoStanceTokens ?? [])]);
-  return args.some((a) => stance.has(a));
+  return args.some((a) => stance.has(a.split('=')[0]));
 }
 
 /** Returns any env vars the provider needs for non-interactive / first-run suppression. */

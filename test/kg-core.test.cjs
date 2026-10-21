@@ -45,6 +45,39 @@ function writeFixture(dir, name, content) {
     assert.ok(!toks.includes('x'), 'drops 1-char token');
   });
 
+  test('tokenize keeps words in any script, with their marks, and pairs Chinese and Japanese characters', () => {
+    // Value: protects=a document in Arabic, Hindi, Chinese or an accented language is searchable by its words; fails_when=tokenize keeps only a-z and 0-9; why_new=those documents had no tokens, so keyword search never found them; seam=none
+    assert.deepStrictEqual(kg.tokenize('سياسة الاسترداد'), ['سياسة', 'الاسترداد'], 'Arabic words');
+    assert.deepStrictEqual(kg.tokenize('वापसी नीति'), ['वापसी', 'नीति'], 'Hindi words keep their vowel signs');
+    assert.deepStrictEqual(kg.tokenize('Rückgabe réception'), ['rückgabe', 'réception'], 'accented letters stay in the word');
+    assert.deepStrictEqual(kg.tokenize('Re\u0301ception'), ['r\u00e9ception'], 'a decomposed accent matches the composed one');
+    assert.deepStrictEqual(kg.tokenize('退款政策'), ['退', '款', '政', '策', '退款', '款政', '政策'], 'a Chinese run becomes its characters and character pairs');
+    assert.deepStrictEqual(kg.tokenize('税'), ['税'], 'a lone Chinese character is a token');
+    assert.deepStrictEqual(kg.tokenize('SKU42の在庫'), ['sku42', 'の', '在', '庫', 'の在', '在庫'], 'Latin and Japanese in one word split apart');
+    assert.deepStrictEqual(kg.tokenize('コーヒー'), ['コ', 'ー', 'ヒ', 'ー', 'コー', 'ーヒ', 'ヒー'], 'the Japanese long vowel mark stays in its word');
+    assert.deepStrictEqual(kg.tokenize('It\u2019s the refund policy'), kg.tokenize("It's the refund policy"), 'a curly quote changes no English token');
+  });
+
+  test('search finds documents written in Arabic, Hindi, Chinese and German by their own words', () => {
+    // Value: protects=company knowledge in the owner's language is found by keyword search; fails_when=non Latin text indexes no tokens; why_new=search returned nothing for these documents; seam=a temp store
+    const root = tmpRoot();
+    const docs = {
+      ar: ['سياسة الاسترداد: يمكن للعملاء استرداد أموالهم خلال ثلاثين يوما.', 'الاسترداد'],
+      hi: ['वापसी नीति: ग्राहक तीस दिनों के भीतर पैसे वापस पा सकते हैं।', 'वापसी नीति'],
+      zh: ['退款政策：客户可在三十天内退款。', '退款'],
+      de: ['Rückgabe innerhalb von dreißig Tagen möglich.', 'Rückgabe'],
+    };
+    const ids = {};
+    for (const [lang, [text]] of Object.entries(docs)) ids[lang] = kg.ingest(root, { text, title: `policy ${lang}` }).docId;
+    for (const [lang, [, query]] of Object.entries(docs)) {
+      const hits = kg.search(root, query);
+      assert.strictEqual(hits.length, 1, `${lang}: exactly its own document`);
+      assert.strictEqual(hits[0].docId, ids[lang], `${lang}: the right document`);
+    }
+    const tax = kg.ingest(root, { text: '消费税的申报流程说明', title: 'tax' }).docId;
+    assert.deepStrictEqual(kg.search(root, '税').map((h) => h.docId), [tax], 'one Chinese character finds the word it is part of');
+  });
+
   // ─── detectModality ─────────────────────────────────────────────────────
   test('detectModality buckets by extension', () => {
     assert.strictEqual(kg.detectModality('a/b/notes.md'), 'text');
