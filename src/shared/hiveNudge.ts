@@ -27,7 +27,10 @@ const OLD_NUDGE_HEAD = 'You have new hive inbox message(s)';
 export function inboxNudgeText(ids: string[]): string {
   // Short and plain (owner cleanup, 2026-09-25): the instructions already say
   // how to work the inbox, so the nudge only says what arrived.
-  const named = ids.length ? `: ${ids.join(', ')}` : '';
+  // The text is typed into a live terminal, so strip control characters and
+  // newlines from each id: a crafted id must never submit keystrokes to the agent.
+  const clean = ids.map((id) => id.replace(/[\x00-\x1f\x7f]/g, ''));
+  const named = clean.length ? `: ${clean.join(', ')}` : '';
   return `${NUDGE_HEAD}${named}. Work everything still pending in your inbox; an id already in inbox/.done/ was handled earlier.`;
 }
 

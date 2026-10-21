@@ -72,6 +72,8 @@ test('the clock restarts on hook events only, never from the terminal parser', (
 test('a terminal ending mid-close refreshes the rows, guarded for startup order', () => {
   const main = read('src/main/index.ts');
   assert.match(main, /try \{ if \(agentId\) closingTime\.refresh\(agentId\); \} catch \(e\) \{ console\.error\('\[closing-time\] refresh:', e\); \}/, 'a refresh failure is logged, never hidden, and never breaks teardown');
+  // And one that comes back is waited on again, once its terminal really started.
+  assert.match(main, /try \{ if \(res\.ok && opts\.hive\?\.id\) closingTime\.revive\(opts\.hive\.id\); \} catch \(e\) \{ console\.error\('\[closing-time\] revive:', e\); \}/);
 });
 
 test('Remind and Close without them reach main on the channels main handles', () => {
@@ -99,6 +101,8 @@ test('a finished tool call leaves the row: its detail clears and the clock resta
   const hive = read('src/renderer/src/hooks/useHive.ts');
   assert.match(hive, /e\.event === 'PostToolUse' \|\| e\.event === 'UserPromptSubmit'[\s\S]{0,400}updateAgent\(e\.agentId, \{ status: 'working', actionDetail: undefined, actionAt: Date\.now\(\) \}\)/);
   assert.match(hive, /action: 'thinking', actionDetail: undefined, actionAt: Date\.now\(\)/);
+  // Value: protects=a finished tool is not named as still running; fails_when=PostToolUse with nothing running keeps "using <tool>"; why_new=TODOS "Row still names a finished tool"; seam=source pin
+  assert.match(hive, /else if \(e\.event === 'PostToolUse' && !breakerArmed\) updateAgent\(e\.agentId, \{ action: 'thinking' \}\);/);
 });
 
 test('the non-English "terminal ended" hint names the buttons as they appear on screen', () => {
@@ -191,3 +195,26 @@ test('focus falls back to the list when the row or its confirm is gone (issue 13
   assert.match(bar, /buttonRef=\{\(el\) => \{ triggers\.current\[id\] = el; \}\}/);
 });
 
+
+test('the still working count reads as a button that opens the list', () => {
+  // Value: protects=the owner sees that the count opens who is still working, with Remind; fails_when=the pill or chevron is dropped back to plain text; why_new=owner, 2026-10-11: plain indigo text did not look clickable; seam=source pin
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  assert.match(bar, /background: 'var\(--cth-indigo-soft\)', padding: '0 8px 0 10px', height: 24, borderRadius: 'var\(--cth-r-pill\)'/);
+  assert.match(bar, /transform: open \? 'rotate\(180deg\)' : 'none'/, 'the chevron flips when the list is open');
+  assert.match(bar, /aria-expanded=\{open\}/);
+});
+
+test('the who list has one scrollbar', () => {
+  // Value: protects=a long who list scrolls in one place; fails_when=the panel around the list scrolls too and shows a second scrollbar; why_new=owner, 2026-10-11: two nested scrollers showed two scrollbars; seam=source pin
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  assert.equal((bar.match(/overflowY: 'auto'/g) || []).length, 1, 'only the list scrolls');
+  assert.match(bar.match(/<div ref=\{listRef\}[^\n]*/)[0], /maxHeight: 300, overflowY: 'auto'/);
+});
+
+test('the still working pill sits in a 28 px target, and the row never jumps', () => {
+  // Value: protects=DESIGN.md 12's 28 px target and a steady bar height; fails_when=the pill becomes the button again or the row loses its min height; why_new=review 2026-10-12; seam=source pin
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  assert.match(bar, /const hitBtn: CSSProperties = \{\n\s*flexShrink: 0, height: 28,/);
+  assert.match(bar, /style=\{hitBtn\}>\n\s*<span style=\{linkBtn\}>/);
+  assert.match(bar, /marginTop: 6, minHeight: 28 \}\}/);
+});

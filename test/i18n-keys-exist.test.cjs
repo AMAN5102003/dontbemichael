@@ -48,3 +48,29 @@ test('every literal t() key in the renderer exists in en.json', () => {
   assert.deepEqual(missing, [], 'these keys would render as raw key text');
   assert.ok(seen > 500, `sanity: only ${seen} t() calls found`);
 });
+
+// i18next leaves a placeholder it has no value for as raw text, so a t() call
+// that passes nothing for a string with {{name}} shows "Kill and respawn
+// {{name}}" to the owner. godName resolves without the call site passing it
+// (defaultVariables in i18n/index.ts); every other placeholder needs a value.
+const DEFAULT_VARIABLES = new Set(['godName']);
+
+function lookup(key) {
+  let node = en;
+  for (const part of key.split('.')) node = node && typeof node === 'object' ? node[part] : undefined;
+  return node;
+}
+
+test('a t() call that passes no values never leaves a {{placeholder}} showing', () => {
+  const unfilled = [];
+  for (const file of sources(rendererDir)) {
+    const src = fs.readFileSync(file, 'utf8');
+    for (const m of src.matchAll(/\bt\(\s*'([A-Za-z]\w*(?:\.\w+)+)'\s*\)/g)) {
+      const value = lookup(m[1]);
+      if (typeof value !== 'string') continue;
+      const needs = [...value.matchAll(/\{\{\s*(\w+)\s*\}\}/g)].map((v) => v[1]).filter((v) => !DEFAULT_VARIABLES.has(v));
+      if (needs.length) unfilled.push(`${path.relative(root, file)}: ${m[1]} needs ${needs.join(', ')}`);
+    }
+  }
+  assert.deepEqual(unfilled, [], 'these strings would show raw {{placeholder}} text');
+});

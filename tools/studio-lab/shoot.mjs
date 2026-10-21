@@ -30,6 +30,7 @@ const SHOTS = [
   ['michael-office-schedule', '?shot=michael-office-schedule'],
   ['tasks-detail', '?shot=tasks-detail'],
   ['who-talks-to-whom', '?shot=who-talks-to-whom'],
+  ['file-tab', '?shot=file-tab'],
   ['onboarding-team', '?shot=onboarding-team'],
   ['onboarding-business', '?shot=onboarding-business'],
   ['onboarding-meet', '?shot=onboarding-meet'],

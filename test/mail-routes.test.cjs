@@ -15,6 +15,7 @@ const { promisify } = require('node:util');
 const loadTs = require('./load-ts.cjs');
 
 const { IntegrationBroker } = loadTs('src/main/integrationBroker.ts');
+const { handleMailRequest } = loadTs('src/main/mail.ts');
 const SCRIPT = path.resolve(__dirname, '..', 'resources', 'md-mail-mcp.cjs');
 
 function request(base, token, method, route, body) {
@@ -173,4 +174,64 @@ test('md-mail answers ping, stays quiet on notifications, rejects unknown method
   const invalid = await next(null);
   assert.equal(invalid.error.code, -32600, 'a JSON value that is not a request');
   assert.equal(lines.filter((m) => m.id === undefined).length, 0, 'the notification got no reply');
+});
+test('denied mailbox access is audited without leaking email contents', async () => {
+  const events = [];
+
+  const deps = {
+    getConfig: () => ({
+      mailboxes: [],
+      agentCapabilities: {}
+    }),
+    audit: (event) => events.push(event)
+  };
+
+  const secretBody = 'PRIVATE_EMAIL_CONTENT_DO_NOT_LOG';
+
+  const result = await handleMailRequest(
+    {},
+    deps,
+    'unauthorized-agent',
+    'search',
+    {
+      mailbox: 'private-mailbox',
+      text: secretBody
+    }
+  );
+
+  assert.equal(result.status, 403);
+  assert.equal(events.length, 1);
+
+  const event = events[0];
+
+  assert.equal(event.kind, 'mail-access-denied');
+  assert.equal(event.agentId, 'unauthorized-agent');
+  assert.equal(event.mailbox, 'private-mailbox');
+  assert.equal(event.operation, 'search');
+  assert.equal(event.outcome, 'denied');
+  assert.ok(!JSON.stringify(event).includes(secretBody));
+
+  assert.ok(!Number.isNaN(Date.parse(event.timestamp)));
+});
+
+test('audit callback failure does not change mailbox access refusal', async () => {
+  const deps = {
+    getConfig: () => ({
+      mailboxes: [],
+      agentCapabilities: {}
+    }),
+    audit: () => {
+      throw new Error('audit storage unavailable');
+    }
+  };
+
+  const result = await handleMailRequest(
+    {},
+    deps,
+    'unauthorized-agent',
+    'search',
+    { mailbox: 'private-mailbox' }
+  );
+
+  assert.equal(result.status, 403);
 });

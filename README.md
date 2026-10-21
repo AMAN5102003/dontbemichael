@@ -14,9 +14,11 @@
   <img src="./branding/reference/studio/home-light.png" alt="The office: a pod for each department around Michael's glass office, and the Needs you board on the right with what waits on you" width="1240">
 </picture>
 
-Pick your kind of business, pick your team, and Michael, your office manager, runs the office
-while you run the business. Every team member is an AI agent with a job, its own folder and its
-own memory, working on your computer.
+Pick your kind of business and choose your team. Michael, your office manager, runs the office
+while you run the business.
+
+Every team member is an AI agent with a clear job, its own folder, and its own memory. Everything
+runs on your computer.
 
 <p>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-FF6B6B.svg?style=flat-square&labelColor=1A1320"></a>
@@ -39,16 +41,14 @@ own memory, working on your computer.
 > brings you only the calls that need you.
 
 > [!TIP]
-> **New in 0.1.8: the office takes a break at your Claude plan limit, and files open inside it.**
-> When the plan runs out, Ask me and the top bar say when work starts again, nothing is typed into
-> a session that cannot answer, and the team carries on by itself at the reset. A file Michael
-> names opens in an office tab. Done cards show the result, and an email that may have gone out is
-> never sent twice. In 0.1.7, Microsoft 365 mailboxes got a clear message.
+> **New in 0.2.4: Company foundations, and company knowledge you can open.**
+> One document holds what each job needs to know about your business; when work needs an empty
+> answer, a card asks you once. Settings lists every document your team searches, and you can open
+> and edit one in your own app. In 0.2.3, the office clocks in and Waiting cards come back.
 
 ## Contents
 
 - [What it is](#what-it-is)
-- [How it differs from Munder Difflin](#how-it-differs-from-munder-difflin)
 - [Your team](#your-team)
 - [A mailbox for every job](#a-mailbox-for-every-job)
 - [What the office does](#what-the-office-does)
@@ -56,50 +56,28 @@ own memory, working on your computer.
 - [Your data](#your-data)
 - [For developers](#for-developers)
 - [Contributing](#contributing)
+- [Where it came from](#where-it-came-from)
 - [License](#license)
 - [Acknowledgements](#acknowledgements)
 
 ## What it is
 
 Don't Be Michael is a desktop app that runs a small office of AI team members for your business.
-Each team member is a [Claude Code](https://claude.com/claude-code) agent with a role: finance,
-customer support, sales, marketing and so on. Michael is the office manager. You talk to him; he
-routes the work, answers the team's questions, and asks you only when something needs your
-decision.
+
+Each team member is a [Claude Code](https://claude.com/claude-code) agent with a specific role
+(finance, customer support, sales, marketing, and more). Michael is the office manager. You talk
+to him. He routes the work, answers the team's questions, and only brings you the decisions that
+need your attention.
 
 Everything runs on your computer, on the Claude plan you already have. Each team member has a
-desk in an office you can watch, a pod for each department around Michael's glass office, so you
-can see who is working on what.
-
-## How it differs from Munder Difflin
-
-Don't Be Michael grew out of [Munder Difflin](https://github.com/chaitanyagiri/munder-difflin),
-and it keeps that project's core: every team member is a real Claude Code process in its own
-terminal, and the team coordinates through the hive, a folder of plain files. What was built on
-top is a different product for a different person.
-
-Munder Difflin is an agent harness for developers: it turns the coding CLIs you already run into
-clones of you. Don't Be Michael is an office for a small business owner who never opens a
-terminal. That changes almost every decision:
-
-| | Munder Difflin | Don't Be Michael |
-|---|---|---|
-| **Made for** | Developers running coding agents | Small business owners in any line of work, with no technical background needed |
-| **Michael** | Your clone, routing work between your agents | Your office manager: the only one who assigns work, decides the team's day to day requests, and brings you only the calls that need you |
-| **Setting up** | Start agents in terminals and give them work | Pick your kind of business, get a suggested team, and hire in four steps with a real job and a work style for each; no two teammates do the same work |
-| **Email** | The one Gmail account on your Claude account, shared by every agent | As many mailboxes as the business runs on, one per team member, each set to Can send, Send on approval or Draft only; passwords stay encrypted on your computer |
-| **Access control** | None: every agent can reach every app connected to your Claude account and every tool you set up in Claude Code | You decide exactly which apps the office can use and which team member uses each one; the app enforces it on every call |
-| **Files and data** | Hard to give an agent a workspace of its own: agents work in code project folders, with no way to give each one its own set of files and data | Your business folder becomes the office's filing cabinet, with access that follows its hierarchy. Each team member works in its own folder with the files its job needs, such as product documentation and client lists for Sales, or survey results and user interviews for Marketing, and opens only that folder. Michael, above them, reads every folder and changes none. You organize your own work in the same folders the team uses |
-| **User experience** | Lots of low level details and out of place screens, which make the system hard to use and hard to focus on the right things | A modern office workspace, redesigned from the ground up for business users. Unneeded details and repetition are gone, and there is one clear way to talk to the office, instead of every option piled into an orchestrator panel |
-| **Cost and data** | Free, with a paid Pro plan; anonymous usage stats | Free, no paid plan, no usage data sent |
-
-If you write code and want a team of coding agents, Munder Difflin is the better fit. If you run a
-business and want the work done without watching terminals, this is the better fit.
+desk in an office you can watch, with a pod for each department around Michael's glass office, so
+you can see who is working on what.
 
 ## Your team
 
-Setup asks for your business and your kind of business, then suggests a team from that business's
-Office Pack. You pick who joins, and you can hire more later.
+During setup, you tell the app your business name and the kind of business you run. It then
+suggests a starting team from that business type's Office Pack. You choose who joins, and you can
+hire more team members later.
 
 | Kind of business | Suggested team |
 |---|---|
@@ -187,7 +165,8 @@ job: one a teammate does today, one from your Office Pack, one from any other ki
 a new one you write. Before you hire, the app checks the new job against every teammate's so no
 two do the same work; an overlap has to be tied to its own mailbox or topic first. The work style
 is plain words you can edit. Each hire gets its own folder inside your business folder and starts
-working.
+working. To let someone go, Delete in the Danger zone of Edit agent removes them for good, and
+Michael hands on their open work.
 
 </td>
 <td width="50%">
@@ -214,7 +193,8 @@ merges and updates them, so memory gets better instead of piling up.
 ### You stay in charge
 
 Spending money, deleting things and changes of scope come to you. A team member that loops or
-keeps failing is steered, then held, then stopped. Each one works under house rules: state only
+keeps failing is steered, then held, then stopped, and one stuck on a prompt is restarted by the
+app instead of handed to you. Each one works under house rules: state only
 what it can trace to a source, say when it doesn't know, and never make up people, customers or
 quotes.
 
@@ -230,7 +210,9 @@ quotes.
 
 Desks light up as team members clock in and go dark at closing time. Envelopes fly between pods
 as work moves, Michael points before he hands a job out, scheduled jobs ring his wall clock, and
-idle teammates trade lines across the office. Click any pod to see that team member's work live.
+idle teammates trade lines across the office. A plate in front of each pod names its department,
+and the monitors are clear glass that tint while someone works. Click any pod to see that team
+member's work live.
 
 </td>
 <td width="50%">
@@ -264,19 +246,20 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 </table>
 
 **Running the office**
-- **Needs you.** When the team needs a decision, Michael puts it on the Needs you board. Your answer goes back to whoever asked, and they remember it. Michael gets it too, as work he routes and then closes.
+- **Needs you.** When the team needs a decision, Michael puts it on the Needs you board. Your answer goes back to whoever asked, and they remember it. Michael gets it too, as work he routes and then closes. Choices show as rows you pick with a click, and several questions get a line each; answer only some, and the rest go back to whoever asked.
 - **Michael answers in the app.** A question you type in the Talk to Michael box opens a conversation above it. Each question shows where it stands, such as Michael has it, Waiting for you or Answered, and his reply arrives under it, with one count on the box and one notification per answer. Commands such as /clear still go straight to his terminal. Scheduled outcomes, such as a weekly summary, arrive on Needs you as quiet Report cards you clear with Got it.
 - **Schedules.** Each team member's jobs on a clock live in the On a schedule section of its Access tab. Say when and which job ("Follow up on unpaid invoices", every weekday at 9), and the team member does it the way its Work style says. One job can have several "when" lines, like every 2 hours on weekdays plus 2 pm on weekends. A team member can ask for a schedule change; Michael decides it, and asks you on Needs you only when he can't settle it. Michael's Office schedule tab lists every job that is on.
 - **A mailbox for each team member.** Connect Gmail, Google Workspace, iCloud, Yahoo, Zoho or any other IMAP mailbox with an app password in Settings, Connections, Mailboxes. The password is tested before it is saved and stays encrypted on your computer. Then add it on a team member's Access tab to watch its inbox, and choose Can send, Send on approval or Draft only. Each mailbox has one team member watching it; others can be added to send only from it. Outlook is not supported yet.
 - **Claude connectors.** Settings, Connections, Claude connectors lists every connector on your Claude account (HubSpot, Google Drive, Gmail, QuickBooks and the rest), read from Claude by itself. Each is off until you turn it on; then give it to the team members who need it on their Access tab. QuickBooks keeps Read only or Can make changes, and Oscar starts on and Read only. Your own Claude Code servers, plugin servers included, never reach the team.
 - **Every team member's panel.** Profile first (the job, its folder and the instructions it works from), then Access (email, Claude connectors, and schedules), Messages as a day by day history, Memory as readable notes, and Work, its session live.
-- **Office, Tasks, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, and who talks to whom. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these, while PDF and Office files open in their own app.
+- **Office, Tasks, Pulse, Who talks to whom.** Tabs in the top bar switch between the office, the whole task board, Pulse (what the office got done and what each team member costs, with ways to save that change nothing until you click Apply), and who talks to whom. A file Michael names shows as a chip; open it, and Markdown, text, JSON, CSV and pictures get a tab of their own beside these, while PDF and Office files open in their own app.
 - **Webhooks.** Another app sends a webhook (set it up in Settings, Connections) and Michael picks it up; the sender can check on the work and get its result.
 - **A fresh start without losing work.** A team member that has sat idle with a long conversation writes a handoff of anything unfinished, then starts fresh. You can bring the old conversation back.
 
 **Your business, known to everyone**
 - **Company profile.** Your business name, owner, address, hours, time zone, currency and more, given to every team member. Change it in Settings.
-- **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and on a Mac, scans or photos. Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy.
+- **Company knowledge.** Add your documents and policies in Memory & Knowledge: Word, Excel, PowerPoint, PDF, and scans or photos (on a Mac or a Windows PC). Every team member can search them by words, and by meaning when MemPalace is installed, so "money back" finds your refund policy. Open one to read or change it in your own app; when you save, the team searches the new version.
+- **Company foundations.** One document of what each job needs to know about your business, such as who you sell to or your financial year. When a team member's work needs an answer that is still empty, Michael asks you for it on Needs you, weekly until it is answered, and what you teach the team fills it in too.
 
 **Private folders**
 - Michael works in your business folder, and each team member works in its own folder inside it.
@@ -329,6 +312,12 @@ follow.
 - **It stays on your computer.** Your team's work, memory and files live in folders on your
   computer. The team members themselves run through your own Claude Code and Claude plan, or
   your Anthropic API key.
+- **Only the Research team member goes online.** In every office, one team member, Pete unless
+  you rename them, does the web research. Nobody else, Michael included, opens web pages, searches
+  the web or reaches the internet from a command (on a Mac). Every message to them first passes a
+  trust layer that keeps out the kinds of data you mark private in Settings, Research & privacy,
+  and their answers are cleaned of instructions before your team reads them. They see none of your
+  files, and they are off until you turn them on. On Windows, they can still reach your office files.
 - **No usage data.** The app sends nothing about how you use it. See [`TELEMETRY.md`](./TELEMETRY.md).
 
 ## For developers
@@ -340,7 +329,7 @@ it.
 
 ### Build from source
 
-You need Node.js 18 or newer, npm, and a C/C++ toolchain for `node-pty` (on a Mac:
+You need Node.js 20 or newer, npm, and a C/C++ toolchain for `node-pty` (on a Mac:
 `xcode-select --install`; on Windows, [`node-pty`'s prerequisites](https://github.com/microsoft/node-pty#dependencies)).
 
 ```bash
@@ -371,7 +360,7 @@ If `node-pty` fails to load after an Electron upgrade, run `npm install` again.
 ### What this build leaves out
 
 Setup offers only Claude Code, signed in with a Claude account or an Anthropic API key. The code
-still carries presets for other agent CLIs (Codex, Gemini, Grok, Kimi, Qwen, OpenCode, Crush, pi,
+still carries presets for other agent CLIs (Codex, Gemini, Antigravity, Grok, Kimi, Qwen, OpenCode, Crush, pi,
 Copilot and Cursor), API keys for other providers and local models,
 but this build doesn't offer them. Some developer features are switched off because business
 owners don't use them: git views, the built in code editor, temporary helper agents, voice, and
@@ -384,6 +373,12 @@ Contributions are welcome. Start with [`CONTRIBUTING.md`](./CONTRIBUTING.md). Fo
 idea? [Open an issue](https://github.com/agentvivekkumar/dontbemichael/issues).
 [`CONTRIBUTORS.md`](./CONTRIBUTORS.md) lists everyone with a merged pull request. Changes are in
 [`CHANGELOG.md`](./CHANGELOG.md).
+
+## Where it came from
+
+Don't Be Michael started as a fork of [Munder Difflin](https://github.com/chaitanyagiri/munder-difflin),
+an agent harness for developers by Chaitanya Giri. It has since grown into its own project, built
+for business owners rather than developers, and is developed independently.
 
 ## License
 

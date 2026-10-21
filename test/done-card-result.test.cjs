@@ -36,6 +36,10 @@ test('the board line is the result\'s first line as plain text', () => {
   assert.equal(resultHeadline('1. Booked the van for Monday'), 'Booked the van for Monday');
   assert.equal(resultHeadline(undefined), '');
   assert.equal(resultHeadline('   \n  '), '');
+  // An underscore inside a name is part of it, not emphasis.
+  assert.equal(resultHeadline('Saved q3_sales_report.md in Office'), 'Saved q3_sales_report.md in Office');
+  assert.equal(resultHeadline('Emailed first_last_name@acme.com'), 'Emailed first_last_name@acme.com');
+  assert.equal(resultHeadline('Sent the _final_ quote to __Kelly__'), 'Sent the final quote to Kelly');
 });
 
 test('the card detail shows the result first on a Done card, and the board shows its first line', () => {
@@ -44,7 +48,7 @@ test('the card detail shows the result first on a Done card, and the board shows
   const detail = kanban.slice(kanban.indexOf('export function TaskDetail'));
   assert.match(detail, /\{task\.status === 'done' && task\.result && \(\s*<div data-result>\{label\(t\('kanban\.result'\)\)\}/);
   assert.match(detail, /<FileText source=\{task\.result\} who=\{\{ assignee: qaAssignee \}\} \/>/, 'files in it open like Ask me files');
-  assert.ok(detail.indexOf('data-result') < detail.indexOf("['description', task.description]"), 'the result comes before the description');
+  assert.ok(detail.indexOf('data-result') < detail.indexOf("label(t('kanban.description'))"), 'the result comes before the description');
   assert.match(kanban, /\{done && task\.closedBy !== 'owner' && resultHeadline\(task\.result\) && \(\s*<span data-result/);
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const kanbanStrings = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).kanban;

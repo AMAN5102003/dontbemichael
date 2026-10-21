@@ -38,7 +38,8 @@ export function localCurrency(): string | undefined {
   const BY_REGION: Record<string, string> = {
     US: 'USD', CA: 'CAD', GB: 'GBP', AU: 'AUD', NZ: 'NZD', IN: 'INR', JP: 'JPY', CN: 'CNY', HK: 'HKD',
     SG: 'SGD', AE: 'AED', SA: 'SAR', EG: 'EGP', MX: 'MXN', BR: 'BRL', ZA: 'ZAR', CH: 'CHF', SE: 'SEK',
-    NO: 'NOK', DK: 'DKK', PL: 'PLN', KR: 'KRW', TW: 'TWD', IL: 'ILS', TR: 'TRY', PH: 'PHP', ID: 'IDR'
+    NO: 'NOK', DK: 'DKK', PL: 'PLN', KR: 'KRW', TW: 'TWD', IL: 'ILS', TR: 'TRY', PH: 'PHP', ID: 'IDR',
+    AZ: 'AZN', IR: 'IRR', PK: 'PKR', BD: 'BDT', UA: 'UAH', MY: 'MYR', TH: 'THB', VN: 'VND'
   };
   try {
     const region = new Intl.Locale(navigator.language).maximize().region;
@@ -96,7 +97,7 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
           <Head>{t('companyProfile.addressHead')}</Head>
           <Field label={t('companyProfile.street')} required>
             <input value={text(value.address?.street)} onChange={(e) => setAddress({ street: orUndefined(e.target.value) })}
-              aria-required aria-invalid={miss('street')} className="cth-input" style={fieldStyle} />
+              placeholder={t('companyProfile.streetPlaceholder')} aria-required aria-invalid={miss('street')} className="cth-input" style={fieldStyle} />
           </Field>
           <div style={grid2}>
             <Field label={t('companyProfile.city')} required>
@@ -222,16 +223,16 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
 function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}{required ? ' *' : ''}</span>
+      <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}{required ? ' *' : ''}</span>
       {children}
-      {hint && <span style={{ fontSize: 11.5, color: 'var(--cth-ink-3)' }}>{hint}</span>}
+      {hint && <span style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-3)' }}>{hint}</span>}
     </label>
   );
 }
 
 function Head({ children }: { children: ReactNode }) {
   return (
-    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink)', marginTop: 4 }}>
+    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink)', marginTop: 4 }}>
       {children}
     </div>
   );
@@ -243,6 +244,6 @@ const grid2: CSSProperties = { display: 'grid', gridTemplateColumns: '1fr 1fr', 
  *  missing required answer (aria-invalid) come from the `cth-input` class. */
 const fieldStyle: CSSProperties = {
   padding: '7px 10px', border: 'none', background: 'var(--cth-card)',
-  fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-ink)',
+  fontFamily: 'var(--cth-font-ui)', fontSize: 14, color: 'var(--cth-ink)',
   minWidth: 0
 };

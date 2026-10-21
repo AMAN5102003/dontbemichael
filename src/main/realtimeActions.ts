@@ -42,6 +42,8 @@ import { ALLOW_VOICE_HIRE } from '../shared/buildFeatures';
 import { clearCommandForProvider } from '../shared/providerAutomation';
 import { resolveGodName } from '../shared/godIdentity';
 import { cleanFocus } from '../shared/missions';
+import { cardConversation, openAskIndexes } from '../shared/askMeRouting';
+import { ownerChangeNote } from '../shared/ownerRequests';
 
 export const VOICE_ACTOR = 'michael-voice';
 
@@ -159,8 +161,7 @@ const SETTING_POLICY: Record<string, {
   costCapTokens: { tier: 'confirm', type: 'number', min: 0, max: 1_000_000_000 },
   maxTurns: { tier: 'confirm', type: 'number', min: 1, max: 1000 },
   slackEnabled: { tier: 'confirm', type: 'boolean' },
-  webhookEnabled: { tier: 'confirm', type: 'boolean' },
-  semanticMemory: { tier: 'confirm', type: 'boolean' }
+  webhookEnabled: { tier: 'confirm', type: 'boolean' }
 };
 
 const PENDING_TTL_MS = 120_000;
@@ -463,6 +464,9 @@ function execUpdateTask(deps: RealtimeActionDeps, a: Record<string, unknown>): A
     return { ok: false, spoken: `Waiting names who the card waits on, so only ${godName} sets it. Tell ${godName} who it is waiting on.` };
   }
   const patch: Partial<Omit<HiveTask, 'id'>> = {};
+  // Out of Done only from the board, with a reason (card-lifecycle.md 10):
+  // refuse before anything on the card changes.
+  if (card.status === 'done' && status && status !== 'done') return { ok: false, spoken: `"${card.title}" is done. To reopen it, open the card on the board and give a short reason.` };
   if (str(a.result)) patch.result = str(a.result);
   if (str(a.assignee)) patch.assignee = str(a.assignee);
   if (Object.keys(patch).length && !deps.hivePatchTask(card.id, patch)) {
@@ -473,11 +477,25 @@ function execUpdateTask(deps: RealtimeActionDeps, a: Record<string, unknown>): A
   // close by the owner, so it is recorded as Done like any finished card.
   if (status === 'done' && patch.result) {
     if (!deps.hivePatchTask(card.id, { status: 'done' })) return { ok: false, spoken: `I couldn't update "${card.title}" right now.` };
+    tellMichaelWithdrawn(deps, card, patch.result);
   } else if (status && !deps.hiveMoveTask(card.id, status as HiveTask['status'])) {
     return { ok: false, spoken: `I couldn't update "${card.title}" right now.` };
   }
   attribute(deps, 'update_task', card.id, { status: status || card.status });
   return { ok: true, spoken: `Updated "${card.title}"${status ? ` to ${status}` : ''}.` };
+}
+
+/** Done with a result withdraws the card's open questions (Hive.patchTask).
+ *  Michael hears it, as he does for a close from Tasks, so whoever raised
+ *  them is told. */
+function tellMichaelWithdrawn(deps: RealtimeActionDeps, card: HiveTask, result: string): void {
+  const withdrew = card.status === 'done' ? 0 : openAskIndexes(card.humanQA).length;
+  const godId = deps.hiveRegistry().godId;
+  if (!withdrew || !godId) return;
+  const note = ownerChangeNote(card, { kind: 'finished', result, withdrew });
+  try {
+    deps.hiveSend({ to: godId, act: 'inform', subject: note.subject, body: note.body, conversation: cardConversation(card.id) }, 'human');
+  } catch { /* the card is done either way; Michael sees it on the board */ }
 }
 
 // ─── v0.3.4 soft executors ──────────────────────────────────────────────────

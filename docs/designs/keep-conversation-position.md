@@ -24,17 +24,27 @@ composer, as closing the dock does.
 
 | Area | Responsibility |
 | --- | --- |
-| `src/renderer/src/shell/useDockScroll.ts` | Keeps transient follow intent, row geometry, seen reply IDs, pending navigation and arrival counts for the open dock. |
-| `src/renderer/src/shell/MichaelDock.tsx` | Marks stable rows, connects scroll events and the container observer, reserves the catch-up footer, reveals hidden targets and returns button focus to the composer. |
+| `src/renderer/src/shell/useDockScroll.ts` | Keeps transient follow intent, row geometry, seen reply keys, pending navigation and arrival counts for the open dock, and the place a move between the bar and the center reopens on. |
+| `src/renderer/src/shell/MichaelDock.tsx` | Passes each row's dock key (`dockKeys.ts`, since message ids can repeat), connects scroll events and the container observer, reserves the catch-up footer, reveals hidden targets and returns button focus to the composer. |
 | `src/renderer/src/store/store.ts` | Increments `dockNavigation` on explicit `setDock` calls, including repeated navigation to the same question. This state is not persisted. |
 | `src/renderer/src/i18n/locales/` | Supplies catch-up text and plural categories for English, Chinese and Arabic. |
 | `test/dock-scroll.electron.test.cjs` and `test/fixtures/dock-scroll*` | Mount the production renderer and store with fictional history and mocked main-process APIs; assert actual Chromium geometry and keyboard input. |
 
-The hook captures stable row IDs and their offsets before layout changes.
+The hook captures each row's dock key (`data-k`) and offset before layout changes.
 A passive commit restores the first surviving row overlapping the viewport,
 unless the reader is following within 32 px of the bottom. Explicit navigation
 is consumed once, clears arrivals and takes precedence over passive restoration.
 A missing target remains pending until it appears or catch-up supersedes it.
+
+A scroll event counts as the reader's only when `scrollTop` moved. Content that
+grew since the last measure (late fonts, a reply's fold measured, a file chip)
+moves the bottom, not the reader, and the container observer follows it.
+
+The dock is mounted again when it moves between the bar and the center (the
+wide 1:1). The hook records the first row in view and its offset in the
+composer's `DockView.anchor` while the owner reads, and nothing while following
+the latest. A fresh mount opens on that row at the same offset, ahead of the
+question the dock was first opened for. Closing the dock clears it.
 
 Chromium may change `scrollTop` before dispatching a scroll event. Before a
 passive commit or resize, the hook reconciles that movement against the previous
@@ -47,7 +57,8 @@ old history and repeated snapshots do not. Notes enable catch-up without adding
 to the reply number. Catch-up clears the local arrival set and resumes following.
 
 One `ResizeObserver` watches the list and content container, then disconnects
-when the dock closes. There are no per-row observers, background timers or new
+when the dock closes. Each folded reply already measures its own fold with an
+observer; the hook adds no per-row observers, background timers or new
 dependencies. Capturing row rectangles is linear in rendered history; this
 change does not add virtualization. Delivery, file handling, notification APIs
 and persisted unread state keep their existing paths.
@@ -90,9 +101,9 @@ following. When the button held focus, focus returns to the composer.
 Open a conversation and scroll back to an earlier answer. When replies arrive,
 the passage stays in place and the catch-up control shows the number of new
 replies. Activate it to reach the latest replies and resume following, or
-scroll to the bottom yourself. Notes use Jump to latest. Opening a quoted
-question, following a notification or sending a message remains explicit
-navigation. The screenshots above show the reading and catch-up states in
+scroll to the bottom yourself. Notes use Jump to latest. Following a
+notification or sending a message remains explicit navigation. A quoted
+question scrolls the list to it without claiming the center, as reading does. The screenshots above show the reading and catch-up states in
 the complete office interface.
 
 ## Automated verification

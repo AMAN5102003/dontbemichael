@@ -8,7 +8,12 @@ import { AgentAvatar } from '@/components/AgentAvatar';
 import { InfoTip } from '@/components/InfoTip';
 import { FileText } from '@/components/FileChip';
 import { Icon } from '@/components/Icon';
-import { useDockScroll } from './useDockScroll';
+import { dockKeys } from './dockKeys';
+import { replyTargets } from './replyTargets';
+import { WideButton } from './PanelChrome';
+import { dockEscAction } from './wideCenter';
+import { isComposingKey } from '@shared/imeGuard';
+import { useDockScroll, type DockPlace } from './useDockScroll';
 
 /**
  * Michael's conversation dock (docs/designs/michael-replies.md): it grows up
@@ -71,7 +76,18 @@ function dayLabel(iso: string, t: (k: string) => string): string {
   return d.toLocaleDateString(i18n.language, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, composerRef }: {
+/** What the owner opened and where they were reading, kept by the composer
+ *  so they survive the move between the bar and the center (eng review R1). */
+export interface DockView {
+  expanded: Record<string, true>;
+  setExpanded: (f: (e: Record<string, true>) => Record<string, true>) => void;
+  showEarlier: boolean;
+  setShowEarlier: (on: boolean) => void;
+  /** Where the list was last read (none while following the latest); the next mount opens on it. */
+  anchor: React.MutableRefObject<DockPlace | null>;
+}
+
+export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, composerRef, wide = false, view }: {
   dock: OwnerDock;
   refresh: () => void;
   godId: string;
@@ -79,6 +95,9 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
   /** Answer Michael's question back (16A): the composer replies in that conversation. */
   onReply: (target: { inReplyTo: string; conversation: string; text: string }) => void;
   composerRef: React.RefObject<HTMLElement | null>;
+  /** Drawn wide in the center with the message box under it (wide 1:1). */
+  wide?: boolean;
+  view: DockView;
 }) {
   const { t } = useTranslation();
   const godName = useResolvedGodName();
@@ -86,23 +105,31 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
   const focus = useStore((s) => s.dockFocus);
   const navigation = useStore((s) => s.dockNavigation);
   const setDock = useStore((s) => s.setDock);
+  const setDockWide = useStore((s) => s.setDockWide);
   const queue = useStore((s) => s.messageQueues[godId]);
   const draft = useStore((s) => s.drafts[godId] ?? '');
   const rootRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
-  const [showEarlier, setShowEarlier] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, true>>({});
+  const { expanded, setExpanded, showEarlier, setShowEarlier, anchor } = view;
   const [announce, setAnnounce] = useState('');
   const prevStatus = useRef<Record<string, OwnerQuestionStatus>>({});
   const items = useMemo(() => visibleItems(dock.items, showEarlier), [dock.items, showEarlier]);
-  const scroll = useDockScroll(listRef, contentRef, open, navigation, focus, items, dock.items);
+  // Keyed over the whole conversation, so "Earlier" never shifts which reply is open.
+  const keyOf = useMemo(() => {
+    const keys = dockKeys(dock.items);
+    return new Map(dock.items.map((it, i) => [it, keys[i]]));
+  }, [dock.items]);
+  const rowOf = (it: DockItem) => ({ key: keyOf.get(it) ?? `${it.kind}:${it.id}`, kind: it.kind, notes: it.kind === 'michael' && !!it.notes });
+  const rows = useMemo(() => items.map(rowOf), [items, keyOf]);
+  const history = useMemo(() => dock.items.map(rowOf), [dock.items, keyOf]);
+  const scroll = useDockScroll(listRef, contentRef, open, navigation, focus, rows, history, anchor);
 
   // A notification can name a question hidden by the 30 day view. Reveal it
   // before the scroll hook consumes its pending target.
   useLayoutEffect(() => {
     if (open && focus && !items.some((it) => it.id === focus) && dock.items.some((it) => it.id === focus)) setShowEarlier(true);
-  }, [open, navigation, focus, items, dock.items]);
+  }, [open, navigation, focus, items, dock.items, setShowEarlier]);
 
   // Tell main whether the dock is on screen, so a reply in view needs no notification.
   useEffect(() => {
@@ -146,6 +173,7 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
     return () => document.removeEventListener('mousedown', onDown);
   }, [open, draft, setDock, composerRef]);
 
+  const canReply = useMemo(() => replyTargets(dock.items), [dock.items]);
   const hasEarlier = items.length < dock.items.length;
   const queued = queue ?? [];
   // Position in Michael's queue: -1 once typed, 0 when next, N with N ahead.
@@ -188,19 +216,36 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
       ref={rootRef}
       role="region"
       aria-label={t('dock.label', { godName })}
-      onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } }}
-      className="cth-dock"
-      style={dockStyle}
+      onKeyDown={(e) => {
+        if (e.key !== 'Escape') return;
+        // Wide, Esc goes back to the side for now (6B, 7A); at the side it closes.
+        const action = dockEscAction({ wide, inDock: true, composing: isComposingKey(e) });
+        if (action === 'none') return;
+        e.stopPropagation();
+        if (action === 'side') useStore.getState().setDockSideForNow(true);
+        else close();
+      }}
+      className={wide ? 'cth-dock-wide' : 'cth-dock'}
+      style={wide ? dockWideStyle : dockStyle}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 13px', boxShadow: '0 1px 0 var(--cth-line)' }}>
         <AgentAvatar id={godId} name={godName} size={26} />
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--cth-ink)' }}>{godName}</span>
         {dock.open > 0 && <span style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{t('dock.open', { count: dock.open })}</span>}
         <InfoTip text={t('dock.openInfo', { godName })} />
-        <button onClick={close} aria-label={t('dock.close')} title={t('dock.close')} style={{ ...quietBtn, marginInlineStart: 'auto', fontSize: 14, width: 32, height: 32, display: 'grid', placeItems: 'center', padding: 0 }}>✕</button>
+        {/* Open wide / Back to the side, the panels' button (3A); only it
+            changes the remembered choice (7A). */}
+        <span style={{ marginInlineStart: 'auto', display: 'inline-flex' }}>
+          <WideButton on={wide} onToggle={() => setDockWide(!wide)} />
+        </span>
+        <button onClick={close} aria-label={t('dock.close')} title={t('dock.close')} style={{ ...quietBtn, fontSize: 14, width: 32, height: 32, display: 'grid', placeItems: 'center', padding: 0 }}>✕</button>
       </div>
-      <div ref={listRef} onScroll={scroll.onScroll} style={{ flex: 1, minHeight: 0, overflowY: 'auto', overflowAnchor: 'none', scrollBehavior: 'auto', padding: '12px 13px' }}>
-        <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div ref={listRef} onScroll={scroll.onScroll} style={{
+        flex: 1, minHeight: 0, overflowY: 'auto', overflowAnchor: 'none', scrollBehavior: 'auto',
+        // Wide, the text is at most 720 px across, centered (wide panel WD8).
+        padding: wide ? '18px max(16px, calc((100% - 720px) / 2))' : '12px 13px'
+      }}>
+        <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', gap: wide ? 14 : 10 }}>
         {dock.items.length === 0 && (
           <div style={{ padding: '14px 4px 10px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
             <AgentAvatar id={godId} name={godName} size={26} />
@@ -216,21 +261,22 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
           <button onClick={() => setShowEarlier(true)} style={{ ...quietBtn, alignSelf: 'center' }}>{t('dock.earlier')}</button>
         )}
         {items.map((it) => {
+          const key = keyOf.get(it) ?? `${it.kind}:${it.id}`;
           const day = dayLabel(it.at, t);
-          const divider = day !== lastDay ? <div key={`d-${it.id}`} style={{ textAlign: 'center', fontSize: 11, color: 'var(--cth-ink-3)' }}>{day}</div> : null;
+          const divider = day !== lastDay ? <div key={`d-${key}`} style={{ textAlign: 'center', fontSize: 11, color: 'var(--cth-ink-3)' }}>{day}</div> : null;
           lastDay = day;
           if (it.kind === 'owner') {
             prevQuestion = it.id;
-            return [divider, <OwnerBubble key={it.id} q={it} ahead={ahead(it.id)} onCancel={() => void cancel(it)} onRetry={() => void retry(it)}
+            return [divider, <OwnerBubble key={key} dataKey={key} q={it} wide={wide} ahead={ahead(it.id)} onCancel={() => void cancel(it)} onRetry={() => void retry(it)}
               onNudge={() => void window.cth.ownerNudge(it.id).then(refresh)} onAskAgain={() => onFillComposer(it.text)} />];
           }
           const quote = prevQuestion !== it.replyTo ? dock.items.find((q): q is DockQuestion => q.kind === 'owner' && q.id === it.replyTo) : undefined;
           prevQuestion = it.replyTo;
           const question = dock.items.find((q): q is DockQuestion => q.kind === 'owner' && q.id === it.replyTo);
-          return [divider, <ReplyBubble key={it.id} r={it} godId={godId} godName={godName} quote={quote}
-            expanded={!!expanded[it.id]} onMore={() => { scroll.pauseForExpansion(); setExpanded((e) => ({ ...e, [it.id]: true })); }}
-            onQuote={() => setDock(true, it.replyTo)}
-            canReply={it.act === 'query' && question?.status === 'waiting-for-you'}
+          return [divider, <ReplyBubble key={key} dataKey={key} r={it} wide={wide} godId={godId} godName={godName} quote={quote}
+            expanded={!!expanded[key]} onMore={() => { scroll.pauseForExpansion(); setExpanded((e) => ({ ...e, [key]: true })); }}
+            onQuote={() => scroll.showQuestion(it.replyTo)}
+            canReply={canReply.has(it)}
             onReply={() => question && onReply({ inReplyTo: it.id, conversation: question.conversation, text: firstSentence(it.text) })} />];
         })}
         </div>
@@ -270,17 +316,18 @@ function visibleItems(items: DockItem[], all: boolean): DockItem[] {
   return items.filter((it) => keep.has(it.kind === 'owner' ? it.id : it.replyTo));
 }
 
-function OwnerBubble({ q, ahead, onCancel, onRetry, onNudge, onAskAgain }: {
-  q: DockQuestion; ahead: number; onCancel: () => void; onRetry: () => void; onNudge: () => void; onAskAgain: () => void;
+function OwnerBubble({ dataKey, q, wide, ahead, onCancel, onRetry, onNudge, onAskAgain }: {
+  dataKey: string; q: DockQuestion; wide: boolean; ahead: number; onCancel: () => void; onRetry: () => void; onNudge: () => void; onAskAgain: () => void;
 }) {
   const { t } = useTranslation();
   const godName = useResolvedGodName();
   const label = statusWords(q, ahead, godName, t);
   return (
-    <div data-q={q.id} data-dock-item={q.id} style={{ alignSelf: 'flex-end', maxWidth: '84%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+    <div data-q={q.id} data-k={dataKey} style={{ alignSelf: 'flex-end', maxWidth: wide ? 'min(84%, 560px)' : '84%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
       <div dir="auto" style={{
-        background: 'var(--cth-neutral-soft)', borderRadius: 'var(--cth-r-lg)', borderEndEndRadius: 4, padding: '8px 11px',
-        fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
+        background: 'var(--cth-neutral-soft)', borderRadius: 'var(--cth-r-lg)', borderEndEndRadius: 4,
+        // Wide reads at t-read 14 / 22 (5A).
+        padding: wide ? '9px 13px' : '8px 11px', fontSize: wide ? 14 : 12.5, lineHeight: wide ? '22px' : '18px', color: 'var(--cth-ink)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere',
         opacity: q.status === 'withdrawn' ? 0.6 : 1
       }}>{q.text}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: STATUS_COLOR[q.status], fontWeight: q.status === 'waiting-for-you' ? 600 : 400 }}>
@@ -305,21 +352,40 @@ function statusWords(q: DockQuestion, ahead: number, godName: string, t: (k: str
   }
 }
 
-function ReplyBubble({ r, godId, godName, quote, expanded, onMore, onQuote, canReply, onReply }: {
-  r: DockReply; godId: string; godName: string; quote?: DockQuestion; expanded: boolean; onMore: () => void; onQuote: () => void;
+function ReplyBubble({ dataKey, r, wide, godId, godName, quote, expanded, onMore, onQuote, canReply, onReply }: {
+  dataKey: string; r: DockReply; wide: boolean; godId: string; godName: string; quote?: DockQuestion; expanded: boolean; onMore: () => void; onQuote: () => void;
   canReply: boolean; onReply: () => void;
 }) {
   const { t } = useTranslation();
-  const lines = r.notes ? 6 : 4;
   // Couldn't finish always says why; a refusal without one reads "No reason given" (10A).
   const text = r.act === 'refuse' && !r.text.trim() ? t('dock.noReason') : r.text;
-  const long = text.split('\n').length > lines || text.length > lines * 60;
+  // Folded by height, 8 lines of 18 px (notes 6), so a list and a table fold
+  // alike; a line clamp never folds a table (design review 2.1A).
+  const fold = r.notes ? FOLD_NOTES_PX : FOLD_PX;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
+  // Wide, nothing folds: a reply shows in full (2A).
+  const open = expanded || wide;
+  // Measured against the folded box, and again when the text's own size
+  // changes (file chips resolve late, the panel is resized).
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el || open) return;
+    const measure = () => setClipped(el.scrollHeight > el.clientHeight + 1);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    if (el.firstElementChild) ro.observe(el.firstElementChild);
+    return () => ro.disconnect();
+  }, [text, open]);
+  const folded = !open && clipped;
   return (
-    <div data-dock-item={r.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: '92%' }}>
+    <div data-k={dataKey} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: '92%' }}>
       <AgentAvatar id={godId} name={godName} size={22} />
       <div style={{
-        minWidth: 0, background: r.notes ? 'var(--cth-card-2)' : 'var(--cth-card)', boxShadow: 'inset 0 0 0 1px var(--cth-line)',
-        borderRadius: 'var(--cth-r-lg)', borderStartStartRadius: 4, padding: '8px 11px', color: r.notes ? 'var(--cth-ink-2)' : 'var(--cth-ink)'
+        ['--dock-reply-bg' as string]: r.notes ? 'var(--cth-card-2)' : 'var(--cth-card)',
+        minWidth: 0, background: 'var(--dock-reply-bg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)',
+        borderRadius: 'var(--cth-r-lg)', borderStartStartRadius: 4, padding: wide ? '10px 14px' : '8px 11px', color: r.notes ? 'var(--cth-ink-2)' : 'var(--cth-ink)'
       }}>
         {r.notes && <div style={{ fontSize: 11, color: 'var(--cth-ink-3)', marginBottom: 3 }}>{t('dock.notes', { godName })}</div>}
         {quote && (
@@ -327,11 +393,12 @@ function ReplyBubble({ r, godId, godName, quote, expanded, onMore, onQuote, canR
             <span dir="auto">{firstSentence(quote.text)}</span>
           </button>
         )}
-        <div dir="auto" style={!expanded && long ? { display: '-webkit-box', WebkitLineClamp: lines, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : undefined}>
+        <div ref={bodyRef} dir="auto" className="cth-dock-reply" style={open ? undefined : { maxHeight: fold, overflow: 'hidden', position: 'relative' }}>
           {/* Files it names are chips that open them (docs/designs/open-file-tab.md). */}
           <FileText source={boldFirst(text)} who={{ raisedBy: 'god' }} />
+          {folded && <div aria-hidden="true" className="cth-dock-fade" />}
         </div>
-        {!expanded && long && <button onClick={onMore} style={linkBtn}>{t('dock.more')}</button>}
+        {folded && <button onClick={onMore} style={linkBtn}>{t('dock.more')}</button>}
         {canReply && <button onClick={onReply} style={{ ...linkBtn, display: 'block', marginTop: 4 }}>{t('dock.reply')}</button>}
       </div>
     </div>
@@ -346,11 +413,20 @@ function boldFirst(text: string): string {
   return m ? `**${m[1]}**${s.slice(m[1].length)}` : text;
 }
 
+/** A long reply folds at 8 lines of 18 px; Michael's notes at 6 (D10 A, design 2.1A). */
+const FOLD_PX = 144;
+const FOLD_NOTES_PX = 108;
+
 const dockStyle: CSSProperties = {
   position: 'absolute', insetInlineStart: 0, bottom: 'calc(100% + 8px)', width: 400, maxWidth: 'calc(100vw - 48px)',
   maxHeight: 'min(430px, calc(100vh - 182px))', display: 'flex', flexDirection: 'column', overflow: 'hidden',
   background: 'var(--cth-card)', borderRadius: 'var(--cth-r-2xl)',
   boxShadow: 'inset 0 0 0 1px var(--cth-line-2), var(--cth-shadow-lg)', fontFamily: 'var(--cth-font-ui)', pointerEvents: 'auto'
+};
+/** Wide, the 1:1 is the top of the center sheet; the sheet draws the card. */
+const dockWideStyle: CSSProperties = {
+  flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  fontFamily: 'var(--cth-font-ui)', pointerEvents: 'auto'
 };
 const quietBtn: CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-ui)', fontSize: 12, padding: 2 };
 const linkBtn: CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', padding: 0, marginInlineStart: 4, color: 'inherit', fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2 };

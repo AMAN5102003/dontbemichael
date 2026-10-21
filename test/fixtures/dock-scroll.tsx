@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
-import { MichaelDock } from '../../src/renderer/src/shell/MichaelDock';
+import { MichaelDock, type DockView } from '../../src/renderer/src/shell/MichaelDock';
 import { useStore } from '../../src/renderer/src/store/store';
 import { sendToMichael } from '../../src/renderer/src/shell/ownerSend';
 import i18n, { directionFor } from '../../src/renderer/src/i18n';
@@ -19,6 +19,7 @@ const history = () => Array.from({ length: 14 }, (_, n) => [question(n), reply(n
 let current = history();
 let update: (items: DockItem[]) => void;
 let remount: () => void;
+let move: () => void;
 let failSend = false;
 let fileOpened = false;
 let resolveFiles: ((value: unknown) => void) | undefined;
@@ -45,8 +46,17 @@ function Fixture() {
   const [items, setItems] = useState(current);
   const [version, setVersion] = useState(0);
   const composer = useRef<HTMLDivElement>(null);
+  // What BottomBar keeps for the dock, so a remount opens where the owner was reading.
+  const [expanded, setExpanded] = useState<Record<string, true>>({});
+  const [showEarlier, setShowEarlier] = useState(false);
+  const kept = useRef<DockView['anchor']['current']>(null);
+  const dockOpen = useStore((s) => s.dockOpen);
+  useEffect(() => { if (!dockOpen) kept.current = null; }, [dockOpen]);
+  const view: DockView = { expanded, setExpanded, showEarlier, setShowEarlier, anchor: kept };
   update = (next) => { current = next; setItems([...next]); };
-  remount = () => setVersion((v) => v + 1);
+  remount = () => { setVersion((v) => v + 1); setExpanded({}); setShowEarlier(false); };
+  // The dock moving between the bar and the center: a new mount, same view.
+  move = () => setVersion((v) => v + 1);
   const dock: OwnerDock = { items, open: 0, unread: 0, waitingForYou: 0 };
   return <>
     <div style={{ padding: 24 }}>
@@ -60,7 +70,7 @@ function Fixture() {
       {['en', 'ar', 'zh-CN'].map((lng) => <button key={lng} onClick={() => language(lng)}>{lng}</button>)}
     </div>
     <div ref={composer} style={{ position: 'absolute', bottom: 40, insetInlineStart: 40, width: 400 }}>
-      <MichaelDock key={version} dock={dock} refresh={() => {}} godId="god" onFillComposer={(s) => useStore.getState().setDraft('god', s)} onReply={() => {}} composerRef={composer} />
+      <MichaelDock key={version} dock={dock} refresh={() => {}} godId="god" onFillComposer={(s) => useStore.getState().setDraft('god', s)} onReply={() => {}} composerRef={composer} view={view} />
       <textarea aria-label="Test composer" placeholder="Test composer" style={{ width: '100%', height: 50 }} />
     </div>
   </>;
@@ -114,11 +124,11 @@ async function runDockTests() {
   const commit = async (next: DockItem[]) => { flushSync(() => update(next)); await settle(); };
   const anchor = () => {
     const top = list().getBoundingClientRect().top;
-    const row = [...list().querySelectorAll<HTMLElement>('[data-dock-item]')].find((r) => r.getBoundingClientRect().bottom > top)!;
-    return { id: row.dataset.dockItem!, offset: row.getBoundingClientRect().top - top };
+    const row = [...list().querySelectorAll<HTMLElement>('[data-k]')].find((r) => r.getBoundingClientRect().bottom > top)!;
+    return { id: row.dataset.k!, offset: row.getBoundingClientRect().top - top };
   };
   const unchanged = (saved: ReturnType<typeof anchor>, label: string) => until(() => {
-    const row = list().querySelector<HTMLElement>(`[data-dock-item="${saved.id}"]`);
+    const row = list().querySelector<HTMLElement>(`[data-k="${saved.id}"]`);
     return row && Math.abs(row.getBoundingClientRect().top - list().getBoundingClientRect().top - saved.offset) <= 1;
   }, label);
   const navigate = async (id?: string) => { flushSync(() => useStore.getState().setDock(true, id)); await settle(); };
@@ -185,11 +195,20 @@ async function runDockTests() {
   // A quoted answer after another exchange navigates through the same path.
   await commit([...current, { ...reply(101), replyTo: 'q4' }]);
   await navigate();
-  const quote = list().querySelector('[data-dock-item="r101"] button') as HTMLButtonElement;
+  const quote = list().querySelector('[data-k="michael:r101"] button') as HTMLButtonElement;
   check(quote, 'quote is rendered'); quote.click(); await settle();
   await pause(600); const afterQuote = anchor(); append(); await settle();
   await unchanged(afterQuote, 'quote navigation is consumed once');
   passed.push('Earlier, hidden question and quote navigation');
+
+  reset(); await settle(); await pause(700);
+  const beforeMove = anchor();
+  flushSync(() => move()); await settle();
+  await unchanged(beforeMove, 'a move between the bar and the center keeps the passage');
+  check(!jump(), 'a move is not an arrival');
+  await navigate(); flushSync(() => move()); await settle();
+  await until(() => bottom() <= 1 && !jump(), 'a move while following stays on the latest');
+  passed.push('move between the bar and the center');
 
   reset(); await settle();
   await commit([oldQ, oldR, ...current]);
@@ -224,10 +243,13 @@ async function runDockTests() {
 
   reset(); await settle(); await pause(350);
   const beforeMore = anchor();
-  const more = list().querySelector(`[data-dock-item="${beforeMore.id}"] button`) as HTMLButtonElement;
-  check(more?.textContent === 'More', 'visible reply can expand');
-  more.click(); await settle(); await unchanged(beforeMore, 'More preserves the reply text');
-  await navigate(); const lastReply = list().querySelector('[data-dock-item="r13"] button') as HTMLButtonElement;
+  // The first reply in view, whether or not a question sits above it.
+  const view = list().getBoundingClientRect();
+  const shown = [...list().querySelectorAll<HTMLElement>('[data-k^="michael:"]')].find((r) => r.getBoundingClientRect().bottom > view.top && r.getBoundingClientRect().top < view.bottom);
+  const more = [...(shown?.querySelectorAll('button') ?? [])].find((b) => b.textContent === 'More') as HTMLButtonElement | undefined;
+  check(more, 'visible reply can expand');
+  more!.click(); await settle(); await unchanged(beforeMore, 'More preserves the reply text');
+  await navigate(); const lastReply = [...list().querySelectorAll('[data-k="michael:r13"] button')].find((b) => b.textContent === 'More') as HTMLButtonElement;
   const beforeLastMore = anchor();
   lastReply.click(); await settle(); await unchanged(beforeLastMore, 'More at bottom keeps the text being read visible');
   await until(() => bottom() > 32, 'More pauses following for reading');
@@ -235,15 +257,18 @@ async function runDockTests() {
   document.querySelector<HTMLElement>('.cth-dock')!.style.maxHeight = '300px'; await settle();
   await unchanged(beforeResize, 'viewport resize preserves reading');
   // Child-only layout change exercises ResizeObserver without a dock rerender.
-  (list().querySelector('[data-dock-item="r0"]') as HTMLElement).style.minHeight = '350px'; await settle();
+  (list().querySelector('[data-k="michael:r0"]') as HTMLElement).style.minHeight = '350px'; await settle();
   await unchanged(beforeResize, 'late child layout preserves reading');
   passed.push('More, viewport resize and asynchronous child layout');
 
-  reset(); await settle(); await pause();
+  // Far enough down that the rows above can shrink without hitting the top.
+  reset(); await settle(); await pause(900);
   const removedAnchor = anchor();
-  const nextRow = [...list().querySelectorAll<HTMLElement>('[data-dock-item]')].find((r) => r.dataset.dockItem !== removedAnchor.id && r.getBoundingClientRect().top > list().getBoundingClientRect().top)!;
-  const neighbour = { id: nextRow.dataset.dockItem!, offset: nextRow.getBoundingClientRect().top - list().getBoundingClientRect().top };
-  await commit(current.filter((it) => it.id !== removedAnchor.id));
+  // A question's reply goes with it, so the survivor is from another exchange.
+  const exchange = (key: string) => key.replace(/^\w+:[qr]/, '');
+  const nextRow = [...list().querySelectorAll<HTMLElement>('[data-k]')].find((r) => exchange(r.dataset.k!) !== exchange(removedAnchor.id) && r.getBoundingClientRect().top > list().getBoundingClientRect().top)!;
+  const neighbour = { id: nextRow.dataset.k!, offset: nextRow.getBoundingClientRect().top - list().getBoundingClientRect().top };
+  await commit(current.filter((it) => `${it.kind}:${it.id}` !== removedAnchor.id));
   await unchanged(neighbour, 'removing visible anchor preserves a surviving neighbour');
   passed.push('visible anchor removal');
 
@@ -281,9 +306,10 @@ async function runDockTests() {
   passed.push('Escape and composer focus');
 
   reset(); await settle(); await pause();
-  const beforeFiles = anchor();
-  const file = list().querySelector('[data-dock-item="r0"]');
+  const file = list().querySelector('[data-k="michael:r0"]');
   await commit(current.map((it) => it.id === 'r0' ? { ...it, text: 'Saved as /tmp/accounts.csv.' } : it));
+  // Read from here: the shorter reply above may have left the view.
+  const beforeFiles = anchor();
   resolveFiles?.([{ verdict: 'open', tab: false, path: '/tmp/accounts.csv' }]); await settle();
   await unchanged(beforeFiles, 'file verdict preserves reading');
   const fileButton = file!.querySelector('button') as HTMLButtonElement;
@@ -320,11 +346,11 @@ async function runDockStressTests() {
   const navigate = (id?: string) => flushSync(() => useStore.getState().setDock(true, id));
   const anchor = () => {
     const top = list().getBoundingClientRect().top;
-    const row = [...list().querySelectorAll<HTMLElement>('[data-dock-item]')].find((r) => r.getBoundingClientRect().bottom > top)!;
-    return { id: row.dataset.dockItem!, offset: row.getBoundingClientRect().top - top };
+    const row = [...list().querySelectorAll<HTMLElement>('[data-k]')].find((r) => r.getBoundingClientRect().bottom > top)!;
+    return { id: row.dataset.k!, offset: row.getBoundingClientRect().top - top };
   };
   const unchanged = (saved: ReturnType<typeof anchor>) => until(() => {
-    const row = list().querySelector<HTMLElement>(`[data-dock-item="${saved.id}"]`);
+    const row = list().querySelector<HTMLElement>(`[data-k="${saved.id}"]`);
     return row && Math.abs(row.getBoundingClientRect().top - list().getBoundingClientRect().top - saved.offset) <= 1;
   }, `reading anchor ${saved.id} moved`);
   const read = () => scrollTo(200);
@@ -401,18 +427,21 @@ async function runDockStressTests() {
 
   // Exercise lifecycle cleanup with the real native observer, not a geometry mock.
   const NativeObserver = window.ResizeObserver;
-  const observing = new Set<ResizeObserver>();
+  // Each folded reply measures itself with its own observer; the scroll
+  // hook keeps exactly one on the list container.
+  const observing = new Map<ResizeObserver, Set<Element>>();
   window.ResizeObserver = class extends NativeObserver {
-    observe(target: Element, options?: ResizeObserverOptions) { observing.add(this); super.observe(target, options); }
+    observe(target: Element, options?: ResizeObserverOptions) { observing.set(this, (observing.get(this) ?? new Set()).add(target)); super.observe(target, options); }
     disconnect() { observing.delete(this); super.disconnect(); }
   };
+  const onList = () => [...observing.values()].filter((targets) => targets.has(list())).length;
   try {
     await scenario('20 open and close cycles clean up observers', async () => {
       for (let i = 0; i < 20; i++) {
         flushSync(() => useStore.getState().setDock(false));
         check(observing.size === 0, 'observer survived closing');
         navigate();
-        check(observing.size === 1, 'opening must have exactly one container observer');
+        check(onList() === 1, 'opening must have exactly one container observer');
       }
       await settle(); await until(() => bottom() <= 1 && !jump(), 'reopening must follow without stale arrivals');
     });

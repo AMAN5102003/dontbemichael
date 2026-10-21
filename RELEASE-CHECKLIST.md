@@ -23,6 +23,15 @@ successful release never touches.
   URL and requires 200.
 - [ ] **`package.json` version is the real release version** (not an `-rc` string), and `RELEASE.md`,
   `build/release-notes.md` and `CHANGELOG.md` all name that same version.
+- [ ] **"What's new" leads with what a business owner notices, and only those lines are bold.**
+  dontbemichael.com's `/download` shows the first three bold lead ins under "What's new in N"
+  as "New in vN" (a bold part must end in `.`, `!`, `?` or `,` to count), and the update toast
+  starts from the same bullets. Put owner facing items first and bold only the ones the site
+  should show; write fun, fixes and developer items as plain bullets after them.
+  `npm run check:leadins` (also in CI on `release/**`) fails on a bold part the site would skip.
+- [ ] **A hand edit to a published release body is also made in `RELEASE.md`.** The body is built
+  from `RELEASE.md` at the tag (`tools/release-assets.cjs`), so re-running that tag's release
+  workflow puts the tag's text back. Edit both, and do not re-run an old tag's workflow after.
 
 ## The proving hop (rehearse on prereleases, before the real release)
 

@@ -58,7 +58,7 @@ test('the Settings copy is true: skills install where every agent reads them', (
   const skills = fs.readFileSync(path.resolve(__dirname, '../src/main/skills.ts'), 'utf8');
   assert.match(skills, /const root = join\(homedir\(\), '\.claude', 'skills'\);/, 'catalog installs are machine wide');
   const hive = fs.readFileSync(path.resolve(__dirname, '../src/main/hive.ts'), 'utf8');
-  assert.match(hive, /if \(opts\.skillsDir\) this\.copyBundledSkills\(opts\.skillsDir, join\(dir, '\.claude', 'skills'\)\);/, 'bundled skills go to every agent');
+  assert.match(hive, /if \(opts\.skillsDir\) this\.copyBundledSkills\(opts\.skillsDir, join\(dir, '\.claude', 'skills'\), meta\.id === RESEARCH_ID\);/, 'bundled skills go to every agent; the web skill to Research alone (ship 2 D13)');
 });
 
 /**

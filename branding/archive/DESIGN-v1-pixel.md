@@ -209,7 +209,7 @@ screen, not the token name.
 | `status-ghost` | `#D9D3DE` | `#6C6A76` | closing | Pane closed, fading out |
 | `status-compacting` | `#8F7CC7` | `#9D8BD2` | compacting | Boxing up context |
 | `status-looping` | `#D6903F` | `#D69A55` | looping | Circuit breaker armed |
-| `status-typing` | `#C89838` | `#CBA24A` | your draft | **Not an agent state.** The user has unsent text on that agent's prompt, which holds its message queue. See [`docs/message-queue.md`](../docs/message-queue.md). |
+| `status-typing` | `#C89838` | `#CBA24A` | your draft | **Not an agent state.** The user has unsent text on that agent's prompt, which holds its message queue. See [`docs/message-queue.md`](../../docs/message-queue.md). |
 
 Status is always shown by color **and** a label or icon **and** position. Never by
 color alone.

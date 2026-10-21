@@ -74,12 +74,12 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{
                 fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px',
-                color: isConsent ? '#6E1423' : 'var(--cth-ink-500)',
+                color: isConsent ? 'var(--cth-coral-text)' : 'var(--cth-ink-500)',
                 textTransform: 'uppercase'
               }}>
                 {t(TIER_LABEL_KEY[tier])}
               </span>
-              <span style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-400, var(--cth-ink-500))' }}>
+              <span style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)' }}>
                 {t(TIER_NOTE_KEY[tier])}
               </span>
             </div>
@@ -95,7 +95,7 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       gap: 12, padding: '7px 10px',
                       background: 'var(--cth-paper-100)',
-                      boxShadow: `inset 0 0 0 1px ${isConsent && on ? '#6E1423' : 'var(--cth-ink-300)'}`
+                      boxShadow: `inset 0 0 0 1px ${isConsent && on ? 'var(--cth-coral-text)' : 'var(--cth-ink-300)'}`
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>

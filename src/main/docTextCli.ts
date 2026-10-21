@@ -10,16 +10,25 @@
  *
  * Exit codes: 0 = text on stdout; 1 = couldn't read it (reason on stderr, in
  * plain English, so the agent can tell the owner); 2 = no file given.
+ *
+ * `doc-text --json <file>` prints the whole result as JSON instead. The app
+ * reads the knowledge store's uploads this way, in a process of its own
+ * (docTextProcess.ts).
  */
 
 import { readFileSync } from 'node:fs';
 import { extractDocumentText, isImagePath } from './docText';
 
 async function main(): Promise<number> {
-  const file = process.argv[2];
+  const json = process.argv[2] === '--json';
+  const file = process.argv[json ? 3 : 2];
   if (!file) {
     process.stderr.write('usage: doc-text <file>\n');
     return 2;
+  }
+  if (json) {
+    process.stdout.write(JSON.stringify(await extractDocumentText(file)));
+    return 0;
   }
   if (isImagePath(file)) {
     process.stderr.write('This is an image. Open it directly with your Read tool. You can see images.\n');

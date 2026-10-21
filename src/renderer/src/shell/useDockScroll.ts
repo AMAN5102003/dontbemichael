@@ -1,12 +1,15 @@
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import type { DockItem } from '@shared/ownerRequests';
+import { useLayoutEffect, useRef, useState, type MutableRefObject, type RefObject } from 'react';
 
 const BOTTOM_SLOP = 32;
-type Anchor = { id: string; offset: number; height: number };
+/** One conversation row, by its dock key (dockKeys.ts): message ids can repeat. */
+export interface DockRow { key: string; kind: string; notes?: boolean }
+/** The row the owner was reading, and how far below the top of the list it sat. */
+export interface DockPlace { key: string; offset: number }
+type Anchor = { key: string; offset: number; height: number };
 type Position = { top: number; height: number; viewport: number; anchors: Anchor[] };
 
 const atBottom = (el: HTMLElement) => el.scrollHeight - el.clientHeight - el.scrollTop <= BOTTOM_SLOP;
-const rows = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLElement>('[data-dock-item]'));
+const rows = (el: HTMLElement) => Array.from(el.querySelectorAll<HTMLElement>('[data-k]'));
 
 function capture(el: HTMLElement): Position {
   const top = el.getBoundingClientRect().top;
@@ -15,16 +18,16 @@ function capture(el: HTMLElement): Position {
   // interval must still know the newly visible passage's pre-change offset.
   const anchors = rows(el).map((row) => {
     const rect = row.getBoundingClientRect();
-    return { id: row.dataset.dockItem!, offset: rect.top - top, height: rect.height };
+    return { key: row.dataset.k!, offset: rect.top - top, height: rect.height };
   });
   return { top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight, anchors };
 }
 
 function restore(el: HTMLElement, position: Position): void {
-  const byId = new Map(rows(el).map((row) => [row.dataset.dockItem, row]));
+  const byKey = new Map(rows(el).map((row) => [row.dataset.k, row]));
   for (const anchor of position.anchors) {
     if (anchor.offset + anchor.height <= 0 || anchor.offset >= position.viewport) continue;
-    const row = byId.get(anchor.id);
+    const row = byKey.get(anchor.key);
     if (!row) continue;
     el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.offset;
     return;
@@ -32,11 +35,20 @@ function restore(el: HTMLElement, position: Position): void {
   el.scrollTop = position.top;
 }
 
+/** Centers a row by scrolling the list alone, never its clipped ancestors (the wide 1:1's sheet). */
+function center(el: HTMLElement, row: Element): void {
+  const r = row.getBoundingClientRect();
+  el.scrollTop += r.top - el.getBoundingClientRect().top - (el.clientHeight - r.height) / 2;
+}
+
 /** Local reading position only. Explicit navigation wins over every passive
- * refresh; ResizeObserver covers font/file layout without observing each reply. */
+ * refresh; ResizeObserver covers font/file layout without observing each reply.
+ * `kept` is the row the owner was reading when the dock moved between the bar
+ * and the center (DockView.anchor); a fresh mount opens on it. */
 export function useDockScroll(
   list: RefObject<HTMLDivElement>, content: RefObject<HTMLDivElement>,
-  open: boolean, navigation: number, focus: string | undefined, items: DockItem[], history: DockItem[]
+  open: boolean, navigation: number, focus: string | undefined, items: DockRow[], history: DockRow[],
+  kept: MutableRefObject<DockPlace | null>
 ) {
   const following = useRef(true);
   const position = useRef<Position>({ top: 0, height: 0, viewport: 0, anchors: [] });
@@ -54,11 +66,17 @@ export function useDockScroll(
   };
 
   const publish = () => {
-    const replies = items.filter((it) => arrivals.current.has(it.id) && it.kind === 'michael' && !it.notes).length;
+    const replies = items.filter((it) => arrivals.current.has(it.key) && it.kind === 'michael' && !it.notes).length;
     const show = !following.current && arrivals.current.size > 0;
     updateNews(replies, show);
   };
-  const remember = (el: HTMLElement) => { position.current = capture(el); };
+  const remember = (el: HTMLElement) => {
+    position.current = capture(el);
+    // What a move between the bar and the center reopens on: nothing while
+    // following the latest, else the first row in view.
+    const first = following.current ? undefined : position.current.anchors.find((a) => a.offset + a.height > 1);
+    kept.current = first ? { key: first.key, offset: first.offset } : null;
+  };
   const readPendingScroll = (el: HTMLElement) => {
     const saved = position.current;
     const delta = el.scrollTop - saved.top;
@@ -87,6 +105,10 @@ export function useDockScroll(
   const onScroll = () => {
     const el = list.current;
     if (!el) return;
+    // Only a new position is the owner's doing. Content that grew since the
+    // last measure (late fonts, a fold measured, a file chip) moves the
+    // bottom, not the reader, and the resize observer follows it.
+    if (el.scrollTop === position.current.top) return;
     readPendingScroll(el);
     const wasFollowing = following.current;
     following.current = atBottom(el);
@@ -111,11 +133,16 @@ export function useDockScroll(
       updateNews(0, false);
       return;
     }
+    const mounting = lastNavigation.current === undefined;
     const navigate = lastNavigation.current !== navigation;
     if (!navigate) readPendingScroll(el);
+    // A move between the bar and the center mounts the dock again: it opens
+    // on what was being read, ahead of the question it was first opened for.
+    const place = mounting ? kept.current : null;
+    const reading = place ? el.querySelector<HTMLElement>(`[data-k="${CSS.escape(place.key)}"]`) : null;
     if (navigate) {
       lastNavigation.current = navigation;
-      pendingFocus.current = focus;
+      pendingFocus.current = reading ? undefined : focus;
       arrivals.current.clear();
       following.current = true;
     }
@@ -125,21 +152,25 @@ export function useDockScroll(
     // reader even when their timestamps precede the newest known reply.
     // First nonempty history is a baseline, including a delayed initial load.
     if (!navigate && seen.current.size > 0) {
-      const firstKnown = history.findIndex((it) => seen.current.has(it.id));
+      const firstKnown = history.findIndex((it) => seen.current.has(it.key));
       if (firstKnown >= 0 && !following.current) {
         for (const it of history.slice(firstKnown + 1)) {
-          if (it.kind === 'michael' && !seen.current.has(it.id)) newReplies.add(it.id);
+          if (it.kind === 'michael' && !seen.current.has(it.key)) newReplies.add(it.key);
         }
       }
     }
-    const present = new Set(items.map((it) => it.id));
-    for (const id of arrivals.current) if (!present.has(id)) arrivals.current.delete(id);
-    for (const it of history) seen.current.add(it.id);
+    const present = new Set(items.map((it) => it.key));
+    for (const key of arrivals.current) if (!present.has(key)) arrivals.current.delete(key);
+    for (const it of history) seen.current.add(it.key);
     const target = pendingFocus.current
       ? el.querySelector<HTMLElement>(`[data-q="${CSS.escape(pendingFocus.current)}"]`)
       : null;
-    if (target) {
-      el.scrollTop += target.getBoundingClientRect().top - el.getBoundingClientRect().top - (el.clientHeight - target.offsetHeight) / 2;
+    if (reading && place) {
+      el.scrollTop += reading.getBoundingClientRect().top - el.getBoundingClientRect().top - place.offset;
+      following.current = atBottom(el);
+      remember(el);
+    } else if (target) {
+      center(el, target);
       pendingFocus.current = undefined;
       arrivals.current.clear();
       following.current = atBottom(el);
@@ -156,7 +187,7 @@ export function useDockScroll(
     if (!following.current && !target && newReplies.size) {
       const bottom = el.getBoundingClientRect().top + el.clientHeight;
       for (const row of rows(el)) {
-        if (newReplies.has(row.dataset.dockItem!) && row.getBoundingClientRect().bottom > bottom) arrivals.current.add(row.dataset.dockItem!);
+        if (newReplies.has(row.dataset.k!) && row.getBoundingClientRect().bottom > bottom) arrivals.current.add(row.dataset.k!);
       }
     }
     publish();
@@ -180,6 +211,19 @@ export function useDockScroll(
   return {
     onScroll,
     jumpToLatest: () => { if (list.current) follow(list.current); },
+    // A quoted question is a reading action inside the dock: it moves the
+    // list only, and never claims the center as opening the dock does.
+    showQuestion: (id: string) => {
+      const el = list.current;
+      const row = el?.querySelector<HTMLElement>(`[data-q="${CSS.escape(id)}"]`);
+      if (!el || !row) return;
+      pendingFocus.current = undefined;
+      arrivals.current.clear();
+      center(el, row);
+      following.current = atBottom(el);
+      remember(el);
+      publish();
+    },
     // More is a reading action. Keep the text being expanded visible even
     // when the reader was following the latest before clicking it.
     pauseForExpansion: () => {

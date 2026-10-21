@@ -36,7 +36,7 @@ test('an open panel on someone who goes home closes, to Needs you while anything
 test('the store, the stage and the app follow the rule, and Cancel brings everything back', () => {
   // Value: protects=5A 6A 7A 8A wiring; fails_when=select ignores the list, Cancel leaves people gone, the chip stays clickable, or mail tags keep full strength; why_new=new; seam=source pins, the renderer has no DOM harness
   const store = read('src/renderer/src/store/store.ts');
-  assert.match(store, /select: \(id\) => set\(\(s\) => \{\n\s*if \(!canOpen\(id, s\.goneHome\)\) return \{\};/);
+  assert.match(store, /select: \(id\) => \{ attemptLeave\(canOpen\(id, get\(\)\.goneHome\) \? \{ selectedId: id, rightColumn: 'person' \} : null, \(\) => set\(\(s\) => \{\n\s*if \(!canOpen\(id, s\.goneHome\)\) return \{\};/);
   assert.match(store, /: s\.selectedId && !canOpen\(s\.selectedId, s\.goneHome\)/);
   const app = read('src/renderer/src/App.tsx');
   assert.match(app, /setGoneHome\(r\.phase === 'cancelled' \? \[\] : \[\.\.\.\(r\.confirmed \?\? \[\]\), \.\.\.\(r\.excused \?\? \[\]\)\]\)/, 'Cancel empties it (7A)');
@@ -49,6 +49,13 @@ test('the store, the stage and the app follow the rule, and Cancel brings everyt
   const css = read('src/renderer/src/design/global.css');
   assert.match(css, /\.cth-st-gone \{ pointer-events: none; animation: cth-st-gone 1\.4s var\(--cth-ease\) forwards; \}/);
   assert.match(css, /prefers-reduced-motion: reduce\) \{ \.cth-st-gone \{ animation: none;/);
+});
+
+test('closing time switches to the office floor as it starts', () => {
+  // Value: protects=the owner sees the office close, from any tab; fails_when=the switch is dropped or fires on every progress tick; why_new=closing used to leave a file or Tasks tab in front; seam=source pin
+  const app = read('src/renderer/src/App.tsx');
+  // Not saved as the remembered view (review 2026-10-12): the next launch opens where the owner left off.
+  assert.match(app, /if \(phase === 'started'\) useStore\.setState\(\{ floorView: 'office' \}\);/);
 });
 
 test('nobody who has gone home trades banter, and a closed office has none', () => {

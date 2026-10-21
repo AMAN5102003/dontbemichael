@@ -31,7 +31,7 @@ test('the onboarding team starts once, each member in its folder, and Michael ke
   const fn = hive.slice(at, hive.indexOf('\nexport function useHive', at));
 
   // The whole team starts once; later launches try only the members that failed.
-  assert.match(fn, /const retry = config\.businessTeamStarted \? new Set\(config\.businessTeamRetry \?\? \[\]\) : undefined;\s*if \(team\.length === 0 \|\| retry\?\.size === 0\) return;/, 'runs once, then only for the members that failed');
+  assert.match(fn, /const retry = config\.businessTeamStarted \? new Set\(config\.businessTeamRetry \?\? \[\]\) : undefined;(?:\s*\/\/[^\n]*)*\s*if \(team\.length === 0 \|\| retry\?\.size === 0\) \{\s*if \(!retry\) await startPickedResearch\(config\);\s*return;\s*\}/, 'runs once, then only for the members that failed (a picked Research starts with the first run)');
   assert.match(fn, /for \(const \[index, member\] of team\.entries\(\)\) \{\s*if \(retry && !retry\.has\(member\.agentId\)\) continue;/, 'a retry skips everyone who started, even one the owner has since removed');
   // A member the floor already holds is not started twice; one the registry
   // knows but the floor lost comes back (office-record.test.cjs).
@@ -57,4 +57,11 @@ test('the onboarding team starts once, each member in its folder, and Michael ke
   const start = hive.indexOf('void rewriteTeamInstructions(config).catch(() => undefined).then(() => removeLegacyFirstTasks(config)).catch(() => undefined).then(() => startBusinessTeam(config));');
   const ready = hive.lastIndexOf("useStore.getState().setGodStatus('ready');", start);
   assert.ok(ready > 0 && start > ready && start - ready < 400, 'started right after Michael is ready');
+});
+
+test('members that did not start are named to Michael, who tells the owner', () => {
+  const at = hive.indexOf('async function startBusinessTeam(config: HarnessConfig)');
+  const fn = hive.slice(at, hive.indexOf('\nexport function useHive', at));
+  assert.match(fn, /if \(failed\.length\) \{\s*const note = didNotStartNote\(failed\.map\(\(id\) => teamMemberName\(defs\.get\(id\)!\)\), !!retry\);\s*await window\.cth\.hiveSend\(\{ to: GOD_ID, act: 'inform', \.\.\.note \}, 'system'\)/);
+  assert.ok(fn.indexOf('didNotStartNote(') > fn.indexOf('businessTeamRetry: failed'), 'after the retry list is saved');
 });

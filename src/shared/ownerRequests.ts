@@ -1,3 +1,5 @@
+import { isNextAt, WAITING_FOLLOW_UPS } from './cardGuards';
+import { ownValue } from './ownValue';
 import { answerMessages, cardOfConversation, cardText, isAnswered, isWithdrawn, MICHAEL_ID, openAskIndexes, raiserOf, type AnswerMessage } from './askMeRouting';
 
 /**
@@ -18,6 +20,8 @@ export interface MessageLike {
   subject?: string;
   created_at: string;
   to?: string;
+  /** The answer an owner's answer request carries (askMeRouting answeredAtOf). */
+  answeredAt?: string;
 }
 
 /** Most cards listed in one context block; the rest are counted. */
@@ -100,18 +104,24 @@ export interface CardLike {
  * Michael sent on that card since: the launch catch-up's candidates
  * (card-lifecycle.md section 5). Every answered, timed entry counts, not only
  * the newest on a Blocked card, because a card can hold several questions and
- * an answered card often leaves Blocked. catchUpRequests keeps only the
- * answers the app recorded itself.
+ * an answered card often leaves Blocked. A request that names its answer
+ * covers that answer only, so a failed send stays caught up after the owner
+ * answers another question on the card; an older request without one covers
+ * every answer before it. catchUpRequests keeps only the answers the app
+ * recorded itself.
  */
 export function answersWithoutRequest(
   tasks: CardLike[],
   toMichael: MessageLike[]
 ): Array<{ task: CardLike; q: string; a: string; raisedBy?: string; answeredAt?: string }> {
   const lastRequestAt = new Map<string, string>();
+  const requested = new Set<string>();
   for (const m of toMichael) {
     if (m.from !== 'human' || m.act !== 'request') continue;
     const taskId = cardOfConversation(m.conversation);
-    if (taskId && (!lastRequestAt.has(taskId) || m.created_at > lastRequestAt.get(taskId)!)) lastRequestAt.set(taskId, m.created_at);
+    if (!taskId) continue;
+    if (m.answeredAt) requested.add(`${taskId}|${m.answeredAt}`);
+    else if (!lastRequestAt.has(taskId) || m.created_at > lastRequestAt.get(taskId)!) lastRequestAt.set(taskId, m.created_at);
   }
   const out: Array<{ task: CardLike; q: string; a: string; raisedBy?: string; answeredAt?: string }> = [];
   for (const t of tasks) {
@@ -119,7 +129,7 @@ export function answersWithoutRequest(
     const sent = lastRequestAt.get(t.id);
     for (const e of t.humanQA) {
       if (!e || typeof e.q !== 'string' || !isAnswered(e) || isWithdrawn(e) || typeof e.answeredAt !== 'string') continue;
-      if (sent && sent >= e.answeredAt) continue;
+      if (requested.has(`${t.id}|${e.answeredAt}`) || (sent && sent >= e.answeredAt)) continue;
       out.push({ task: t, q: e.q, a: e.a as string, raisedBy: e.raisedBy, answeredAt: e.answeredAt });
     }
   }
@@ -151,10 +161,37 @@ export function catchUpRequests(
   for (const { task, q, a, raisedBy, answeredAt } of candidates) {
     if (!answeredAt || !recorded.has(answerKey(task.id, answeredAt, digest(q, a)))) continue;
     const raiser = raiserOf({ raisedBy }, { assignee: typeof task.assignee === 'string' ? task.assignee : undefined }, known);
-    const m = answerMessages({ raiser, raiserName: agents[raiser]?.name ?? raiser, taskId: task.id, title: task.title ?? task.id, q, a }).find((x) => x.to === MICHAEL_ID);
+    const m = answerMessages({ raiser, raiserName: agents[raiser]?.name ?? raiser, taskId: task.id, title: task.title ?? task.id, q, a, answeredAt }).find((x) => x.to === MICHAEL_ID);
     if (m) out.push(m);
   }
   return out;
+}
+
+/** How long after the owner's last Ask me answer the catch-up runs again. */
+export const OWNER_ANSWER_RETRY_MS = 60_000;
+
+/**
+ * The catch-up again in the same launch (card-lifecycle.md section 5): the
+ * renderer records an answer on the card, then sends Michael's request, so a
+ * send that failed left the answer off Ask me with Michael unaware until the
+ * next launch. A minute after the owner's last answer the fleet tick runs the
+ * catch-up once more. A request that did go is in his inbox by then, so its
+ * answer is skipped and nothing goes twice. A catch-up that fails is tried
+ * again a minute later.
+ */
+export class OwnerAnswerRetry {
+  private dueAt = 0;
+  /** `catchUp` runs the catch-up and says whether it finished. */
+  constructor(private catchUp: () => boolean, private waitMs = OWNER_ANSWER_RETRY_MS) {}
+  /** The app recorded an answer the owner gave. */
+  answered(now: number): void {
+    this.dueAt = now + this.waitMs;
+  }
+  /** The fleet tick. */
+  tick(now: number): void {
+    if (!this.dueAt || now < this.dueAt) return;
+    this.dueAt = this.catchUp() ? 0 : now + this.waitMs;
+  }
 }
 
 /** How long an owner request may sit with Michael, in office time, before the
@@ -224,9 +261,10 @@ export function michaelCardState(createdAt: string, now: number, days: readonly 
  *  conversation. */
 export type OwnerCardChange =
   | { kind: 'closed'; reason?: string }
-  | { kind: 'moved'; from: string; to: string };
+  | { kind: 'moved'; from: string; to: string; reason?: string }
+  | { kind: 'finished'; result: string; withdrew: number };
 
-const STATUS_WORDS: Record<string, string> = { todo: 'To do', doing: 'Doing', blocked: 'Blocked', done: 'Done' };
+const STATUS_WORDS: Record<string, string> = { triage: 'Triage', todo: 'To do', doing: 'Doing', waiting: 'Waiting', blocked: 'Blocked', done: 'Done' };
 
 export function ownerChangeNote(task: { id: string; title?: string }, change: OwnerCardChange): { subject: string; body: string } {
   const card = `card ${cardText(task.id, 60)}${task.title ? ` "${cardText(task.title)}"` : ''}`;
@@ -239,19 +277,148 @@ export function ownerChangeNote(task: { id: string; title?: string }, change: Ow
       ].join('\n')
     };
   }
+  if (change.kind === 'finished') {
+    return {
+      subject: `OWNER FINISHED card ${cardText(task.id, 60)}`,
+      body: [
+        `The owner marked ${card} Done with a result: ${cardText(change.result, 500)}`,
+        `That withdrew ${change.withdrew === 1 ? 'its open question' : `its ${change.withdrew} open questions`} from Ask me, unanswered. Tell whoever raised ${change.withdrew === 1 ? 'it' : 'them'}. If one still needs an answer, ask it again on a new card.`
+      ].join('\n')
+    };
+  }
   return {
-    subject: `OWNER MOVED card ${cardText(task.id, 60)} to ${STATUS_WORDS[change.to] ?? change.to}`,
-    body: `The owner moved ${card} from ${STATUS_WORDS[change.from] ?? change.from} to ${STATUS_WORDS[change.to] ?? change.to}. Take it from there: check who has it and route the work to match.`
+    subject: `OWNER MOVED card ${cardText(task.id, 60)} to ${ownValue(STATUS_WORDS, change.to) ?? change.to}`,
+    body: `The owner moved ${card} from ${ownValue(STATUS_WORDS, change.from) ?? change.from} to ${ownValue(STATUS_WORDS, change.to) ?? change.to}.${change.reason ? ` Reason: ${cardText(change.reason, 500)}` : ''} Take it from there: check who has it and route the work to match.`
+  };
+}
+
+/** The owner deleted a team member for good (owner, 2026-10-14): Michael
+ *  hears once, with their open cards, so he gives each one to someone else or
+ *  closes it. Their open Ask me questions were withdrawn by the app. */
+export function memberDeletedNote(
+  member: { id: string; name?: string },
+  cards: ReadonlyArray<{ id: string; title?: string; status?: string }>,
+  withdrawn: number,
+  setAside = 0
+): { subject: string; body: string } {
+  const who = cardText(member.name?.trim() || member.id, 60);
+  const shown = cards.slice(0, 20);
+  return {
+    subject: `OWNER DELETED ${who} from the team`,
+    body: [
+      `The owner deleted ${who} (${cardText(member.id, 60)}) from the team for good. Never route work to them again.`,
+      ...(shown.length ? [
+        'Their open cards. Give each one to a teammate who fits, or close it when the work is no longer needed:',
+        ...shown.map((c) => `- card ${cardText(c.id, 60)}${c.title ? `: ${cardText(c.title)}` : ''}${c.status ? ` (${ownValue(STATUS_WORDS, c.status) ?? cardText(c.status, 20)})` : ''}`),
+        ...(cards.length > shown.length ? [`- and ${cards.length - shown.length} more`] : [])
+      ] : []),
+      ...(withdrawn > 0 ? [`The app withdrew their ${withdrawn === 1 ? 'open question' : `${withdrawn} open questions`} on Ask me. When the work still needs an answer, ask it again on the card.`] : []),
+      ...(setAside > 0 ? [`The app also set aside ${setAside === 1 ? 'a filing' : `${setAside} filings`} they made that you had not worked yet, so nothing new is asked for them.`] : [])
+    ].join('\n')
+  };
+}
+
+/** The app put back a Done card an agent reopened (card-lifecycle.md section
+ *  10): only the owner takes a card out of Done. Status only: a question asked
+ *  on it meanwhile is still open, so Michael moves it to a new card. */
+export function reopenedNote(task: { id: string; title?: string }, to: string, openAsk = false): { subject: string; body: string } {
+  const card = `card ${cardText(task.id, 60)}${task.title ? ` "${cardText(task.title)}"` : ''}`;
+  return {
+    subject: `DONE CARD PUT BACK: card ${cardText(task.id, 60)}`,
+    body: [
+      `${card} was moved out of Done to ${ownValue(STATUS_WORDS, to) ?? cardText(to, 20)} by an agent, so the app put it back to Done: only the owner takes a card out of Done. If the work needs more, make a new card for it, and tell whoever moved it.`,
+      ...(openAsk ? ['It has a question open on Ask me. Withdraw it on this card ("dismissedAt" and a short "dismissedReason"), and when the work still needs the answer, ask it on the new card.'] : [])
+    ].join('\n')
+  };
+}
+
+/** The app put back a Done card that vanished from the board: a card ends only
+ *  as Done and is never deleted. */
+export function restoredDoneNote(task: { id: string; title?: string }): { subject: string; body: string } {
+  const card = `card ${cardText(task.id, 60)}${task.title ? ` "${cardText(task.title)}"` : ''}`;
+  return {
+    subject: `DONE CARD RESTORED: card ${cardText(task.id, 60)}`,
+    body: `${card} disappeared from tasks.json, so the app put it back as it was when it was last Done. Never delete a card: a card ends only as Done. When you rewrite tasks.json, start from the file as it is now.`
+  };
+}
+
+/** The app moved a card back out of Triage: Triage is only the way a new card
+ *  comes in. */
+export function untriagedNote(task: { id: string; title?: string }, to: string): { subject: string; body: string } {
+  const card = `card ${cardText(task.id, 60)}${task.title ? ` "${cardText(task.title)}"` : ''}`;
+  return {
+    subject: `CARD MOVED BACK FROM TRIAGE: card ${cardText(task.id, 60)}`,
+    body: `${card} was moved into Triage after it was on the board, so the app moved it back to ${ownValue(STATUS_WORDS, to) ?? cardText(to, 20)}. Triage is only for new filings; move the card to where its work stands.`
+  };
+}
+
+/** A To do card's nextAt has come: its person does the step (house rule 8).
+ *  `whose`: the card's person's, Michael's own, or nobody's (it goes to Michael). */
+export function nextStepDueNote(task: { id: string; title?: string; nextAt?: string; description?: unknown }, godName: string, whose: 'person' | 'own' | 'nobody' = 'person'): { subject: string; body: string } {
+  const what = typeof task.description === 'string' && task.description.trim() ? ` What it is about: ${cardText(task.description, 500).replace(/[.!?]+$/, '')}.` : '';
+  return {
+    subject: `Next step due: ${cardText(task.title ?? task.id)}`,
+    body: `The next step on card ${cardText(task.id, 60)} "${cardText(task.title ?? task.id)}" was set for ${cardText(String(task.nextAt ?? ''), 40)} and is due now.${what} ${whose === 'nobody'
+      ? 'Nobody on the team has this card: do the step or hand it to someone, then move the card to where its work stands.'
+      : whose === 'own'
+        ? 'It is your own card: do the step, then move the card to where its work stands.'
+        : `Do it, then tell ${cardText(godName, 40)} where the card stands.`}`
+  };
+}
+
+/** Michael's one backstop: a card still in To do long after its step came due.
+ *  `reminded`: the team member who got the reminder, when it was not him. */
+export function nextStepBackstopNote(task: { id: string; title?: string; nextAt?: string }, reminded?: string): { subject: string; body: string } {
+  return {
+    subject: `STILL IN TO DO: card ${cardText(task.id, 60)}`,
+    body: `Card ${cardText(task.id, 60)} "${cardText(task.title ?? task.id)}" had its next step due at ${cardText(String(task.nextAt ?? ''), 40)}${reminded ? `, and ${cardText(reminded, 40)} was reminded` : ''}, but it is still in To do. ${reminded ? 'Check with them' : 'Check who should do it'}, then move the card to where its work stands, with a new "nextAt" if the step moved.`
+  };
+}
+
+/** How long ago, in whole days, for a note or list line ("today", "1 day", "6 days"). */
+const daysAgo = (iso: string, now: number): string => {
+  const d = Math.floor((now - Date.parse(iso)) / 86_400_000);
+  return d <= 0 ? 'today' : d === 1 ? '1 day' : `${d} days`;
+};
+
+/** A Waiting card's check back time came (card-lifecycle.md section 8; owner,
+ *  2026-10-17): Michael has its person follow up and sets a new time, or, after
+ *  two follow ups with no reply, asks the owner whether to keep waiting. */
+export function waitingDueNote(
+  task: { id: string; title?: string; assignee?: string; waitingOn?: unknown },
+  clock: { since: string; followUps: number },
+  askOwner: boolean,
+  now: number
+): { subject: string; body: string } {
+  const followUpsMax = WAITING_FOLLOW_UPS;
+  const card = `Card ${cardText(task.id, 60)} "${cardText(task.title ?? task.id)}"`;
+  const who = typeof task.waitingOn === 'string' && task.waitingOn.trim() ? cardText(task.waitingOn, 60) : 'someone outside the office';
+  const waited = `has waited on ${who} for ${daysAgo(clock.since, now)}`;
+  if (askOwner) {
+    return {
+      subject: `No reply after ${followUpsMax} follow ups: card ${cardText(task.id, 60)}`,
+      body: `${card} ${waited}, with no reply after ${followUpsMax} follow ups. Ask the owner on Ask me whether to keep waiting or close it: add the question to the card's humanQA and move the card to "blocked".`
+    };
+  }
+  const person = task.assignee ? cardText(task.assignee, 40) : 'its person';
+  return {
+    subject: `Follow up due: card ${cardText(task.id, 60)}`,
+    body: `${card} ${waited}, and its check back time has come. This is follow up ${clock.followUps + 1} of ${followUpsMax}. Have ${person} follow up with them, then set a new "nextAt" for when to check back: a date they named, else your judgement. If they answered, move the card to where its work stands.`
   };
 }
 
 /** A card Michael has to tidy: in Blocked with nothing asked (no `issue`), or
  *  holding an open question the wrong way (`issue`). */
-export interface StuckCard { id: string; title: string; assignee?: string; issue?: 'ask-off-blocked' | 'several-asks' }
+export interface StuckCard {
+  id: string; title: string; assignee?: string;
+  issue?: 'filing' | 'triage' | 'ask-off-blocked' | 'several-asks' | 'bad-next' | 'ask-as-list' | 'gone-quiet';
+  /** A Waiting card gone quiet: who it waits on, since when, follow ups done. */
+  quiet?: { waitingOn?: string; since: string; followUps: number };
+}
 
 const stuckOf = (t: CardLike, issue?: StuckCard['issue']): StuckCard => ({
   id: t.id,
-  title: (t.title ?? t.id).trim(),
+  title: String(t.title ?? t.id).trim() || t.id,
   ...(t.assignee ? { assignee: t.assignee } : {}),
   ...(issue ? { issue } : {})
 });
@@ -266,8 +433,24 @@ const stuckOf = (t: CardLike, issue?: StuckCard['issue']): StuckCard => ({
 export function blockedWithNothingAsked(tasks: CardLike[], open: Pick<OwnerRequest, 'taskId'>[]): StuckCard[] {
   const withMichael = new Set(open.map((r) => r.taskId));
   return tasks
-    .filter((t) => !!t && t.status === 'blocked' && openAskIndexes(t.humanQA as never).length === 0 && !withMichael.has(t.id))
+    .filter((t) => !!t && typeof t.id === 'string' && t.status === 'blocked' && openAskIndexes(t.humanQA as never).length === 0 && !withMichael.has(t.id))
     .map((t) => stuckOf(t));
+}
+
+/** Two or more lines that start like a numbered or bulleted list. */
+const LIST_LINES = /^[ \t]*(?:\d+[.)]|[-*\u2022])[ \t]+\S/gm;
+
+/**
+ * An open ask written as a list in its text, with no options or parts, asked
+ * since `since` (ms). The owner can only type an answer to it, so Michael is
+ * told to rewrite it (docs/designs/ask-me-options.md; owner, 2026-10-15: his
+ * habit beat the instruction). Older asks keep their look (decision 1A).
+ */
+export function askAsList(entry: { q?: unknown; askedAt?: unknown; options?: unknown; parts?: unknown } | null | undefined, since: number): boolean {
+  if (!entry || typeof entry.q !== 'string' || entry.options !== undefined || entry.parts !== undefined) return false;
+  const at = typeof entry.askedAt === 'string' ? Date.parse(entry.askedAt) : NaN;
+  if (!Number.isFinite(at) || at < since) return false;
+  return (entry.q.match(LIST_LINES) ?? []).length >= 2;
 }
 
 /**
@@ -275,23 +458,37 @@ export function blockedWithNothingAsked(tasks: CardLike[], open: Pick<OwnerReque
  * Ask me until the owner answers it or Michael withdraws it, so a card that
  * left Blocked, or that gained a second question, still shows the old one.
  * Michael is told each turn until he moves the card back to Blocked, folds the
- * questions into one, or withdraws what no longer matters.
+ * questions into one, or withdraws what no longer matters. An ask written as
+ * a list since `since` (ms) is listed too (askAsList).
  */
-export function asksToTidy(tasks: CardLike[]): StuckCard[] {
+export function asksToTidy(tasks: CardLike[], since = Infinity): StuckCard[] {
   const out: StuckCard[] = [];
   for (const t of tasks) {
-    if (!t) continue;
+    if (!t || typeof t.id !== 'string') continue;
+    // Filed by a team member, waiting for Michael to check and release it
+    // (card-lifecycle.md section 10); its ask is not on Ask me yet.
+    if (t.status === 'triage') { out.push(stuckOf(t, 'triage')); continue; }
+    // A next step time the app cannot read wakes nobody (cardGuards.ts).
+    const next = (t as { nextAt?: unknown }).nextAt;
+    if (t.status === 'todo' && next !== undefined && next !== null && next !== '' && !isNextAt(next)) out.push(stuckOf(t, 'bad-next'));
     const open = openAskIndexes(t.humanQA as never).length;
     if (!open) continue;
     if (t.status !== 'blocked') out.push(stuckOf(t, 'ask-off-blocked'));
     else if (open > 1) out.push(stuckOf(t, 'several-asks'));
+    const qa = t.humanQA as unknown as Parameters<typeof askAsList>[0][] | undefined;
+    if (openAskIndexes(t.humanQA as never).some((i) => askAsList(qa?.[i], since))) out.push(stuckOf(t, 'ask-as-list'));
   }
   return out;
 }
 
 const STUCK_HEADS: Record<NonNullable<StuckCard['issue']> | 'nothing-asked', string> = {
+  'gone-quiet': 'WAITING CARDS GONE QUIET, oldest first. Their check back time has come and they are still in Waiting. For each one: have its person follow up with who it waits on, then set a new "nextAt" for when to check back (a date they named, else your judgement); move it on if they answered. After two follow ups with no reply, ask the owner on Ask me whether to keep waiting or close it, and move it to "blocked".',
+  filing: 'NEW FILINGS TO TRIAGE, oldest first. Team members filed these in the triage folder of the hive with what their work needs; the owner does not see them. Work them in this order, one at a time, against the board as it stands. For each one: answer it from your memory or the board when you can, and tell the team member; fold it into an existing card that covers the same matter; route a question a teammate can answer; drop a duplicate; or make a card for it, "blocked" with its ask rewritten into the Ask me shape, or "waiting" with "waitingOn". Keep one card per source of answers. Then move the file to triage/.done.',
+  triage: 'CARDS IN TRIAGE ON THE BOARD. The owner does not see these. Handle each like a new filing, then release it: "blocked" when it asks the owner, "waiting" with "waitingOn" when it waits on someone else, or "done" when it needs nothing more.',
   'nothing-asked': 'BLOCKED CARDS WITH NOTHING ASKED. These cards are in Blocked, but none has a question for the owner on Ask me or an open request from the owner, so nothing is moving them. Blocked means waiting on the owner\'s answer. For each one: if it needs the owner, add the question to its humanQA so it shows on Ask me; if it waits on someone outside the office or on a team member, move it to "waiting" and name who in "waitingOn"; if the work is finished, or the owner decided to stop it, move it to "done".',
   'ask-off-blocked': 'OPEN QUESTIONS ON CARDS OUT OF BLOCKED. Each of these cards left Blocked with a question still open, and the owner still sees it on Ask me until they answer it or you withdraw it. For each one: if you moved the card out of Blocked and the work still needs the answer, move it back to "blocked". If the owner moved it, the card is done, or the question no longer matters, withdraw the question by setting "dismissedAt" (the time) and a short "dismissedReason" on that humanQA entry. Never move a card the owner moved.',
+  'bad-next': 'CARDS WITH A NEXT TIME THE APP CANNOT READ. Nobody is reminded when it comes. Set "nextAt" on each to an ISO date and time with its offset, such as 2026-10-12T09:00:00+01:00, or remove it.',
+  'ask-as-list': 'ASKS WRITTEN AS A LIST. The owner can only type an answer to these. Rewrite the open humanQA entry on each card: keep only the bold sentence and the short context in "q"; put a choice in "options", as [{"label": "..."}] with "recommended": true on the one you recommend, or several questions in "parts", as [{"q": "..."}], giving a question its own "options" when it is a choice. Keep its "askedAt" and "raisedBy".',
   'several-asks': 'CARDS WITH MORE THAN ONE OPEN QUESTION. The owner sees every one of them on Ask me. Keep one open question per card: fold what still matters into the newest, and withdraw the others by setting "dismissedAt" (the time) and a short "dismissedReason" on each.'
 };
 
@@ -299,12 +496,17 @@ const STUCK_HEADS: Record<NonNullable<StuckCard['issue']> | 'nothing-asked', str
 export function stuckCardsContext(stuck: StuckCard[]): string | null {
   if (!stuck.length) return null;
   const parts: string[] = [];
-  for (const kind of ['nothing-asked', 'ask-off-blocked', 'several-asks'] as const) {
+  const now = Date.now();
+  for (const kind of ['filing', 'triage', 'nothing-asked', 'gone-quiet', 'ask-off-blocked', 'several-asks', 'ask-as-list', 'bad-next'] as const) {
     const cards = stuck.filter((c) => (c.issue ?? 'nothing-asked') === kind);
     if (!cards.length) continue;
     parts.push([
       STUCK_HEADS[kind],
-      ...cards.slice(0, LIST_MAX).map((c) => `- card ${cardText(c.id, 60)}: ${cardText(c.title)}${c.assignee ? ` (with ${cardText(c.assignee, 40)})` : ''}`),
+      ...cards.slice(0, LIST_MAX).map((c) => kind === 'filing'
+        ? `- triage/${cardText(c.id, 80)}: ${cardText(c.title)}${c.assignee ? ` (from ${cardText(c.assignee, 40)})` : ''}`
+        : `- card ${cardText(c.id, 60)}: ${cardText(c.title)}${c.assignee ? ` (with ${cardText(c.assignee, 40)})` : ''}${c.quiet
+          ? `, waiting on ${c.quiet.waitingOn ? cardText(c.quiet.waitingOn, 60) : 'someone outside the office'} for ${daysAgo(c.quiet.since, now)}, ${c.quiet.followUps} follow up${c.quiet.followUps === 1 ? '' : 's'} done`
+          : ''}`),
       ...(cards.length > LIST_MAX ? [`- and ${cards.length - LIST_MAX} more`] : [])
     ].join('\n'));
   }
@@ -536,7 +738,7 @@ export function openOwnerQuestions(
 export function ownerQuestionsContext(open: OpenOwnerQuestion[]): string | null {
   if (!open.length) return null;
   return [
-    'QUESTIONS FROM THE OWNER IN YOUR CONVERSATION. Each is waiting for your answer in the owner\'s conversation with you. Route the work as you would any request, then answer the owner: a message "to": "human" with "in_reply_to" the id. Use "act": "done" with the answer, "refuse" with a one line reason when it cannot be done, "query" to ask the owner something about it, or "inform" with "expect_by" (a time) and "waiting_on" (who) while it is in progress. They stay here until you send done or refuse.',
+    'QUESTIONS FROM THE OWNER IN YOUR CONVERSATION. Each is waiting for your answer in the owner\'s conversation with you. Route the work as you would any request, then answer the owner: a message "to": "human" with "in_reply_to" the id. Lay out a longer answer as your rules say: the answer first, then a list or small table where it helps. Use "act": "done" with the answer, "refuse" with a one line reason when it cannot be done, "query" to ask the owner something about it, or "inform" with "expect_by" (a time) and "waiting_on" (who) while it is in progress. They stay here until you send done or refuse.',
     ...open.slice(0, LIST_MAX).map((q) => `- id ${cardText(q.id, 60)}: ${cardText(q.text)}`),
     ...(open.length > LIST_MAX ? [`- and ${open.length - LIST_MAX} more`] : [])
   ].join('\n');
