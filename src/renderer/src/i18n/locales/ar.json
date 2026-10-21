@@ -192,7 +192,9 @@
     "traces": "التتبّع",
     "memory": "الذاكرة",
     "profile": "الملف",
-    "capabilities": "الصلاحيات"
+    "capabilities": "الصلاحيات",
+    "resizeLabel": "تغيير حجم اللوحة الجانبية",
+    "resizeTitle": "اسحب لتغيير الحجم. انقر مرتين لإعادة الضبط."
   },
   "toolWaterfall": {
     "fresh": "جديد {{tokens}}ر",

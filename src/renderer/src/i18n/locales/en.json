@@ -192,7 +192,9 @@
     "traces": "Traces",
     "memory": "Memory",
     "profile": "Profile",
-    "capabilities": "Access"
+    "capabilities": "Access",
+    "resizeLabel": "Resize the side panel",
+    "resizeTitle": "Drag to resize. Double click to reset."
   },
   "toolWaterfall": {
     "fresh": "fresh {{tokens}}t",
