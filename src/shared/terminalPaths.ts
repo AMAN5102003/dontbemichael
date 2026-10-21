@@ -65,8 +65,8 @@ export type PathAction = 'preview' | 'edit' | 'reveal';
 /**
  * Candidate path tokens in one line of terminal output.
  *
- * The extension must START WITH A LETTER and run 1-8 more alphanumerics. That
- * single constraint is what keeps `v0.4.5`, `1.5`, and `0.92` out: their
+ * The extension must START WITH A LETTER and run up to 15 more alphanumerics, so
+ * `application.properties` comes through whole. Starting with a letter is what keeps `v0.4.5`, `1.5`, and `0.92` out: their
  * "extension" is digits. `node_modules/.bin` has no extension and is caught by
  * the separator rule in `isPathToken` instead.
  *
@@ -77,7 +77,16 @@ export type PathAction = 'preview' | 'edit' | 'reveal';
  */
 // Only explicit path prefixes qualify for a whole quoted match; otherwise prose
 // such as "Update README.md" must fall through to the filename inside it.
-const PATH_TOKEN_RE = /"(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^"\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?"|'(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^'\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?'|`(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])[^`\r\n]*\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?`|(?:[A-Za-z]:[\\/])?[A-Za-z0-9_@.~/\\+-]*[A-Za-z0-9_@~/\\+-]\.[A-Za-z][A-Za-z0-9]{0,7}(?::\d+)?/g;
+// A folder name may hold spaces ("Business Reports/summary.md"), but a space is
+// never right before or after a separator in a real path. Prose that happens to
+// start with a slash ("/ see notes.md") has one, so it falls through too.
+const quotedPathRe = (q: string): string =>
+  String.raw`${q}(?:[A-Za-z]:[\\/]|~[\\/]|\.{1,2}[\\/]|[\\/])(?!\s)(?:[^${q}\r\n\\/]|(?<!\s)[\\/](?!\s))*\.[A-Za-z][A-Za-z0-9]{0,15}(?::\d+)?${q}`;
+const PATH_TOKEN_RE = new RegExp(
+  [quotedPathRe('"'), quotedPathRe("'"), quotedPathRe('`'),
+    String.raw`(?:[A-Za-z]:[\\/])?[A-Za-z0-9_@.~/\\+-]*[A-Za-z0-9_@~/\\+-]\.[A-Za-z][A-Za-z0-9]{0,15}(?::\d+)?`].join('|'),
+  'g'
+);
 
 /** A fresh matcher. The regex is stateful (`g`), so callers must never share one. */
 export function pathTokenMatcher(): RegExp {
@@ -119,6 +128,18 @@ export function stripPathToken(raw: string): string {
 }
 
 /**
+ * The extension that decides what a path is. A dotfile such as `.gitignore`,
+ * `.env` or `.npmrc` is named by its type, so the name after its dot counts;
+ * `extensionOf` (shared with Ask me) gives a dotfile none.
+ */
+function typeOf(token: string): string {
+  const ext = extensionOf(token);
+  if (ext) return ext;
+  const name = token.split(/[\\/]/).pop() ?? '';
+  return /^\.[A-Za-z][A-Za-z0-9]*$/.test(name) ? name.slice(1).toLowerCase() : '';
+}
+
+/**
  * Is this token worth underlining at all?
  *
  * A token qualifies when it carries an extension we KNOW, or when it contains a
@@ -128,7 +149,7 @@ export function stripPathToken(raw: string): string {
  * false positive is one underline that stats to nothing and does nothing.
  */
 export function isPathToken(token: string): boolean {
-  const ext = extensionOf(token);
+  const ext = typeOf(token);
   if (!ext) return false;
   if (PREVIEW_EXTS.has(ext) || EDIT_EXTS.has(ext) || isImagePath(token)) return true;
   return /[/\\]/.test(token);
@@ -145,7 +166,7 @@ export function isPathToken(token: string): boolean {
  * place that decides.
  */
 export function classifyPathToken(token: string): PathAction {
-  const ext = extensionOf(token);
+  const ext = typeOf(token);
   if (PREVIEW_EXTS.has(ext)) return 'preview';
   if (isImagePath(token)) return 'reveal';
   if (EDIT_EXTS.has(ext)) return 'edit';

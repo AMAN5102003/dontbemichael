@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useAgentSpans, useFleetTelemetry, totalTokens, cacheFraction } from '@/hooks/useTelemetry';
+import { fmtToolTokens } from '@shared/tokenFormat';
 
 /**
  * Per-agent tool-call timeline (#7B.2) — a horizontal waterfall of tool spans
@@ -30,13 +31,13 @@ export function ToolWaterfall({ agentId }: { agentId: string }) {
           <>
             <span><strong>${sample.usd.toFixed(2)}</strong></span>
             <span style={{ color: 'var(--cth-ink-700)' }}>
-              {t('toolWaterfall.fresh', { tokens: fmtTokens(sample.input + sample.cacheCreation) })}
+              {t('toolWaterfall.fresh', { tokens: fmtToolTokens(sample.input + sample.cacheCreation) })}
             </span>
             <span style={{ color: 'var(--cth-sky)' }}>
-              {t('toolWaterfall.cache', { tokens: fmtTokens(sample.cacheRead), pct: Math.round(cacheFraction(sample) * 100) })}
+              {t('toolWaterfall.cache', { tokens: fmtToolTokens(sample.cacheRead), pct: Math.round(cacheFraction(sample) * 100) })}
             </span>
             {sample.model && <span style={{ color: 'var(--cth-ink-500)' }}>{sample.model}</span>}
-            <span style={{ color: 'var(--cth-ink-500)' }}>{t('toolWaterfall.total', { tokens: fmtTokens(totalTokens(sample)) })}</span>
+            <span style={{ color: 'var(--cth-ink-500)' }}>{t('toolWaterfall.total', { tokens: fmtToolTokens(totalTokens(sample)) })}</span>
           </>
         ) : (
           <span style={{ color: 'var(--cth-ink-500)' }}>{t('toolWaterfall.noTelemetry')}</span>
@@ -85,9 +86,4 @@ export function ToolWaterfall({ agentId }: { agentId: string }) {
 function fmtDur(ms: number): string {
   if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
   return `${Math.round(ms)}ms`;
-}
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
-  return String(n);
 }

@@ -6,7 +6,13 @@ Don't Be Michael is a **local-first desktop app**. It spawns local processes in 
 reads/writes files under directories you register. What it listens on:
 
 - **The hook server**: a Unix domain socket in the hive folder (on Windows, a named
-  pipe with a random name for each launch), for agents' hook events.
+  pipe with a random name for each launch), for agents' hook events. Each agent start
+  gets its own secret, kept only in the app's memory and handed to that agent in its
+  environment (`HIVE_HOOK_SEAL`); the app takes an event's sender from that secret. An
+  event with no secret, an unknown one or one from an earlier start reaches nothing, and a
+  tool check from it is refused (issue #61). Known limit: another program running as you
+  can read an agent's environment, so a member that deliberately looks there could send
+  events as a teammate; moving the secret out of the environment is planned.
 - **The integration broker**: an HTTP server bound to `127.0.0.1` that agents call to
   reach connected apps. Each call needs the agent's own capability token.
 - **The telemetry receiver**: an HTTP server bound to `127.0.0.1` for usage data from

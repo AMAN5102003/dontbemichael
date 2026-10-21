@@ -15,7 +15,11 @@ import { request as httpsRequest } from 'node:https';
  *  third-party pages, and a redirect loop there would otherwise never settle. */
 export const MAX_REDIRECTS = 5;
 
-export function getText(url: string, opts: { timeoutMs?: number } = {}, redirects = 0): Promise<string> {
+export function getText(url: string, opts: { timeoutMs?: number } = {}): Promise<string> {
+  return getBuffer(url, opts).then((body) => body.toString('utf8'));
+}
+
+export function getBuffer(url: string, opts: { timeoutMs?: number } = {}, redirects = 0): Promise<Buffer> {
   const timeoutMs = opts.timeoutMs ?? 12000;
   return new Promise((resolve, reject) => {
     const req = httpsRequest(url, { method: 'GET', headers: { 'user-agent': 'dontbemichael' } }, (res) => {
@@ -29,14 +33,13 @@ export function getText(url: string, opts: { timeoutMs?: number } = {}, redirect
         let next: string;
         try { next = new URL(res.headers.location, url).href; }
         catch { reject(new Error('bad redirect')); return; }
-        getText(next, opts, redirects + 1).then(resolve, reject);
+        getBuffer(next, opts, redirects + 1).then(resolve, reject);
         return;
       }
       if (res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode}`)); return; }
-      let body = '';
-      res.setEncoding('utf8');
-      res.on('data', (c) => { body += c; });
-      res.on('end', () => resolve(body));
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => { chunks.push(c); });
+      res.on('end', () => resolve(Buffer.concat(chunks)));
     });
     req.on('error', reject);
     req.setTimeout(timeoutMs, () => req.destroy(new Error('timed out')));

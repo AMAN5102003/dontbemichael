@@ -248,7 +248,8 @@ export function useStudioLife({ seatOf, godId, paused, T, posts, accentOf, done,
 
   // Tool calls: mail moves an envelope on the mail wire; anything else pops a glyph.
   useEffect(() => {
-    const onHook = (e: { agentId?: string; event: string; tool?: string }) => {
+    const onHook = (e: { agentId?: string; event: string; tool?: string; blocked?: boolean }) => {
+      if (e.blocked) return;
       if (live.current.paused || e.event !== 'PreToolUse' || !e.agentId || !e.tool) return;
       const agentId = e.agentId;
       const mail = /^mcp__md-mail__([a-z_]+)$/.exec(e.tool);
@@ -400,7 +401,9 @@ function colorOf(kind: FlightKind, T: SceneTokens, own?: string): string {
  *  and a ping where it lands. */
 function Token({ f, T, still }: { f: Flight; T: SceneTokens; still: boolean }) {
   const ref = useRef<SVGAnimateMotionElement | null>(null);
-  useEffect(() => { if (!still) { try { ref.current?.beginElement(); } catch { /* no SMIL */ } } }, [still]);
+  // Until beginElement() runs the head has no motion position, so SVG would draw it at the stage origin.
+  const [launched, setLaunched] = useState(false);
+  useEffect(() => { if (!still) { try { ref.current?.beginElement(); setLaunched(true); } catch { /* no SMIL */ } } }, [still]);
   const color = colorOf(f.kind, T, f.color);
   const dur = `${FLIGHT_MS / 1000}s`;
   const head = <TokenHead kind={f.kind} color={color} T={T} />;
@@ -421,7 +424,7 @@ function Token({ f, T, still }: { f: Flight; T: SceneTokens; still: boolean }) {
       {ping(f.start, 0, 18)}
       {f.ping && ping(f.end, FLIGHT_MS - 120, 30)}
       {f.ping && ping(f.end, FLIGHT_MS + 120, 30)}
-      <g>
+      <g visibility={launched ? 'visible' : 'hidden'}>
         <animateMotion ref={ref} dur={dur} begin="indefinite" fill="freeze" path={f.d} calcMode="spline" keyTimes="0;1" keySplines="0.45 0 0.25 1"
           rotate={plane ? 'auto' : undefined} />
         <g className="cth-st-tokenhead">{plane && f.end[0] < f.start[0] ? <g transform="scale(1,-1)">{head}</g> : head}</g>

@@ -62,7 +62,7 @@ function rendererSubmission(onPoll, breaker = 'healthy') {
     console: { warn: () => {} }
   };
   runtime = new Function('deps', `const { ${Object.keys(deps).join(', ')} } = deps;\n${compiled}\nreturn { submitToPty, onHook };`)(deps);
-  return { ...runtime, writes, promptSubmits };
+  return { ...runtime, writes, promptSubmits, agents };
 }
 
 test('an Enter the terminal swallowed is pressed again until the agent accepts the prompt', async () => {
@@ -152,6 +152,19 @@ test('renderer sends slash commands without waiting for a prompt hook', async ()
   const runtime = rendererSubmission(() => assert.fail('slash commands must not enter prompt confirmation'));
   await runtime.submitToPty('pty-alice', '/compact', 'claude', 0);
   assert.deepEqual(runtime.writes, ['/compact', '\r']);
+});
+
+test('a tool that finished is no longer named as running', () => {
+  // Value: protects=the closing-time row never names a finished tool as running; fails_when=PostToolUse with nothing running keeps "using <tool>"; why_new=TODOS "Row still names a finished tool"; seam=production hook listener with stubbed store
+  const runtime = rendererSubmission(() => {});
+  const alice = runtime.agents.find((a) => a.id === 'alice');
+  Object.assign(alice, { status: 'working', action: 'using Bash', actionDetail: 'Run the tests' });
+  runtime.onHook({ agentId: 'alice', event: 'PostToolUse', tool: 'Bash', toolUseId: 'toolu_1' });
+  assert.equal(alice.action, 'thinking');
+  assert.equal(alice.actionDetail, undefined);
+  Object.assign(alice, { action: 'idle' });
+  runtime.onHook({ agentId: 'alice', event: 'UserPromptSubmit' });
+  assert.equal(alice.action, 'idle', 'only a finished tool changes the caption');
 });
 
 test('both typing paths wait for the agent to accept, Claude agents only', () => {

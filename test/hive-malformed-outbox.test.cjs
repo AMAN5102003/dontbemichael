@@ -84,6 +84,18 @@ test('literal LF inside a JSON string is repaired and routed', async (t) => {
   assert.equal(events[0].repair, 'literal-line-break');
 });
 
+test('a report ending in a list and a small table, written with literal line breaks, keeps every line', async (t) => {
+  // Value: protects=team reports may end with figures one per line or a small table (owner D6, 2026-10-17); fails_when=the repair drops or merges lines of a multi line body; why_new=existing cases have one broken line; seam=none
+  const { hive, outbox } = await floor(t);
+  const LF = String.fromCharCode(0x0A);
+  const lines = ['Done. Costs so far this year:', '- Rent: $1,200.00', '- Software: $310.50', '', '| Item | Amount |', '|---|--:|', '| Travel | $890.00 |'];
+  const raw = '{"to":"god","act":"done","subject":"Costs","body":"' + lines.join(LF) + '","requires_reply":false}';
+  writeOutbox(outbox, 'report-lines.json', raw);
+  assert.throws(() => JSON.parse(raw));
+  assert.equal(hive.routeOnce(), 1);
+  assert.equal(hive.inbox('god-1')[0].body, lines.join(LF));
+});
+
 test('literal CRLF inside a JSON string is repaired and preserved', async (t) => {
   const { hive, outbox } = await floor(t);
   const filename = 'literal-crlf.json';

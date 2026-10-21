@@ -6,6 +6,8 @@ export const MAX_HOOK_FRAME_BYTES = 256 * 1024;
 /** A file tool call whose path could not reach the app's check whole (ship
  *  review pass 2): refused, never let through unchecked. */
 export const HOOK_PATH_UNCHECKED = 'The app could not check where this step reads or saves, so it did not run. Use a shorter file path.';
+/** A step whose hook frame carried no valid secret for its sender (issue #61). */
+export const HOOK_SENDER_UNCHECKED = 'The app could not confirm which team member asked for this step, so it did not run.';
 
 /** Renderer-facing hook event shared across the Electron IPC boundary. */
 export interface HookEvent {

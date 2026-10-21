@@ -63,6 +63,15 @@ help either."
   something in their terminal: <text>. Talk 1:1 with {{name}} to answer."
 - While that agent's status is "needs you", the panel bar leads with "{{name}} is waiting on
   something in their terminal. Talk 1:1 to answer." and `Talk 1:1` becomes the primary button.
+  **Superseded (owner, 2026-10-15):** the owner is never sent to a terminal or a 1:1 for
+  this. The app restarts the member (Restart & Continue, with resume), which clears the
+  prompt, and tells Michael not to put it on Ask me. Only when the prompt comes back within
+  30 minutes of that restart does Michael move the member's work to a teammate and raise a
+  plain ask saying they are stuck, with no mention of terminals, prompts or 1:1
+  (`hooks.ts` `stuckOnPrompt`). The panel line reads "{name} stopped on something in their
+  session. The app restarts them to clear it.", with no coral and the usual button order
+  (owner kept Talk 1:1 as the everyday main button). The inbox nudge never types into an open
+  prompt, however long it waits (`workerWake.ts`).
 
 ### 4A. "Message {{godName}} about {{name}}" jumps to Michael (owner choice 2026-09-25)
 

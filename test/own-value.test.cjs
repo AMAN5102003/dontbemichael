@@ -72,3 +72,11 @@ test('the activity caption and the model key lookup read own keys only', () => {
   assert.match(read('src/renderer/src/store/store.ts'), /const said = ownValue\(OFFICE_WORDS, plain\);/);
   assert.match(read('src/main/index.ts'), /const scoped = ownValue\(PREFIX_BACKEND, prefix\);/);
 });
+
+test('saving or clearing an engine key accepts only the known backends', () => {
+  // Value: protects=a backend named "constructor" or "toString" is refused as unknown, not saved as apikey:constructor; fails_when=providerKey:set or providerKey:clear go back to `in BACKEND_KEY_ENV`; why_new=the a8dc657 sweep missed these two; seam=none; no_claim=behavior (source assertions; main index cannot load here, the helper is tested above)
+  const src = read('src/main/index.ts');
+  assert.match(src, /typeof p\.backend !== 'string' \|\| !ownValue\(BACKEND_KEY_ENV, p\.backend\)/);
+  assert.match(src, /typeof backend !== 'string' \|\| !ownValue\(BACKEND_KEY_ENV, backend\)/);
+  assert.doesNotMatch(src, /\bin BACKEND_KEY_ENV\b/);
+});

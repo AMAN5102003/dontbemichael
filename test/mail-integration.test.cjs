@@ -115,6 +115,24 @@ test('a delayed IMAP logout leaves the replacement connection available', { time
   assert.equal(clients.length, 2, 'the replacement survives the old socket closing and is reused');
 });
 
+test('parallel searches share one real IMAP connection', { timeout: 10_000 }, async (t) => {
+  // Value: protects=parallel broker calls share a real login and mailbox lock; fails_when=ImapFlow clients are created per concurrent read; why_new=unit gates alone do not exercise the protocol; seam=local IMAP server
+  const ports = await servers(t);
+  const { svc, clients, call } = service(ports);
+  t.after(() => { svc.closeAll(); for (const client of clients) client.close(); });
+
+  const results = await Promise.all([
+    call('search', { mailbox: 'sales', from: 'acme' }),
+    call('search', { mailbox: 'sales', from: 'bob' }),
+    call('search', { mailbox: 'sales', unread: true })
+  ]);
+  assert.ok(results.every((r) => r.status === 200), JSON.stringify(results));
+  assert.deepEqual(results.map((r) => r.body.messages.map((m) => m.subject)), [
+    ['Quote please'], ['Lunch'], ['Quote please']
+  ]);
+  assert.equal(clients.length, 1, 'one authenticated connection serves all three calls');
+});
+
 test('search, read, draft and send against real IMAP and SMTP servers', async (t) => {
   const ports = await servers(t);
   const { svc, call } = service(ports);

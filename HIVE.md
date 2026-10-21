@@ -99,7 +99,7 @@ LISP syntax. Seven semantic fields:
 
 ```jsonc
 {
-  "id":            "2026-05-30T14-03-11-123Z-a1b2",  // unique, time-sortable
+  "id":            "2026-05-30T14-03-11-123Z-a1b2",  // set by the app, unique, time-sortable; one an agent writes is replaced
   "conversation":  "conv-7f3",                        // groups a thread
   "in_reply_to":   "<prev msgid> | null",
   "from":          "agent.researcher",
@@ -186,12 +186,16 @@ is the primary control surface — tune the prompt, not the code.
   agent's Claude Code session (permission prompts). Idle agents are woken when they hold unread inbox messages.
 - **Phase 3 — Semantic memory** ✅ (CLI integration): `memory.ts` wraps the
   **MemPalace CLI** (not MCP, by decision). The harness keeps one shared palace
-  under `harnessHome`, points every agent's `MEMPALACE_PALACE_PATH` at it, mines
-  each agent's `memory.md` into its own wing (mtime-gated), and agents recall via
-  `mempalace search` / `wake-up`. Detect-and-degrade: a no-op when `mempalace`
+  under `harnessHome` and points every agent's `MEMPALACE_PALACE_PATH` at it. The
+  palace holds company knowledge only: each agent's own notes are its own and are
+  never mined (owner, 2026-10-16), so an agent asks a teammate what it knows
+  instead, and searches company knowledge by meaning with `mempalace search`.
+  Detect-and-degrade: a no-op when `mempalace`
   isn't installed (markdown memory still works). Default model `minilm` (light,
-  for low-RAM Macs); `embeddinggemma` is the multilingual opt-in. Michael's **Memory** tab
-  lets the human search the same palace.
+  for low-RAM Macs); `embeddinggemma` is the multilingual opt-in. It has no switch since
+  2026-10-19 (owner): it runs whenever MemPalace is installed, and Settings, Memory &
+  Knowledge shows whether it is ready and sets its search language. Michael's **Memory** tab
+  searches the team's notes by exact words only.
   - `memory.md` is now a short index the app keeps. Agents add notes to
     `memory/inbox.md`, and a background tidy up (`memoryTidy.ts`, Haiku with no
     tools) sorts them in with itemised changes, so memory stays bounded.
@@ -210,6 +214,7 @@ is the primary control surface — tune the prompt, not the code.
 | Modifying the user's repo with hooks | Hooks ride in a per-agent settings file passed with `--settings`, kept at `<harnessHome>/agent-settings/<id>.json`; nothing is written into the user's repo or `~/.claude` |
 | Office data leaving through the internet (every office) | Only the Research agent (`research`, Pete by default) has web tools or shell network; the hook refuses WebFetch and WebSearch to everyone else, Michael included, whose shells get an empty strict network list. Every message to Pete passes the trust layer (`trustLayer.ts`): passed, cleaned or refused against the owner's data classes, fail closed |
 | Web text steering the team | Pete's answers pass the outbound trust layer: instructions aimed at agents are removed, the answer is labelled as information, and a likely injection is flagged to Michael only. Pete writes only to the teammate whose question he answers, or to Michael |
+| An agent posing as a teammate on the hook socket | Each start gets a secret in memory, handed over in the agent's environment; the sender is taken from it and frames without a valid one reach nothing (issue #61). The environment is readable by other processes of the same user, so this stops stale processes and name claims, not a member that reads a sibling's environment (TODOS: hand the secret over where another process cannot read it) |
 | An agent rewriting its own hooks or sandbox | The hook program (`<harnessHome>/hive/bin`) and `agent-settings` are locked for every agent, Michael included: shell deny-write, an `Edit` deny rule, and the hook's own folder check. Reading stays open (issue 100). Windows has no shell sandbox, so there only the file tool rules hold |
 
 ---

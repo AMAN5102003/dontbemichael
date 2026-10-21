@@ -129,6 +129,14 @@ test('quoted prose keeps linking the file name inside it', () => {
   assert.deepEqual(tokensIn("Michael's notes: see plan.md' later"), ['plan.md']);
 });
 
+test('quoted prose that starts with a slash links only the file name inside it', () => {
+  assert.deepEqual(tokensIn('note: "/ see notes.md"'), ['notes.md']);
+  assert.deepEqual(tokensIn("note: '/ see notes.md'"), ['notes.md']);
+  assert.deepEqual(tokensIn('note: `./ then open plan.md`'), ['plan.md']);
+  // a real path with spaces inside its folder names still links whole
+  assert.deepEqual(tokensIn('saved "/Users/Jane/Business Reports/summary.md"'), ['/Users/Jane/Business Reports/summary.md']);
+});
+
 test('quoted versions and prose do not become file paths', () => {
   assert.deepEqual(tokensIn('version "v0.4.5", cost \'0.92\', called `spring.thaw`'), []);
 });
@@ -153,4 +161,35 @@ test('a link covers the cells of its path, past wide characters and inside its q
   assert.deepEqual(linkCellRange(cellsFor(line), start, start + raw.length, raw), { startX: 7, endX: 17 });
   const plain = 'see notes.md';
   assert.deepEqual(linkCellRange(cellsFor(plain), 4, 12, 'notes.md'), { startX: 5, endX: 12 });
+});
+
+test('a dotfile is named by its type: .gitignore, .env and .npmrc open as text', () => {
+  // Value: protects=dotfiles on the edit list open for editing instead of revealing; fails_when=the dotfile rule is dropped or extensionOf's no-extension answer wins; why_new=gitignore, dockerignore, env and npmrc never matched a real dotfile; seam=none; no_claim=a long dotfile name as a token, which waits on the longer extension fix (#190)
+  for (const p of ['.gitignore', 'src/.dockerignore', './.env', '~/.npmrc', 'C:\\proj\\.editorconfig']) {
+    assert.equal(classifyPathToken(p), 'edit', p);
+  }
+  assert.deepEqual(tokensIn('wrote ./.env and ~/.npmrc'), ['./.env', '~/.npmrc']);
+  // A dotfile that is not on a list is still only revealed, and a name with a
+  // real extension after the dot keeps it.
+  assert.equal(classifyPathToken('~/.bashrc'), 'reveal');
+  assert.equal(classifyPathToken('.env.local'), 'reveal');
+  assert.equal(classifyPathToken('src/.eslintrc.json'), 'edit');
+});
+
+test('extensions longer than 8 characters match without truncation and classify correctly', () => {
+  // Bare properties file (10-char extension in EDIT_EXTS)
+  assert.deepEqual(tokensIn('check application.properties for db config'), ['application.properties']);
+  assert.equal(classifyPathToken('application.properties'), 'edit');
+
+  // Quoted path containing spaces and explicit path prefix
+  assert.deepEqual(tokensIn('saved "./My Docs/app.properties" in project'), ['./My Docs/app.properties']);
+  assert.equal(classifyPathToken('./My Docs/app.properties'), 'edit');
+
+  // Windows path with long extension
+  assert.deepEqual(tokensIn('configured C:\\proj\\settings.properties successfully'), ['C:\\proj\\settings.properties']);
+  assert.equal(classifyPathToken('C:\\proj\\settings.properties'), 'edit');
+
+  // Existing short extensions and version-like strings behave correctly
+  assert.deepEqual(tokensIn('built src/index.ts in v0.4.5 after 1.5 hours'), ['src/index.ts']);
+  assert.equal(classifyPathToken('src/index.ts'), 'edit');
 });
