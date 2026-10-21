@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent, type KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useStore } from '@/store/store';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
@@ -7,8 +8,12 @@ import { nextRunAt } from '@shared/missions';
 import { isComposingKey } from '@shared/imeGuard';
 import { GrowingTextarea } from '@/components/GrowingTextarea';
 import { attachmentsFromPaste } from '@/components/pasteAttachments';
-import { MichaelDock, useOwnerDock } from './MichaelDock';
+import { MichaelDock, useOwnerDock, type DockView } from './MichaelDock';
+import type { DockPlace } from './useDockScroll';
 import { sendToMichael } from './ownerSend';
+import { DOCK_CENTER_ID, dockEscAction } from './wideCenter';
+import { PANEL_MOVE_MS } from './Dialog';
+import { useDockCentered } from '@/hooks/useCenter';
 
 /**
  * The v2 bottom bar (branding/DESIGN.md 7.19), floating over the stage: brief
@@ -54,6 +59,73 @@ function TalkToMichael() {
   // A notification click opens the dock at its question (12A).
   useEffect(() => window.cth.onOwnerOpenDock?.((id) => setDock(true, id)), [setDock]);
 
+  // The wide 1:1 (design review 2026-10-17, eng review R1): while it holds the
+  // center, the dock and this box are drawn into App's center host, outside
+  // the office that goes inert. This component stays mounted, so the draft
+  // (store), files, reply target and what the dock had open are all kept.
+  const wide = useDockCentered();
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  useEffect(() => { setHost(document.getElementById(DOCK_CENTER_ID)); }, []);
+  const centered = wide && !!host;
+  const [expanded, setExpanded] = useState<Record<string, true>>({});
+  const [showEarlier, setShowEarlier] = useState(false);
+  const anchor = useRef<DockPlace | null>(null);
+  useEffect(() => { if (!dockOpen) anchor.current = null; }, [dockOpen]);
+  const view: DockView = { expanded, setExpanded, showEarlier, setShowEarlier, anchor };
+  // After a move the box has the focus, at the end of its text.
+  const moved = useRef(false);
+  useEffect(() => {
+    if (!moved.current) { moved.current = true; return; }
+    const box = composerRef.current?.querySelector('textarea');
+    if (!box) return;
+    box.focus({ preventScroll: true });
+    box.setSelectionRange(box.value.length, box.value.length);
+  }, [centered]);
+  // The move (wide panel WD9): the new place at once, then a transform from
+  // the old box over 320 ms; reduced motion switches at once.
+  const lastBox = useRef<DOMRect | null>(null);
+  useLayoutEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    // The box and the dock above it, as one rectangle.
+    const measure = (): DOMRect => {
+      const a = el.getBoundingClientRect();
+      const d = el.querySelector('.cth-dock')?.getBoundingClientRect();
+      if (!d) return a;
+      const l = Math.min(a.left, d.left), t = Math.min(a.top, d.top);
+      return new DOMRect(l, t, Math.max(a.right, d.right) - l, Math.max(a.bottom, d.bottom) - t);
+    };
+    const from = lastBox.current;
+    const to = measure();
+    const keep = (): void => { lastBox.current = measure(); };
+    keep();
+    const ro = new ResizeObserver(keep);
+    ro.observe(el);
+    window.addEventListener('resize', keep);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const done = (): void => { el.style.transition = ''; el.style.transform = ''; el.style.transformOrigin = ''; };
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (from && from.width && from.height && to.width && to.height && !still
+      && (from.left !== to.left || from.top !== to.top || from.width !== to.width || from.height !== to.height)) {
+      el.style.transition = 'none';
+      el.style.transformOrigin = '0 0';
+      el.style.transform = `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`;
+      void el.offsetWidth;
+      el.style.transition = `transform ${PANEL_MOVE_MS}ms var(--cth-ease)`;
+      el.style.transform = '';
+      timer = setTimeout(done, PANEL_MOVE_MS + 40);
+    }
+    return () => { ro.disconnect(); window.removeEventListener('resize', keep); clearTimeout(timer); done(); };
+  }, [centered]);
+  // Wide, Esc from the box too goes back to the side for now (6B); the dock
+  // takes its own Esc first.
+  const onSheetKey = (e: KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== 'Escape' || e.defaultPrevented) return;
+    if (dockEscAction({ wide: true, inDock: false, composing: isComposingKey(e) }) !== 'side') return;
+    e.preventDefault();
+    useStore.getState().setDockSideForNow(true);
+  };
+
   const add = (incoming: Attachment[]) => setAttachments((prev) => {
     const seen = new Set(prev.map((a) => a.path));
     return [...prev, ...incoming.filter((a) => a.path && !seen.has(a.path))];
@@ -96,39 +168,13 @@ function TalkToMichael() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(); }
   };
 
-  return (
-    <div
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={onDrop}
-      // The ring and its focus state live in global.css (.cth-composer).
-      className="cth-composer"
-      ref={composerRef}
-      style={{
-        pointerEvents: 'auto', position: 'relative',
-        // The buttons stay on the bottom row while the message grows upward.
-        // It gives up to 120 px before anything else (owner check at 1280 x 800:
-        // squeezed, the placeholder wrapped onto two lines). The conversation
-        // button takes its 34 px plus a gap out of the same row, so it adds both.
-        flex: `0 1 ${dock.items.length > 0 ? 464 : 420}px`, minWidth: dock.items.length > 0 ? 344 : 300, minHeight: 50, display: 'flex', alignItems: 'flex-end', gap: 10, padding: '7px 7px 7px 8px',
-        background: 'var(--cth-card)', borderRadius: 'var(--cth-r-2xl)'
-      }}
-    >
-      <MichaelDock dock={dock} refresh={refresh} godId={godId} composerRef={composerRef}
-        onFillComposer={(v) => { setDraft(godId, v); composerRef.current?.querySelector('textarea')?.focus(); }}
-        onReply={(target) => { setReplyTo(target); composerRef.current?.querySelector('textarea')?.focus(); }} />
-      {/* The way back to the saved conversation once every reply is read (21A: the owner's action). */}
-      {dock.items.length > 0 && (
-        <button onClick={() => (dockOpen ? setDock(false) : openAt())} aria-expanded={dockOpen}
-          aria-label={t('dock.label', { godName })} title={t('dock.label', { godName })} style={{
-            width: 34, height: 34, flexShrink: 0, border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
-            display: 'grid', placeItems: 'center',
-            background: dockOpen ? 'var(--cth-ink)' : 'var(--cth-neutral-soft)', color: dockOpen ? 'var(--cth-bg)' : 'var(--cth-ink-2)'
-          }}>
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z" />
-          </svg>
-        </button>
-      )}
+  const dockEl = (
+    <MichaelDock dock={dock} refresh={refresh} godId={godId} composerRef={composerRef} wide={centered} view={view}
+      onFillComposer={(v) => { setDraft(godId, v); composerRef.current?.querySelector('textarea')?.focus(); }}
+      onReply={(target) => { setReplyTo(target); composerRef.current?.querySelector('textarea')?.focus(); }} />
+  );
+  const controls = (
+    <>
       <button onClick={() => void pick()} aria-label={t('shell.attach')} title={t('shell.attach')} style={{
         width: 34, height: 34, flexShrink: 0, border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
         display: 'grid', placeItems: 'center', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-2)'
@@ -188,6 +234,63 @@ function TalkToMichael() {
           <path d="M5 12h14M13 6l6 6-6 6" />
         </svg>
       </button>
+
+    </>
+  );
+  // The bar keeps the box's slot while it is in the center, so the next job
+  // chip and Hire never move.
+  const slot = { flex: `0 1 ${dock.items.length > 0 ? 464 : 420}px`, minWidth: dock.items.length > 0 ? 344 : 300 };
+
+  if (centered && host) {
+    return (
+      <>
+        <div aria-hidden="true" style={{ ...slot, minHeight: 50 }} />
+        {createPortal(
+          <div ref={composerRef} onDragOver={(e) => e.preventDefault()} onDrop={onDrop} onKeyDown={onSheetKey}
+            className="cth-dock-sheet" style={sheetStyle}>
+            {dockEl}
+            {/* Text at most 720 px across, like the conversation above it. */}
+            <div className="cth-composer" style={sheetBoxStyle}>{controls}</div>
+          </div>,
+          host
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+      // The ring and its focus state live in global.css (.cth-composer).
+      className="cth-composer"
+      ref={composerRef}
+      style={{
+        pointerEvents: 'auto', position: 'relative',
+        // The buttons stay on the bottom row while the message grows upward.
+        // It gives up to 120 px before anything else (owner check at 1280 x 800:
+        // squeezed, the placeholder wrapped onto two lines). The conversation
+        // button takes its 34 px plus a gap out of the same row, so it adds both.
+        ...slot, minHeight: 50, display: 'flex', alignItems: 'flex-end', gap: 10, padding: '7px 7px 7px 8px',
+        background: 'var(--cth-card)', borderRadius: 'var(--cth-r-2xl)'
+      }}
+    >
+      {dockEl}
+      {/* The way back to the saved conversation once every reply is read (21A: the owner's action). */}
+      {dock.items.length > 0 && (
+        <button onClick={() => (dockOpen ? setDock(false) : openAt())} aria-expanded={dockOpen}
+          aria-label={t('dock.label', { godName })} title={t('dock.label', { godName })} style={{
+            width: 34, height: 34, flexShrink: 0, border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
+            display: 'grid', placeItems: 'center',
+            background: dockOpen ? 'var(--cth-ink)' : 'var(--cth-neutral-soft)', color: dockOpen ? 'var(--cth-bg)' : 'var(--cth-ink-2)'
+          }}>
+          {/* The conversation opens upward: up shows it, down puts it away. */}
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d={dockOpen ? 'M6 9l6 6 6-6' : 'M6 15l6-6 6 6'} />
+          </svg>
+        </button>
+      )}
+      {controls}
       {count > 0 && (
         // A 28 px target (DESIGN.md) holding the 20 px count pill.
         <button
@@ -208,6 +311,16 @@ function TalkToMichael() {
     </div>
   );
 }
+
+/** The wide 1:1: one card in the center host, the conversation over the box. */
+const sheetStyle: CSSProperties = {
+  pointerEvents: 'auto', position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+  background: 'var(--cth-card)', borderRadius: 'var(--cth-r-2xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2), var(--cth-shadow-lg)'
+};
+const sheetBoxStyle: CSSProperties = {
+  flexShrink: 0, display: 'flex', alignItems: 'flex-end', gap: 10, minHeight: 50, padding: '7px 7px 7px 8px', boxSizing: 'border-box',
+  margin: '10px max(16px, calc((100% - 720px) / 2)) 16px', background: 'var(--cth-card)', borderRadius: 'var(--cth-r-2xl)'
+};
 
 /** The next scheduled job across the office. Click opens Michael's Office schedule. */
 function NextJobChip() {

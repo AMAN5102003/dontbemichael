@@ -126,6 +126,10 @@ only the owner's own answer may be relayed as the owner's (security review,
 Michael sees it on his "Blocked cards with nothing asked" list (section 7).
 Code, for every install; no data is edited by hand.
 
+The catch-up runs again a minute after the owner's last answer, so a request
+the app failed to send reaches Michael in the same launch; one that went is in
+his inbox by then and is skipped.
+
 ### 6. Michael's standup how
 
 Built with `schedule-focus-areas.md` (F6): Michael's default Work style, and
@@ -179,6 +183,25 @@ member" in Doing, so Doing could not tell work in progress from work on hold.
   Doing, so no card ever reached Waiting. An office still on that focus, word
   for word, gets the current one at launch; a focus the owner wrote stays as it
   is.
+- **A Waiting card comes back (owner, 2026-10-17; eng review D4 E, D5 B;
+  research "Waiting task follow up ownership").** Until then nothing brought a
+  Waiting card back: the standup said "else chase them" with no date. Now the
+  job is split. The team member whose work waits tells Michael when to check
+  back: a date the other side named ("next week" becomes the first working
+  morning after it), else their own judgement. Michael keeps it on the card as
+  `nextAt`. The app keeps the clock (`waitingChecks` in shared/cardGuards.ts,
+  saved with the board guard, so a restart neither forgets nor repeats): a
+  missing, unreadable, past or more than 30 days out time becomes three
+  business days after the app first saw the card Waiting. When the time comes,
+  Michael gets one "Follow up due" note (never the person directly) and the card
+  sits on his WAITING CARDS GONE QUIET list every turn while overdue. Any
+  change to the check back time after one came, a cleared one included, counts
+  as a follow up (the same time written another way does not; owner,
+  2026-10-18 ship review); after two with no
+  reply, the note tells him to ask the owner on Ask me whether to keep waiting
+  or close it. A card that leaves Waiting loses its clock, so one that comes
+  back starts afresh. The standup's focus works the list; an office on the old
+  "else chase them" text gets the new one at launch.
 
 ### 9. Questions held the wrong way (2026-10-04)
 
@@ -366,7 +389,7 @@ and the hook reads the cache. No other new work.
 ### Failure modes
 | Path | Failure | Covered by | Owner sees |
 |---|---|---|---|
-| Answer request | send fails | the answer is still on the card; launch catch-up re-sends | card shows With Michael once sent |
+| Answer request | send fails | the answer is still on the card; the catch-up re-sends a minute after the owner's last answer, and at launch | card shows With Michael once sent |
 | Closure | Michael replies without in_reply_to | stays open; listed each turn | With Michael, then overdue |
 | Catch-up | runs twice | once per launch; a request sent since the answer skips the card | one request per answer |
 | Catch-up | an agent wrote an answer into the card | not in the app's record (card, answer time, sha256 of question and answer), so never relayed | the card on Michael's Blocked with nothing asked list |

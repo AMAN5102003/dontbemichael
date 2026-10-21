@@ -20,23 +20,38 @@ export type RefusalGate =
 export const REFUSAL_GATES: readonly RefusalGate[] = ['connector', 'quickbooks', 'mail', 'internet', 'sandbox', 'folder', 'office-files', 'paused', 'impostor'];
 
 /** A trust layer log line as trustLayer.ts writes it. */
-export interface TrustDecision { way?: unknown; decision?: unknown; by?: unknown; flagged?: unknown }
+export interface TrustDecision { way?: unknown; decision?: unknown; by?: unknown; flagged?: unknown; v?: unknown }
 
 /** The counters one trust layer decision adds to. A deny the model or the
  *  patterns reached is a stop; one where the check could not run (no answer,
- *  unreadable, too long) is held: nothing went out unchecked. */
+ *  unreadable, too long) is held: nothing went out unchecked. From v 2
+ *  (2026-10-16) a hold is counted from the hive's own trust-held line, which
+ *  the held list shares, so a v 2 line adds no held key; older lines still do. */
 export function trustKeys(e: TrustDecision): string[] {
   const way = e.way === 'out' ? 'out' : e.way === 'in' ? 'in' : null;
-  if (!way) return [];
+  // From v 3 the hive's trust-checked line counts these (checkedKeys).
+  if (!way || (typeof e.v === 'number' && e.v >= 3)) return [];
   const d = String(e.decision ?? '');
   const by = String(e.by ?? '');
   const held = d === 'deny' && (by === 'no-answer' || by === 'unreadable' || by === 'length' || by === '');
   const keys: string[] = [];
   if (d === 'pass') keys.push(`${way}-pass`);
   else if (d === 'clean') keys.push(`${way}-clean`);
-  else if (d === 'deny') keys.push(held || way === 'out' ? `${way}-held` : `${way}-stop`);
+  else if (d === 'deny') {
+    if (held || way === 'out') { if (e.v !== 2) keys.push(`${way}-held`); }
+    else keys.push(`${way}-stop`);
+  }
   if (way === 'out' && e.flagged === true) keys.push('out-flagged');
   return keys;
+}
+
+/** The counters one hive trust-checked line adds to: one per message the check
+ *  let through or stopped, the same event Pulse's lists read (owner, D5). */
+export function checkedKeys(e: { way?: unknown; decision?: unknown; flagged?: unknown }): string[] {
+  const way = e.way === 'out' ? 'out' : e.way === 'in' ? 'in' : null;
+  const d = String(e.decision ?? '');
+  if (!way || !(d === 'pass' || d === 'clean' || (d === 'stop' && way === 'in'))) return [];
+  return [`${way}-${d}`, ...(way === 'out' && e.flagged === true ? ['out-flagged'] : [])];
 }
 
 export const refusalKey = (gate: RefusalGate): string => `rule-${gate}`;
@@ -48,6 +63,9 @@ export interface KeptSafe {
   webAnswers: { pass: number; clean: number; flagged: number };
   /** Messages held because the check could not run, both ways. */
   held: number;
+  /** The same, by way, for the lists' pointer to the held list (DD11). */
+  heldIn: number;
+  heldOut: number;
   /** Steps stopped by the owner's settings, by gate. */
   rules: Partial<Record<RefusalGate, number>>;
   /** True once anything at all was counted, so an office without Research still shows its rules. */
@@ -65,6 +83,8 @@ export function keptSafe(rows: Array<{ key: string; n: number }>): KeptSafe {
     toInternet: { pass: get('in-pass'), clean: get('in-clean'), stop: get('in-stop') },
     webAnswers: { pass: get('out-pass'), clean: get('out-clean'), flagged: get('out-flagged') },
     held: get('in-held') + get('out-held'),
+    heldIn: get('in-held'),
+    heldOut: get('out-held'),
     rules,
     any: [...c.values()].some((n) => n > 0)
   };

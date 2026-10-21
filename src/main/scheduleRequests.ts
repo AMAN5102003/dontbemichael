@@ -14,6 +14,7 @@ import {
   applyScheduleRequest, buildScheduleRequest, fileScheduleRequest, foldScheduleRequests, missionsFor, requestSummary, whenWords,
   type ScheduledMission, type ScheduleRequest
 } from '../shared/missions';
+import type { UpkeepKind } from '../shared/upkeep';
 
 /** How long Michael has to decide a request before it goes to the owner. */
 export const MICHAEL_DECIDES_WITHIN_MS = 12 * 60 * 60 * 1000;
@@ -27,7 +28,7 @@ export interface ScheduleRequestDeps {
   michaelName: () => string;
   /** A team member's name, or undefined when unknown. */
   agentName: (id: string) => string | undefined;
-  hive: { enabled: () => boolean; send: (msg: { to: string; act: 'request' | 'inform'; subject: string; body: string }, from: string) => void };
+  hive: { enabled: () => boolean; send: (msg: { to: string; act: 'request' | 'inform'; subject: string; body: string }, from: string, upkeep?: UpkeepKind) => void };
   /** The window's request list changed. */
   updated: () => void;
   ownerToast: (title: string, body: string) => void;
@@ -198,7 +199,7 @@ export function makeScheduleRequests(deps: ScheduleRequestDeps) {
         to: req.agentId, act: 'inform',
         subject: approve ? 'Schedule change approved' : 'Schedule change declined',
         body: `${who} ${approve ? 'approved' : 'declined'}: ${described}. ${approve ? 'It is in place now.' : 'Nothing changed.'}${note ? ` Note: ${note}` : ''}`
-      }, 'scheduler');
+      }, 'scheduler', 'schedule-decision');
       // The owner decided one Michael passed on: he hears the outcome too.
       if (by === 'owner' && req.escalated) {
         hive.send({ to: deps.godId(), act: 'inform', subject: `Owner ${approve ? 'approved' : 'declined'} a schedule change`, body: `${described}.` }, 'scheduler');

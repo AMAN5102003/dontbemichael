@@ -124,7 +124,7 @@ test('every file the app keeps in an office\'s private folder is erased by a res
     for (const m of fs.readFileSync(path.join(dir, f), 'utf8').matchAll(/privateRoot\((?:[^()]|\([^()]*\))*\),\s*'([^']+)'/g)) names.add(m[1]);
   }
   assert.ok(names.size >= 8, `the scan finds the private files (${[...names].join(', ')})`);
-  assert.ok(names.has('research-mined'), 'a call nested in privateRoot() is seen too');
+  assert.ok(names.has('research-mined'), 'the old copy of Research\'s notes, which the palace clears, is erased too');
   for (const n of names) assert.ok(PRIVATE_ENTRIES.includes(n), `${n} is not erased`);
 });
 
@@ -162,6 +162,17 @@ test('a reset with no office folder still clears the app data and never throws',
   seed(userData, ['knowledge']);
   assert.deepEqual(eraseOfficeData({ home: null, userData }), []);
   assert.equal(fs.existsSync(path.join(userData, 'knowledge')), false);
+});
+
+test('a damaged write journal the broker set aside is erased by a reset too', (t) => {
+  // Value: protects=app answers in a set-aside journal do not outlive a reset; fails_when=only the live journal's fixed name is erased; why_new=PR #212 sets damaged journals aside; seam=fs
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'md-reset-aside-'));
+  t.after(() => fs.rmSync(userData, { recursive: true, force: true }));
+  seed(userData, ['broker-write-journal.json', 'broker-write-journal.damaged-1792543090.json', 'notes.damaged-1.json']);
+  assert.deepEqual(eraseOfficeData({ home: null, userData }), []);
+  assert.equal(fs.existsSync(path.join(userData, 'broker-write-journal.json')), false);
+  assert.equal(fs.existsSync(path.join(userData, 'broker-write-journal.damaged-1792543090.json')), false);
+  assert.equal(fs.existsSync(path.join(userData, 'notes.damaged-1.json')), true, 'nothing else of that shape is touched');
 });
 
 test('app:resetAll erases the office data before it resets the config', () => {

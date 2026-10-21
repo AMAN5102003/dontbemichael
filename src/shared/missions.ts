@@ -95,6 +95,19 @@ export function missionsFor(missions: ScheduledMission[], agentId: string, godId
   return missions.filter((m) => ownerOf(m, godId) === agentId);
 }
 
+/** A job that sends its agent to the mailbox: the name or focus speaks of the
+ *  inbox, or of checking, reading or sorting email. */
+const MAIL_CHECK = /\b(?:inbox|mailbox(?:es)?)\b|\b(?:check|read|triage|sort|clear)(?:\s+(?!and\b|then\b|to\b)\w+){0,2}\s+e-?mails?\b/i;
+
+/** True when `m` is a running job that looks in the mailbox and its agent has
+ *  no way to: its email is off and it holds no Gmail connector that is on
+ *  (`gmail`). The hook refuses the mail call, so each run is a wasted turn
+ *  (docs/designs/multi-mailbox.md); the schedules say so beside the job. */
+export function cannotCheckEmail(m: ScheduledMission, email: { enabled: boolean } | undefined, gmail = false): boolean {
+  if (!m.enabled || (m.kind ?? 'dispatch') !== 'dispatch' || email?.enabled || gmail) return false;
+  return MAIL_CHECK.test(`${m.label} ${m.focus ?? ''} ${m.body}`);
+}
+
 /** May `actor` (an agent id) ask for a change to `m`? Only its own. */
 export function canEdit(actor: string, m: Pick<ScheduledMission, 'to'>, godId: string): boolean {
   return ownerOf(m, godId) === actor;
@@ -204,6 +217,38 @@ export function firePayload(m: ScheduledMission): { to: string; subject: string;
     subject: m.label,
     body: m.relay ? relayRunBody(m.label, m.body, m.focus) : scheduledRunBody(m.label, m.body, m.focus)
   };
+}
+
+/* ───────────────────────────────── run now ───────────────────────────────── */
+// The owner runs one job at once, to see it work without waiting for its clock
+// (docs/designs/schedule-run-now.md). A run now sends exactly what the clock
+// sends (firePayload) and stamps lastFiredAt the same way, so it is a real run.
+
+/** How soon after a run the same job can be run again by hand. A double click,
+ *  or a click right after the clock fired, would otherwise send the job twice. */
+export const RUN_NOW_GAP_MS = 60_000;
+
+export type RunNowCheck =
+  | { ok: true; mission: ScheduledMission }
+  | { ok: false; error: 'not found' | 'not a job' | 'just ran' };
+
+/** May the schedule `id` be run now? Only a job (a dispatch schedule) can: the
+ *  heartbeat is the office's own pulse and a compact row sends nothing. A paused
+ *  job can, so the owner can try it before turning it on. */
+export function runNowCheck(list: ScheduledMission[], id: string, now: number): RunNowCheck {
+  const mission = list.find((m) => m.id === id);
+  if (!mission) return { ok: false, error: 'not found' };
+  if ((mission.kind ?? 'dispatch') !== 'dispatch' || !firePayload(mission)) return { ok: false, error: 'not a job' };
+  const last = mission.lastFiredAt ?? 0;
+  if (last > 0 && now >= last && now - last < RUN_NOW_GAP_MS) return { ok: false, error: 'just ran' };
+  return { ok: true, mission };
+}
+
+/** What a row says after main answers a run now: sent, ran a moment ago (the
+ *  gap above), or failed for any other reason. */
+export function runNowOutcome(res: { ok: boolean; error?: string }): 'sent' | 'justRan' | 'failed' {
+  if (res.ok) return 'sent';
+  return res.error === 'just ran' ? 'justRan' : 'failed';
 }
 
 /* ──────────────────────────── one-schedule edits ──────────────────────────── */
@@ -317,7 +362,7 @@ export interface ScheduleRequest {
   createdAt: number;
 }
 
-const DAY_NAMES: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const LABEL_MAX = 80;
 
 /** Node timers can't wait longer than 2^31-1 ms (about 24.8 days): a longer
@@ -336,8 +381,17 @@ function parseDays(raw: unknown): number[] | null {
     if (d === 'weekdays') [1, 2, 3, 4, 5].forEach((x) => days.add(x));
     else if (d === 'weekends') [0, 6].forEach((x) => days.add(x));
     else if (d === 'daily' || d === 'every day') [0, 1, 2, 3, 4, 5, 6].forEach((x) => days.add(x));
-    else if (d.slice(0, 3) in DAY_NAMES) days.add(DAY_NAMES[d.slice(0, 3)]);
-    else return null;
+    else {
+      // "mon", "tues", "Friday", "Mondays", "weds", "mon.": a start of a real
+      // day name, never just its first three letters, so "monthly" or
+      // "sunset" is not read as a day.
+      const w = d.replace(/\.$/, '');
+      const day = w.length >= 3
+        ? DAY_NAMES.findIndex((n) => n.startsWith(w) || w === `${n}s` || (w === 'weds' && n === 'wednesday'))
+        : -1;
+      if (day < 0) return null;
+      days.add(day);
+    }
   }
   return days.size ? [...days].sort((a, b) => a - b) : null;
 }

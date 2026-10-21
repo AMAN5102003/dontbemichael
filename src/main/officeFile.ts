@@ -5,7 +5,7 @@
  */
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import {
   configMatchesRegistry,
   officeRecordFromConfig,
@@ -18,6 +18,7 @@ import {
 } from '../shared/officeRecord';
 import { homeFolderStatus } from './homeFolder';
 import type { FolderLayout } from '../shared/folderAccess';
+import { claudeProjectsRoot, engineHistoryFile } from './transcript';
 
 export function officeRecordPath(home: string): string {
   return join(home, 'office.json');
@@ -149,6 +150,10 @@ export function folderLayoutFor(businessFolder: string | undefined, folders: str
   const onDisk = (p: string) => {
     try { return realpathSync.native(resolve(p)); } catch { return resolve(p); }
   };
+  // A record the engine hasn't written yet takes its folder's real path.
+  const recordOnDisk = (p: string) => {
+    try { return realpathSync.native(resolve(p)); } catch { return join(onDisk(dirname(p)), basename(p)); }
+  };
   const fold = process.platform === 'darwin' || process.platform === 'win32'
     ? (p: string) => p.toLowerCase()
     : (p: string) => p;
@@ -169,9 +174,11 @@ export function folderLayoutFor(businessFolder: string | undefined, folders: str
   }
   // The app's private folder (issue #63), whatever the layout: nobody opens it.
   // Its program and settings folders (issue 100): nobody changes them.
+  // Every session's record: nobody's tools open it.
   return {
     business, teamFolders,
-    ...(app ? { appPrivate: join(app, 'private'), appLocked: [join(app, 'hive', 'bin'), join(app, 'agent-settings')] } : {})
+    ...(app ? { appPrivate: join(app, 'private'), appLocked: [join(app, 'hive', 'bin'), join(app, 'agent-settings')] } : {}),
+    engineRecords: { projects: recordOnDisk(claudeProjectsRoot()), history: recordOnDisk(engineHistoryFile()) }
   };
 }
 

@@ -131,6 +131,53 @@ test('a restart whose new session never starts is no restart: Michael hears the 
   assert.match(inbox[0].body, /the app could not restart Pam/);
 });
 
+test('a restart that starts after Michael heard it never did gets one follow up that it went through', async (t) => {
+  // Value: protects=Michael doesn't move work or keep an Ask me question about a member whose late restart worked; fails_when=a late session start says nothing, says it twice, or a prompt that comes back after it never reaches Michael; why_new=TODOS "Tell Michael when a timed out restart worked after all"; seam=HookServer.checkStuckRestarts
+  const { hive, server } = await office(t);
+  let clock = 1_000_000;
+  server.now = () => clock;
+  server.restartStuck = () => true;
+  const prompt = { agent_id: 'pam', session_id: 's', hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'needs your permission' };
+  await server.handle(prompt);
+  clock += 61_000;
+  server.checkStuckRestarts();
+  assert.equal(hive.inbox('god').length, 1, 'Michael heard Pam is stuck');
+  clock += 30_000;
+  // A subagent starting is not Pam's session.
+  await server.handle({ agent_id: 'pam', subagent_id: 'sub', session_id: 's2', hook_event_name: 'SessionStart', source: 'startup' });
+  assert.equal(hive.inbox('god').length, 1);
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'SessionStart', source: 'resume' });
+  await server.handle({ agent_id: 'pam', session_id: 's3', hook_event_name: 'SessionStart', source: 'resume' });
+  server.checkStuckRestarts();
+  let inbox = hive.inbox('god');
+  assert.equal(inbox.length, 2, 'one follow up, never two');
+  const late = inbox.find((m) => m.subject === 'Pam was restarted after all');
+  assert.ok(late);
+  assert.equal(late.act, 'inform');
+  assert.equal(late.from, 'system');
+  assert.equal(late.body, "Pam's session started again after all, so the restart went through and Pam is not stuck. Leave Pam's open work with them, and if you asked the owner whether Pam is stuck, withdraw that question.");
+  // Back on the prompt after that: Michael was told to withdraw, so he hears it again.
+  await server.handle(prompt);
+  inbox = hive.inbox('god');
+  const stuck = inbox.filter((m) => /Pam is stuck/.test(m.subject));
+  assert.equal(stuck.length, 2);
+  assert.ok(stuck.some((m) => /restarting Pam did not clear it/.test(m.body)));
+});
+
+test('a restart that starts in time gets no follow up', async (t) => {
+  const { hive, server } = await office(t);
+  let clock = 1_000_000;
+  server.now = () => clock;
+  server.restartStuck = () => true;
+  await server.handle({ agent_id: 'pam', session_id: 's', hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'needs your permission' });
+  clock += 30_000;
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'SessionStart', source: 'resume' });
+  clock += 31_000;
+  server.checkStuckRestarts();
+  await server.handle({ agent_id: 'pam', session_id: 's3', hook_event_name: 'SessionStart', source: 'resume' });
+  assert.deepEqual(hive.inbox('god').map((m) => m.subject), ['Pam was restarted']);
+});
+
 test('with no window to restart them, Michael is told the member is stuck', async (t) => {
   const { hive, server } = await office(t);
   server.restartStuck = () => false;

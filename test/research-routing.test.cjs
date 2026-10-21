@@ -22,6 +22,9 @@ const electron = require.resolve('electron');
 require.cache[electron] = { id: electron, filename: electron, loaded: true, exports: { Notification: class { show() {} static isSupported() { return false; } } } };
 const { HiveManager, HOUSE_RULES, OFFICE_HOUSE_RULES } = loadTs('src/main/hive.ts');
 const R = loadTs('src/shared/research.ts');
+// These tests pin what happens once a check that could not run has waited
+// its time out; research-check-wait.test.cjs pins the wait itself.
+HiveManager.TRUST_WAIT_MS = 0;
 
 /** A fake trust layer: `inbound` and `outbound` decide from the text. */
 function fakeLayer(over = {}) {
@@ -50,6 +53,8 @@ const msgsIn = (hive, id) => {
 };
 const send = (hive, from, msg, name = 'm1.json') => fs.writeFileSync(path.join(hive.root(), 'agents', from, 'outbox', name), JSON.stringify(msg));
 const tick = () => new Promise((r) => setImmediate(r));
+/** The id the app gave a sent message, as its sender's sent copy records it. */
+const sentId = (hive, from, name = 'm1.json') => JSON.parse(fs.readFileSync(path.join(hive.root(), 'agents', from, 'outbox', '.sent', name), 'utf8')).id;
 const notes = (hive, id, subject) => msgsIn(hive, id).filter((m) => m.subject === subject);
 /** A teammate asks Research something, so Research may answer it (owner, D8.1). */
 const askFrom = async (hive, from) => {
@@ -287,6 +292,96 @@ test('an answer the layer can\'t check is not delivered, and a late answer after
   assert.equal(notes(hive, 'pam', R.ANSWER_UNCHECKED_SUBJECT).length, 1);
 });
 
+// ─── Pulse's held list (owner, 2026-10-16) ───────────────────────────────────
+const heldRows = (hive) => {
+  const f = path.join(path.dirname(hive.root()), 'private', 'held.jsonl');
+  return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+};
+const heldLines = (hive) => fs.readFileSync(path.join(hive.root(), 'log.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.kind === 'trust-held');
+
+test('a question held because the check could not run is recorded with its subject, opening, why and who was told; a stop is not', async (t) => {
+  // Value: protects=D2 and D4 (one event for count and list; subject and 300 character opening, kept privately); fails_when=a hold is missed, a stop is listed, text passes 300, or the committed log carries text; why_new=held list; seam=fake layer; no_claim=the real model
+  const { hive } = await office(t, { layer: fakeLayer({ inbound: () => ({ decision: 'deny', reason: R.REFUSAL_CHECK_FAILED, by: 'no-answer', error: 'hidden session never took the prompt' }) }) });
+  send(hive, 'pam', { to: 'research', act: 'query', subject: 'Supplier \u201cprices\u201d', body: `Line one\n${'x'.repeat(400)}` });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  const rows = heldRows(hive);
+  assert.equal(rows.length, 1);
+  const r = rows[0];
+  assert.deepEqual([r.way, r.from, r.fromName, r.to, r.toName, r.why, r.error, r.told], ['in', 'pam', 'Pam', 'research', 'Pete', 'no-answer', 'hidden session never took the prompt', 'sender+michael']);
+  assert.equal(r.subject, 'Supplier prices', 'quote marks tidied');
+  assert.equal(r.opening.length, 300);
+  assert.ok(r.opening.startsWith('Line one x'), 'line breaks tidied');
+  assert.deepEqual(heldLines(hive).map((e) => Object.keys(e).sort()), [['kind', 'ts', 'way']], 'the office log line carries no text');
+  const stop = await office(t, { layer: fakeLayer({ inbound: () => ({ decision: 'deny', reason: R.refusalForClass('names'), by: 'model' }) }) });
+  send(stop.hive, 'pam', { to: 'research', act: 'query', subject: 'Who', body: 'Jane' });
+  stop.hive.routeOnce(); await tick(); stop.hive.routeOnce();
+  assert.equal(heldRows(stop.hive).length, 0, 'a deny the check reached is a stop, not a hold');
+  assert.equal(heldLines(stop.hive).length, 0);
+});
+
+test('a check that throws, or no check at all, is a hold too', async (t) => {
+  // Value: protects=D2 (holds the trust layer never logged are counted and listed); fails_when=a rejected or missing check leaves no row; why_new=held list; seam=fake layer
+  const { hive } = await office(t, { layer: fakeLayer({ inbound: () => { throw new Error('down'); } }) });
+  send(hive, 'pam', { to: 'research', act: 'query', subject: 'x', body: 'Pizza trends' });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.deepEqual(heldRows(hive).map((r) => r.why), ['failed']);
+  const unwired = await office(t, { layer: null });
+  send(unwired.hive, 'pam', { to: 'research', act: 'query', subject: 'x', body: 'Pizza trends' });
+  unwired.hive.routeOnce(); await tick(); unwired.hive.routeOnce();
+  assert.deepEqual(heldRows(unwired.hive).map((r) => r.why), ['no-layer']);
+  const off = await office(t, { on: false });
+  send(off.hive, 'pam', { to: 'research', act: 'query', subject: 'x', body: 'Pizza trends' });
+  off.hive.routeOnce(); await tick(); off.hive.routeOnce();
+  assert.equal(heldRows(off.hive).length, 0, 'Research off is not a hold');
+});
+
+test('a held answer is listed, and Michael hears of it as well as the member waiting (D5)', async (t) => {
+  // Value: protects=D5 and D2 for answers; fails_when=Michael is not told, he is told twice, or the row is missing; why_new=held list, agent behavior change approved 2026-10-16; seam=fake layer
+  const layer = fakeLayer({ outbound: () => ({ decision: 'deny', reason: R.REFUSAL_CHECK_FAILED, by: 'unreadable' }) });
+  const { hive } = await office(t, { layer });
+  const ask = await askFrom(hive, 'pam');
+  send(hive, 'research', { to: 'pam', in_reply_to: ask, act: 'inform', subject: 'Pizza answer', body: 'Some answer' });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.equal(notes(hive, 'pam', R.ANSWER_UNCHECKED_SUBJECT).length, 1);
+  const told = msgsIn(hive, 'god').filter((m) => m.subject === "Pete's answer was not delivered");
+  assert.equal(told.length, 1);
+  assert.match(told[0].body, /Pete's answer to Pam \("Pizza answer"\) was not delivered: the privacy check could not run/);
+  assert.doesNotMatch(told[0].body, /[\u2013\u2014]/);
+  const rows = heldRows(hive);
+  assert.deepEqual(rows.map((r) => [r.way, r.from, r.fromName, r.to, r.toName, r.why, r.told]), [['out', 'research', 'Pete', 'pam', 'Pam', 'unreadable', 'recipient+michael']]);
+});
+
+test('a held answer meant for Michael tells him once, by his id or by a name for him (D5)', async (t) => {
+  // Value: protects=Michael hears exactly once when Pete's answer to him is held; fails_when=the guard against a second note is lost, an alias answer tells nobody, or the row names the wrong recipient or who was told; why_new=only an answer to a teammate was tested; seam=fake layer; no_claim=the real model
+  const layer = () => fakeLayer({ outbound: () => ({ decision: 'deny', reason: R.REFUSAL_CHECK_FAILED, by: 'unreadable' }) });
+  const byId = await office(t, { layer: layer() });
+  send(byId.hive, 'research', { to: 'god', act: 'inform', subject: 'Stuck', body: 'No source has it' });
+  byId.hive.routeOnce(); await tick(); byId.hive.routeOnce();
+  assert.equal(notes(byId.hive, 'god', R.ANSWER_UNCHECKED_SUBJECT).length, 1, 'told as the one waiting');
+  assert.equal(notes(byId.hive, 'god', "Pete's answer was not delivered").length, 0, 'and not a second time');
+  assert.deepEqual(heldRows(byId.hive).map((r) => [r.way, r.to, r.why, r.told]), [['out', 'god', 'unreadable', 'recipient']]);
+  const byName = await office(t, { layer: layer() });
+  send(byName.hive, 'research', { to: 'michael', act: 'inform', subject: 'Stuck', body: 'No source has it' });
+  byName.hive.routeOnce(); await tick(); byName.hive.routeOnce();
+  const told = notes(byName.hive, 'god', "Pete's answer was not delivered");
+  assert.equal(told.length, 1);
+  assert.match(told[0].body, /^Pete's answer to you \("Stuck"\) was not delivered: .* Ask Pete again if the work still needs it\./);
+  assert.equal(notes(byName.hive, 'god', R.ANSWER_UNCHECKED_SUBJECT).length, 0);
+  assert.deepEqual(heldRows(byName.hive).map((r) => [r.to, r.toName, r.told]), [['god', 'Michael', 'recipient']]);
+});
+
+test('held rows past 400 days are pruned when a new one is written', async (t) => {
+  // Value: protects=the record is kept as long as Pulse keeps raw events, no longer; fails_when=old rows stay or new ones are dropped; why_new=held list; seam=none
+  const { hive } = await office(t, { layer: fakeLayer({ inbound: () => ({ decision: 'deny', reason: R.REFUSAL_TOO_LONG, by: 'length' }) }) });
+  const priv = path.join(path.dirname(hive.root()), 'private');
+  fs.mkdirSync(priv, { recursive: true });
+  const old = { at: Date.now() - 401 * 86_400_000, way: 'in', from: 'pam', to: 'research', subject: 'old', opening: '', why: 'no-answer', told: 'sender' };
+  fs.writeFileSync(path.join(priv, 'held.jsonl'), `${JSON.stringify(old)}\n`);
+  send(hive, 'pam', { to: 'research', act: 'query', subject: 'new', body: 'b' });
+  hive.routeOnce(); await tick(); hive.routeOnce();
+  assert.deepEqual(heldRows(hive).map((r) => [r.subject, r.why]), [['new', 'too-long']]);
+});
+
 test('turning Research off sends its waiting asks back', async (t) => {
   // Value: protects=no ask is lost when Research turns off; fails_when=asks stay in its inbox or vanish silently; why_new=design review D7; seam=fake layer
   const { hive } = await office(t);
@@ -320,7 +415,7 @@ test('every office tells every agent the rule with the Research agent\'s current
   assert.doesNotMatch(hive.houseRules(), /Pete/);
   const prompt = hive['injectedPrompt'](
     { id: 'research', name: 'Robin', cwd: '/w/desk', isResearch: true },
-    path.join(hive.root(), 'agents', 'research'), hive.root(), true, true, '/kg', '/w/Biz', undefined, '/kg-root', undefined, { name: 'Harbor Pizza', city: 'Austin', typeName: 'Restaurant', briefing: 'secret plans' }
+    path.join(hive.root(), 'agents', 'research'), hive.root(), true, '/kg', '/w/Biz', undefined, '/kg-root', undefined, { name: 'Harbor Pizza', city: 'Austin', typeName: 'Restaurant', briefing: 'secret plans' }
   );
   assert.match(prompt, /You are Robin, the Research team member at Harbor Pizza in Austin, the one who uses the internet/);
   assert.match(prompt, /cleaned or more general version/);
@@ -356,7 +451,7 @@ test('Research\'s answer lands in the sender\'s thread, and a request reaches Re
   send(hive, 'research', { to: 'pam', act: 'inform', subject: 'Flour', body: 'About 25 dollars a bag', in_reply_to: copy.id, conversation: copy.conversation });
   hive.routeOnce(); await tick(); hive.routeOnce();
   const answer = msgsIn(hive, 'pam').find((m) => m.from === 'research');
-  assert.equal(answer.in_reply_to, 'pam-ask-1');
+  assert.equal(answer.in_reply_to, sentId(hive, 'pam'), 'names the ask as Pam\'s sent copy records it');
   assert.equal(answer.conversation, 'card:T-9');
 });
 
@@ -559,23 +654,21 @@ test('Research\'s folder stays out of the hive\'s git history, and a link in an 
   assert.match(fs.readFileSync(path.join(root, 'log.jsonl'), 'utf8'), /outbox-not-a-file/);
 });
 
-test('Research\'s notes are read only from plain files inside its own folder', posixOnly('symlinks'), (t) => {
-  // Value: protects=a link Research makes can't pull an office file into the team's shared memory through the app; fails_when=the reader follows a link or reads outside the folder; why_new=Codex adversarial review (critical); seam=none
-  const { readResearchNotes } = loadTs('src/main/researchNotes.ts');
+test('the app reads Research\'s files only as plain files inside its own folder', posixOnly('symlinks'), (t) => {
+  // Value: protects=a link Research makes can't pull an office file into what the app reads for it; fails_when=the reader follows a link or reads outside the folder; why_new=Codex adversarial review (critical), kept when notes mining went (2026-10-16); seam=none
+  const { readResearchFile } = loadTs('src/main/researchNotes.ts');
   const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const dir = path.join(base, 'research');
   fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
   fs.writeFileSync(path.join(base, 'ledger.md'), 'Jane Smith owes 4200');
   fs.writeFileSync(path.join(dir, 'memory.md'), 'Flour suppliers in Austin');
-  fs.writeFileSync(path.join(dir, 'memory', 'inbox.md'), 'not mined');
   fs.symlinkSync(path.join(base, 'ledger.md'), path.join(dir, 'memory', 'ledger.md'));
-  const text = readResearchNotes(dir);
-  assert.match(text, /Flour suppliers/);
-  assert.doesNotMatch(text, /Jane Smith|not mined/);
+  assert.match(readResearchFile(dir, path.join(dir, 'memory.md')), /Flour suppliers/);
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'ledger.md')), null);
   fs.rmSync(path.join(dir, 'memory.md'));
   fs.symlinkSync(path.join(base, 'ledger.md'), path.join(dir, 'memory.md'));
-  assert.equal(readResearchNotes(dir), '', 'a linked top note is skipped too');
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory.md')), null, 'a linked top file is skipped too');
 });
 
 test('turning Research off answers each waiting ask in its sender\'s own thread', async (t) => {
@@ -585,7 +678,7 @@ test('turning Research off answers each waiting ask in its sender\'s own thread'
   hive.routeOnce(); await tick(); hive.routeOnce();
   assert.equal(hive.returnResearchInbox(), 1);
   const [note] = notes(hive, 'pam', R.NOT_SENT_SUBJECT);
-  assert.equal(note.in_reply_to, 'ask-9');
+  assert.equal(note.in_reply_to, sentId(hive, 'pam'));
   assert.equal(note.conversation, 'card:T-4');
 });
 
@@ -644,9 +737,9 @@ test('turning Research off tells Michael about owner and app notes still waiting
   assert.match(note.body, new RegExp(R.REFUSAL_OFF.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
 });
 
-test('Research\'s notes skip a file with a second name', posixOnly('hard links'), (t) => {
-  // Value: protects=a hard link Research makes can't pull an office file into shared memory; fails_when=the reader trusts lstat and realpath alone; why_new=verification of the Codex fix; seam=none
-  const { readResearchNotes } = loadTs('src/main/researchNotes.ts');
+test('the app skips a Research file with a second name', posixOnly('hard links'), (t) => {
+  // Value: protects=a hard link Research makes can't pull an office file into what the app reads; fails_when=the reader trusts lstat and realpath alone; why_new=verification of the Codex fix; seam=none
+  const { readResearchFile } = loadTs('src/main/researchNotes.ts');
   const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes2-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const dir = path.join(base, 'research');
@@ -654,9 +747,8 @@ test('Research\'s notes skip a file with a second name', posixOnly('hard links')
   fs.writeFileSync(path.join(base, 'ledger.md'), 'SECRET ledger');
   fs.linkSync(path.join(base, 'ledger.md'), path.join(dir, 'memory', 'hard.md'));
   fs.writeFileSync(path.join(dir, 'memory', 'ok.md'), 'Flour notes');
-  const text = readResearchNotes(dir);
-  assert.match(text, /Flour notes/);
-  assert.doesNotMatch(text, /SECRET/);
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'ok.md')), 'Flour notes');
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'hard.md')), null);
 });
 
 test('a refused note from the owner or the app is told to Michael, so nothing vanishes', async (t) => {
@@ -779,9 +871,9 @@ test('the Research agent is Pete by default, the owner may rename it, and the ap
   assert.match(back.body, /Robin is off/);
 });
 
-test('Research\'s notes reader skips a pipe and an oversized file instead of hanging', posixOnly('mkfifo'), (t) => {
-  // Value: protects=a pipe Pete makes can't freeze the app when his notes are read; fails_when=the open waits on a pipe or a huge note is read whole; why_new=security review (reproduced hang); seam=none
-  const { readResearchNotes, MAX_NOTE_BYTES } = loadTs('src/main/researchNotes.ts');
+test('the app skips a pipe and an oversized Research file instead of hanging', posixOnly('mkfifo'), (t) => {
+  // Value: protects=a pipe Pete makes can't freeze the app when it reads his files; fails_when=the open waits on a pipe or a huge file is read whole; why_new=security review (reproduced hang); seam=none
+  const { readResearchFile, MAX_NOTE_BYTES } = loadTs('src/main/researchNotes.ts');
   const { execFileSync } = require('node:child_process');
   const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes3-')));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
@@ -789,8 +881,8 @@ test('Research\'s notes reader skips a pipe and an oversized file instead of han
   fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
   execFileSync('mkfifo', [path.join(dir, 'memory', 'pipe.md')]);
   fs.writeFileSync(path.join(dir, 'memory', 'huge.md'), 'x'.repeat(MAX_NOTE_BYTES + 1));
-  fs.writeFileSync(path.join(dir, 'memory.md'), 'Flour suppliers');
-  assert.equal(readResearchNotes(dir), 'Flour suppliers');
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'pipe.md')), null);
+  assert.equal(readResearchFile(dir, path.join(dir, 'memory', 'huge.md')), null);
 });
 
 test('nobody else takes the Research agent\'s name, and its name reaches it unless an older hire has it', async (t) => {
@@ -837,25 +929,6 @@ test('Pete may write to Michael by his display name', async (t) => {
   send(hive, 'research', { to: 'mike', act: 'inform', subject: 'Stuck', body: 'No source has it' });
   hive.routeOnce(); await tick(); hive.routeOnce();
   assert.equal(msgsIn(hive, 'god').filter((m) => m.subject === 'Stuck').length, 1);
-});
-
-test('Research\'s notes: memory.md and memory/*.md are read, inbox.md is not, and a linked memory folder is refused', (t) => {
-  // Value: protects=his own notes reach the shared memory and an office folder linked in as memory/ does not; fails_when=the folder checks go; why_new=testing review (only single file links were covered); seam=none
-  const { readResearchNotes } = loadTs('src/main/researchNotes.ts');
-  const base = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-notes4-')));
-  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
-  const dir = path.join(base, 'research');
-  fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
-  fs.writeFileSync(path.join(dir, 'memory.md'), 'Flour');
-  fs.writeFileSync(path.join(dir, 'memory', 'yeast.md'), 'Yeast');
-  fs.writeFileSync(path.join(dir, 'memory', 'inbox.md'), 'not mined');
-  assert.equal(readResearchNotes(dir), 'Flour\n\nYeast');
-  if (process.platform === 'win32') return;
-  fs.rmSync(path.join(dir, 'memory'), { recursive: true });
-  fs.mkdirSync(path.join(base, 'office'));
-  fs.writeFileSync(path.join(base, 'office', 'ledger.md'), 'SECRET ledger');
-  fs.symlinkSync(path.join(base, 'office'), path.join(dir, 'memory'));
-  assert.equal(readResearchNotes(dir), 'Flour');
 });
 
 test('an owner note whose check fails leaves nothing pending, so no second note comes at the next start', async (t) => {
@@ -1075,6 +1148,108 @@ test('a repaired outbox file is written over only when it is the agent\'s own pl
   assert.equal(fs.readFileSync(outside, 'utf8'), before);
   assert.equal(msgsIn(hive, 'god').filter((m) => /line one/.test(m.body)).length, 0, 'set aside before it is delivered');
   assert.match(fs.readFileSync(path.join(hive.root(), 'log.jsonl'), 'utf8'), /outbox-not-a-file/);
+});
+
+test('a plain outbox file linked from elsewhere is set aside, never sent again as new or written through', posixOnly('hard links'), async (t) => {
+  // Value: protects=an agent can't resend someone else's message (another member's inbox, Michael's sent mail) as its own new mail, and nothing is written through the link; fails_when=only repaired files get the one name check; why_new=Codex review, ship 2026-10-18; seam=none
+  const { hive } = await office(t);
+  const outside = path.join(path.dirname(hive.root()), 'linked-ok.json');
+  fs.writeFileSync(outside, JSON.stringify({ to: 'god', act: 'inform', subject: 'linked', body: 'b' }));
+  const before = fs.readFileSync(outside, 'utf8');
+  fs.linkSync(outside, path.join(hive.root(), 'agents', 'pam', 'outbox', 'm.json'));
+  hive.routeOnce();
+  assert.equal(fs.readFileSync(outside, 'utf8'), before, 'nothing written through the link');
+  assert.equal(msgsIn(hive, 'god').filter((m) => m.subject === 'linked').length, 0, 'not delivered');
+  assert.match(fs.readFileSync(path.join(hive.root(), 'log.jsonl'), 'utf8'), /outbox-not-a-file/);
+});
+
+test('a time an agent typed is replaced by the app\'s', async (t) => {
+  // Value: protects=a typed time, later or earlier, never closes the owner's next question or hides a message; fails_when=an outbox created_at is kept; why_new=red team and Codex review, ship 2026-10-18; seam=none
+  const { hive } = await office(t);
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'late', body: 'b', created_at: '2099-01-01T00:00:00Z' });
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'early', body: 'b', created_at: '2026-01-01T10:00:00-05:00' }, 'm2.json');
+  const before = Date.now();
+  hive.routeOnce();
+  for (const m of msgsIn(hive, 'god').filter((x) => x.from === 'pam')) {
+    assert.ok(Date.parse(m.created_at) >= before - 1000 && Date.parse(m.created_at) <= Date.now(), `${m.subject}: the app's time`);
+    assert.match(m.created_at, /Z$/, 'one canonical form');
+  }
+});
+
+/** The outbox journal: the app's record for one outbox file (Codex review, ship 2026-10-18). */
+const journalDir = (hive, from) => path.join(path.dirname(hive.root()), 'private', 'outbox-routing', from);
+/** One pass that dies after delivering, before the file is archived. */
+const passThatDies = (hive) => {
+  hive.archiveOutboxFile = () => {};
+  try { hive.routeOnce(); } finally { delete hive.archiveOutboxFile; }
+};
+
+test('a message delivered by a pass that died before archiving it is not delivered again', async (t) => {
+  // Value: protects=a crash between delivery and archive never doubles a message; fails_when=the replay routes it again under a new id; why_new=Codex review, ship 2026-10-18 (the app makes every id, so nothing deduped a replay); seam=archiveOutboxFile stubbed for one pass
+  const { hive } = await office(t);
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'once', body: 'b' });
+  passThatDies(hive);
+  const first = notes(hive, 'god', 'once');
+  assert.equal(first.length, 1);
+  assert.ok(fs.existsSync(path.join(hive.root(), 'agents', 'pam', 'outbox', 'm1.json')), 'the file is still in the outbox');
+  hive.routeOnce();
+  assert.equal(notes(hive, 'god', 'once').length, 1, 'not again');
+  assert.equal(sentId(hive, 'pam'), first[0].id, 'the sent copy names the id it was delivered under');
+  assert.deepEqual(fs.readdirSync(journalDir(hive, 'pam')), [], 'the record goes once it is archived');
+});
+
+test('a pass that died before recording the delivery delivers again under the same id, so the copy replaces itself', async (t) => {
+  // Value: protects=the narrow window between delivery and its record still leaves one copy; fails_when=the replay picks a new id; why_new=Codex review, ship 2026-10-18; seam=the journal record set back to not delivered
+  const { hive } = await office(t);
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'once', body: 'b' });
+  passThatDies(hive);
+  const [first] = notes(hive, 'god', 'once');
+  const rec = path.join(journalDir(hive, 'pam'), 'm1.json');
+  fs.writeFileSync(rec, JSON.stringify({ ...JSON.parse(fs.readFileSync(rec, 'utf8')), delivered: false }));
+  hive.routeOnce();
+  const again = notes(hive, 'god', 'once');
+  assert.equal(again.length, 1, 'one copy');
+  assert.deepEqual([again[0].id, again[0].created_at], [first.id, first.created_at], 'the same id and time');
+});
+
+test('a schedule request is filed once though the pass died before archiving it', async (t) => {
+  // Value: protects=a crash never files a schedule request or answers it twice; fails_when=the replay calls the scheduler again; why_new=Codex review, ship 2026-10-18; seam=archiveOutboxFile stubbed for one pass
+  const { hive } = await office(t);
+  let filed = 0;
+  hive.onScheduleRequest(() => { filed++; return 'Schedule request sent.'; });
+  send(hive, 'pam', { to: 'scheduler', act: 'request', subject: 's', body: 'why', schedule: { kind: 'x' } });
+  passThatDies(hive);
+  hive.routeOnce();
+  assert.equal(filed, 1);
+  assert.equal(notes(hive, 'pam', 'Schedule request').length, 1);
+});
+
+test('a journal record whose file is gone, or names another file, is never used', async (t) => {
+  // Value: protects=a stale record never gives a new message an old id; fails_when=records outlive their file or are matched by name alone; why_new=Codex review, ship 2026-10-18; seam=records written by hand
+  const { hive } = await office(t);
+  const dir = journalDir(hive, 'pam');
+  fs.mkdirSync(dir, { recursive: true });
+  const old = { ino: 1, birth: 1, id: '20260101-000000-aaaa', created_at: '2026-01-01T00:00:00.000Z', delivered: true };
+  fs.writeFileSync(path.join(dir, 'gone.json'), JSON.stringify(old));
+  fs.writeFileSync(path.join(dir, 'm1.json'), JSON.stringify(old));
+  send(hive, 'pam', { to: 'god', act: 'inform', subject: 'new', body: 'b' });
+  hive.routeOnce();
+  const [m] = notes(hive, 'god', 'new');
+  assert.ok(m, 'delivered, not skipped as delivered');
+  assert.notEqual(m.id, old.id, 'a fresh id');
+  assert.deepEqual(fs.readdirSync(dir), [], 'both records went');
+});
+
+test('Research\'s schedule request is archived as Research wrote it', async (t) => {
+  // Value: protects=Research's files are the app's own record, never written over (red team, third ship); fails_when=the scheduler branch stamps Research's file; why_new=ship review; seam=none
+  const { hive } = await office(t);
+  hive.onScheduleRequest(() => 'Schedule request not sent.');
+  const out = path.join(hive.root(), 'agents', 'research', 'outbox');
+  fs.mkdirSync(out, { recursive: true });
+  const raw = JSON.stringify({ to: 'scheduler', act: 'request', subject: 's', body: 'b', schedule: { kind: 'x' } });
+  fs.writeFileSync(path.join(out, 'req.json'), raw);
+  hive.routeOnce();
+  assert.equal(fs.readFileSync(path.join(out, '.sent', 'req.json'), 'utf8'), raw);
 });
 
 test('the app never deletes a folder inside Research\'s mail, so no link swapped into it leads a delete elsewhere', posixOnly('symlinks'), async (t) => {
