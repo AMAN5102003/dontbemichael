@@ -18,6 +18,7 @@ import { TriggerCard } from './triggers/ui';
 import { WorkersTab } from './WorkersTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
+import { areLogsEqual, type LogEntry } from './activityLog';
 import { Icon } from './Icon';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
@@ -1272,18 +1273,20 @@ function TokenLimitEditor({ value, onSet }: { value?: number; onSet: (tokens: nu
 
 // ─── Activity tab — hive event log + board ───────────────────────────────────
 
-interface LogEntry { ts?: number; kind?: string; [k: string]: unknown }
-
 function ActivityTab({ embedded = false }: { embedded?: boolean }) {
   const Wrap = embedded ? Bare : Scroll;
   const { t } = useTranslation();
   const [log, setLog] = useState<LogEntry[]>([]);
   const [board, setBoard] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     const refresh = async () => {
-      try { setLog((await window.cth.hiveLog(60)) as LogEntry[]); } catch { /* noop */ }
+      try {
+        const next = (await window.cth.hiveLog(60)) as LogEntry[];
+        // Same log as last poll: keep the prev reference so React skips the
+        // re-render. IPC returns fresh objects each time, so compare by value.
+        setLog((prev) => (areLogsEqual(prev, next) ? prev : next));
+      } catch { /* noop */ }
       try { setBoard(await window.cth.hiveBoard()); } catch { /* noop */ }
     };
     refresh();
