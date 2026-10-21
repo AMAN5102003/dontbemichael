@@ -77,8 +77,11 @@ export function workStyleOffers(
     const goal = swapName(teamMemberGoal(def, business), cardName, name);
     // The lines a hire binding wrote ("Only <scope>." on the bound member,
     // "Not for <scope>; that goes to <Name>." on teammates) stay: Michael routes
-    // by them, and the new default text knows nothing about them.
-    const bindings = (a.description ?? '').match(/Only [^.]+\.|Not for [^;.]+; that goes to [^.]+\./g) ?? [];
+    // by them, and the new default text knows nothing about them. Lazy up to
+    // the full stop that ends the line, as bindingRe in hireTemplates is, so a
+    // scope with a period or a semicolon in it stays whole: "the
+    // owner@sunrise.com mailbox", "orders over $1.5k", "refunds; returns".
+    const bindings = (a.description ?? '').match(/Only (?:(?!Only |Not for ).)+?\.(?![\p{L}\p{N}])|Not for (?:(?!Not for ).)+?; that goes to [^.]+?\.(?![\p{L}\p{N}])/gu) ?? [];
     const description = bindings.reduce((d, line) => appendOnce(d, line), swapName(teamMemberRole(def), cardName, name));
     if ((a.goal ?? '').trim() === goal.trim()) continue;
     out.push({ key: update.key, whyKey: update.whyKey, agentId: a.id, sourceCard, goal, description });

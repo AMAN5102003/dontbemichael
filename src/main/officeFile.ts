@@ -167,7 +167,12 @@ export function folderLayoutFor(businessFolder: string | undefined, folders: str
     if (teamFolders.some((t) => fold(t) === fold(f))) continue;
     teamFolders.push(f);
   }
-  return { business, teamFolders };
+  // The app's private folder (issue #63), whatever the layout: nobody opens it.
+  // Its program and settings folders (issue 100): nobody changes them.
+  return {
+    business, teamFolders,
+    ...(app ? { appPrivate: join(app, 'private'), appLocked: [join(app, 'hive', 'bin'), join(app, 'agent-settings')] } : {})
+  };
 }
 
 /** The deepest folder that contains every path's parent, or undefined. */

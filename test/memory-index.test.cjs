@@ -192,3 +192,98 @@ test('the tidy up runs with no tools and no MCP servers', () => {
   assert.match(tidy, /noTools: true,/);
   assert.match(hidden, /opts\.noTools \? \['--tools', '', '--strict-mcp-config'\]/);
 });
+
+test('a pass reports only the notes new to the index: an edit, a repeat or a replaced procedure is not new', () => {
+  // Value: protects=Pulse's Learning count (owner, 2026-10-18: 4 notes today were 3 new and 1 edit); fails_when=an update, a repeat or an existing procedure is reported as added, a new procedure pointer is missed, or a note added and deleted in one pass is reported; why_new=the count moved from note dates to add events; seam=none; no_claim=what the notes say
+  const base = [
+    { id: 'm1', kind: 'fact', text: 'Invoices go to the shared box', source: 'owner', date: '2026-10-01' },
+    { id: 'm2', kind: 'procedure', text: 'Close the month: steps in memory/procedures/close-the-month.md', source: 'task', date: '2026-10-02' }
+  ];
+  const out = mi.applyOps(base, [
+    { op: 'update', id: 'm1', text: 'Invoices go to the shared box, copy Oscar' },
+    { op: 'update', id: 'm1', repeat: true },
+    { op: 'procedure', name: 'Close the month', steps: '1. Reconcile', source: 'task' },
+    { op: 'add', kind: 'fact', text: 'Rent is due on the 1st', source: 'michael' },
+    { op: 'procedure', name: 'Weekly money summary', steps: '1. Totals', source: 'owner' },
+    { op: 'add', kind: 'fact', text: 'A note that is gone at once', source: 'task' },
+    { op: 'delete', id: 'm5', reason: 'wrong' }
+  ], '2026-10-18');
+  assert.deepEqual(out.added, [{ id: 'm3', source: 'michael' }, { id: 'm4', source: 'owner' }]);
+});
+
+function addedOffice(t) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-memadded-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const dir = path.join(home, 'hive', 'agents', 'oscar');
+  fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'memory.md'), mi.renderIndex('Oscar', 'oscar', [{ id: 'm1', kind: 'fact', text: 'Old fact', source: 'task', date: '2026-10-01' }]));
+  fs.writeFileSync(path.join(dir, 'memory', 'inbox.md'), '- a note\n');
+  const reported = [];
+  const tidy = new MemoryTidy(() => home, () => 'claude', () => ({}), () => true, () => 'Oscar', () => {}, () => ({}), (id, added) => reported.push([id, added]));
+  return { dir, tidy, reported };
+}
+
+test('the tidy pass hands its new notes on once the index is written', async (t) => {
+  // Value: protects=the note-added record Pulse counts from (owner, 2026-10-18); fails_when=added notes are not reported or an edit is reported; why_new=the count moved from note dates to the app's own record; seam=temp hive, model stubbed; no_claim=the telemetry store itself
+  const f = addedOffice(t);
+  f.tidy.askModel = async () => ({ ops: [{ op: 'update', id: 'm1', text: 'Old fact, edited' }, { op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  await f.tidy.tidyNow();
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.ok(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').includes('New fact'), 'reported after the index holds it');
+});
+
+test('a pass whose state write fails after the index landed counts its notes once and never hands them back', async (t) => {
+  // Value: protects=one note, one count, one index line; fails_when=a failed step after the index write restores the inbox, so the next pass adds and counts the note again; why_new=ship review (state machine and QA probe); seam=state.json made a folder
+  const f = addedOffice(t);
+  const state = path.join(f.dir, 'memory', 'state.json');
+  fs.mkdirSync(state);
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  await f.tidy.tidyNow();
+  fs.rmdirSync(state);
+  await f.tidy.tidyNow();
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').split('\n').filter((l) => l.includes('New fact')).length, 1);
+});
+
+test('held notes that cannot be removed after going back to the inbox come back only once', { skip: process.platform === 'win32' }, async (t) => {
+  // Value: protects=a locked processing file never adds the same notes again each pass; fails_when=the stranded recovery appends and then leaves the file full; why_new=ship review cycle 3; seam=a read only memory folder blocks the delete, not the inbox append
+  const f = addedOffice(t);
+  const mem = path.join(f.dir, 'memory');
+  fs.writeFileSync(path.join(mem, 'inbox.md'), '');
+  fs.writeFileSync(path.join(mem, 'inbox.processing.md'), '- a stranded note\n');
+  fs.chmodSync(mem, 0o500);
+  t.after(() => { try { fs.chmodSync(mem, 0o700); } catch { /* gone */ } });
+  f.tidy.askModel = async () => { throw new Error('no model'); };
+  await f.tidy.tidyNow();
+  await f.tidy.tidyNow();
+  fs.chmodSync(mem, 0o700);
+  const inbox = fs.readFileSync(path.join(mem, 'inbox.md'), 'utf8');
+  assert.equal(inbox.split('a stranded note').length - 1, 1, 'back once');
+});
+
+test('a processing file left after the index landed is never read back into the inbox', async (t) => {
+  // Value: protects=a cleanup that failed (Windows can hold the file open) never adds or counts notes twice; fails_when=the stranded recovery appends notes the index already has; why_new=ship review cycle 2; seam=the processing file emptied as the fallback leaves it
+  const f = addedOffice(t);
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  await f.tidy.tidyNow();
+  // What the fallback leaves when the file cannot be removed: an empty file.
+  fs.writeFileSync(path.join(f.dir, 'memory', 'inbox.processing.md'), '');
+  f.tidy.askModel = async () => ({ ops: [] });
+  await f.tidy.tidyNow();
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.doesNotMatch(fs.readFileSync(path.join(f.dir, 'memory', 'inbox.md'), 'utf8').replace(/\s/g, ''), /\S/, 'nothing came back');
+});
+
+// POSIX only: a read only folder is how the write is made to fail, and Windows
+// ignores those permission bits (platform-scoped tests, owner 2026-10-09).
+test('a pass whose index write fails reports no new notes', { skip: process.platform === 'win32' }, async (t) => {
+  // Value: protects=the count never includes a note that did not land; fails_when=the report happens before or without the index write; why_new=owner 2026-10-18; seam=read only agent folder; no_claim=Windows
+  const f = addedOffice(t);
+  fs.chmodSync(f.dir, 0o500);
+  t.after(() => { try { fs.chmodSync(f.dir, 0o700); } catch { /* gone */ } });
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'Never written', source: 'task' }] });
+  const [r] = await f.tidy.tidyNow();
+  fs.chmodSync(f.dir, 0o700);
+  assert.equal(r.tidied, false, 'the index could not be written');
+  assert.deepEqual(f.reported, []);
+});

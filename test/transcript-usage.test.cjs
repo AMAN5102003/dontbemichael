@@ -57,7 +57,14 @@ function rec(output, opts = {}) {
     }
   };
   if (opts.sessionId !== null) r.sessionId = opts.sessionId ?? 's1';
+  if (opts.id) { r.message.id = opts.id; r.requestId = opts.requestId ?? `req_${opts.id}`; }
   return JSON.stringify(r);
+}
+
+/** One API response as Claude Code writes it: a line per content block, each
+ *  repeating the response's id, requestId and full usage. */
+function response(id, output, blocks = 3, opts = {}) {
+  return Array.from({ length: blocks }, () => rec(output, { ...opts, id }) + '\n').join('');
 }
 
 let failures = 0;
@@ -186,6 +193,41 @@ test('model is the last one seen (per current semantics)', () => {
   fs.writeFileSync(path.join(dir, 'a.jsonl'),
     rec(1, { model: 'claude-haiku-4-5' }) + '\n' + rec(2, { model: 'claude-opus-4-8' }) + '\n');
   assert.equal(readAgentUsage(cwd).model, 'claude-opus-4-8');
+});
+
+test('a response written as one line per content block counts once', () => {
+  const { cwd, dir } = makeProject();
+  fs.writeFileSync(path.join(dir, 'a.jsonl'), response('msg_1', 500, 3, { cacheRead: 20000 }));
+  const u = readAgentUsage(cwd);
+  assert.equal(u.outputTokens, 500, 'not 1500');
+  assert.equal(u.cacheReadTokens, 20000, 'not 60000');
+  assert.equal(u.inputTokens, 10);
+  const single = makeProject();
+  fs.writeFileSync(path.join(single.dir, 'a.jsonl'), rec(500, { id: 'msg_1', cacheRead: 20000 }) + '\n');
+  assert.equal(u.estimatedCostUsd, readAgentUsage(single.cwd).estimatedCostUsd, 'priced once too');
+});
+
+test('blocks of one response split across two reads still count once', () => {
+  const { cwd, dir } = makeProject();
+  const f = path.join(dir, 'a.jsonl');
+  fs.writeFileSync(f, response('msg_1', 500, 1));
+  assert.equal(readAgentUsage(cwd).outputTokens, 500); // primes the cache mid-response
+  fs.appendFileSync(f, response('msg_1', 500, 2) + response('msg_2', 40, 2));
+  assert.equal(readAgentUsage(cwd).outputTokens, 540);
+  fs.writeFileSync(f, response('msg_1', 500, 2)); // a rewrite re-parses from scratch
+  assert.equal(readAgentUsage(cwd).outputTokens, 500, 'a from-scratch parse forgets the old responses');
+});
+
+test('distinct responses each count, and the session buckets match', () => {
+  const { cwd, dir } = makeProject();
+  fs.writeFileSync(path.join(dir, 'a.jsonl'),
+    response('msg_1', 100, 2, { sessionId: 's1' }) +
+    response('msg_2', 200, 3, { sessionId: 's1' }) +
+    response('msg_3', 7, 2, { sessionId: 's2' }) +
+    rec(1000, { id: 'msg_1', requestId: 'req_other', sessionId: 's1' }) + '\n');
+  assert.equal(readAgentUsage(cwd, { sessionId: 's1' }).outputTokens, 1300, 'same message id under another request is another response');
+  assert.equal(readAgentUsage(cwd, { sessionId: 's2' }).outputTokens, 7);
+  assert.equal(readAgentUsage(cwd).outputTokens, 1307);
 });
 
 test('missing project dir yields zeros', () => {

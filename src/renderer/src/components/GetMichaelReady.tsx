@@ -19,13 +19,18 @@ const SIGNIN_POLL_MS = 2000;
  * browser and the step notices when it is done. The terminals stay behind
  * Show details. Used as setup's last step and in the Ask me card's dialog.
  */
-export function GetMichaelReady({ provider, onReadyChange }: {
+export function GetMichaelReady({ provider, onReadyChange, fix }: {
   provider?: AgentProvider;
   onReadyChange?: (ready: boolean) => void;
+  /** Opened from a stop card (office-stopped-account.md): `key` starts on the
+   *  key form, `signin` offers a fresh sign in even when Claude still reads
+   *  as signed in. */
+  fix?: 'signin' | 'key';
 }) {
   const { t } = useTranslation();
   const godName = useResolvedGodName();
   const [status, setStatus] = useState<EngineSetupStatus | undefined>();
+  const [statusFailed, setStatusFailed] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installFailed, setInstallFailed] = useState(false);
   const [browser, setBrowser] = useState(false);
@@ -35,7 +40,9 @@ export function GetMichaelReady({ provider, onReadyChange }: {
   const inFlight = useRef(false);
   const autoInstalled = useRef(false);
   // Use an API key instead of a Claude account: the key never comes back.
-  const [keyForm, setKeyForm] = useState(false);
+  const [keyForm, setKeyForm] = useState(fix === 'key');
+  // A stop card's sign in finished in the browser (fix 'signin').
+  const [signedInAgain, setSignedInAgain] = useState(false);
   const [keyDraft, setKeyDraft] = useState('');
   const [keyBusy, setKeyBusy] = useState(false);
   const [keyError, setKeyError] = useState<string | undefined>();
@@ -44,9 +51,13 @@ export function GetMichaelReady({ provider, onReadyChange }: {
     const mine = ++reads.current;
     try {
       const s = await window.cth.engineSetupStatus(provider);
-      if (mine === reads.current) setStatus(s);
+      if (mine === reads.current) {
+        setStatus(s);
+        setStatusFailed(false);
+      }
       return s;
     } catch {
+      if (mine === reads.current) setStatusFailed(true);
       return undefined;
     }
   }, [provider]);
@@ -73,9 +84,12 @@ export function GetMichaelReady({ provider, onReadyChange }: {
     setKeyBusy(false);
     if (!res.ok) {
       // A refusal shows Anthropic's own reason (a workspace key has its own message).
+      // A key the computer cannot store shows what to do about it (keychain or keyring).
       setKeyError(res.error === 'refused' && 'reason' in res && res.reason
         ? t('engineSetup.keyError.refused', { reason: res.reason })
-        : t(`engineSetup.keyError.${res.error ?? 'unreachable'}`));
+        : res.error === 'store' && 'reason' in res && res.reason
+          ? res.reason
+          : t(`engineSetup.keyError.${res.error ?? 'unreachable'}`));
       return;
     }
     setKeyDraft('');
@@ -110,6 +124,7 @@ export function GetMichaelReady({ provider, onReadyChange }: {
       if (e.id === ENGINE_SIGNIN_PTY) {
         setBrowser(false);
         setSignInStuck(s.signedIn === false);
+        if (s.signedIn !== false) setSignedInAgain(true);
       }
     });
   }), [read]);
@@ -126,8 +141,11 @@ export function GetMichaelReady({ provider, onReadyChange }: {
     return () => clearInterval(iv);
   }, [browser, read]);
 
-  const phase = engineSetupPhase(status, { installing, installFailed, browser });
-  const ready = engineSetupPhaseOpensOffice(phase);
+  const phase = engineSetupPhase(status, { installing, installFailed, browser, statusFailed });
+  // From a stop card, ready means the fix is done too: a new key saved, or a
+  // fresh sign in finished.
+  const fixPending = (fix === 'key' && keyForm) || (fix === 'signin' && status?.method !== 'apiKey' && !signedInAgain);
+  const ready = engineSetupPhaseOpensOffice(phase) && !fixPending;
   useEffect(() => { onReadyChange?.(ready); }, [ready, onReadyChange]);
   // A finished step has nothing to show behind Show details.
   useEffect(() => { if (ready) setDetails(false); }, [ready]);
@@ -148,6 +166,13 @@ export function GetMichaelReady({ provider, onReadyChange }: {
   const claudeRow = (() => {
     switch (phase) {
       case 'checking': return <Row glyph={<Spinner />} tone="wait" label={t('engineSetup.claude')} status={t('engineSetup.checking')} />;
+      case 'checkFailed': return (
+        <Row icon="x" tone="bad" label={t('engineSetup.claude')} status={t('engineSetup.checkFailed')} bad>
+          <div style={actions}>
+            <PixelButton variant="primary" size="sm" onClick={() => { setStatusFailed(false); void read(); }}>{t('engineSetup.tryAgain')}</PixelButton>
+          </div>
+        </Row>
+      );
       case 'installing': return (
         <Row glyph={<Spinner />} tone="wait" label={t('engineSetup.claude')} status={t('engineSetup.installing')}>
           <div className="cth-engine-bar" aria-hidden><i /></div>
@@ -191,6 +216,7 @@ export function GetMichaelReady({ provider, onReadyChange }: {
   const accountRow = (() => {
     switch (phase) {
       case 'checking':
+      case 'checkFailed':
       case 'installing':
       case 'installFailed':
         return <Row icon="clock" tone="idle" label={t('engineSetup.account')} status={t('engineSetup.waitingInstall')} dim />;
@@ -220,7 +246,16 @@ export function GetMichaelReady({ provider, onReadyChange }: {
           </div>
         </Row>
       );
-      default: return status?.method === 'apiKey' ? (
+      // A stop card's fix: the key form, or a fresh sign in, over the ready row.
+      default: if (keyForm) return keyFormRow;
+        if (fix === 'signin' && status?.method !== 'apiKey' && !signedInAgain) return (
+          <Row icon="arrow-right" tone="idle" label={t('engineSetup.account')} status={signInStuck ? t('engineSetup.signInStuck') : t('engineSetup.signInWhy', { godName })} bad={signInStuck}>
+            <div style={actions}>
+              <PixelButton variant="primary" size="sm" onClick={() => void signIn()}>{t('engineSetup.signIn')}</PixelButton>
+            </div>
+          </Row>
+        );
+        return status?.method === 'apiKey' ? (
         <Row icon="check" tone="ok" label={t('engineSetup.apiKey')} status={t('engineSetup.usingApiKey')} />
       ) : (
         <Row icon="check" tone="ok" label={t('engineSetup.account')}
@@ -278,7 +313,7 @@ const visuallyHidden: React.CSSProperties = {
   position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0
 };
 
-function Spinner() {
+export function Spinner() {
   return <span className="cth-engine-spin" />;
 }
 

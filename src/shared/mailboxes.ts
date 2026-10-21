@@ -102,12 +102,14 @@ export type MailOp = 'list' | 'read' | 'organize' | 'draft' | 'propose' | 'send'
  *  hook both check tools against this one map. `organize` (archive, mark read,
  *  mark junk) moves mail out of the inbox and never deletes it, so it can be
  *  undone in the mailbox: it needs the mailbox, like reading (inbox zero,
- *  owner 2026-10-03). */
-export const MAIL_TOOL_OPS: Record<string, MailOp> = {
+ *  owner 2026-10-03). It has no prototype: the name looked up comes from the
+ *  agent's call, and on a plain object "constructor" or "__proto__" would read
+ *  as a known tool and pass both checks. */
+export const MAIL_TOOL_OPS: Record<string, MailOp> = Object.assign(Object.create(null) as Record<string, MailOp>, {
   list_mailboxes: 'list', search: 'read', read: 'read',
   archive: 'organize', mark_read: 'organize', mark_junk: 'organize',
   draft: 'draft', propose: 'propose', send: 'send'
-};
+});
 
 /** Standard mail ports: IMAP over TLS, SMTP over TLS, and SMTP submission
  *  (STARTTLS). */

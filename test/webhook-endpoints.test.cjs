@@ -229,21 +229,63 @@ test('the query-param token fallback still works', async () => {
   assert.equal(res.status, 200);
 });
 
-test('one noisy endpoint cannot starve the others', async () => {
+test('requests rejected by one endpoint do not exhaust the global budget', async () => {
   const { server } = makeServer();
   let limited = 0;
-  for (let i = 0; i < 61; i++) {
+  for (let i = 0; i < 121; i++) {
     const r = await request(server, {
       url: '/alpha', headers: auth(SECRET_A), body: post({ message: `n${i}` })
     });
     if (r.status === 429) limited++;
   }
-  assert.ok(limited > 0, 'the per-endpoint budget must trip before the global one');
+  assert.equal(limited, 61, 'only the first 60 requests fit the endpoint budget');
 
   const other = await request(server, {
     url: '/legacy', headers: auth(SECRET_B), body: post({ message: 'still fine' })
   });
   assert.equal(other.status, 200, 'a different endpoint keeps its own budget');
+});
+
+test('unknown endpoint ids share a budget without starving a real endpoint', async () => {
+  const { server, seen } = makeServer();
+  let unauthorized = 0;
+  let limited = 0;
+  for (let i = 0; i < 121; i++) {
+    const res = await request(server, {
+      url: `/unknown-${i}`, headers: auth(SECRET_A), body: post({ message: 'probe' })
+    });
+    if (res.status === 401) unauthorized++;
+    if (res.status === 429) limited++;
+  }
+  assert.equal(unauthorized, 60, 'unknown ids share one allowance');
+  assert.equal(limited, 61);
+  assert.equal(seen.length, 0, 'unknown ids never dispatch');
+
+  const real = await request(server, {
+    url: '/alpha', headers: auth(SECRET_A), body: post({ message: 'still fine' })
+  });
+  assert.equal(real.status, 200);
+});
+
+test('the global budget still bounds requests admitted across endpoints', async () => {
+  const { server, seen } = makeServer();
+  server.setEndpoints([
+    ...endpoints(),
+    { id: 'gamma', name: 'Gamma', secret: SECRET_A, schema: SCHEMA }
+  ]);
+  for (const [id, secret] of [['alpha', SECRET_A], ['legacy', SECRET_B], ['gamma', SECRET_A]]) {
+    for (let i = 0; i < 40; i++) {
+      const res = await request(server, {
+        url: `/${id}`, headers: auth(secret), body: post({ message: `n${i}` })
+      });
+      assert.equal(res.status, 200);
+    }
+  }
+  const over = await request(server, {
+    url: '/gamma', headers: auth(SECRET_A), body: post({ message: 'over global quota' })
+  });
+  assert.equal(over.status, 429, 'a remaining endpoint allowance cannot exceed the global cap');
+  assert.equal(seen.length, 120);
 });
 
 test('a secretless endpoint is never served', async () => {
@@ -254,4 +296,20 @@ test('a secretless endpoint is never served', async () => {
     url: '/empty', headers: { 'x-md-webhook-secret': '' }, body: post({ message: 'hi' })
   });
   assert.equal(res.status, 401);
+});
+
+test('the webhook server answers this computer only, and the security policy names it (issue 102)', async (t) => {
+  // Value: protects=an enabled webhook is not reachable from the local network; fails_when=listen drops the loopback host or SECURITY.md stops naming the listeners; why_new=issue 102; seam=none
+  const { server } = makeServer();
+  await server.listen(); // the bind alone: start() would open a real tunnel
+  t.after(() => server.server?.close());
+  assert.equal(server.server.address().address, '127.0.0.1');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
+  assert.match(read('src/main/slack.ts'), /server\.listen\(this\.port, '127\.0\.0\.1', \(\) => \{/);
+  const policy = read('SECURITY.md');
+  for (const listener of ['hook server', 'integration broker', 'telemetry receiver', 'webhook server']) {
+    assert.match(policy, new RegExp(`\\*\\*The ${listener}\\*\\*`), `SECURITY.md names the ${listener}`);
+  }
 });

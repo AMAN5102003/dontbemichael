@@ -100,48 +100,62 @@ export function MailboxesSettings() {
 
       {failed && <div role="alert" style={{ fontSize: 13, color: 'var(--cth-ink-900)' }}>! {t('capabilities.saveFailed')}</div>}
 
-      <div id={listId} hidden={!open}>
-        {mailboxes.length > 0 && (
-          <div role="list">
-            {mailboxes.map((m) => {
-              const users = usersOf(m.id);
-              const senders = sendersOf(m.id);
-              const losing = [...users, ...sendersFrom(config.agentCapabilities, m.id).filter((x) => current(x.agentId)).map((x) => nameOf(x.agentId))];
-              const needsYou = m.status === 'needs-attention';
-              return (
-                <div key={m.id} role="listitem" style={row}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, wordBreak: 'break-all' }}>{m.address}</div>
-                    <div style={hint}>
-                      {m.provider === 'other' ? t('mailboxes.other') : PROVIDER_PRESETS[m.provider].label}
-                      {' · '}
-                      {users.length ? t('mailboxes.usedBy', { names: list(users) }) : t('mailboxes.usedByNobody')}
-                    </div>
-                    {senders.length > 0 && <div style={hint}>{t('capabilities.alsoSendsFromHere', { names: list(senders) })}</div>}
-                    {needsYou && m.statusReason && <div style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-900)' }}>! {m.statusReason}</div>}
-                    {confirming === m.id && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 13 }}>{t('mailboxes.sure')}{losing.length ? ` ${t('mailboxes.removeAffects', { names: list(losing) })}` : ''}</span>
-                        <MiniButton tone="destructive" autoFocus onClick={() => { void remove(m.id); }}>{t('mailboxes.removeIt')}</MiniButton>
-                        <MiniButton onClick={() => { setConfirming(null); refocus(`remove-${m.id}`); }}>{t('mailboxes.keep')}</MiniButton>
+      <div style={{
+        display: 'grid',
+        gridTemplateRows: open ? '1fr' : '0fr',
+        transition: 'grid-template-rows var(--cth-dur-base) var(--cth-ease)',
+      }}>
+        {/* Closed, the rows leave the Tab order and screen readers too, as the
+            `hidden` attribute did; visibility flips after the slide. */}
+        <div style={{
+          overflow: 'hidden', minHeight: 0,
+          visibility: open ? 'visible' : 'hidden',
+          transition: `visibility 0s linear ${open ? '0s' : 'var(--cth-dur-base)'}`
+        }}>
+          <div id={listId}>
+            {mailboxes.length > 0 && (
+              <div role="list">
+                {mailboxes.map((m) => {
+                  const users = usersOf(m.id);
+                  const senders = sendersOf(m.id);
+                  const losing = [...users, ...sendersFrom(config.agentCapabilities, m.id).filter((x) => current(x.agentId)).map((x) => nameOf(x.agentId))];
+                  const needsYou = m.status === 'needs-attention';
+                  return (
+                    <div key={m.id} role="listitem" style={row}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, wordBreak: 'break-all' }}>{m.address}</div>
+                        <div style={hint}>
+                          {m.provider === 'other' ? t('mailboxes.other') : PROVIDER_PRESETS[m.provider].label}
+                          {' · '}
+                          {users.length ? t('mailboxes.usedBy', { names: list(users) }) : t('mailboxes.usedByNobody')}
+                        </div>
+                        {senders.length > 0 && <div style={hint}>{t('capabilities.alsoSendsFromHere', { names: list(senders) })}</div>}
+                        {needsYou && m.statusReason && <div style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-900)' }}>! {m.statusReason}</div>}
+                        {confirming === m.id && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 13 }}>{t('mailboxes.sure')}{losing.length ? ` ${t('mailboxes.removeAffects', { names: list(losing) })}` : ''}</span>
+                            <MiniButton tone="destructive" autoFocus onClick={() => { void remove(m.id); }}>{t('mailboxes.removeIt')}</MiniButton>
+                            <MiniButton onClick={() => { setConfirming(null); refocus(`remove-${m.id}`); }}>{t('mailboxes.keep')}</MiniButton>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <span style={{ ...badge, ...(needsYou ? needsBadge : okBadge) }}>
-                    <Dot color={needsYou ? 'var(--cth-coral)' : 'var(--cth-mint)'} />
-                    {needsYou ? t('mailboxes.statusNeeds') : t('mailboxes.statusConnected')}
-                  </span>
-                  <span data-focus={`fix-${m.id}`}>
-                    <PixelButton variant={needsYou ? 'secondary' : 'ghost'} size="sm" onClick={() => setDialog({ fix: m })}>
-                      {needsYou ? t('mailboxes.fix') : t('mailboxes.edit')}
-                    </PixelButton>
-                  </span>
-                  {confirming !== m.id && <span data-focus={`remove-${m.id}`}><PixelButton variant="ghost" size="sm" onClick={() => setConfirming(m.id)}>{t('mailboxes.remove')}</PixelButton></span>}
-                </div>
-              );
-            })}
+                      <span style={{ ...badge, ...(needsYou ? needsBadge : okBadge) }}>
+                        <Dot color={needsYou ? 'var(--cth-coral)' : 'var(--cth-mint)'} />
+                        {needsYou ? t('mailboxes.statusNeeds') : t('mailboxes.statusConnected')}
+                      </span>
+                      <span data-focus={`fix-${m.id}`}>
+                        <PixelButton variant={needsYou ? 'secondary' : 'ghost'} size="sm" onClick={() => setDialog({ fix: m })}>
+                          {needsYou ? t('mailboxes.fix') : t('mailboxes.edit')}
+                        </PixelButton>
+                      </span>
+                      {confirming !== m.id && <span data-focus={`remove-${m.id}`}><PixelButton variant="ghost" size="sm" onClick={() => setConfirming(m.id)}>{t('mailboxes.remove')}</PixelButton></span>}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
       {dialog && (

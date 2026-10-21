@@ -72,6 +72,8 @@ test('the clock restarts on hook events only, never from the terminal parser', (
 test('a terminal ending mid-close refreshes the rows, guarded for startup order', () => {
   const main = read('src/main/index.ts');
   assert.match(main, /try \{ if \(agentId\) closingTime\.refresh\(agentId\); \} catch \(e\) \{ console\.error\('\[closing-time\] refresh:', e\); \}/, 'a refresh failure is logged, never hidden, and never breaks teardown');
+  // And one that comes back is waited on again, once its terminal really started.
+  assert.match(main, /try \{ if \(res\.ok && opts\.hive\?\.id\) closingTime\.revive\(opts\.hive\.id\); \} catch \(e\) \{ console\.error\('\[closing-time\] revive:', e\); \}/);
 });
 
 test('Remind and Close without them reach main on the channels main handles', () => {
@@ -99,6 +101,8 @@ test('a finished tool call leaves the row: its detail clears and the clock resta
   const hive = read('src/renderer/src/hooks/useHive.ts');
   assert.match(hive, /e\.event === 'PostToolUse' \|\| e\.event === 'UserPromptSubmit'[\s\S]{0,400}updateAgent\(e\.agentId, \{ status: 'working', actionDetail: undefined, actionAt: Date\.now\(\) \}\)/);
   assert.match(hive, /action: 'thinking', actionDetail: undefined, actionAt: Date\.now\(\)/);
+  // Value: protects=a finished tool is not named as still running; fails_when=PostToolUse with nothing running keeps "using <tool>"; why_new=TODOS "Row still names a finished tool"; seam=source pin
+  assert.match(hive, /else if \(e\.event === 'PostToolUse' && !breakerArmed\) updateAgent\(e\.agentId, \{ action: 'thinking' \}\);/);
 });
 
 test('the non-English "terminal ended" hint names the buttons as they appear on screen', () => {
@@ -155,4 +159,62 @@ test('quitting starts closing time on the floor, with no dialog (owner, 2026-09-
     const d = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
     for (const k of ['title', 'starting', 'left', 'leftPlural', 'hideWho', 'confirmForce', 'keepClosing', 'tryAgain']) assert.ok(d.closingBar[k], `${loc}: closingBar.${k}`);
   }
+});
+
+test('the list that takes focus from code shows the focus ring to the keyboard, inside its scrolling panel', () => {
+  // Value: protects=a keyboard user sees where focus went after Remind or a refused Close without them; fails_when=the list hides its outline again (an inline outline beats the global :focus-visible ring) or the ring is drawn outside the scrolling panel that would clip it; why_new=no test above looks at focus styling; seam=none
+  const list = read('src/renderer/src/components/ClosingTimeBar.tsx').match(/<div ref=\{listRef\}[^\n]*/)[0];
+  assert.match(list, /className="cth-closing-list"/);
+  assert.doesNotMatch(list, /outline/, 'an inline outline would hide the ring from the keyboard');
+  assert.match(read('src/renderer/src/design/global.css'), /\.cth-closing-list:focus-visible \{ outline-offset: -2px; \}/);
+});
+
+test('focus falls back to the list when the row or its confirm is gone (issue 135)', () => {
+  // Value: protects=keyboard focus always lands somewhere after Remind or a refused Close without them, even when that row has left; fails_when=the refocus effect drops its listRef fallback, or the list stops being focusable; why_new=the fallback had no test; seam=the effect's own expression, run against stand-in elements (no DOM here)
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  const effect = bar.match(/\n\s*(\(\(refocus === 'keep' \? keepButton\.current : triggers\.current\[refocus\]\) \?\? listRef\.current\)\?\.focus\(\);)/);
+  assert.ok(effect, 'the refocus effect');
+  const refocusTo = new Function('refocus', 'keepButton', 'triggers', 'listRef', effect[1]);
+  const el = () => ({ focused: 0, focus() { this.focused++; } });
+  const run = (refocus, { trigger, keep }) => {
+    const list = el();
+    refocusTo(refocus, { current: keep ?? null }, { current: trigger === undefined ? {} : { pam: trigger } }, { current: list });
+    return list;
+  };
+  const button = el();
+  assert.equal(run('pam', { trigger: button }).focused, 0);
+  assert.equal(button.focused, 1, "back on the row's Close without them");
+  assert.equal(run('pam', { trigger: null }).focused, 1, 'the row left (its ref was cleared): the list');
+  assert.equal(run('pam', {}).focused, 1, 'no ref for that row at all: the list');
+  const keep = el();
+  assert.equal(run('keep', { keep }).focused, 0);
+  assert.equal(keep.focused, 1, "a refused Close without them: back on the confirm's Keep waiting");
+  assert.equal(run('keep', { keep: null }).focused, 1, 'the confirm is gone by the time the refusal lands: the list');
+  // The list can take focus from code, and a row's ref is cleared when it leaves.
+  assert.match(bar, /<div ref=\{listRef\} className="cth-closing-list" tabIndex=\{-1\}/);
+  assert.match(bar, /buttonRef=\{\(el\) => \{ triggers\.current\[id\] = el; \}\}/);
+});
+
+
+test('the still working count reads as a button that opens the list', () => {
+  // Value: protects=the owner sees that the count opens who is still working, with Remind; fails_when=the pill or chevron is dropped back to plain text; why_new=owner, 2026-10-11: plain indigo text did not look clickable; seam=source pin
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  assert.match(bar, /background: 'var\(--cth-indigo-soft\)', padding: '0 8px 0 10px', height: 24, borderRadius: 'var\(--cth-r-pill\)'/);
+  assert.match(bar, /transform: open \? 'rotate\(180deg\)' : 'none'/, 'the chevron flips when the list is open');
+  assert.match(bar, /aria-expanded=\{open\}/);
+});
+
+test('the who list has one scrollbar', () => {
+  // Value: protects=a long who list scrolls in one place; fails_when=the panel around the list scrolls too and shows a second scrollbar; why_new=owner, 2026-10-11: two nested scrollers showed two scrollbars; seam=source pin
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  assert.equal((bar.match(/overflowY: 'auto'/g) || []).length, 1, 'only the list scrolls');
+  assert.match(bar.match(/<div ref=\{listRef\}[^\n]*/)[0], /maxHeight: 300, overflowY: 'auto'/);
+});
+
+test('the still working pill sits in a 28 px target, and the row never jumps', () => {
+  // Value: protects=DESIGN.md 12's 28 px target and a steady bar height; fails_when=the pill becomes the button again or the row loses its min height; why_new=review 2026-10-12; seam=source pin
+  const bar = read('src/renderer/src/components/ClosingTimeBar.tsx');
+  assert.match(bar, /const hitBtn: CSSProperties = \{\n\s*flexShrink: 0, height: 28,/);
+  assert.match(bar, /style=\{hitBtn\}>\n\s*<span style=\{linkBtn\}>/);
+  assert.match(bar, /marginTop: 6, minHeight: 28 \}\}/);
 });

@@ -13,6 +13,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import type { LocalSkill, CatalogSkill } from '../../../preload';
+import { filterCatalog } from './skillSearch';
 
 type Mode = 'installed' | 'browse';
 
@@ -94,27 +95,10 @@ export function SkillsTab({ agentCwd }: { agentCwd?: string }) {
     return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   }, [catalog]);
 
-  const shownCatalog = useMemo(() => {
-    let list = catalog ?? [];
-    if (owner !== 'all') list = list.filter((s) => s.owner === owner);
-    if (category !== 'all') list = list.filter((s) => s.category === category);
-    if (q) {
-      list = list.filter((s) =>
-        s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
-    }
-    // Bounded render: 1,200 rows in a DOM list makes the panel janky, and nobody
-    // scrolls past a few hundred. The count below always states the real total.
-    return list.slice(0, 300);
-  }, [catalog, owner, category, q]);
-
-  const totalMatching = useMemo(() => {
-    let list = catalog ?? [];
-    if (owner !== 'all') list = list.filter((s) => s.owner === owner);
-    if (category !== 'all') list = list.filter((s) => s.category === category);
-    if (!q) return list.length;
-    return list.filter((s) =>
-      s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q)).length;
-  }, [catalog, owner, category, q]);
+  const { shown: shownCatalog, total: totalMatching } = useMemo(
+    () => filterCatalog(catalog ?? [], query, owner, category),
+    [catalog, owner, category, query]
+  );
 
   const install = async (c: CatalogSkill) => {
     setAction((a) => ({ ...a, [c.url]: { busy: true } }));

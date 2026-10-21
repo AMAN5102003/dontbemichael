@@ -1,4 +1,5 @@
-- **Microsoft 365 on your own domain:** a clear message.
-- **Large Office files** are refused, not unpacked.
-- **No repeat emails** after a restart.
-- **Web links** open in your browser.
+- **Company foundations** for every job.
+- **Company knowledge** you can open and edit.
+- **No switches** for knowledge search.
+- **Pulse** shows what it sees early.
+- **Windows** reads scans and photos.

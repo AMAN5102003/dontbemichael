@@ -21,6 +21,27 @@ test('the headline is Michael\'s bold lead, else the first sentence, as plain te
   assert.equal(askHeadline('Sign in again\nwith the app password'), 'Sign in again');
 });
 
+test('the headline does not truncate at common abbreviations', () => {
+  assert.equal(askHeadline('Mr. Davis sent an invoice for $500. Should we pay it?'), 'Mr. Davis sent an invoice for $500.');
+  assert.equal(askHeadline('Dr. Watson requested an update on the case. What should I reply?'), 'Dr. Watson requested an update on the case.');
+  assert.equal(askHeadline('Invoice No. 42 is ready for review. Can you check it?'), 'Invoice No. 42 is ready for review.');
+  assert.equal(askHeadline('The answer was no. What should we do next?'), 'The answer was no.');
+  assert.equal(askHeadline('Acme Inc. sent their proposal. Should we review it?'), 'Acme Inc. sent their proposal.');
+  assert.equal(askHeadline('e.g. please check whether the payment cleared. It is pending.'), 'e.g. please check whether the payment cleared.');
+  assert.equal(askHeadline('U.S. tax forms are ready. Should I file them?'), 'U.S. tax forms are ready.');
+  assert.equal(askHeadline('Bring cups, plates, etc. before Friday. Can you order them?'), 'Bring cups, plates, etc. before Friday.');
+  assert.equal(askHeadline('The delivery arrives at 9 a.m. tomorrow. Should I confirm it?'), 'The delivery arrives at 9 a.m. tomorrow.');
+  assert.equal(askHeadline('Close the register at 6 p.m. tonight. Who has the keys?'), 'Close the register at 6 p.m. tonight.');
+});
+
+test('the headline keeps underscores in file names and addresses, and drops them as emphasis', () => {
+  assert.equal(askHeadline('Should I send `monthly_report.pdf` to Kelly? It is ready.'), 'Should I send monthly_report.pdf to Kelly?');
+  assert.equal(askHeadline('Can I email first_last@acme.com the quote?'), 'Can I email first_last@acme.com the quote?');
+  assert.equal(askHeadline('Is `a*b` the right formula?'), 'Is a*b the right formula?');
+  assert.equal(askHeadline('**Approve the _final_ invoice?** It is ready.'), 'Approve the final invoice?');
+  assert.equal(askHeadline('__Approve__ the *new* price?'), 'Approve the new price?');
+});
+
 test('how long ago, in plain words', () => {
   const now = Date.parse('2026-09-30T12:00:00Z');
   assert.equal(askedAgo('2026-09-30T11:59:30Z', now, 'en'), 'just now');
@@ -79,18 +100,49 @@ test('an Ask me card title drops opaque ids and bracketed metadata', () => {
 
 /**
  * Task detail (owner, 2026-10-01): the id and close sit on one row with the
- * title below at full width, and the card's notes show (agents write "notes";
- * the dialog read only "description", so it was empty on every card).
+ * title below at full width. Owner, 2026-10-11: cards carry no running notes
+ * (agents used them as diaries of up to 8,700 characters); an agent's activity
+ * lives in its conversation and the office log, and a To do card's next step
+ * time shows as "Next: ..." in local time.
  */
-test('task detail: title under the id row, and the card\'s notes show', () => {
+test('task detail: title under the id row, no running notes, the next step time shows', () => {
+  // Value: protects=cards read as where the work stands, not a diary; fails_when=notes come back on the card or in the prompts, or nextAt stops showing; why_new=owner, 2026-10-11; seam=source pins
   const src = read('src/renderer/src/components/TasksKanban.tsx');
-  // Both fields: the app's "description" and the agents' "notes" (the parser
-  // lives in hiveTasks.ts, shared with the Needs you feed).
-  assert.match(read('src/renderer/src/components/hiveTasks.ts'), /description: typeof t\.description === 'string' \? t\.description : undefined,\n\s*notes: typeof t\.notes === 'string' \? t\.notes : undefined,/);
-  assert.match(src, /\[\['description', task\.description\], \['notes', task\.notes\]\]/);
+  const model = read('src/renderer/src/components/hiveTasks.ts');
+  assert.doesNotMatch(model, /notes: typeof t\.notes/, 'the parser no longer reads notes');
+  assert.match(model, /nextAt: isNextAt\(t\.nextAt\) \? t\.nextAt : undefined,/);
+  assert.doesNotMatch(src, /task\.notes/);
+  assert.equal((src.match(/const next = nextAtLabel\(task\.nextAt, i18n\.language\);/g) || []).length, 2, 'on the card and in the detail, in the app language');
+  assert.equal((src.match(/t\('kanban\.nextAt', \{ when: next \}\)/g) || []).length, 2);
+  assert.doesNotMatch(read('src/renderer/src/components/TaskDetailOverlay.tsx'), /task\.notes/);
   assert.doesNotMatch(src, /noDescription/);
   assert.match(src, /<div style=\{\{ marginTop: 10, fontSize: 16, fontWeight: 600[^}]*\}\}>\{askTitle\(task\.title\)\}<\/div>/);
-  assert.match(read('src/main/hive.ts'), /Keep the card\\'s "notes" to what the work is and where it stands/);
+  const hive = read('src/main/hive.ts');
+  assert.doesNotMatch(hive, /Keep the card\\?'s "notes"/);
+  assert.equal((hive.match(/Write no running \\?"notes\\?" on a card \(house rule 8\)/g) || []).length, 2, 'Michael\'s business and legacy prompts');
+  assert.doesNotMatch(read('src/main/closingTime.ts'), /says where the work stands and the next step/);
+  for (const loc of ['en', 'zh-CN', 'ar']) assert.match(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).kanban.nextAt, /\{\{when\}\}/, loc);
+});
+
+test('a next step time that is not a date never reaches the card', () => {
+  // Value: protects=a card shows "Next" only for a real time, in local time; fails_when=the parser keeps an unparseable nextAt or the label prints "Invalid Date"; why_new=the parser and label were only source pinned; seam=none
+  // no_claim=the label's exact wording is the runtime locale's; only the local day and the absence of an invalid date are checked
+  const { parseTasks, nextAtLabel } = loadTs('src/renderer/src/components/hiveTasks.ts');
+  const when = '2026-10-12T08:00:00+05:30';
+  const [bad, good] = parseTasks({ tasks: [{ id: 'a', title: 'a', status: 'todo', nextAt: 'Monday after the 20th' }, { id: 'b', title: 'b', status: 'todo', nextAt: when }] });
+  assert.equal(bad.nextAt, undefined, 'agent text that is not a date is dropped');
+  assert.equal(good.nextAt, when);
+  assert.equal(nextAtLabel(undefined), undefined);
+  assert.equal(nextAtLabel('not a date'), undefined, 'never "Invalid Date"');
+  // Review 2026-10-12: loose agent dates never show (V8 reads the first as 2001,
+  // and a bare date as midnight UTC, the evening before west of it).
+  const [loose, dateOnly] = parseTasks({ tasks: [{ id: 'l', title: 'l', status: 'todo', nextAt: 'Mon 12 Oct 13:00' }, { id: 'd', title: 'd', status: 'todo', nextAt: '2026-10-12' }] });
+  assert.equal(loose.nextAt, undefined);
+  assert.equal(dateOnly.nextAt, undefined);
+  assert.equal(nextAtLabel('Mon 12 Oct 13:00'), undefined);
+  const label = nextAtLabel(when);
+  assert.ok(label && !/Invalid/.test(label), label);
+  assert.match(label, new RegExp(`\\b${new Date(when).getDate()}\\b`), 'the day in the viewer\'s local time');
 });
 
 /** The answer box grows with the text (owner, 2026-10-01). */
@@ -147,6 +199,40 @@ test('askTitle never throws on agent-written data, stays fast, and keeps readabl
   assert.equal(askTitle('Review Q3_2026_budget_final export'), 'Review Q3_2026_budget_final export');
   assert.equal(askTitle('Sign the lease (Suite 100)'), 'Sign the lease (Suite 100)');
   assert.equal(askTitle('Refund for Northwind Cafe (#4471, 30 Sep)'), 'Refund for Northwind Cafe');
+  // A word that only starts like a month is part of the name, not a date.
+  assert.equal(askTitle('Approve ad spend (3 marketing campaigns)'), 'Approve ad spend (3 marketing campaigns)');
+  assert.equal(askTitle('Hire help (2 junior designers)'), 'Hire help (2 junior designers)');
+  assert.equal(askTitle('Pick a supplier (Decision 2 of 3)'), 'Pick a supplier (Decision 2 of 3)');
+  // Full and dotted month names are still dates.
+  assert.equal(askTitle('Renew the lease (March 3)'), 'Renew the lease');
+  assert.equal(askTitle('Send the quote (Sept. 30)'), 'Send the quote');
+  assert.equal(askTitle('Pay the invoice (3 Sep.)'), 'Pay the invoice');
   const tab = read('src/renderer/src/components/AskMeTab.tsx');
   assert.match(tab, /const who = nameFor\(typeof t\.assignee === 'string' \? t\.assignee : undefined\);/);
+});
+
+test('See full context shows only when the card holds more than the question, and Michael keeps the background (owner, 2026-10-12)', () => {
+  // Value: protects=the link never opens a repeat of the question, and blocked cards carry their background; fails_when=the footer shows unconditionally or the triage rule keeps the description on waiting cards only; why_new=the link and rule had no test; seam=none; no_claim=whether Michael writes a good background (no eval)
+  const tab = read('src/renderer/src/components/AskMeTab.tsx');
+  assert.match(tab, /const moreContext = \(typeof t\.description === 'string' && t\.description\.trim\(\) !== ''\)\n\s+\|\| \(typeof t\.result === 'string' && t\.result\.trim\(\) !== ''\)\n\s+\|\| \(t\.humanQA\?\.length \?\? 0\) > 1;/);
+  assert.match(tab, /\{moreContext && \(\n\s+<div style=\{\{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10/, 'the footer and its link need something more to show');
+  const hive = read('src/main/hive.ts');
+  assert.match(hive, /make a card for it, keeping what they were doing and why in its "description" \(the owner reads it under See full context\): "blocked"/, 'triage keeps the background on blocked cards too');
+  assert.doesNotMatch(hive, /the team member as assignee and what they were doing kept in its description/, 'no longer waiting cards only');
+  assert.equal((hive.match(/so the owner can read it under See full context/g) ?? []).length, 3, 'ask rule, standing rule and the HIVE doc ask a background for asks Michael writes');
+});
+
+test('Task detail lists questions newest first, each with when it was asked (owner, 2026-10-12)', () => {
+  // Value: protects=the open question is first on Task detail and each question says when it was asked; fails_when=the reverse, the ledger index key or the askedAgo span is dropped; why_new=no test covers the Q and A list order; seam=none; no_claim=pixel layout (source assertion, no render harness)
+  const kanban = read('src/renderer/src/components/TasksKanban.tsx');
+  assert.match(kanban, /task\.humanQA!\.map\(\(e, i\) => \[e, i\] as const\)\.reverse\(\)\.map\(\(\[e, i\]\) => \{/, 'newest first');
+  assert.match(kanban, /<div key=\{i\} style=\{\{\n\s+padding: '10px 12px'/, 'the key stays the ledger index');
+  assert.match(kanban, /const ago = askedAgo\(typeof e\.askedAt === 'string' \? e\.askedAt : undefined, Date\.now\(\), i18n\.language, t\('askMe\.justNow'\)\);/);
+  assert.match(kanban, /\{t\('kanban\.question'\)\}<\/span>\n\s+\{ago && <span style=\{\{ fontSize: 11, color: 'var\(--cth-ink-3\)' \}\}>\{ago\}<\/span>\}/, 'the time beside Question, as on Ask me');
+});
+
+test('a reply that does not save says so and keeps the draft', () => {
+  const tab = read('src/renderer/src/components/AskMeTab.tsx');
+  assert.match(tab, /catch \{[\s\S]{0,300}setFailed\(row\.key\);[\s\S]{0,80}refreshNeedsYou\(\);/);
+  assert.match(tab, /failed === row\.key && \([\s\S]{0,200}role="alert"[\s\S]{0,200}translate\('askMe\.mailFailed'\)/);
 });

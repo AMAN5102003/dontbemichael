@@ -28,7 +28,7 @@ test('every character has at least four lines of their own', () => {
 });
 
 test('the new characters speak in their own voice, briefly and without dashes', () => {
-  for (const c of ['darryl', 'erin', 'nick', 'sadiq']) {
+  for (const c of ['darryl', 'erin', 'nick', 'sadiq', 'pete']) {
     const seen = new Set();
     const own = createIdleLines(() => 0);
     for (let i = 0; i < 20; i++) seen.add(own(c));
@@ -171,4 +171,90 @@ test('the running gags are in, short, and nobody says a line about themselves', 
     if (pick.beats[0] === 'Michael’s in the warehouse.') assert.ok(opener !== 'michael' && partners[pick.partner] === 'darryl');
   }
   assert.ok(gags.size >= 95, `${gags.size} running gags played`);
+});
+
+/**
+ * Pete, the Research member, joins the idle talk (owner, 2026-10-13: "find
+ * original the office fun conversations ... to make him part of idle time
+ * fun"), in lines from his season 9 story, never his Research job (D1).
+ */
+test('Pete speaks from his season 9 story, never by name, and Plop is Andy\'s word for him', () => {
+  // Value: protects=Pete's lines are show lines, no line says Pete (renamable), only Andy calls him Plop; fails_when=a research line returns, a beat names Pete, or a Plop bit loses its pins; why_new=no Pete line test existed; seam=none; no_claim=none beyond protects
+  const own = createIdleLines(() => 0);
+  const solo = new Set();
+  for (let i = 0; i < 12; i++) solo.add(own('pete'));
+  assert.equal(solo.size, 6, 'six lines of his own');
+  for (const line of solo) {
+    assert.doesNotMatch(line, /look that up|source|sites|internet/i, `"${line}" is from the show, not his Research job`);
+    assert.doesNotMatch(line, /\bPete\b/, `"${line}"`);
+  }
+  let seed = 5;
+  const random = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  const next = createBanter(random);
+  const peteSaw = new Set();
+  for (let i = 0; i < 20000; i++) {
+    const opener = cast[i % cast.length];
+    const partners = cast.filter((c) => c !== opener);
+    const pick = next(opener, partners);
+    if (!pick) continue;
+    const partner = partners[pick.partner];
+    pick.beats.forEach((beat, j) => {
+      const who = j % 2 ? partner : opener;
+      assert.doesNotMatch(beat, /\bPete\b/, `${who} says "${beat}"`);
+      if (/\bPlop\b/.test(beat)) assert.ok(who === 'pete' || (who === 'andy' && (j % 2 ? opener : partner) === 'pete'), `${who} says "${beat}" in ${JSON.stringify(pick.beats)}`);
+      if (/Die Hard|Poor Richard/.test(beat)) assert.deepEqual([opener, partner].sort(), ['erin', 'pete'], `"${beat}"`);
+    });
+    if (opener === 'pete' || partner === 'pete') peteSaw.add(opener === 'pete' ? partner : opener);
+  }
+  for (const c of ['andy', 'erin', 'jim', 'kelly', 'stanley', 'dwight', 'creed', 'oscar', 'kevin', 'toby', 'phyllis']) assert.ok(peteSaw.has(c), `Pete trades planes with ${c}`);
+});
+
+/**
+ * No teammate is left out of idle talk again (owner, 2026-10-13, E1): Pete
+ * was silent because the studio filtered him out, and nothing noticed.
+ */
+test('every cast member is a named side of a bit or has a signature opener, and the studio filters nobody out', () => {
+  // Value: protects=each character has idle talk of their own and the studio's chat candidates carry no id filter; fails_when=a new character lands with no bits or an id filter returns on quietPeople; why_new=E1; seam=none; no_claim=pod and compact grid rules (by design, closing-floor and studio-home tests)
+  const keyedBlock = src.slice(src.indexOf('const KEYED_EXCHANGES'), src.indexOf('export function createBanter'));
+  for (const c of cast) {
+    const named = new RegExp(`[ab]: \\[[^\\]]*'${c}'`).test(src);
+    const keyed = new RegExp(`\\n  ${c}:\\s*\\[`).test(keyedBlock);
+    assert.ok(named || keyed, `${c} has a bit or a signature opener`);
+  }
+  const stage = fs.readFileSync(path.resolve(__dirname, '..', 'src/renderer/src/scene/studio/StudioStage.tsx'), 'utf8');
+  assert.match(stage, /const quietPeople = \(\) => chatCandidates\(live\.current\.pods, live\.current\.gone, ACTIVE, ACTION_CLOCKING_IN\);/, 'the studio chat candidates, with nothing chained on');
+});
+
+/**
+ * Pete's first day welcome draws only Pete's bits, and never disturbs the
+ * deck the rest of the office plays from (owner, 2026-10-13, E3).
+ */
+test('a welcome draw is always one of Pete\'s bits and leaves the deck as it was', () => {
+  // Value: protects=a must draw names Pete as a side, skips others' signature openers, is null when none fits, and leaves the normal deck order; fails_when=it pulls another bit or keyed opener, or reshuffles the deck; why_new=E3; seam=createBanter third argument (the welcome calls it); no_claim=none beyond protects
+  const others = cast.filter((c) => c !== 'pete');
+  // A varying random, so every opener slot comes up, not one fixed index.
+  let wseed = 11;
+  const welcome = createBanter(() => ((wseed = (wseed * 16807) % 2147483647) - 1) / 2147483646);
+  const openers = new Set();
+  for (let i = 0; i < 200; i++) {
+    const own = welcome('pete', others, 'pete');
+    assert.ok(own, 'Pete has bits to open with');
+    assert.ok(/Plop|New Jim|Die Hard|nickname|junior|about Erin/.test(own.beats[0]), JSON.stringify(own.beats));
+    openers.add(own.beats[0]);
+  }
+  assert.ok(openers.size >= 3, `several of Pete's bits came up (${openers.size})`);
+  assert.deepEqual([...createBanter(() => 0.5)('stanley', ['pete'], 'pete').beats], ['you’re a junior Jim.', 'is that bad?', 'one Jim was plenty.'], 'Stanley\'s Pretzel Day opener is not a welcome');
+  assert.equal(createBanter(() => 0.5)('michael', ['pete'], 'pete'), null, 'Michael and Pete never shared the show');
+  assert.equal(createBanter(() => 0.5)('andy', ['jim'], 'pete'), null, 'no Pete, no welcome');
+  // The same constant random never reorders the deck, so any difference in the
+  // normal draws comes from the welcome draws in between.
+  const plain = createBanter(() => 0.99);
+  const mixed = createBanter(() => 0.99);
+  for (let i = 0; i < 300; i++) {
+    const opener = cast[i % cast.length];
+    const partners = cast.filter((c) => c !== opener);
+    mixed('pete', others, 'pete');
+    mixed('kelly', ['pete'], 'pete');
+    assert.deepEqual(mixed(opener, partners), plain(opener, partners), `draw ${i}`);
+  }
 });

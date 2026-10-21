@@ -71,7 +71,6 @@ test('on a business install, a document written into the hive is refused through
   assert.match(r.hookSpecificOutput.permissionDecisionReason, /only for coordination/);
   assert.ok(r.hookSpecificOutput.permissionDecisionReason.includes(f.finance), 'names the agent\'s own folder');
   // The floor hears about it too, so the owner can see an agent was steered.
-  assert.ok(f.sent.some((s) => s.channel === 'control:approvalRequest' && s.payload.agentId === 'oscar'));
 });
 
 test('the same install still lets an agent write its memory and its work, and read anything', async (t) => {

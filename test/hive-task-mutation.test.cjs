@@ -137,9 +137,12 @@ test('the owner closing a card ends it as Done by their decision, keeps it, and 
   assert.equal(hive.ownerCloseTask('t1', 'Not needed this month'), true);
   let c = tasks(hive)[0];
   assert.deepEqual([c.status, c.closedBy, c.closedReason, c.notes], ['done', 'owner', 'Not needed this month', 'kept']);
-  assert.equal(hive.ownerMoveTask('t1', 'doing'), true);
+  // Out of Done only into To do, with a reason (owner, 2026-10-11).
+  assert.equal(hive.ownerMoveTask('t1', 'doing', 'wrong'), false, 'never straight to Doing');
+  assert.equal(hive.ownerMoveTask('t1', 'todo'), false, 'a reason is needed');
+  assert.equal(hive.ownerMoveTask('t1', 'todo', 'Marked done by mistake'), true);
   c = tasks(hive)[0];
-  assert.deepEqual([c.status, c.closedBy, c.closedReason], ['doing', undefined, undefined], 'moving out of Done clears the mark');
+  assert.deepEqual([c.status, c.closedBy, c.closedReason], ['todo', undefined, undefined], 'moving out of Done clears the mark');
   assert.equal(hive.ownerMoveTask('t1', 'done'), true);
   assert.equal(tasks(hive)[0].closedBy, 'owner', 'a move to Done is the owner\'s decision');
   assert.equal(hive.ownerMoveTask('t1', 'blocked'), false, 'Blocked is Michael\'s, for a question on Ask me');
@@ -147,7 +150,8 @@ test('the owner closing a card ends it as Done by their decision, keeps it, and 
   assert.equal(hive.ownerCloseTask('missing'), false);
   const inbox = path.join(hive.root(), 'agents', 'god', 'inbox');
   const notes = fs.readdirSync(inbox).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(fs.readFileSync(path.join(inbox, f), 'utf8')));
-  assert.deepEqual(notes.map((m) => m.subject).sort(), ['OWNER CLOSED card t1', 'OWNER CLOSED card t1', 'OWNER MOVED card t1 to Doing'].sort());
+  assert.deepEqual(notes.map((m) => m.subject).sort(), ['OWNER CLOSED card t1', 'OWNER CLOSED card t1', 'OWNER MOVED card t1 to To do'].sort());
+  assert.match(notes.find((m) => /MOVED/.test(m.subject)).body, /from Done to To do\. Reason: Marked done by mistake/);
   assert.ok(notes.every((m) => m.act === 'inform' && m.from === 'human' && m.conversation === 'card:t1'));
   assert.match(notes.find((m) => /Reason/.test(m.body)).body, /The owner closed card t1 "Pay the supplier" as Done\. Reason: Not needed this month/);
 });
@@ -165,7 +169,7 @@ test('the owner cannot move a card to Blocked or Waiting from Task detail or the
   const root = path.resolve(__dirname, '..');
   const kanban = fs.readFileSync(path.join(root, 'src/renderer/src/components/TasksKanban.tsx'), 'utf8');
   // Waiting names who the card waits on, so it is Michael's too (owner, 2026-10-03).
-  assert.match(kanban, /COLUMNS\.filter\(\(c\) => \(c\.key !== 'blocked' && c\.key !== 'waiting'\) \|\| task\.status === c\.key\)/);
+  assert.match(kanban, /COLUMNS\.filter\(\(c\) => \(\(c\.key !== 'blocked' && c\.key !== 'waiting'\) \|\| task\.status === c\.key\) && !\(task\.status === 'done' && c\.key === 'doing'\)\)/);
   assert.match(kanban, /disabled=\{c\.key === 'blocked' \|\| c\.key === 'waiting'\}/);
   assert.match(fs.readFileSync(path.join(root, 'src/main/index.ts'), 'utf8'), /!\['todo', 'doing', 'done'\]\.includes\(status as string\)/);
 });
@@ -233,4 +237,11 @@ test('voice: a status change is the owner\'s move, close never deletes, and a ne
   r = await handlers.get('realtime:action:confirm')(null, { phrase: 'confirm' });
   assert.equal(r.ok, true, r.spoken);
   assert.deepEqual(missions.map((m) => [m.label, m.focus, m.intervalMs, m.to, m.createdBy]), [['Check invoices', 'Unpaid past 30 days.', 7_200_000, 'god', 'owner']]);
+  // Review 2026-10-12: a spoken reopen of a Done card changes nothing on it.
+  board.tasks.push(card('d1', { title: 'Settled invoice', status: 'done', result: 'Paid' }));
+  calls.length = 0;
+  r = await act({ verb: 'update_task', task: 'Settled invoice', status: 'todo', result: 'Not paid after all' });
+  assert.equal(r.ok, false);
+  assert.match(r.spoken, /is done\. To reopen it, open the card on the board and give a short reason\./);
+  assert.deepEqual(calls, [], 'nothing on the Done card changes');
 });

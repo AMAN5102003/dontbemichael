@@ -60,7 +60,8 @@ much cheaper than finding out in review.
   are for Mac and Windows 11 (x64), and are not signed yet.
   Cross-platform smoke-testing and fixes are very welcome (see
   [Good first areas](#good-first-areas)).
-- **Node.js 18+** and npm.
+- **Node.js 20+** and npm. CI runs on Node 20; the mail libraries (`imapflow`,
+  `mailparser`, `nodemailer`) do not support anything older.
 - A **C/C++ toolchain** to build `node-pty`'s native addon. On macOS:
   ```bash
   xcode-select --install
@@ -84,6 +85,12 @@ npm run dev        # live-reloading Electron build
 > ABI. If you see a "wrong ELF/Mach-O" or "NODE_MODULE_VERSION" error at launch,
 > re-run `npm install` (which re-triggers `postinstall`) after confirming your
 > C/C++ toolchain is installed.
+
+On Ubuntu 23.10 and later, `npm run dev` stops at start with a "SUID sandbox
+helper" error: the system blocks the Chromium sandbox for apps without an
+AppArmor profile. For development only, start it with
+`ELECTRON_DISABLE_SANDBOX=1 npm run dev`. The Linux AppImage does not start on
+stock Ubuntu 24.04 yet (#35).
 
 ## Screenshots help
 
@@ -160,6 +167,8 @@ See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for the data-flow overview,
 the module by module layout, and the design system.
 
 ## Good first areas
+
+Issues labelled [good first issue](https://github.com/agentvivekkumar/dontbemichael/labels/good%20first%20issue) are small and ready to pick up: comment on one before you start, so two people do not take the same one. Beyond those:
 
 - **More life from real events.** Real Claude Code hook events drive the studio
   (`src/renderer/src/scene/studio/life.tsx`); the synthetic loop in

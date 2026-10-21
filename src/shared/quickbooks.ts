@@ -93,6 +93,18 @@ export function quickbooksCapability(saved: QuickBooksCapability | undefined, ro
   return { enabled: roleReadsBooks, changes: false };
 }
 
+/** What `quickbooks:setAccess` saves for `agentId`, or null to refuse it
+ *  (issue 132). An id must be on the team: one that is not (a typo, a member
+ *  who was removed) would quietly apply to a later member who gets that id. A
+ *  hire saves for its new id before the spawn, so the agent starts holding the
+ *  connector, and says so with `hiring`. */
+export function quickbooksAccessToSave(agentId: unknown, cap: unknown, onTeam: (id: string) => boolean, hiring = false): QuickBooksCapability | null {
+  if (typeof agentId !== 'string' || !agentId || !cap || typeof cap !== 'object') return null;
+  if (!hiring && !onTeam(agentId)) return null;
+  const c = cap as { enabled?: unknown; changes?: unknown };
+  return { enabled: c.enabled === true, changes: c.enabled === true && c.changes === true };
+}
+
 /** Refuses a QuickBooks connector call the Settings switch (`officeOn`) or
  *  the agent's Capabilities don't allow. The reason is read by the agent and
  *  shown on the floor. */

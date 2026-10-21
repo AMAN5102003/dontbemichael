@@ -1,3 +1,4 @@
+import { useResearchName } from '@/shell/research';
 import { CompanyProfileFields, localCurrency, localTimeZone } from './CompanyProfileFields';
 import { cityLine, cleanCompanyProfile, missingProfileFields, prefillLegalName, type CompanyProfile, type RequiredProfileField } from '@shared/companyProfile';
 import { useEffect, useRef, useState } from 'react';
@@ -15,8 +16,9 @@ import { modelsForProvider, onboardingEngineChoices, teamDefaultsFromMichael, ty
 import { isClaudeProvider, providerPreset } from '@shared/agentProvider';
 import { GetMichaelReady, GetMichaelReadyInfo } from './GetMichaelReady';
 import {
-  classifyEngineAvailability, engineAvailabilityBadge, engineAvailabilityMessage, engineBlocksOnboarding
+  classifyEngineAvailability, engineBlocksOnboarding
 } from '@shared/engineAvailability';
+import { engineBadgeWords, engineMissingWords } from './engineStatusWords';
 import type { ToolStatus } from '@shared/toolCatalog';
 import type { OfficePack } from '@shared/officePack';
 import type { AgentDefinitionV2 } from '@shared/agentDefinition';
@@ -130,6 +132,15 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
   // Step 2's legal name starts as the step 1 business name, and follows a
   // rename on step 1 until the owner types a legal name of their own.
   const legalNameFilled = useRef<string | undefined>(undefined);
+  // A settings file that could not be read is why setup starts again: say so,
+  // and where its copy is kept (issue 98).
+  const [damagedCopy, setDamagedCopy] = useState<string | null>(null);
+  useEffect(() => {
+    if (preview) return;
+    let alive = true;
+    void window.cth.damagedConfigCopy?.().then((p) => { if (alive) setDamagedCopy(p); }).catch(() => {});
+    return () => { alive = false; };
+  }, [preview]);
   useEffect(() => {
     if (step !== 'details') return;
     const next = prefillLegalName(profile, businessName, legalNameFilled.current);
@@ -195,6 +206,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
   const teamAgents = teamPack?.agents ?? [];
   const coreIds = new Set((corePack?.agents ?? []).map((a) => a.id));
   const [teamPicked, setTeamPicked] = useState<Record<string, boolean>>({});
+  // Research, the one member on the internet: off unless picked (issue #230, D11).
+  const [researchPicked, setResearchPicked] = useState(false);
+  const researchName = useResearchName();
   /** Folders the owner pointed somewhere other than the suggestion, keyed by agent id (or OFFICE_KEY). */
   const [folderOverrides, setFolderOverrides] = useState<Record<string, string>>({});
   const [folderSuggestions, setFolderSuggestions] = useState<(FolderSuggestions & { home: string }) | undefined>();
@@ -233,7 +247,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
   const plan = teamPlan(teamAgents, teamPicked, folderSuggestions, folderOverrides);
   const needed = connectionsNeeded(teamAgents, teamPicked);
-  const pickedCount = teamAgents.filter((a) => teamPicked[a.id]).length;
+  const pickedCount = teamAgents.filter((a) => teamPicked[a.id]).length + (researchPicked ? 1 : 0);
   /** `/Users/me/Documents/Pho` → `~/Documents/Pho`: shorter, and what an owner recognises. */
   const tildePath = (p: string) => {
     const h = folderSuggestions?.home;
@@ -489,6 +503,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
         // quick-picks, which is what registeredRepos has always fed.
         businessFolder: finishPlan.business,
         businessTeam: finishPlan.team,
+        // Research starts with the team when picked; a new office never gets
+        // the update card (design review D10).
+        research: { on: researchPicked, notice: false },
         registeredRepos: finishPlan.folders,
         autoMode,
         godProvider,
@@ -564,6 +581,17 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
           </div>
           <div style={{ padding: '14px 22px 22px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
+            {damagedCopy && (step === 'business' || step === 'resume') && (
+              <div role="status" data-damaged-config style={{
+                borderRadius: 'var(--cth-r-md)', padding: '8px 10px',
+                background: 'var(--cth-amber-soft)', color: 'var(--cth-amber-text)',
+                fontSize: 13, lineHeight: '19px'
+              }}>
+                {t('onboarding.damagedConfig')}{' '}
+                <span dir="ltr" style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, wordBreak: 'break-all' }}>{damagedCopy}</span>
+              </div>
+            )}
+
             {step === 'resume' && found && (
               <>
                 <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
@@ -609,15 +637,15 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     width: 56, height: 56, flexShrink: 0,
                     background: 'var(--cth-sky-light)',
                     boxShadow: 'inset 0 0 0 1.5px var(--cth-indigo)',
-                    display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
                   }}>
                     <SpritePortrait character="michael" scale={2} />
                   </div>
                   <div>
-                    <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '18px' }}>
+                    <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 14, lineHeight: '20px' }}>
                       {t('onboarding.business.headline', { godName })}
                     </div>
-                    <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: '19px' }}>
+                    <div style={{ fontSize: 14, color: 'var(--cth-ink-700)', lineHeight: '20px' }}>
                       {t('onboarding.business.body')}
                     </div>
                   </div>
@@ -628,7 +656,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     ever used as an id or a path. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span style={{ fontSize: 12, color: 'var(--cth-ink-700)' }}>
+                    <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-2)' }}>
                       {t('onboarding.business.nameLabel')} *
                     </span>
                     <input
@@ -644,7 +672,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
                 </div>
 
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
                   {t('onboarding.business.ask')} *
                 </div>
 
@@ -675,7 +703,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 </div>
 
                 {packProblems > 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                  <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>
                     {t('onboarding.business.packsProblem')}
                   </div>
                 )}
@@ -697,7 +725,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     padding: '6px 10px',
                     background: 'var(--cth-coral-light)',
                     boxShadow: 'inset 0 0 0 1px var(--cth-coral)',
-                    fontSize: 13, color: 'var(--cth-ink-900)'
+                    fontSize: 14, color: 'var(--cth-ink-900)'
                   }}>
                     {businessGaps.map((g) => gapMessage[g]).join(' ')}
                   </div>
@@ -722,16 +750,16 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     width: 56, height: 56, flexShrink: 0,
                     background: 'var(--cth-sky-light)',
                     boxShadow: 'inset 0 0 0 1.5px var(--cth-indigo)',
-                    display: 'flex', alignItems: 'flex-end', justifyContent: 'center', overflow: 'hidden'
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden'
                   }}>
                     <SpritePortrait character="michael" scale={2} />
                   </div>
                   <div>
                     <div style={{
                       fontFamily: 'var(--cth-font-display)',
-                      fontSize: 12, lineHeight: '18px'
+                      fontSize: 14, lineHeight: '20px'
                     }}>{t('onboarding.welcome.headline')}</div>
-                    <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: '18px' }}>
+                    <div style={{ fontSize: 14, color: 'var(--cth-ink-700)', lineHeight: '20px' }}>
                       {t('onboarding.welcome.desc')}
                     </div>
                   </div>
@@ -749,7 +777,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                       <span style={{ width: 26, height: 26, flexShrink: 0, display: 'grid', placeItems: 'center', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-neutral-soft)', color: 'var(--cth-ink-2)' }}>
                         <Icon name={f.icon} />
                       </span>
-                      <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--cth-ink)' }}>{t(f.labelKey, { godName })}</span>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink)' }}>{t(f.labelKey, { godName })}</span>
                       <InfoTip text={t(f.descKey)} align="end" />
                     </div>
                   ))}
@@ -831,7 +859,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                   <span>
                     <Trans i18nKey="onboarding.orchestrator.cliAgent" components={{ strong: <span style={{ color: 'var(--cth-ink-900)' }} /> }}>
                       <strong>Claude Code</strong>, made by Anthropic, is the AI that powers
-                      your office. It runs right here on this Mac. <strong>Your manager</strong> is
+                      your office. It runs right here on this computer. <strong>Your manager</strong> is
                       always on and runs your whole office. We recommend Opus 5.5, the newest model.
                     </Trans>
                   </span>
@@ -880,7 +908,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         </span>
                         {(() => {
                           const a = classifyEngineAvailability(engines, p.id);
-                          const badge = engineAvailabilityBadge(a);
+                          const badge = engineBadgeWords(a, t);
                           if (!badge) return null;
                           const bad = a.state === 'not-installable';
                           return (
@@ -951,14 +979,14 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)',
                     fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-900)'
                   }}>
-                    <span>{engineAvailabilityMessage(selectedEngine, providerPreset(godProvider).label)}</span>
+                    <span>{engineMissingWords(selectedEngine, providerPreset(godProvider).label, t)}</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <PixelButton variant="secondary" size="sm" onClick={() => { void probeEngines(); }} disabled={probing}>
-                        {probing ? 'checking...' : 'check again'}
+                        {probing ? t('onboarding.orchestrator.checking') : t('onboarding.orchestrator.checkAgain')}
                       </PixelButton>
                       {selectedEngine.docsUrl && (
                         <PixelButton variant="ghost" size="sm" onClick={() => { void window.cth.openExternal(selectedEngine.docsUrl!); }}>
-                          install instructions
+                          {t('onboarding.orchestrator.installInstructions')}
                         </PixelButton>
                       )}
                     </div>
@@ -1015,7 +1043,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
             {step === 'team' && (
               <>
-                <p style={{ margin: 0, lineHeight: '20px', fontSize: 13, color: 'var(--cth-ink-700)' }}>
+                <p style={{ margin: 0, lineHeight: '20px', fontSize: 14, color: 'var(--cth-ink-700)' }}>
                   {businessType === OTHER_BUSINESS
                     ? t('onboarding.team.introOther')
                     : t('onboarding.team.intro', { pack: teamPack?.displayName ?? '' })}
@@ -1028,7 +1056,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     borderRadius: 'var(--cth-r-md)',
                     display: 'flex', gap: 10, alignItems: 'flex-start', padding: 10,
                     background: 'var(--cth-sky-light)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
-                    fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-700)'
+                    fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)'
                   }}>
                     <span style={{ flexShrink: 0, marginTop: 1 }}><Icon name="folder" /></span>
                     <span>{t('onboarding.team.folderNote', { root: tildePath(folderSuggestions.root) })}</span>
@@ -1066,9 +1094,22 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                       labels={folderLabels}
                     />
                   ))}
+                  <TeamCard
+                    character="pete"
+                    name={`${researchName} · ${t('research.title')}`}
+                    summary={t('research.teamSummary')}
+                    chips={[{ tone: 'muted', label: t('research.teamTag') }]}
+                    picked={researchPicked}
+                    onTogglePicked={() => setResearchPicked((v) => !v)}
+                    displayPath={tildePath}
+                    overridden={false}
+                    onChangeFolder={() => undefined}
+                    onUseSuggested={() => undefined}
+                    labels={folderLabels}
+                  />
                 </div>
 
-                <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                <div style={{ fontSize: 14, color: 'var(--cth-ink-500)' }}>
                   {t('onboarding.team.summary', { picked: pickedCount, connect: needed.required.length })}
                 </div>
               </>
@@ -1081,7 +1122,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 {/* AUTONOMY — one choice that maps to each engine's flag: autoMode →
                     claude bypassPermissions / codex -a never -s workspace-write
                     (sandbox kept), etc.; off → each engine's ask-first default. */}
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>
                   {t('onboarding.permissions.autonomyHead')}
                 </div>
                 <label style={{
@@ -1099,25 +1140,25 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     style={{ width: 18, height: 18, flexShrink: 0 }}
                   />
                   <div>
-                    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, lineHeight: '16px' }}>
+                    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px' }}>
                       {t('onboarding.permissions.autoLabel')}
                     </div>
-                    <div style={{ fontSize: 13, color: 'var(--cth-ink-700)' }}>
+                    <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
                       {autoMode ? t('onboarding.permissions.autoOn') : t('onboarding.permissions.autoOff')}
                     </div>
                   </div>
                 </label>
-                <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
                   {t('onboarding.permissions.autoNote')}
                 </div>
 
                 <div style={{ height: 1, background: 'var(--cth-ink-300)', margin: '2px 0' }} />
 
                 {/* RELIABILITY — keeping work firing while you're away. */}
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>
                   {t('onboarding.permissions.reliabilityHead')}
                 </div>
-                <p style={{ margin: 0, lineHeight: '20px', fontSize: 12, color: 'var(--cth-ink-700)' }}>
+                <p style={{ margin: 0, lineHeight: '20px', fontSize: 14, color: 'var(--cth-ink-700)' }}>
                   {t('onboarding.permissions.reliabilityDesc')}
                 </p>
 
@@ -1141,15 +1182,17 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                   onChange={toggleNotifications}
                 />
 
-                <ToggleRow
-                  icon="play"
-                  label={t('onboarding.permissions.openAtLogin')}
-                  desc={t('onboarding.permissions.openAtLoginDesc')}
-                  on={openAtLogin}
-                  tint="var(--cth-sky-light)"
-                  edge="var(--cth-sky)"
-                  onChange={toggleOpenAtLogin}
-                />
+                {platform !== 'linux' && (
+                  <ToggleRow
+                    icon="play"
+                    label={t('onboarding.permissions.openAtLogin')}
+                    desc={t('onboarding.permissions.openAtLoginDesc')}
+                    on={openAtLogin}
+                    tint="var(--cth-sky-light)"
+                    edge="var(--cth-sky)"
+                    onChange={toggleOpenAtLogin}
+                  />
+                )}
 
                 {COLLECT_USAGE_STATS && (
                   <ToggleRow
@@ -1182,10 +1225,10 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                   </span>
                   <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div>
-                      <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, lineHeight: '16px', marginBottom: 3 }}>
+                      <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', marginBottom: 3 }}>
                         {t('onboarding.permissions.stayAwake')}
                       </div>
-                      <div style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
+                      <div style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
                         {t(`onboarding.permissions.stayAwakeDesc${stayAwakeOs === 'mac' ? 'Mac' : stayAwakeOs === 'windows' ? 'Windows' : 'Linux'}`)}
                       </div>
                     </div>
@@ -1399,7 +1442,7 @@ function PackTile({ glyph, title, subtitle, selected, missing, onClick }: {
       <span style={{ minWidth: 0, flex: 1 }}>
         <span style={{
           display: 'block', fontFamily: 'var(--cth-font-ui)',
-          fontSize: 13, fontWeight: 600, lineHeight: '17px', color: 'var(--cth-ink)',
+          fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink)',
           // Pack names are DATA, not copy we control: a bundled or community pack
           // can supply a long token with no space in it ("SaaS/Consulting"), and
           // no browser breaks a line at a slash. Break anywhere rather than let a
@@ -1407,7 +1450,7 @@ function PackTile({ glyph, title, subtitle, selected, missing, onClick }: {
           overflowWrap: 'anywhere'
         }}>{title}</span>
         <span style={{
-          display: 'block', fontSize: 12, lineHeight: '16px',
+          display: 'block', fontSize: 14, lineHeight: '20px',
           color: 'var(--cth-ink-2)', overflowWrap: 'anywhere'
         }}>
           {subtitle}
@@ -1485,14 +1528,14 @@ function TeamCard({
         <span style={{ minWidth: 0, flex: 1 }}>
           <span style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'baseline', marginBottom: 2 }}>
             <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--cth-ink)' }}>{first}</span>
-            {rest.length > 0 && <span style={{ fontSize: 12.5, color: 'var(--cth-ink-3)' }}>{rest.join(' · ')}</span>}
+            {rest.length > 0 && <span style={{ fontSize: 14, color: 'var(--cth-ink-3)' }}>{rest.join(' · ')}</span>}
           </span>
-          <span style={{ display: 'block', fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-2)' }}>{summary}</span>
+          <span style={{ display: 'block', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>{summary}</span>
           <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 7 }}>
             {chips.map((c) => (
               <span key={c.label} style={{
                 display: 'inline-flex', alignItems: 'center', gap: 5,
-                fontSize: 11, fontWeight: 600, lineHeight: '16px', padding: '2px 9px', borderRadius: 999,
+                fontSize: 14, fontWeight: 600, lineHeight: '20px', padding: '2px 9px', borderRadius: 999,
                 background: CHIP_BG[c.tone], color: CHIP_FG[c.tone],
                 boxShadow: c.tone === 'optional' ? 'none' : c.tone === 'need' ? 'inset 0 0 0 1px var(--cth-line-2)' : 'none',
                 border: c.tone === 'optional' ? '1px dashed var(--cth-line-2)' : 'none'
@@ -1508,7 +1551,7 @@ function TeamCard({
       {active && folder && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
-          marginTop: 8, marginInlineStart: textIndent, fontSize: 11.5, color: 'var(--cth-ink-3)', minWidth: 0
+          marginTop: 8, marginInlineStart: textIndent, fontSize: 14, color: 'var(--cth-ink-3)', minWidth: 0
         }}>
           <Icon name="folder" />
           <span>{labels.worksIn}</span>
@@ -1527,7 +1570,7 @@ function TeamCard({
 
 const linkBtn: React.CSSProperties = {
   padding: 0, border: 'none', background: 'transparent', cursor: 'pointer', textDecoration: 'underline',
-  fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, fontWeight: 600, color: 'var(--cth-indigo-text)'
+  fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, color: 'var(--cth-indigo-text)'
 };
 
 function ToggleRow({ icon, label, desc, on, tint, edge, onChange }: {
@@ -1560,10 +1603,10 @@ function ToggleRow({ icon, label, desc, on, tint, edge, onChange }: {
         <Icon name={icon} />
       </span>
       <span style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, lineHeight: '16px', marginBottom: 3 }}>
+        <span style={{ display: 'block', fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', marginBottom: 3 }}>
           {label}
         </span>
-        <span style={{ display: 'block', fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-700)' }}>
+        <span style={{ display: 'block', fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
           {desc}
         </span>
       </span>

@@ -1,4 +1,6 @@
 node_modules/
+# Bare form too: the trailing slash matches only a directory, so a symlinked
+# node_modules (worktrees) would otherwise show up as untracked.
 node_modules
 out/
 dist/

@@ -39,10 +39,10 @@ function fakeImap(state) {
     async list() { return [{ path: 'INBOX' }, { path: 'Drafts', specialUse: '\\Drafts' }, { path: 'Sent', specialUse: '\\Sent' }]; },
     async getMailboxLock(p) { folder = p; return { release() {} }; },
     async search(q) {
-      if (q.header) return state.sentHit ? [1] : [];
+      if (q.header) return (typeof state.sentHit === 'function' ? state.sentHit(q.header['message-id']) : state.sentHit) ? [1] : [];
       return state.folders[folder].filter((m) => !q.from || m.from.includes(q.from)).map((m) => m.uid);
     },
-    async *fetch(uids) { for (const m of state.folders[folder]) if (uids.includes(m.uid)) yield { uid: m.uid, envelope: { from: [{ address: m.from }], subject: m.subject, date: new Date('2026-09-25') }, flags: new Set(m.seen ? ['\\Seen'] : []) }; },
+    async *fetch(uids) { for (const m of state.folders[folder]) if (uids.includes(m.uid)) yield { uid: m.uid, envelope: { from: [{ address: m.from }], subject: m.subject, date: m.date ?? new Date('2026-09-25') }, flags: new Set(m.seen ? ['\\Seen'] : []) }; },
     async fetchOne(uid) { const m = state.folders[folder].find((x) => String(x.uid) === String(uid)); return m ? { source: m.source } : false; },
     async append(p, content) { state.folders[p].push({ uid: 100 + state.folders[p].length, from: '', subject: '', source: content }); }
   };
@@ -139,6 +139,15 @@ test('search and read work in the agent\'s mailbox; bodies are capped', async ()
   const big = await call('dwight', 'read', { mailbox: 'sales', id: '2' });
   assert.equal(big.body.truncated, true);
   assert.equal((await call('dwight', 'search', { mailbox: 'ceo' })).status, 403, 'not his mailbox');
+});
+
+test('search still lists the mail when one email has a date nobody can read', async () => {
+  const { call, state } = setup();
+  // imapflow passes the raw header text through when it cannot parse the date
+  state.folders.INBOX[1].date = 'Mon, 32 Foo 2026';
+  const s = await call('dwight', 'search', { mailbox: 'sales' });
+  assert.equal(s.status, 200);
+  assert.deepEqual(s.body.messages.map((m) => [m.subject, m.date]), [['Hello', ''], ['Quote please', '2026-09-25T00:00:00.000Z']]);
 });
 
 test('draft lands in Drafts; Draft only cannot send', async () => {
@@ -270,6 +279,205 @@ test('send journal persists deduplication IDs to journalPath across service inst
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
+
+// ── A send the app stopped in the middle of (TODOS: never send twice across a restart) ──
+
+/** A mail service on its own journal. `onSend` runs when the server gets the
+ *  email, before it answers: the journal as it is then is what a crash leaves.
+ *  `sentHit` answers the Sent search for a Message-ID. */
+function journalSetup(journalPath, { sentHit = false, onSend, config = cfg(), audit } = {}) {
+  const state = { folders: { INBOX: [], Drafts: [], Sent: [] }, sentHit, sends: [] };
+  const deps = {
+    getConfig: () => config,
+    getPassword: () => 'app-pass',
+    markStatus: () => {},
+    createImap: () => fakeImap(state),
+    createSmtp: () => ({ async sendMail(m) { if (onSend) await onSend(m); state.sends.push(m); return { messageId: m.messageId }; }, async verify() {}, close() {} }),
+    journalPath
+  };
+  const svc = new MailService(deps);
+  const brokerDeps = { getConfig: () => config, ...(audit ? { audit } : {}) };
+  return { state, call: (body, agent = 'dwight') => handleMailRequest(svc, brokerDeps, agent, 'send', body) };
+}
+
+function withJournalDir(run) {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mail journal '));
+  return Promise.resolve(run(dir, fs, path)).finally(() => fs.rmSync(dir, { recursive: true, force: true }));
+}
+
+const quote = { mailbox: 'sales', to: 'customer@buyer.com', subject: 'Quote', body: 'Quote details' };
+
+/** Sends once and keeps the journal as it was while the server had the email:
+ *  the state a crash at that moment leaves on disk. */
+async function journalAtCrash(dir, fs, path, { body = quote, config } = {}) {
+  const journalPath = path.join(dir, 'journal.json');
+  let atCrash = null;
+  const first = journalSetup(journalPath, { config, onSend: () => { atCrash = fs.readFileSync(journalPath, 'utf8'); } });
+  const res = await first.call(body);
+  assert.equal(res.status, 200);
+  const crashed = path.join(dir, 'after-crash.json');
+  fs.writeFileSync(crashed, atCrash);
+  return { crashed, messageId: res.body.messageId };
+}
+
+/** Moves every entry in a journal back in time. */
+function ageJournal(fs, file, ms) {
+  const j = JSON.parse(fs.readFileSync(file, 'utf8'));
+  for (const v of Object.values(j)) v.at -= ms;
+  fs.writeFileSync(file, JSON.stringify(j));
+}
+
+const savedAs = (fs, file) => Object.values(JSON.parse(fs.readFileSync(file, 'utf8'))).map((v) => [v.messageId, v.pending]);
+
+test('send journal: a send is saved as pending before the server sees it, and as sent after', () => withJournalDir(async (dir, fs, path) => {
+  const journalPath = path.join(dir, 'journal.json');
+  let during = null;
+  const { call } = journalSetup(journalPath, { onSend: () => { during = savedAs(fs, journalPath); } });
+  const res = await call(quote);
+  assert.equal(res.status, 200);
+  assert.deepEqual(during, [[res.body.messageId, true]], 'on disk before the server answered');
+  assert.deepEqual(savedAs(fs, journalPath), [[res.body.messageId, undefined]]);
+}));
+
+test('send journal: after a stop mid-send, a retry finds that Message-ID in Sent and gets the first result, never a second copy', () => withJournalDir(async (dir, fs, path) => {
+  const { crashed, messageId } = await journalAtCrash(dir, fs, path);
+  ageJournal(fs, crashed, 11 * 60_000); // restarted after the repeat window
+  const looked = [];
+  const restarted = journalSetup(crashed, { sentHit: (id) => { looked.push(id); return id === messageId; } });
+  const res = await restarted.call(quote);
+  assert.equal(res.status, 200);
+  assert.equal(res.body.messageId, messageId, 'the first Message-ID');
+  assert.equal(res.body.repeated, undefined, 'not marked repeated: the stopped run never recorded it, so this caller does');
+  assert.deepEqual(looked, [messageId], 'Sent was searched for the pending Message-ID');
+  assert.equal(restarted.state.sends.length, 0, 'nothing went to the server');
+  const again = await restarted.call(quote);
+  assert.equal(again.body.messageId, messageId);
+  assert.equal(again.body.repeated, true, 'settled: a later repeat is an ordinary repeat, its window starting now');
+  assert.deepEqual(savedAs(fs, crashed), [[messageId, undefined]], 'saved as sent');
+}));
+
+test('send journal: a grant send settled after a stop is written to the office log once', () => withJournalDir(async (dir, fs, path) => {
+  // Dwight sends only from Pam's mailbox.
+  const config = cfg();
+  config.agentCapabilities.dwight.sendOnly = { mailbox: 'ceo', sending: 'send' };
+  const body = { ...quote, mailbox: 'ceo' };
+  const { crashed, messageId } = await journalAtCrash(dir, fs, path, { body, config });
+  const audit = [];
+  const restarted = journalSetup(crashed, { config, sentHit: (id) => id === messageId, audit: (e) => audit.push(e) });
+  assert.equal((await restarted.call(body)).status, 200);
+  assert.equal((await restarted.call(body)).status, 200);
+  assert.deepEqual(audit, [{ kind: 'mail-sent', agentId: 'dwight', mailbox: 'ceo', messageId, grant: true }]);
+  assert.equal(restarted.state.sends.length, 0);
+}));
+
+test('send journal: two identical retries during the Sent check share one check and one result', () => withJournalDir(async (dir, fs, path) => {
+  const { crashed, messageId } = await journalAtCrash(dir, fs, path);
+  let checks = 0;
+  const restarted = journalSetup(crashed, { sentHit: (id) => { checks++; return id === messageId; } });
+  const [a, b] = await Promise.all([restarted.call(quote), restarted.call(quote)]);
+  assert.deepEqual([a.status, b.status, a.body.messageId, b.body.messageId], [200, 200, messageId, messageId]);
+  assert.deepEqual([a.body.repeated, b.body.repeated], [undefined, true], 'recorded by one caller only');
+  assert.equal(checks, 1);
+}));
+
+test('send journal: after a stop mid-send with no copy in Sent, the retry is refused in plain words, and stays refused after another restart', () => withJournalDir(async (dir, fs, path) => {
+  const { crashed } = await journalAtCrash(dir, fs, path);
+  const restarted = journalSetup(crashed, { sentHit: false });
+  for (let i = 0; i < 2; i++) {
+    const res = await restarted.call(quote);
+    assert.deepEqual([res.status, res.body.kind], [502, 'refused']);
+    assert.match(res.body.error, /may already have gone out: sending it was interrupted, and it is not in Sent yet\. Do not send it again; tell Michael/);
+  }
+  const again = journalSetup(crashed, { sentHit: false });
+  assert.equal((await again.call(quote)).body.kind, 'refused', 'a second restart still refuses it');
+  assert.equal(restarted.state.sends.length + again.state.sends.length, 0);
+  // Changed in any way, it is a different email and goes out.
+  assert.equal((await again.call({ ...quote, body: 'Quote details, revised' })).status, 200);
+  assert.equal(again.state.sends.length, 1);
+}));
+
+test('send journal: when Sent cannot be reached after a stop, nothing is sent and a later try checks again', () => withJournalDir(async (dir, fs, path) => {
+  const { crashed, messageId } = await journalAtCrash(dir, fs, path);
+  const restarted = journalSetup(crashed, { sentHit: (id) => id === messageId });
+  restarted.state.failConnect = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' });
+  const res = await restarted.call(quote);
+  assert.deepEqual([res.status, res.body.kind], [502, 'network']);
+  assert.match(res.body.error, /Sent could not be checked for it.*Try again in a moment/);
+  assert.equal(restarted.state.sends.length, 0);
+  restarted.state.failConnect = null;
+  const later = await restarted.call(quote);
+  assert.equal(later.status, 200);
+  assert.equal(later.body.messageId, messageId);
+  assert.equal(restarted.state.sends.length, 0);
+}));
+
+test('send journal: when Sent cannot be checked for a lasting reason after a stop, it is refused, not retried', () => withJournalDir(async (dir, fs, path) => {
+  const { crashed } = await journalAtCrash(dir, fs, path);
+  const restarted = journalSetup(crashed, { sentHit: true });
+  restarted.state.failConnect = Object.assign(new Error('Invalid credentials'), { authenticationFailed: true });
+  const res = await restarted.call(quote);
+  assert.deepEqual([res.status, res.body.kind], [502, 'refused']);
+  assert.match(res.body.error, /may already have gone out/);
+  assert.equal(restarted.state.sends.length, 0);
+}));
+
+test('send journal: a send that cannot be recorded first does not go out', () => withJournalDir(async (dir, fs, path) => {
+  const { call, state } = journalSetup(path.join(dir, 'missing folder', 'journal.json'));
+  const res = await call(quote);
+  assert.deepEqual([res.status, res.body.kind], [502, 'unknown']);
+  assert.match(res.body.error, /^Not sent\. The app could not record this send before sending it/);
+  assert.equal(state.sends.length, 0);
+}));
+
+test('a dropped connection mid-send with no copy in Sent is held, and a repeat is not sent (issue 101)', () => withJournalDir(async (dir, fs, path) => {
+  // Value: protects=a customer never gets the same email twice after a flaky connection; fails_when=an uncertain drop reads as not sent and the retry sends a second copy; why_new=issue 101; seam=fake SMTP
+  let tries = 0;
+  const { call, state } = journalSetup(path.join(dir, 'journal.json'), { onSend: () => { tries++; throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }); } });
+  const first = await call(quote);
+  assert.equal(first.status, 502);
+  assert.match(first.body.error, /may already have gone out: the connection dropped before the mail server answered, and it is not in Sent yet\. Do not send it again; tell Michael/);
+  const again = await call(quote);
+  assert.deepEqual([again.status, again.body.kind], [502, 'refused']);
+  assert.match(again.body.error, /may already have gone out: sending it was interrupted/);
+  assert.equal(tries, 1, 'the server saw the email once');
+  assert.equal(state.sends.length, 0);
+}));
+
+test('a mail server that was never reached is not held: the retry goes out (issue 101)', () => withJournalDir(async (dir, fs, path) => {
+  // Value: protects=an email that surely never left can be sent again; fails_when=a refused connection is held like a drop; why_new=issue 101; seam=fake SMTP
+  let down = true;
+  const { call, state } = journalSetup(path.join(dir, 'journal.json'), { onSend: () => { if (down) throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }); } });
+  const first = await call(quote);
+  assert.equal(first.status, 502);
+  assert.match(first.body.error, /^Not sent\./);
+  down = false;
+  assert.equal((await call(quote)).status, 200);
+  assert.equal(state.sends.length, 1);
+}));
+
+test('send journal: a send the server refused is cleared, so a retry goes out', () => withJournalDir(async (dir, fs, path) => {
+  const journalPath = path.join(dir, 'journal.json');
+  let refuse = true;
+  const { call, state } = journalSetup(journalPath, { onSend: () => { if (refuse) throw Object.assign(new Error('Message rejected'), { responseCode: 550 }); } });
+  assert.notEqual((await call(quote)).status, 200);
+  assert.deepEqual(savedAs(fs, journalPath), [], 'nothing left pending');
+  refuse = false;
+  assert.equal((await call(quote)).status, 200);
+  assert.equal(state.sends.length, 1);
+}));
+
+test('send journal: a send left pending stays refused past the repeat window, for a day', () => withJournalDir(async (dir, fs, path) => {
+  const { crashed } = await journalAtCrash(dir, fs, path);
+  ageJournal(fs, crashed, 11 * 60_000);
+  assert.equal((await journalSetup(crashed).call(quote)).body.kind, 'refused', 'past the 10 minute repeat window, still refused');
+  ageJournal(fs, crashed, 24 * 60 * 60_000);
+  const later = journalSetup(crashed);
+  assert.equal((await later.call(quote)).status, 200, 'a day on, it is a new send');
+  assert.equal(later.state.sends.length, 1);
+}));
 
 test('Settings test: a custom domain on Microsoft 365 gets the same message (issue 39)', async () => {
   const { svc, state } = setup({ resolveMx: async () => [{ exchange: 'github-com.mail.protection.outlook.com', priority: 0 }] });

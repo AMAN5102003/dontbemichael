@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
-const { validateHookEvent } = loadTs('src/shared/hookEvents.ts');
+const { validateHookEvent, isTerminalPrompt, TERMINAL_PROMPT_TYPES } = loadTs('src/shared/hookEvents.ts');
 
 test('accepts valid hook event payloads', () => {
   assert.equal(validateHookEvent({
@@ -49,4 +49,32 @@ test('main and preload share the hook event contract', () => {
   assert.match(main, /validateHookEvent.*shared\/hookEvents|shared\/hookEvents.*validateHookEvent/s);
   assert.match(preload, /HookEvent.*shared\/hookEvents|shared\/hookEvents.*HookEvent/s);
   assert.match(preload, /payload: HookEvent/);
+});
+
+test('isTerminalPrompt: shared prompt detection across IPC formats', () => {
+  assert.equal(isTerminalPrompt(null), false);
+  assert.equal(isTerminalPrompt(undefined), false);
+  assert.equal(isTerminalPrompt({}), false);
+  // Structured types (camelCase from renderer HookEvent and snake_case from raw hook payload)
+  assert.equal(isTerminalPrompt({ notificationType: 'permission_prompt' }), true);
+  assert.equal(isTerminalPrompt({ notification_type: 'permission_prompt' }), true);
+  assert.equal(isTerminalPrompt({ notificationType: 'elicitation_dialog' }), true);
+  assert.equal(isTerminalPrompt({ notification_type: 'elicitation_dialog' }), true);
+  assert.equal(isTerminalPrompt({ notificationType: 'idle_prompt' }), false);
+  assert.equal(isTerminalPrompt({ notification_type: 'idle_prompt' }), false);
+  // String message fallbacks
+  assert.equal(isTerminalPrompt({ message: 'Claude needs your permission to use Write' }), true);
+  assert.equal(isTerminalPrompt({ message: 'needs your approval' }), true);
+  assert.equal(isTerminalPrompt({ message: 'Claude is waiting for your input' }), false);
+  assert.equal(isTerminalPrompt({ message: '' }), false);
+});
+
+test('renderer useHive and main hooks share isTerminalPrompt', () => {
+  const root = path.resolve(__dirname, '..');
+  const main = fs.readFileSync(path.join(root, 'src/main/hooks.ts'), 'utf8');
+  const useHive = fs.readFileSync(path.join(root, 'src/renderer/src/hooks/useHive.ts'), 'utf8');
+
+  assert.match(main, /isTerminalPrompt/);
+  assert.match(useHive, /import\s*\{\s*isTerminalPrompt\s*\}\s*from\s*['"][^'"]*shared\/hookEvents['"]/);
+  assert.match(useHive, /if\s*\(\s*isTerminalPrompt\(e\)\s*\)/);
 });

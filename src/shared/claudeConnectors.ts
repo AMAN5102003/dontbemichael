@@ -19,7 +19,9 @@ import type { AgentCapabilities } from './mailboxes';
 import { quickbooksCapability } from './quickbooks';
 import { emailCalendarAllowed } from './mcpCatalog';
 
-export type ConnectorStatus = 'connected' | 'needs-sign-in';
+/** `unreachable`: the check failed to connect (a network or server failure),
+ *  which signing in again would not fix. */
+export type ConnectorStatus = 'connected' | 'needs-sign-in' | 'unreachable';
 
 export interface ClaudeConnector {
   /** The name after "claude.ai ", e.g. "Intuit QuickBooks". The key everywhere. */
@@ -88,7 +90,8 @@ export function parseMcpList(stdout: string): McpList | null {
     const key = c[1].trim().slice(0, KEY_MAX);
     if (!key || connectors.some((x) => x.key === key)) continue;
     const ok = (!mark || mark === '✔' || mark === '✓') && /\bconnected\b/i.test(words) && !/\bnot\b|needs|fail|error/i.test(words);
-    connectors.push({ key, url: target.trim().split(/\s+/)[0].slice(0, URL_MAX), status: ok ? 'connected' : 'needs-sign-in' });
+    const unreachable = !ok && (mark === '✘' || mark === '✗' || /fail|error/i.test(words)) && !/needs|auth/i.test(words);
+    connectors.push({ key, url: target.trim().split(/\s+/)[0].slice(0, URL_MAX), status: ok ? 'connected' : unreachable ? 'unreachable' : 'needs-sign-in' });
   }
   return seen > 0 ? { connectors, servers } : null;
 }

@@ -16,7 +16,7 @@ const loadTs = require('./load-ts.cjs');
 
 const { mailAccess, sendingMode } = loadTs('src/shared/mailboxes.ts');
 const { describeEdits, fileProposal, pruneProposals, proposalSendProblem, PROPOSAL_KEEP_MS, parseStandingFit, standingFitPrompt } = loadTs('src/shared/mailProposals.ts');
-const { handleMailRequest, setAgentCapabilities } = loadTs('src/main/mail.ts');
+const { handleMailRequest, setAgentCapabilities, MailError } = loadTs('src/main/mail.ts');
 const { MailApprovals } = loadTs('src/main/mailApprovals.ts');
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 
@@ -299,4 +299,31 @@ test('the card offers the tick only when the agent offered it, and the Access ta
     const l = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
     assert.ok(l.askMe.mailStanding && l.capabilities.standingTitle && l.capabilities.standingLast && l.capabilities.standingRevoke, loc);
   }
+});
+
+test('an approved email whose send may have gone out stays sending and is not sent again (issue 101)', async (t) => {
+  // Value: protects=an approved card is never resent after an uncertain drop; fails_when=the card returns to approved after a timeout with no copy in Sent; why_new=issue 101; seam=fake svc
+  const { approvals, call, out, cleanup } = setup();
+  t.after(cleanup);
+  const id = (await call('pam', 'propose', { mailbox: 'ceo', to: 'ellah@client.com', subject: 'Re: COE', body: 'Hi Ellah' })).body.proposal;
+  assert.deepEqual(approvals.decide(id, 'approve', {}, ''), { ok: true });
+  let tries = 0;
+  const svc = { send: async () => { tries++; throw new MailError('timeout', 'This email may already have gone out.', true); } };
+  const send = () => handleMailRequest(svc, { getConfig: () => cfg, proposals: approvals }, 'pam', 'send', { mailbox: 'ceo', proposal: id });
+  assert.notEqual((await send()).status, 200);
+  assert.equal(approvals.get(id).state, 'sending', 'held, not back to approved');
+  assert.notEqual((await send()).status, 200);
+  assert.equal(tries, 1, 'the second try never reached the server');
+  assert.equal(out.sends.length, 0);
+});
+
+test('an approved email that surely did not go out returns to approved', async (t) => {
+  // Value: protects=a plain failure can still be retried; fails_when=every failure holds the card; why_new=issue 101; seam=fake svc
+  const { approvals, call, cleanup } = setup();
+  t.after(cleanup);
+  const id = (await call('pam', 'propose', { mailbox: 'ceo', to: 'ellah@client.com', subject: 'Re: COE', body: 'Hi Ellah' })).body.proposal;
+  assert.deepEqual(approvals.decide(id, 'approve', {}, ''), { ok: true });
+  const svc = { send: async () => { throw new MailError('network', "Not sent. Couldn't reach the mail server."); } };
+  await handleMailRequest(svc, { getConfig: () => cfg, proposals: approvals }, 'pam', 'send', { mailbox: 'ceo', proposal: id });
+  assert.equal(approvals.get(id).state, 'approved');
 });

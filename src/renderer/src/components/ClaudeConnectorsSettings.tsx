@@ -94,49 +94,66 @@ export function ClaudeConnectorsSettings() {
 
       {failed && <div role="alert" style={{ fontSize: 13, color: 'var(--cth-ink-900)' }}>! {t('capabilities.saveFailed')}</div>}
 
-      <div id={listId} hidden={!open}>
-        {state?.failedAt && (
-          <div role="status" style={{ ...row, color: 'var(--cth-ink-900)' }}>
-            <span style={{ flex: 1, fontSize: 13 }}>
-              ! {state.readAt ? t('connectors.readFailedSince', { when: new Date(state.readAt).toLocaleString() }) : t('connectors.readFailed')}
-            </span>
-            <MiniButton disabled={reading} onClick={() => { void window.cth.connectorsRefresh('retry').catch(() => {}); }}>{t('connectors.tryAgain')}</MiniButton>
-          </div>
-        )}
-        {state?.list && list.length === 0 && removed.length === 0 && (
-          <div style={{ ...row, ...hint }}>
-            <span style={{ flex: 1 }}>{t('connectors.empty')}</span>
-            <button type="button" style={link} onClick={() => { void window.cth.openExternal(CLAUDE_CONNECTORS_URL); }}>{t('connectors.addAtClaude')}</button>
-          </div>
-        )}
-        {!state?.list && !state?.failedAt && <div style={{ ...row, ...hint }}>{t('connectors.reading')}</div>}
-        {(removed.length > 0 || list.length > 0) && (
-          <div role="list">
-            {/* Removed ones need the owner, so they come first (design D3). */}
-            {removed.map((key) => (
-              <div key={`removed-${key}`} role="listitem" style={row}>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600 }}>{key}</span>
-                <span style={{ ...badge, ...needsBadge }}><Dot color="var(--cth-coral)" />{t('connectors.removed')}</span>
-                <MiniButton onClick={() => { void run(window.cth.connectorsClear(key)); }}>{t('connectors.clear')}</MiniButton>
+      <div style={{
+        display: 'grid',
+        gridTemplateRows: open ? '1fr' : '0fr',
+        transition: 'grid-template-rows var(--cth-dur-base) var(--cth-ease)',
+      }}>
+        {/* Closed, the rows leave the Tab order and screen readers too, as the
+            `hidden` attribute did; visibility flips after the slide. */}
+        <div style={{
+          overflow: 'hidden', minHeight: 0,
+          visibility: open ? 'visible' : 'hidden',
+          transition: `visibility 0s linear ${open ? '0s' : 'var(--cth-dur-base)'}`
+        }}>
+          <div id={listId}>
+            {state?.failedAt && (
+              <div role="status" style={{ ...row, color: 'var(--cth-ink-900)' }}>
+                <span style={{ flex: 1, fontSize: 13 }}>
+                  ! {state.readAt ? t('connectors.readFailedSince', { when: new Date(state.readAt).toLocaleString() }) : t('connectors.readFailed')}
+                </span>
+                <MiniButton disabled={reading} onClick={() => { void window.cth.connectorsRefresh('retry').catch(() => {}); }}>{t('connectors.tryAgain')}</MiniButton>
               </div>
-            ))}
-            {list.map((c) => {
-              const on = connectorOn(config, c.key);
-              const signIn = c.status === 'needs-sign-in';
-              return (
-                <div key={c.key} role="listitem" style={row}>
-                  <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: signIn ? 'var(--cth-ink-500)' : undefined }}>{c.key}</span>
-                  {signIn ? (
-                    <button type="button" style={link} onClick={() => { void window.cth.openExternal(CLAUDE_CONNECTORS_URL); }}>{t('connectors.signIn')}</button>
-                  ) : (
-                    <span style={hint}>{t('connectors.connected')}</span>
-                  )}
-                  <Toggle on={on} label={t('connectors.allow', { name: c.key })} onClick={() => { void run(window.cth.connectorsSetOn(c.key, !on)); }} />
-                </div>
-              );
-            })}
+            )}
+            {state?.list && list.length === 0 && removed.length === 0 && (
+              <div style={{ ...row, ...hint }}>
+                <span style={{ flex: 1 }}>{t('connectors.empty')}</span>
+                <button type="button" style={link} onClick={() => { void window.cth.openExternal(CLAUDE_CONNECTORS_URL); }}>{t('connectors.addAtClaude')}</button>
+              </div>
+            )}
+            {!state?.list && !state?.failedAt && <div style={{ ...row, ...hint }}>{t('connectors.reading')}</div>}
+            {(removed.length > 0 || list.length > 0) && (
+              <div role="list">
+                {/* Removed ones need the owner, so they come first (design D3). */}
+                {removed.map((key) => (
+                  <div key={`removed-${key}`} role="listitem" style={row}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600 }}>{key}</span>
+                    <span style={{ ...badge, ...needsBadge }}><Dot color="var(--cth-coral)" />{t('connectors.removed')}</span>
+                    <MiniButton onClick={() => { void run(window.cth.connectorsClear(key)); }}>{t('connectors.clear')}</MiniButton>
+                  </div>
+                ))}
+                {list.map((c) => {
+                  const on = connectorOn(config, c.key);
+                  const signIn = c.status === 'needs-sign-in';
+                  const unreachable = c.status === 'unreachable';
+                  return (
+                    <div key={c.key} role="listitem" style={row}>
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 600, color: signIn || unreachable ? 'var(--cth-ink-500)' : undefined }}>{c.key}</span>
+                      {signIn ? (
+                        <button type="button" style={link} onClick={() => { void window.cth.openExternal(CLAUDE_CONNECTORS_URL); }}>{t('connectors.signIn')}</button>
+                      ) : unreachable ? (
+                        <span style={hint}>{t('connectors.unreachable')}</span>
+                      ) : (
+                        <span style={hint}>{t('connectors.connected')}</span>
+                      )}
+                      <Toggle on={on} label={t('connectors.allow', { name: c.key })} onClick={() => { void run(window.cth.connectorsSetOn(c.key, !on)); }} />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

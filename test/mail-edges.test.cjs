@@ -15,7 +15,7 @@ const {
   PROVIDER_PRESETS, guessServers, mailboxIdFor, secretRefForMailbox, mailAccess, agentMailboxes, mailToolsJustAttached
 } = loadTs('src/shared/mailboxes.ts');
 const { emailCalendarAllowed } = loadTs('src/shared/mcpCatalog.ts');
-const { MailService, MailError, handleMailRequest, classifyMailError, saveMailbox, removeMailbox, setAgentCapabilities } = loadTs('src/main/mail.ts');
+const { MailService, MailError, handleMailRequest, classifyMailError, saveMailbox, removeMailbox, setAgentCapabilities, cannotStoreReason } = loadTs('src/main/mail.ts');
 
 const server = { host: 'h', port: 993, secure: true };
 const box = (id, address, provider = 'gmail') => ({ id, address, provider, imap: server, smtp: server, status: 'connected', createdAt: 1, updatedAt: 1 });
@@ -63,7 +63,8 @@ function setup(over = {}) {
       async sendMail(m) { if (state.smtpError) throw state.smtpError; state.sends.push(m); return { messageId: m.messageId }; },
       async verify() { if (state.verifyError) throw state.verifyError; },
       close() { state.smtpCloses = (state.smtpCloses ?? 0) + 1; }
-    })
+    }),
+    log: over.log
   };
   const svc = new MailService(deps);
   return { state, svc, config, call: (agent, op, body) => handleMailRequest(svc, deps, agent, op, body) };
@@ -108,6 +109,16 @@ test('classifyMailError: timeouts, unknown errors and MailError pass through', (
   assert.equal(classifyMailError({ responseText: 'Please log in via your web browser' }).kind, 'provider-blocked');
 });
 
+test('classifyMailError: 535 is a refused login only as a reply code, not inside an address or a number', () => {
+  assert.equal(classifyMailError({ response: '535-5.7.8 Username and Password not accepted' }).kind, 'auth', 'a multiline 535 reply');
+  assert.equal(classifyMailError(new Error('Invalid login: 535 Incorrect authentication data')).kind, 'auth');
+  // nodemailer copies the server's reply into the message, address and all.
+  const reply = '550 5.1.1 <ann1535@example.com>: Recipient address rejected';
+  const rejected = Object.assign(new Error(`Can't send mail - all recipients were rejected: ${reply}`), { code: 'EENVELOPE', response: reply });
+  assert.equal(classifyMailError(rejected).kind, 'unknown');
+  assert.equal(classifyMailError({ response: '552 5.3.4 Message size exceeds fixed limit (35350000 bytes)' }).kind, 'unknown');
+});
+
 // ── handleMailRequest: refusals and error mapping ───────────────────────────
 
 test('mail route: unknown tool 404, missing id or subject 400, numeric id reads, missing message 404', async () => {
@@ -131,6 +142,21 @@ test('mail route: unknown tool 404, missing id or subject 400, numeric id reads,
   assert.equal(missing.status, 404);
   assert.equal(missing.body.kind, 'not-found');
   }
+});
+
+test('mail route: one log line per call with agent, mailbox, tool, result and time, never the email itself', async () => {
+  const lines = [];
+  const { call } = setup({ log: (line) => lines.push(line) });
+  await call('dwight', 'search', { mailbox: 'sales' });
+  await call('dwight', 'read', { mailbox: 'sales', id: '999' });
+  await call('dwight', 'draft', { mailbox: 'sales', to: 'client@private.com', subject: 'Private offer', body: 'x' });
+  await call('dwight', 'delete_all', { mailbox: 'sales\n[mail] forged' });
+  assert.equal(lines.length, 4, 'one line per call, refusals included');
+  assert.match(lines[0], /^\[mail\] dwight sales search 200 \d+ms$/);
+  assert.match(lines[1], /^\[mail\] dwight sales read 404 not-found \d+ms$/);
+  assert.match(lines[2], /^\[mail\] dwight sales draft 200 \d+ms$/);
+  assert.doesNotMatch(lines.join('\n'), /client@private|Private offer/, 'no recipient or subject');
+  assert.match(lines[3], /^\[mail\] dwight sales\?\?mail\?\?forged unknown 404 \d+ms$/, 'what the agent names stays on one line');
 });
 
 test('search pages newest first, caps the page size, and ignores a bad date', async () => {
@@ -167,7 +193,7 @@ test('a mailbox with no saved password is refused in plain words and marked need
 
 // ── send failures ───────────────────────────────────────────────────────────
 
-test('send failures: a refusal says "Not sent" and is not remembered; a timeout not found in Sent is not sent', async () => {
+test('send failures: a refusal says "Not sent" and is not remembered; a timeout not found in Sent is held as maybe sent', async () => {
   const { call, state } = setup();
   state.smtpError = Object.assign(new Error('535 Authentication failed'), { code: 'EAUTH' });
   const msg = { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' };
@@ -187,9 +213,42 @@ test('send failures: a refusal says "Not sent" and is not remembered; a timeout 
   state.sentHit = false;
   const r = await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' });
   assert.equal(r.status, 502, 'ETIMEDOUT classifies as network');
-  assert.match(r.body.error, /^Not sent\./);
+  // A drop mid-send may have delivered it (issue 101): held, never reported as not sent.
+  assert.match(r.body.error, /^This email may already have gone out/);
   assert.ok(state.queries.some((q) => q.header && q.header['message-id']), 'Sent was checked first');
   }
+  {
+  // The connection closing mid-send may have delivered it too (adversarial review).
+  const { call, state } = setup();
+  state.smtpError = Object.assign(new Error('Connection closed unexpectedly'), { code: 'ECONNECTION' });
+  state.sentHit = false;
+  const r = await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' });
+  assert.match(r.body.error, /^This email may already have gone out/);
+  }
+  // A server that was never reached took nothing: that is plainly not sent, and a retry may send it.
+  for (const never of [
+    Object.assign(new Error('connect ECONNREFUSED 10.0.0.1:465'), { code: 'ESOCKET', syscall: 'connect' }),
+    Object.assign(new Error('Connection timeout'), { code: 'ETIMEDOUT' }),
+    Object.assign(new Error('Greeting never received'), { code: 'ETIMEDOUT' })
+  ]) {
+    const { call, state } = setup();
+    state.smtpError = never;
+    state.sentHit = false;
+    const r = await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' });
+    assert.match(r.body.error, /^Not sent\./, never.message);
+    state.smtpError = null;
+    assert.equal((await call('dwight', 'send', { mailbox: 'sales', to: 'a@b.com', subject: 's', body: 'b' })).status, 200, `${never.message}: the retry sends`);
+  }
+});
+
+test('a rejected recipient whose address holds 535 is not sent, and the mailbox is not marked as needing a password', async () => {
+  const { call, state } = setup();
+  const reply = '550 5.1.1 <ann1535@example.com>: Recipient address rejected';
+  state.smtpError = Object.assign(new Error(`Can't send mail - all recipients were rejected: ${reply}`), { code: 'EENVELOPE', response: reply });
+  const r = await call('dwight', 'send', { mailbox: 'sales', to: 'ann1535@example.com', subject: 's', body: 'b' });
+  assert.match(r.body.error, /^Not sent\./);
+  assert.doesNotMatch(r.body.error, /password/);
+  assert.equal(state.statuses.some((s) => s.status === 'needs-attention'), false, 'the password is fine; only the recipient was refused');
 });
 
 test('a send from a non Gmail mailbox files a copy in Sent; Gmail does not', async () => {
@@ -240,7 +299,7 @@ function admin(initial) {
     state,
     getConfig: () => state.cfg,
     saveConfig: (patch) => { state.cfg = { ...state.cfg, ...patch }; },
-    setSecret: (ref, value) => { if (state.setSecretFails) return { ok: false }; state.secrets[ref] = value; return { ok: true }; },
+    setSecret: (ref, value) => { if (state.setSecretFails) return { ok: false, error: typeof state.setSecretFails === 'string' ? state.setSecretFails : 'OS secret encryption is unavailable; refusing to store a secret in plaintext' }; state.secrets[ref] = value; return { ok: true }; },
     deleteSecret: (ref) => { state.deleted.push(ref); delete state.secrets[ref]; }
   };
 }
@@ -318,7 +377,47 @@ test('saveMailbox: when the password cannot be stored, the mailbox is not saved'
   const r = await saveMailbox(svc, a, PROVIDER_PRESETS, { provider: 'gmail', address: 'sales@shop.com', password: 'p' });
   assert.equal(r.ok, false);
   assert.match(r.reason, /store the password/);
+  assert.doesNotMatch(r.reason, /plaintext|refusing/, 'the owner never reads the raw error');
   assert.deepEqual(a.state.cfg.mailboxes, []);
+});
+
+test('saveMailbox: a damaged secrets file keeps its own words, not the keychain message (PR 136)', async () => {
+  // Value: protects=the owner is told what is actually wrong; fails_when=every store failure blames the keychain; why_new=the keychain message covered all failures; seam=fake secret store
+  const { SECRETS_FILE_UNREADABLE } = loadTs('src/shared/secretStore.ts');
+  const { svc } = setup();
+  const a = admin();
+  a.canStoreSecrets = () => true;
+  a.state.setSecretFails = SECRETS_FILE_UNREADABLE;
+  const r = await saveMailbox(svc, a, PROVIDER_PRESETS, { provider: 'gmail', address: 'sales@shop.com', password: 'p' });
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, SECRETS_FILE_UNREADABLE);
+  assert.doesNotMatch(r.reason, /keychain|keyring/);
+  assert.deepEqual(a.state.cfg.mailboxes, []);
+});
+
+test('saveMailbox: when this computer cannot encrypt, it says so before any login and saves nothing', async () => {
+  const { svc, state } = setup();
+  const a = admin();
+  a.canStoreSecrets = () => false;
+  const r = await saveMailbox(svc, a, PROVIDER_PRESETS, { provider: 'gmail', address: 'sales@shop.com', password: 'p' });
+  assert.equal(r.ok, false);
+  assert.equal(r.kind, 'unsupported');
+  assert.equal(r.reason, cannotStoreReason());
+  assert.equal(state.connects, undefined, 'nothing tried to log in');
+  assert.deepEqual(a.state.secrets, {});
+  assert.deepEqual(a.state.cfg.mailboxes, []);
+});
+
+test('cannotStoreReason says what to do on each platform, in plain words', () => {
+  assert.match(cannotStoreReason('darwin'), /keychain/);
+  assert.match(cannotStoreReason('linux'), /keyring/);
+  assert.match(cannotStoreReason('win32'), /Restart the computer/);
+  for (const p of ['darwin', 'linux', 'win32']) {
+    const reason = cannotStoreReason(p);
+    assert.match(reason, /nothing was saved/);
+    assert.match(reason, /try again/);
+    assert.doesNotMatch(reason, /[-‐-―−]/, `no dashes: ${reason}`);
+  }
 });
 
 test('removeMailbox takes the mailbox, its password and every grant to it, and names who lost it', () => {
@@ -337,6 +436,30 @@ test('removeMailbox takes the mailbox, its password and every grant to it, and n
   assert.deepEqual(a.state.cfg.agentCapabilities.dwight.email.mailboxes, []);
   assert.deepEqual(a.state.cfg.agentCapabilities.pam.email.mailboxes, ['ceo'], 'others untouched');
   assert.deepEqual(a.state.deleted, ['mail:sales']);
+});
+
+test('removeMailbox logs when the saved password could not be removed, and still removes the mailbox (issue 133)', () => {
+  // Value: protects=a mailbox removal never passes silently while its password is still on disk; fails_when=removeMailbox ignores deleteSecret's answer; why_new=the removal path reported nothing; seam=console.error captured
+  const { svc } = setup();
+  const removeWith = (secretGone) => {
+    const a = admin({ mailboxes: [box('sales', 's@x.com')] });
+    a.deleteSecret = (ref) => { a.state.deleted.push(ref); return secretGone; };
+    const logged = [];
+    const real = console.error;
+    console.error = (...args) => { logged.push(args.join(' ')); };
+    let r;
+    try { r = removeMailbox(svc, a, 'sales'); } finally { console.error = real; }
+    return { r, logged, a };
+  };
+  const gone = removeWith(true);
+  assert.deepEqual(gone.r, { ok: true, affected: [] });
+  assert.deepEqual(gone.logged, [], 'removed: nothing logged');
+  const kept = removeWith(false);
+  assert.deepEqual(kept.r, { ok: true, affected: [] }, 'the mailbox still goes');
+  assert.deepEqual(kept.a.state.cfg.mailboxes, []);
+  assert.deepEqual(kept.a.state.deleted, ['mail:sales']);
+  assert.equal(kept.logged.length, 1);
+  assert.match(kept.logged[0], /^\[mail\] .*saved password could not be: sales$/);
 });
 
 test('setAgentCapabilities: unknown mailboxes are dropped; restart only on first enable', () => {

@@ -86,6 +86,22 @@ test('the plain description names the owner and Michael, never "you" (owner, 202
   assert.match(W.instructionsFallback('Asks you first: refunds.', ctx), /### Needs the owner's approval\nrefunds\./);
 });
 
+test('the quick rewrite gives an s only to a verb: "you" as an object, and "don\'t", read right', () => {
+  const s = (text) => W.thirdPerson(text, 'Support');
+  assert.equal(s('When Michael asks you to draft a reply, keep it short.'), 'When Michael asks Support to draft a reply, keep it short.');
+  assert.equal(s('Anything between you and a customer stays in the thread.'), 'Anything between Support and a customer stays in the thread.');
+  assert.equal(s('Michael tells you what to do. Thank you for waiting.'), 'Michael tells Support what to do. Thank Support for waiting.');
+  assert.equal(s('If you don\'t know a price, ask first.'), 'If Support doesn\'t know a price, ask first.');
+  assert.equal(s('You haven\'t the authority, and you aren\'t the buyer.'), 'Support hasn\'t the authority, and Support isn\'t the buyer.');
+  assert.equal(s('You won\'t send it and you can\'t refund.'), 'Support won\'t send it and Support can\'t refund.');
+  assert.equal(s('You sort mail and you check the inbox.'), 'Support sorts mail and Support checks the inbox.', 'a verb still gets its s');
+  // The shipped default for Michael reads cleanly too.
+  const { MICHAEL_WORK_STYLE } = loadTs('src/shared/michaelWorkStyle.ts');
+  const michael = W.plainFallback(MICHAEL_WORK_STYLE, W.roleLabel('Office Manager'));
+  assert.match(michael, /the owner asks Office Manager in their conversation/);
+  assert.doesNotMatch(michael, /\b\w+s't\b| ins | tos | ands | fors /);
+});
+
 test('the Add and Edit agent views read a work style by role, never by the agent\'s name', () => {
   // Value: protects=no name reaches the plain description an owner edits and saves; fails_when=a view passes the agent's name to plainFallback or the rewrite; why_new=owner 2026-10-03: "fix the card job view to not use names either"; seam=source pin
   const read = (p) => require('node:fs').readFileSync(require('node:path').resolve(__dirname, '..', p), 'utf8');

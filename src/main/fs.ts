@@ -1,10 +1,12 @@
 import { readdir, lstat, open, realpath, stat } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { constants, existsSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
-import { imageMimeForPath } from '../shared/imageTypes';
-import { OPEN_EXTENSIONS, extensionOf, type AskFileVerdict } from '../shared/askFiles';
+import { imageMimeForExtension } from '../shared/imageTypes';
+import { NAME_ENDINGS, OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, isNameSpan, kindOf, type AskFileVerdict } from '../shared/askFiles';
+import { isSameOrInside } from './pathInside';
+import { RESEARCH_ID } from '../shared/research';
 
 /**
  * Lexical containment — pure string math, no filesystem access.
@@ -17,8 +19,7 @@ import { OPEN_EXTENSIONS, extensionOf, type AskFileVerdict } from '../shared/ask
 function lexicalJoin(root: string, rel: string): { absRoot: string; absPath: string } | null {
   const absRoot = resolve(root);
   const absPath = isAbsolute(rel) ? normalize(rel) : resolve(absRoot, rel);
-  const rel2 = relative(absRoot, absPath);
-  if (rel2.startsWith('..') || isAbsolute(rel2)) return null;
+  if (!isSameOrInside(absRoot, absPath)) return null;
   return { absRoot, absPath };
 }
 
@@ -38,8 +39,7 @@ async function canonicalize(realRoot: string, absPath: string): Promise<string |
     try {
       const real = await realpath(probe);
       const full = tail.length ? resolve(real, ...tail) : real;
-      const r = relative(realRoot, full);
-      if (r.startsWith('..') || isAbsolute(r)) return null;
+      if (!isSameOrInside(realRoot, full)) return null;
       return full;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') return null;
@@ -269,7 +269,7 @@ export async function readFileBinary(root: string, rel: string, maxBytes = MAX_B
     return {
       ok: true,
       bytes,
-      mime: imageMimeForPath(abs) ?? 'application/octet-stream',
+      mime: imageMimeForExtension(extensionOf(abs)) ?? 'application/octet-stream',
       path: abs,
       size: s.size
     };
@@ -385,7 +385,8 @@ export interface AskFileAgent {
  * (docs/designs/ask-me-open-file.md): the office folder, then the folder of the
  * team member who raised the question, the card's assignee, and every other
  * team member. Michael and his assistant are not team members here, the same
- * rule as the folder access layout, so their folders never widen Open. Ids
+ * rule as the folder access layout, so their folders never widen Open; nor
+ * does Research's desk, which holds raw web pages (red team, third ship). Ids
  * the registry does not know are dropped; each folder appears once.
  */
 export function askFileRootsFor(
@@ -396,7 +397,7 @@ export function askFileRootsFor(
   const w = (who ?? {}) as { raisedBy?: unknown; assignee?: unknown };
   const member = (id: unknown): id is string => {
     const a = typeof id === 'string' ? agents[id] : undefined;
-    return !!a && !a.isGod && !a.isAssistant;
+    return !!a && !a.isGod && !a.isAssistant && id !== RESEARCH_ID;
   };
   const first = [w.raisedBy, w.assignee].filter(member);
   const ids = [...first, ...Object.keys(agents).filter((id) => member(id) && !first.includes(id))];
@@ -434,12 +435,12 @@ export async function resolveAskFileRoots(roots: readonly string[]): Promise<Ask
 export async function askFileVerdict(
   pathText: string,
   roots: readonly string[] | readonly AskFileRoot[]
-): Promise<{ verdict: AskFileVerdict; path: string }> {
+): Promise<{ verdict: AskFileVerdict; path: string; tab: boolean; root?: string; real?: string }> {
   const resolved = roots.length && typeof roots[0] === 'string'
     ? await resolveAskFileRoots(roots as readonly string[])
     : roots as readonly AskFileRoot[];
   const p = expandTilde(pathText.trim());
-  if (!p || p.includes('\0')) return { verdict: 'missing', path: pathText };
+  if (!p || p.includes('\0')) return { verdict: 'missing', path: pathText, tab: false };
   for (const { root, real } of resolved) {
     if (!root || !isAbsolute(root)) continue;
     let rel = p;
@@ -447,8 +448,7 @@ export async function askFileVerdict(
       // Against the root as written, then as it resolves: an office reached
       // through a link is named either way.
       const inside = (base: string): string | null => {
-        const r = relative(base, normalize(p));
-        return r.startsWith('..') || isAbsolute(r) ? null : r;
+        return isSameOrInside(base, normalize(p)) ? relative(base, normalize(p)) : null;
       };
       const r = inside(resolve(root)) ?? (real ? inside(real) : null);
       if (r === null) continue;
@@ -461,29 +461,74 @@ export async function askFileVerdict(
     if (!abs) continue;
     let st;
     try { st = await stat(abs); } catch { continue; }
-    return { verdict: st.isFile() && OPEN_EXTENSIONS.has(extensionOf(abs)) ? 'open' : 'reveal', path: abs };
+    const file = st.isFile();
+    return {
+      verdict: file && OPEN_EXTENSIONS.has(extensionOf(abs)) ? 'open' : 'reveal',
+      path: abs,
+      // The office can show it in a tab (docs/designs/open-file-tab.md, R3),
+      // judged on the canonical path like the verdict.
+      tab: file && TAB_EXTENSIONS.has(extensionOf(abs)),
+      root,
+      real
+    };
   }
   // Outside every root, or behind a link that leaves it: agent text never
   // opens or shows anything there (Codex adversarial review, 2026-10-05).
   const first = resolved.find(({ root }) => root && isAbsolute(root));
-  return { verdict: 'missing', path: isAbsolute(p) || !first ? p : resolve(first.root, p) };
+  return { verdict: 'missing', path: isAbsolute(p) || !first ? p : resolve(first.root, p), tab: false };
 }
 
-/** macOS package endings: directories Finder treats as an app or a document. */
-const PACKAGE_EXTENSIONS = new Set([
-  'app', 'appex', 'bundle', 'framework', 'plugin', 'prefpane', 'kext', 'xpc', 'saver', 'qlgenerator', 'mdimporter',
-  'pkg', 'mpkg', 'workflow', 'action', 'service', 'scptd', 'pages', 'numbers', 'key', 'rtfd', 'photoslibrary',
-  'logicx', 'band', 'playground', 'xcodeproj', 'xcworkspace', 'xcarchive', 'dsym',
-]);
+/** What a file tab gets back (docs/designs/open-file-tab.md). */
+export type AskFileRead =
+  | { ok: true; path: string; root: string; real: string; kind: 'markdown' | 'text' | 'json' | 'csv' | 'image'; text?: string; bytes?: Uint8Array<ArrayBuffer>; mime?: string; size: number }
+  | { ok: false; error: 'not found' | 'too large' | 'unreadable' };
 
 /**
- * Whether revealing a directory may open it as a folder. On macOS an app, and
- * many documents, are directories whose names carry a package ending
- * (`Tool.app`, `Report.pages`); `shell.openPath` launches those, so they are
- * shown in their parent instead (eng review R4). Any other folder opens, dots
- * in its name included (`Sales`, `acme.com`, `Q3.2026`).
+ * A file named without its ending, such as `First contact follow up draft
+ * 2026-10-19` for the `.md` in the Sales folder (owner, 2026-10-19): each
+ * ending in NAME_ENDINGS is tried in turn, through the same folder check as
+ * any named file, and the first that exists wins. Null when none does, so the
+ * name stays plain text.
  */
-export function opensAsFolder(path: string): boolean {
-  return !PACKAGE_EXTENSIONS.has(extensionOf(path));
+export async function askFileByName(
+  name: string,
+  roots: readonly AskFileRoot[]
+): Promise<{ verdict: AskFileVerdict; path: string; tab: boolean } | null> {
+  if (!isNameSpan(name)) return null;
+  // Every ending is checked at once; the first in NAME_ENDINGS order wins.
+  const all = await Promise.all(NAME_ENDINGS.map((ext) => askFileVerdict(`${name.trim()}.${ext}`, roots)));
+  const v = all.find((x) => x.verdict !== 'missing');
+  return v ? { verdict: v.verdict, path: v.path, tab: v.tab } : null;
 }
 
+/**
+ * Read a file an Ask me question or a reply names, for its tab. The same check
+ * as Open runs first (`askFileVerdict`: inside the office or a team member's
+ * folder, canonical path, no link leaving it), and only kinds a tab can show
+ * are read: text up to 2 MB, images up to 10 MB, through the root-confined
+ * readers. Anything outside the folders reads as not found, like the chip.
+ */
+export async function readAskFile(pathText: string, roots: readonly string[] | readonly AskFileRoot[]): Promise<AskFileRead> {
+  const v = await askFileVerdict(pathText, roots);
+  if (v.verdict === 'missing' || !v.tab || !v.real) return { ok: false, error: 'not found' };
+  const rel = relative(v.real, v.path);
+  const kind = kindOf(v.path);
+  const root = v.root ?? v.real;
+  if (kind === 'image') {
+    const r = await readFileBinary(v.real, rel);
+    if (!r.ok) return { ok: false, error: /too large|grew past/.test(r.error) ? 'too large' : 'unreadable' };
+    return { ok: true, path: r.path, root, real: v.real, kind, bytes: r.bytes, mime: r.mime, size: r.size };
+  }
+  const r = await readFileText(v.real, rel);
+  if (!r.ok) return { ok: false, error: /too large/.test(r.error) ? 'too large' : /ENOENT|escapes/.test(r.error) ? 'not found' : 'unreadable' };
+  const tabKind = kind === 'markdown' || kind === 'json' || kind === 'csv' ? kind : 'text';
+  return { ok: true, path: r.path, root, real: v.real, kind: tabKind, text: r.content, size: r.size };
+}
+
+/** A folder macOS treats as an app or a package, by its ending or by an app's
+ *  insides: opening one launches it, so it is shown instead (owner, D12). */
+const PACKAGE_DIR_RE = /\.(app|appex|bundle|framework|plugin|prefpane|kext|xpc|saver|qlgenerator|mdimporter|pkg|mpkg|workflow|action|service|scptd|pages|numbers|key|rtfd|photoslibrary|logicx|band|playground|xcodeproj|xcworkspace|xcarchive|dsym)$/i;
+export function isPackageDir(dir: string): boolean {
+  if (PACKAGE_DIR_RE.test(dir.replace(/[\\/]+$/, ''))) return true;
+  return ['Contents/Info.plist', 'Contents/MacOS'].some((f) => existsSync(join(dir, f)));
+}

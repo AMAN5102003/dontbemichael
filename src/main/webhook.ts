@@ -74,7 +74,8 @@ export interface WebhookEndpointRef {
 export interface WebhookInbound {
   message: string;
   title?: string;
-  /** Declared by the caller when they bothered to; the handler classifies when not. */
+  /** Declared by the caller. Only 'directive' is taken as given; a 'communication'
+   *  label is checked like an unlabeled message (index.ts handleWebhookMessage). */
   kind?: InboundKind;
   /** Who is sending, for the trigger history. Falls back to the endpoint name. */
   from?: string;
@@ -241,7 +242,9 @@ export class WebhookServer {
       const server = createServer((req, res) => this.handleRequest(req, res));
       const onError = (e: Error): void => reject(e);
       server.once('error', onError);
-      server.listen(this.port, () => {
+      // This computer only (issue 102): the tunnel reaches it over loopback, and
+      // nothing else on the local network can.
+      server.listen(this.port, '127.0.0.1', () => {
         server.off('error', onError);
         this.server = server;
         resolve();
@@ -274,14 +277,14 @@ export class WebhookServer {
   }
 
   private handleRequest(req: IncomingMessage, res: ServerResponse): void {
-    // Rate limit first — cheapest possible rejection, ahead of any work.
-    if (!this.allowRequest('', RATE_LIMIT)) { json(res, 429, { ok: false, error: 'rate limited' }); return; }
     const id = readEndpointId(req);
     const endpoint = id !== null ? this.endpoints.get(id) ?? null : null;
     // Per-endpoint budget, with every unknown id sharing one bucket (see UNKNOWN_BUCKET).
     if (!this.allowRequest(endpoint ? endpoint.id : UNKNOWN_BUCKET, PER_ENDPOINT_RATE_LIMIT)) {
       json(res, 429, { ok: false, error: 'rate limited' }); return;
     }
+    // Requests already rejected by one bucket must not consume the shared budget.
+    if (!this.allowRequest('', RATE_LIMIT)) { json(res, 429, { ok: false, error: 'rate limited' }); return; }
     const method = req.method ?? '';
     if (method === 'GET') { this.handleStatus(req, res, endpoint); return; }
     if (method === 'POST') { this.handleCreate(req, res, endpoint); return; }

@@ -24,6 +24,7 @@ const { MailApprovals } = loadTs('src/main/mailApprovals.ts');
 const { standingFitPrompt, standingTooLong, STANDING_CHECK_MAX, recipientDomains, decisionMessage } = loadTs('src/shared/mailProposals.ts');
 const { ownerDock, openOwnerQuestions } = loadTs('src/shared/ownerRequests.ts');
 const { HiveManager } = loadTs('src/main/hive.ts');
+const { privateOwnerStatePath } = loadTs('src/shared/agentPrivatePaths.ts');
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 
 const server = { host: 'h', port: 993, secure: true };
@@ -306,7 +307,7 @@ test('pass 2 fixes: owner text out of the log, the owner folder is never routed,
   assert.equal(ctx.out.sends.length, 1);
 
   const main = read('src/main/index.ts');
-  assert.match(main, /cwd: \(\) => \{\n    const dir = join\(app\.getPath\('userData'\), 'standing-check'\);/);
+  assert.match(main, /cwd: \(\) => \{\n    const dir = join\(app\.getPath\('userData'\), STANDING_CHECK_DIR\);/);
   assert.match(main, /if \(saveOwnerDockKeys\(list\)\) writeConfig\(\{ ownerDockKeys: undefined \}\);/);
   assert.match(main, /mailApprovals\.waiting\(\)\.filter\(\(p\) => memberPresent\(p\.agentId\)\)/);
   assert.match(read('src/main/standingCheck.ts'), /settingSources: 'user'/);
@@ -408,12 +409,14 @@ test('Codex P3 and P2: an emptied edit is refused; a lost state file rebuilds un
   assert.equal(ctx.approvals.get(p).state, 'waiting');
   assert.deepEqual(ctx.approvals.decide(p, 'approve', {}, ''), { ok: true }, 'fields left out keep the draft');
 
-  const { hive, dir } = await office(t);
+  const { hive, home, dir } = await office(t);
   const delivered = hive.ownerAsk({ text: 'One' });
   hive.ownerDelivered(delivered.id);
   const pending = hive.ownerAsk({ text: 'Two' });
   hive.ownerWithdraw(pending.id);
-  fs.writeFileSync(path.join(dir('human'), 'state.json'), '{ broken');
+  const statePath = privateOwnerStatePath(home);
+  fs.mkdirSync(path.dirname(statePath), { recursive: true });
+  fs.writeFileSync(statePath, '{ broken');
   const view = hive.ownerConversationView(Date.now(), () => true);
   const status = Object.fromEntries(view.items.filter((i) => i.kind === 'owner').map((i) => [i.id, i.status]));
   assert.equal(status[pending.id], 'not-sent');

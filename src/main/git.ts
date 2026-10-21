@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process';
+import { lstat, realpath } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { openForRead, safeResolve } from './fs';
+import { unlinkWorktreeDeps } from './worktreeDeps';
 
 /** Run git in `cwd` with `args`. Returns stdout text or an error. */
 function runGit(cwd: string, args: string[], timeoutMs = 8000): Promise<{
@@ -266,7 +269,51 @@ export async function addWorktree(
 export async function removeWorktree(
   cwd: string, wtPath: string
 ): Promise<{ ok: boolean; error?: string }> {
-  const res = await runGit(cwd, ['worktree', 'remove', '--force', wtPath]);
+  let target = resolve(cwd, wtPath);
+  const normalize = (path: string): string => process.platform === 'win32' ? resolve(path).toLowerCase() : resolve(path);
+  // Verify registration and lock status before changing dependencies.
+  // NUL-delimited records keep spaces, Unicode and quoted paths intact.
+  const listing = await runGit(cwd, ['worktree', 'list', '--porcelain', '-z']);
+  if (!listing.ok) return { ok: false, error: listing.error };
+  const records = listing.stdout.split('\0\0').map((record) => record.split('\0'));
+  let index = records.findIndex((fields) => fields[0]?.startsWith('worktree ')
+    && normalize(fields[0].slice(9)) === normalize(target));
+  if (index < 0) {
+    // Git canonicalizes aliased parents, including macOS /var and Windows 8.3
+    // names. Compare filesystem identities when their spellings differ.
+    try {
+      const canonicalTarget = normalize(await realpath(target));
+      const canonicalPaths = await Promise.all(records.map(async (fields) => {
+        if (!fields[0]?.startsWith('worktree ')) return null;
+        try { return normalize(await realpath(fields[0].slice(9))); }
+        catch (error) {
+          const code = error instanceof Error && 'code' in error ? error.code : undefined;
+          if (code === 'ENOENT') return null; // another registered checkout may be missing
+          throw error;
+        }
+      }));
+      index = canonicalPaths.findIndex((path) => path === canonicalTarget);
+    } catch (error) { return { ok: false, error: String(error) }; }
+  }
+  if (index <= 0) return { ok: false, error: 'path is not a registered secondary worktree' };
+  if (records[index].some((field) => field === 'locked' || field.startsWith('locked '))) {
+    return { ok: false, error: 'worktree is locked' };
+  }
+  target = records[index][0].slice(9);
+  // Git for Windows traverses dependency junctions during forced removal.
+  // Detach the app-created link first; refuse foreign/dangling links rather
+  // than let recursive removal reach a directory outside this worktree.
+  const deps = await unlinkWorktreeDeps(resolve(cwd), target);
+  if (!deps.ok) return { ok: false, error: deps.error };
+  try {
+    if ((await lstat(join(target, 'node_modules'))).isSymbolicLink()) {
+      return { ok: false, error: 'worktree dependencies link to an unverified directory' };
+    }
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? error.code : undefined;
+    if (code !== 'ENOENT') return { ok: false, error: String(error) };
+  }
+  const res = await runGit(cwd, ['worktree', 'remove', '--force', target]);
   if (res.ok) return { ok: true };
   return { ok: false, error: res.error };
 }

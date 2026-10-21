@@ -23,6 +23,7 @@ import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import { simpleParser } from 'mailparser';
 import { writeFileAtomic } from './atomicFile';
+import { SECRETS_FILE_UNREADABLE } from '../shared/secretStore';
 import {
   MAIL_TOOL_OPS,
   agentMailboxes,
@@ -55,9 +56,18 @@ const SEND_TIMEOUT_MS = 60_000;
 const MX_LOOKUP_TIMEOUT_MS = 5_000;
 const SEARCH_DEFAULT = 20;
 const SEARCH_MAX = 50;
+/** How long a search's ids are kept for its next pages, and how many searches. */
+const SEARCH_KEEP_MS = 60_000;
+const SEARCHES_KEPT = 20;
 const BODY_MAX_CHARS = 50_000;
+/** A message bigger than this is read part by part, and this is the most of
+ *  its text a read downloads. Well past BODY_MAX_CHARS of any text. */
+const TEXT_PART_MAX_BYTES = 1_000_000;
 const IDLE_CLOSE_MS = 5 * 60_000;
 const SEND_MEMORY_MS = 10 * 60_000;
+/** How long a send the app stopped in the middle of stays refused. Longer than
+ *  the repeat window: whether it went out is unknown, and such sends are rare. */
+const PENDING_MEMORY_MS = 24 * 60 * 60_000;
 /** The most mail one send may forward or attach from, in all. */
 const REFERENCE_MAX_BYTES = 25 * 1024 * 1024;
 const REFERENCE_TOO_LARGE = 'That email is too large to forward or attach from (over 25 MB in all). Send a new email instead, or ask the owner to forward it.';
@@ -65,7 +75,26 @@ const REFERENCE_TOO_LARGE = 'That email is too large to forward or attach from (
 export type MailErrorKind = 'auth' | 'provider-blocked' | 'network' | 'not-found' | 'bad-request' | 'refused' | 'unsupported' | 'timeout' | 'unknown';
 
 export class MailError extends Error {
-  constructor(readonly kind: MailErrorKind, message: string) { super(message); }
+  /** `uncertain`: the server may have taken the email though the send failed
+   *  (issue 101), so it must not be sent again until Sent shows otherwise. */
+  constructor(readonly kind: MailErrorKind, message: string, readonly uncertain = false) { super(message); }
+}
+
+/** A connection that dropped or timed out after it was made: the server may
+ *  have taken the email. A server that was never reached is not uncertain
+ *  (neverReachedServer). ECONNECTION is the SMTP library's "Connection closed
+ *  unexpectedly", which can come after the server took the email. */
+const MID_SEND_DROP = new Set(['ETIMEDOUT', 'ECONNRESET', 'EPIPE', 'ESOCKET', 'ECONNECTION']);
+
+/** A failure before the mail server took anything: the connection was never
+ *  made (refused, no such host, timed out connecting) or the server never said
+ *  hello. The SMTP library tags every socket error and timeout as the
+ *  connection phase, so the original connect error and its own messages for
+ *  these two timeouts are what tell them apart. */
+export function neverReachedServer(e: unknown): boolean {
+  const err = e as { syscall?: unknown; message?: unknown } | null;
+  if (err?.syscall === 'connect' || err?.syscall === 'getaddrinfo') return true;
+  return typeof err?.message === 'string' && /^(Connection timeout|Greeting never received)\b/.test(err.message);
 }
 
 /** The slice of ImapFlow this module uses (so tests can inject a fake). */
@@ -83,7 +112,59 @@ export interface ImapLike {
   messageFlagsAdd?(range: string | number[], flags: string[], opts?: { uid?: boolean; useLabels?: boolean }): Promise<unknown>;
   messageMove?(range: string | number[], destination: string, opts?: { uid?: boolean }): Promise<unknown>;
   mailboxCreate?(path: string): Promise<unknown>;
+  /** One body part, decoded, as UTF-8 for text (ImapFlow). Optional so a
+   *  client without it reads whole messages. */
+  download?(range: string | number, part?: string, options?: { uid?: boolean; maxBytes?: number }): Promise<{ content?: AsyncIterable<Buffer | string> }>;
   on?(event: string, fn: (...a: any[]) => void): unknown;
+}
+
+/** A node of a message's BODYSTRUCTURE, as ImapFlow parses it. */
+interface BodyNode {
+  part?: string;
+  type?: string;
+  parameters?: Record<string, string>;
+  encoding?: string;
+  size?: number;
+  disposition?: string;
+  dispositionParameters?: Record<string, string>;
+  childNodes?: BodyNode[];
+}
+
+/** Body text as mailparser sees it: an inline plain or HTML part. Anything
+ *  else is an attachment. */
+const isBodyText = (n: BodyNode): boolean =>
+  (n.type === 'text/plain' || n.type === 'text/html') && (!n.disposition || n.disposition === 'inline');
+
+/** The parts a read shows, in order, like a whole-message parse: every body
+ *  text part, and from an alternative only its plain one (else its last). */
+function bodyPartsOf(root: BodyNode): BodyNode[] {
+  const out: BodyNode[] = [];
+  const walk = (n: BodyNode): void => {
+    if (n.type === 'message/rfc822') return;
+    if (!n.childNodes?.length) { if (isBodyText(n)) out.push(n); return; }
+    if (n.type === 'multipart/alternative') {
+      const plain = n.childNodes.find((child) => child.type === 'text/plain' && isBodyText(child));
+      if (plain) out.push(plain); else walk(n.childNodes[n.childNodes.length - 1]);
+      return;
+    }
+    n.childNodes.forEach(walk);
+  };
+  walk(root);
+  return out;
+}
+
+/** Attachment names and sizes from the structure, without downloading any.
+ *  Base64 is counted back to bytes (wrapped at 76 characters plus CRLF). */
+function attachmentsOf(root: BodyNode): Array<{ name: string; size: number }> {
+  const out: Array<{ name: string; size: number }> = [];
+  const walk = (n: BodyNode): void => {
+    if (n.childNodes?.length && n.type !== 'message/rfc822') { n.childNodes.forEach(walk); return; }
+    if (isBodyText(n)) return;
+    const size = n.size ?? 0;
+    out.push({ name: n.dispositionParameters?.filename || n.parameters?.name || 'attachment', size: n.encoding === 'base64' ? Math.floor((size - 2 * Math.floor(size / 78)) * 3 / 4) : size });
+  };
+  walk(root);
+  return out;
 }
 
 /**
@@ -176,6 +257,8 @@ export interface MailDeps {
   log?(line: string): void;
   /** Where the sends of the last SEND_MEMORY_MS are kept on disk, so a repeat
    *  after a restart still gets the first result back instead of a second email.
+   *  A send is written here before the server sees it, so one the app stopped
+   *  in the middle of is not sent a second time either (for PENDING_MEMORY_MS).
    *  Without it the record lives in memory only. */
   journalPath?: string;
 }
@@ -202,7 +285,9 @@ export function classifyMailError(e: unknown): MailError {
   if (/application-specific password required|web login required|basic auth(entication)? (is )?(disabled|blocked)|app passwords? (are |is )?(not allowed|disabled)|please log ?in via your web browser/i.test(text)) {
     return new MailError('provider-blocked', 'This provider no longer accepts the app password for this mailbox.');
   }
-  if (err?.authenticationFailed || err?.code === 'EAUTH' || /AUTHENTICATIONFAILED|invalid credentials|authentication failed|535/i.test(text)) {
+  // 535 is the SMTP reply code for a refused login. It counts only as a reply
+  // code, never inside an address or a number a rejection quotes (ann1535@...).
+  if (err?.authenticationFailed || err?.code === 'EAUTH' || /AUTHENTICATIONFAILED|invalid credentials|authentication failed|(?:^|\s)535[\s-]/i.test(text)) {
     return new MailError('auth', "The mailbox didn't accept that password. Check it's an app password, not your normal one.");
   }
   if (['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH', 'ESOCKET', 'ECONNECTION', 'EPIPE', 'NoConnection'].includes(err?.code ?? '')) {
@@ -247,7 +332,13 @@ export interface ComposeInput {
   thread?: ThreadHeaders;
 }
 
-interface OpenBox { client: ImapLike; timer?: ReturnType<typeof setTimeout> }
+interface OpenBox {
+  client: ImapLike;
+  /** Shared by every caller until this mailbox's login finishes. */
+  ready?: Promise<ImapLike>;
+  cancelled?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+}
 
 export class MailService {
   private readonly boxes = new Map<string, OpenBox>();
@@ -255,9 +346,16 @@ export class MailService {
    *  config on every tool call. */
   private readonly lastStatus = new Map<string, 'connected' | 'needs-attention'>();
   private readonly sent = new Map<string, { at: number; result: { messageId: string } }>();
+  /** Sends handed to the server whose answer has not come back, saved before
+   *  the server sees them. Outside a running send, one is left over from a run
+   *  that stopped mid-send: it may have gone out, so it is not sent again. */
+  private readonly pending = new Map<string, { at: number; messageId: string }>();
   /** Sends in progress by the same key, so an identical send that overlaps
    *  waits for the first and gets its result instead of sending again. */
   private readonly inFlight = new Map<string, Promise<{ sent: boolean; messageId: string }>>();
+  /** Recent searches' ids, newest first, so a later page doesn't search the
+   *  whole folder again. Page one always searches. */
+  private readonly searches = new Map<string, { mailbox: string; at: number; uids: number[] }>();
   private readonly createImap: NonNullable<MailDeps['createImap']>;
   private readonly createSmtp: NonNullable<MailDeps['createSmtp']>;
   private readonly resolveMx: NonNullable<MailDeps['resolveMx']>;
@@ -277,9 +375,11 @@ export class MailService {
       const raw = JSON.parse(readFileSync(this.deps.journalPath, 'utf8'));
       if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
         const now = Date.now();
-        for (const [k, v] of Object.entries(raw as Record<string, { at?: number; messageId?: string }>)) {
+        for (const [k, v] of Object.entries(raw as Record<string, { at?: number; messageId?: string; pending?: boolean }>)) {
           if (v && typeof v.at === 'number' && typeof v.messageId === 'string') {
-            if (now - v.at <= SEND_MEMORY_MS) {
+            if (v.pending === true) {
+              if (now - v.at <= PENDING_MEMORY_MS) this.pending.set(k, { at: v.at, messageId: v.messageId });
+            } else if (now - v.at <= SEND_MEMORY_MS) {
               this.sent.set(k, { at: v.at, result: { messageId: v.messageId } });
             }
           }
@@ -288,18 +388,24 @@ export class MailService {
     } catch { /* best-effort */ }
   }
 
-  private saveJournal(): void {
-    if (!this.deps.journalPath) return;
+  /** False only when the journal could not be written. */
+  private saveJournal(): boolean {
+    if (!this.deps.journalPath) return true;
     try {
-      const data: Record<string, { at: number; messageId: string }> = {};
+      const data: Record<string, { at: number; messageId: string; pending?: true }> = {};
       for (const [k, v] of this.sent) {
         data[k] = { at: v.at, messageId: v.result.messageId };
       }
+      for (const [k, v] of this.pending) {
+        data[k] = { at: v.at, messageId: v.messageId, pending: true };
+      }
       writeFileAtomic(this.deps.journalPath, JSON.stringify(data, null, 2), 0o600);
-    } catch { /* best-effort */ }
+      return true;
+    } catch { return false; }
   }
 
   private recordSent(key: string, at: number, messageId: string): void {
+    this.pending.delete(key);
     this.sent.set(key, { at, result: { messageId } });
     this.saveJournal();
   }
@@ -333,24 +439,44 @@ export class MailService {
 
   private async imap(id: string): Promise<ImapLike> {
     const open = this.boxes.get(id);
+    if (open?.ready) return open.ready;
     if (open && open.client.usable !== false) { this.touch(id, open); return open.client; }
     if (open) this.drop(id);
     const rec = this.record(id);
     const client = this.createImap(rec.imap, rec.address, this.password(id));
-    client.on?.('error', () => this.drop(id));
-    client.on?.('close', () => this.drop(id));
-    try {
-      await withTimeout(client.connect(), CALL_TIMEOUT_MS, 'Connecting to the mailbox');
-    } catch (e) {
-      // A failed login leaves a half-open socket: close it, or every failed
-      // attempt leaks a connection.
-      try { client.close?.(); } catch { /* already gone */ }
-      throw e;
-    }
+    // A replaced socket can finish closing after its successor connects.
+    // Only the client still held for this mailbox may drop that connection.
+    const disconnected = (): void => {
+      if (this.boxes.get(id)?.client === client) this.drop(id);
+    };
+    client.on?.('error', disconnected);
+    client.on?.('close', disconnected);
     const box: OpenBox = { client };
+    const requireCurrent = (): void => {
+      if (this.boxes.get(id) !== box) throw new MailError('refused', 'The mailbox connection was closed. Try again.');
+    };
+    // Own the pending socket before yielding, so concurrent calls wait for it
+    // and close/closeAll can cancel it just like an established connection.
     this.boxes.set(id, box);
-    this.touch(id, box);
-    return client;
+    box.ready = withTimeout(Promise.resolve().then(() => {
+      requireCurrent();
+      return client.connect();
+    }), CALL_TIMEOUT_MS, 'Connecting to the mailbox').then(() => {
+      requireCurrent(); // A late login must never resurrect a closed socket.
+      box.ready = undefined;
+      this.touch(id, box);
+      return client;
+    }).catch((e: unknown) => {
+      if (this.boxes.get(id) === box) {
+        this.boxes.delete(id);
+        // A failed login leaves a half-open socket. A box already removed by
+        // close or a disconnect event has had its socket closed there.
+        try { client.close?.(); } catch { /* already gone */ }
+      }
+      if (box.cancelled) throw new MailError('refused', 'The mailbox connection was closed. Try again.');
+      throw e;
+    });
+    return box.ready;
   }
 
   private touch(id: string, box: OpenBox): void {
@@ -359,24 +485,31 @@ export class MailService {
     (box.timer as { unref?: () => void }).unref?.();
   }
 
-  private drop(id: string): void {
+  private drop(id: string, expected?: ImapLike): void {
     const box = this.boxes.get(id);
-    if (!box) return;
+    if (!box || (expected && box.client !== expected)) return;
     this.boxes.delete(id);
     if (box.timer) clearTimeout(box.timer);
-    box.client.logout().catch(() => box.client.close?.());
+    if (box.ready && box.client.close) {
+      try { box.client.close(); } catch { /* already gone */ }
+    } else box.client.logout().catch(() => box.client.close?.());
   }
 
   /** Close every connection (app quit, reset, mailbox removed). */
-  closeAll(): void { for (const id of [...this.boxes.keys()]) this.drop(id); }
-  close(id: string): void { this.drop(id); }
+  closeAll(): void { for (const id of [...this.boxes.keys()]) this.close(id); }
+  close(id: string): void {
+    const box = this.boxes.get(id);
+    if (box?.ready) box.cancelled = true;
+    this.drop(id);
+  }
 
   /** Run `fn` with the folder locked; one reconnect after a dropped socket
    *  (sleep and wake), then a classified error. */
   private async inFolder<T>(id: string, folder: (c: ImapLike) => Promise<string>, fn: (c: ImapLike, path: string) => Promise<T>, what: string): Promise<T> {
     for (let attempt = 0; attempt < 2; attempt++) {
+      let client: ImapLike | undefined;
       try {
-        const client = await this.imap(id);
+        client = await this.imap(id);
         const path = await folder(client);
         const lock = await withTimeout(client.getMailboxLock(path), CALL_TIMEOUT_MS, what);
         try {
@@ -386,8 +519,10 @@ export class MailService {
         } finally { lock.release(); }
       } catch (e) {
         const err = classifyMailError(e);
-        if (err.kind === 'network' && attempt === 0) { this.drop(id); continue; }
-        if (err.kind === 'network' || err.kind === 'timeout') this.drop(id);
+        // Acquisition failures clean up their own pending socket in imap.
+        // An older operation must not drop a replacement another caller owns.
+        if (err.kind === 'network' && attempt === 0) { if (client) this.drop(id, client); continue; }
+        if ((err.kind === 'network' || err.kind === 'timeout') && client) this.drop(id, client);
         this.note(id, err);
         throw err;
       }
@@ -453,17 +588,19 @@ export class MailService {
       if (!Object.keys(query).length) query.all = true;
       // Never the owner's unsent drafts: Gmail's All Mail (the archive) holds them too.
       query.draft = false;
-      const uids = (await c.search(query, { uid: true })) || [];
-      const newest = [...uids].sort((a, b) => b - a);
+      const newest = await this.searchIds(c, id, key, query, page);
       const slice = newest.slice(page * limit, page * limit + limit);
       const messages: Array<{ id: string; from: string; subject: string; date: string; unread: boolean }> = [];
       if (slice.length) {
         for await (const m of c.fetch(slice, { uid: true, envelope: true, flags: true }, { uid: true })) {
+          // imapflow hands back the raw header text when it cannot read a date,
+          // and toISOString throws on that, failing the whole search over one email.
+          const sent = m.envelope?.date ? new Date(m.envelope.date) : null;
           messages.push({
             id: messageIdFor(key, m.uid),
             from: addrText(m.envelope?.from),
             subject: m.envelope?.subject ?? '',
-            date: m.envelope?.date ? new Date(m.envelope.date).toISOString() : '',
+            date: sent && !Number.isNaN(sent.getTime()) ? sent.toISOString() : '',
             unread: !(m.flags instanceof Set ? m.flags.has('\\Seen') : false)
           });
         }
@@ -480,6 +617,21 @@ export class MailService {
     }, 'Searching the mailbox');
   }
 
+  /** The ids a query matches, newest first. A later page reuses what its
+   *  first page found, for up to SEARCH_KEEP_MS. */
+  private async searchIds(c: ImapLike, id: string, key: FolderKey, query: Record<string, unknown>, page: number): Promise<number[]> {
+    const now = Date.now();
+    for (const [k, v] of this.searches) if (now - v.at > SEARCH_KEEP_MS) this.searches.delete(k);
+    const cacheKey = JSON.stringify([id, key, query]);
+    const kept = this.searches.get(cacheKey);
+    if (page > 0 && kept) return kept.uids;
+    const uids = [...((await c.search(query, { uid: true })) || [])].sort((a, b) => b - a);
+    this.searches.delete(cacheKey);
+    this.searches.set(cacheKey, { mailbox: id, at: now, uids });
+    if (this.searches.size > SEARCHES_KEPT) this.searches.delete(this.searches.keys().next().value!);
+    return uids;
+  }
+
   /**
    * Inbox zero (owner, 2026-10-03): take messages out of the inbox without
    * deleting any. `archive` marks them read and moves them to the archive, or,
@@ -490,6 +642,8 @@ export class MailService {
    */
   async organize(id: string, action: 'archive' | 'mark_read' | 'mark_junk', uids: number[], label?: string) {
     if (!uids.length) throw new MailError('bad-request', `${action} needs the message ids from search.`);
+    // Moved or marked mail changes what a search finds: search again.
+    for (const [k, v] of this.searches) if (v.mailbox === id) this.searches.delete(k);
     return this.inFolder(id, MailService.inbox, async (c) => {
       if (!c.messageFlagsAdd || !c.messageMove) throw new MailError('unsupported', 'This mailbox cannot move messages.');
       // Only the asked-for ids are searched, not the whole inbox.
@@ -558,7 +712,13 @@ export class MailService {
       if (head && typeof head.size === 'number' && head.size > maxBytes) throw new MailError('bad-request', REFERENCE_TOO_LARGE);
     }
     const m = await c.fetchOne(uid, { uid: true, source: true, flags: true }, { uid: true });
-    if (!m || !m.source) {
+    MailService.checkReadable(m && m.source ? m : false, uid, key);
+    return Buffer.isBuffer(m.source) ? m.source : Buffer.from(m.source);
+  }
+
+  /** Throws unless the fetched message is there and isn't a draft. */
+  private static checkReadable(m: { flags?: unknown } | false | null | undefined, uid: string, key: FolderKey): void {
+    if (!m) {
       // A plain number is an inbox id, and mail leaves the inbox when it is
       // archived. Say where to look, so an agent searches the archive instead of
       // deciding archived mail is out of reach (owner, 2026-10-04: Pam read an
@@ -570,25 +730,79 @@ export class MailService {
     // A draft is the owner's own unsent words, whichever folder holds it.
     const flags: Set<string> = m.flags instanceof Set ? m.flags : new Set(Array.isArray(m.flags) ? m.flags : []);
     if (flags.has('\\Draft')) throw new MailError('bad-request', 'That message is an unsent draft, which the team does not read.');
-    return Buffer.isBuffer(m.source) ? m.source : Buffer.from(m.source);
   }
 
   async read(id: string, messageId: string) {
     const { key, uid } = parseMessageId(messageId);
     return this.inFolder(id, MailService.folderOf(key), async (c) => {
-      const parsed = await simpleParser(await this.source(c, uid, key));
-      let text = parsed.text ?? (typeof parsed.html === 'string' ? parsed.html.replace(/<[^>]+>/g, ' ') : '') ?? '';
-      const truncated = text.length > BODY_MAX_CHARS;
-      if (truncated) text = `${text.slice(0, BODY_MAX_CHARS)}\n\n[message cut at ${BODY_MAX_CHARS} characters]`;
+      if (!c.download) return this.readWhole(c, uid, key, messageId);
+      // The structure first. A small message is read whole, as before; a big
+      // one downloads only its body text, never the attachments.
+      const m = await c.fetchOne(uid, { uid: true, flags: true, size: true, envelope: true, bodyStructure: true }, { uid: true });
+      MailService.checkReadable(m, uid, key);
+      if (!m.bodyStructure || !m.envelope || !(m.size > TEXT_PART_MAX_BYTES)) return this.readWhole(c, uid, key, messageId);
+      let body: { text: string; cut: boolean };
+      try {
+        body = await this.bodyText(c, uid, bodyPartsOf(m.bodyStructure));
+      } catch (err) {
+        // A server that won't send a part can still send the whole message.
+        if (['network', 'timeout', 'auth'].includes(classifyMailError(err).kind)) throw err;
+        return this.readWhole(c, uid, key, messageId);
+      }
+      let { text } = body;
+      const truncated = text.length > BODY_MAX_CHARS || body.cut;
+      if (text.length > BODY_MAX_CHARS) text = `${text.slice(0, BODY_MAX_CHARS)}\n\n[message cut at ${BODY_MAX_CHARS} characters]`;
+      else if (body.cut) text = `${text}\n\n[message cut]`;
+      const e = m.envelope;
+      const date = e.date ? new Date(e.date) : null;
       return {
         id: messageId,
-        from: addrText(parsed.from), to: addrText(parsed.to), cc: addrText(parsed.cc),
-        subject: parsed.subject ?? '', date: parsed.date ? parsed.date.toISOString() : '',
-        messageId: parsed.messageId ?? '',
+        from: addrText(e.from), to: addrText(e.to), cc: addrText(e.cc),
+        subject: e.subject ?? '', date: date && !Number.isNaN(date.getTime()) ? date.toISOString() : '',
+        messageId: e.messageId ?? '',
         text, truncated,
-        attachments: (parsed.attachments ?? []).map((a) => ({ name: a.filename ?? 'attachment', size: a.size }))
+        attachments: attachmentsOf(m.bodyStructure)
       };
     }, 'Reading the message');
+  }
+
+  /** The body parts decoded to UTF-8 and joined the way mailparser joins them,
+   *  downloading TEXT_PART_MAX_BYTES at most. It stops once there's more text
+   *  than a read shows. */
+  private async bodyText(c: ImapLike, uid: string, parts: BodyNode[]): Promise<{ text: string; cut: boolean }> {
+    const texts: string[] = [];
+    let used = 0;
+    let cut = false;
+    for (const node of parts) {
+      const max = TEXT_PART_MAX_BYTES - used;
+      if (max <= 0 || texts.join('\n').length > BODY_MAX_CHARS) break;
+      const { content } = await c.download!(uid, node.part || '1', { uid: true, maxBytes: max });
+      const chunks: Buffer[] = [];
+      if (content) for await (const chunk of content) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      const raw = Buffer.concat(chunks);
+      if (raw.length >= max) cut = true;
+      used += raw.length;
+      texts.push(node.type === 'text/html'
+        ? (await simpleParser(Buffer.concat([Buffer.from('Content-Type: text/html; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n'), raw]))).text ?? ''
+        : raw.toString('utf8').replace(/\r\n?/g, '\n'));
+    }
+    return { text: texts.join('\n'), cut };
+  }
+
+  /** A read of the whole message: a small one, or a client that can't fetch parts. */
+  private async readWhole(c: ImapLike, uid: string, key: FolderKey, messageId: string) {
+    const parsed = await simpleParser(await this.source(c, uid, key));
+    let text = parsed.text ?? (typeof parsed.html === 'string' ? parsed.html.replace(/<[^>]+>/g, ' ') : '') ?? '';
+    const truncated = text.length > BODY_MAX_CHARS;
+    if (truncated) text = `${text.slice(0, BODY_MAX_CHARS)}\n\n[message cut at ${BODY_MAX_CHARS} characters]`;
+    return {
+      id: messageId,
+      from: addrText(parsed.from), to: addrText(parsed.to), cc: addrText(parsed.cc),
+      subject: parsed.subject ?? '', date: parsed.date ? parsed.date.toISOString() : '',
+      messageId: parsed.messageId ?? '',
+      text, truncated,
+      attachments: (parsed.attachments ?? []).map((a) => ({ name: a.filename ?? 'attachment', size: a.size }))
+    };
   }
 
   /** Build the MIME for a draft or send. References are fetched here, from the
@@ -665,14 +879,46 @@ export class MailService {
         pruned = true;
       }
     }
+    for (const [k, v] of this.pending) {
+      if (now - v.at > PENDING_MEMORY_MS) {
+        this.pending.delete(k);
+        pruned = true;
+      }
+    }
     if (pruned) this.saveJournal();
     const prior = this.sent.get(key);
     if (prior) return { ...prior.result, sent: true, repeated: true };
     const running = this.inFlight.get(key);
     if (running) return { ...(await running), repeated: true };
-    const attempt = this.sendOnce(key, now, id, input, beforeSmtp);
+    // Not running, yet saved as handed to the server: the app stopped in the
+    // middle of this send, so it is looked for in Sent instead of sent again.
+    const left = this.pending.get(key);
+    const attempt = left ? this.settleInterrupted(key, id, left) : this.sendOnce(key, now, id, input, beforeSmtp);
     this.inFlight.set(key, attempt);
     try { return await attempt; } finally { this.inFlight.delete(key); }
+  }
+
+  /** A send the app stopped in the middle of: if its Message-ID is in Sent, the
+   *  server took it and the first result comes back. That is not marked
+   *  repeated: the stopped run never got to record the send (grant, standing
+   *  approval, office log), so this caller records it once. If it is not in
+   *  Sent, it may still have gone out (only Gmail files sent mail itself; for
+   *  the rest the app adds the copy after the server answers), so it is refused. */
+  private async settleInterrupted(key: string, id: string, left: { at: number; messageId: string }): Promise<{ sent: boolean; messageId: string }> {
+    const mayHaveGone = 'This email may already have gone out: sending it was interrupted, and it is not in Sent yet. Do not send it again; tell Michael, so the owner can check with the recipient.';
+    let found: boolean;
+    try { found = await this.inSent(id, left.messageId); } catch (e) {
+      const err = classifyMailError(e);
+      // Only a passing problem is worth another try; any other leaves it unknown.
+      if (err.kind === 'network' || err.kind === 'timeout') {
+        throw new MailError(err.kind, `Not sent now. Sending this email was interrupted before, and Sent could not be checked for it: ${err.message} Try again in a moment.`);
+      }
+      throw new MailError('refused', mayHaveGone);
+    }
+    if (!found) throw new MailError('refused', mayHaveGone);
+    // The repeat window starts now: the stop may have been long before.
+    this.recordSent(key, Date.now(), left.messageId);
+    return { sent: true, messageId: left.messageId };
   }
 
   private async sendOnce(key: string, now: number, id: string, input: ComposeInput, beforeSmtp?: () => string | null): Promise<{ sent: boolean; messageId: string }> {
@@ -683,6 +929,10 @@ export class MailService {
     if (stop) throw new MailError('refused', `Not sent. ${stop}`);
     const smtp = this.createSmtp(rec.smtp, rec.address, this.password(id));
     try {
+      // Saved before the server sees it, so a stop before its answer never
+      // leads to a second copy. If that can't be saved, nothing goes out.
+      this.pending.set(key, { at: now, messageId });
+      if (!this.saveJournal()) throw new MailError('unknown', 'The app could not record this send before sending it. Try again in a moment.');
       await withTimeout(smtp.sendMail(msg), SEND_TIMEOUT_MS, 'Sending');
     } catch (e) {
       const err = classifyMailError(e);
@@ -690,7 +940,18 @@ export class MailService {
         // The server may have accepted it before the line dropped: look in Sent.
         const found = await this.inSent(id, messageId).catch(() => false);
         if (found) { this.recordSent(key, now, messageId); return { sent: true, messageId }; }
+        // Not in Sent yet, but a drop mid-send may still have delivered it
+        // (issue 101): it stays recorded as pending, so a repeat is checked in
+        // Sent instead of sent, and an approved card stays sending.
+        const code = (e as { code?: unknown } | null)?.code;
+        if ((err.kind === 'timeout' || (typeof code === 'string' && MID_SEND_DROP.has(code))) && !neverReachedServer(e)) {
+          this.note(id, err);
+          throw new MailError(err.kind, 'This email may already have gone out: the connection dropped before the mail server answered, and it is not in Sent yet. Do not send it again; tell Michael, so the owner can check Sent.', true);
+        }
       }
+      // Reported as not sent, so a retry may send it.
+      this.pending.delete(key);
+      this.saveJournal();
       this.note(id, err);
       throw new MailError(err.kind, `Not sent. ${err.message}`);
     } finally { smtp.close?.(); }
@@ -815,14 +1076,37 @@ function ref(v: unknown): MailRef | undefined {
   return typeof o.mailbox === 'string' && (typeof o.id === 'string' || typeof o.id === 'number') ? { mailbox: o.mailbox, id: String(o.id) } : undefined;
 }
 
+type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean };
+
 /**
  * One md-mail tool call, already authenticated by the broker token (so `agentId`
  * is trusted). Checks `mailAccess` for the op, MB-8 for references, then runs it.
  * Never throws: every outcome is a status and a JSON body the MCP server relays.
+ *
+ * Each call writes one line to `deps.log` (multi-mailbox.md §8): agent, mailbox,
+ * operation, result and duration. Ids only, never a recipient, subject or body.
  */
 export async function handleMailRequest(
   svc: MailService,
-  deps: Pick<MailDeps, 'getConfig'> & { audit?: (event: Record<string, unknown>) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean },
+  deps: MailRequestDeps,
+  agentId: string,
+  op: string,
+  body: Record<string, unknown>
+): Promise<MailRequestResult> {
+  const started = Date.now();
+  const res = await runMailRequest(svc, deps, agentId, op, body);
+  try {
+    // The mailbox and op come from the agent: keep them to one plain token each.
+    const mailbox = (str(body.mailbox, 100) ?? '-').replace(/[^\w.@-]/g, '?');
+    const kind = typeof res.body.kind === 'string' ? ` ${res.body.kind}` : '';
+    deps.log?.(`[mail] ${agentId} ${mailbox} ${Object.prototype.hasOwnProperty.call(MAIL_TOOL_OPS, op) ? op : 'unknown'} ${res.status}${kind} ${Date.now() - started}ms`);
+  } catch { /* the call stands */ }
+  return res;
+}
+
+async function runMailRequest(
+  svc: MailService,
+  deps: MailRequestDeps,
   agentId: string,
   op: string,
   body: Record<string, unknown>
@@ -840,7 +1124,22 @@ export async function handleMailRequest(
     refs: { forward: !!ref(body.forward), attachFrom: !!attachRefs?.length },
     present: deps.present
   });
-  if (!access.ok) return { status: 403, body: { error: access.reason } };
+  if (!access.ok) {
+    try {
+      deps.audit?.({
+        kind: 'mail-access-denied',
+        agentId,
+        mailbox: mailbox ?? null,
+        operation: op,
+        outcome: 'denied',
+        timestamp: new Date().toISOString()
+      });
+    } catch {
+      // Audit logging must not expose details or alter the refusal.
+    }
+
+    return { status: 403, body: { error: access.reason } };
+  }
   // A Send only grant on the named mailbox (shared-mailboxes.md).
   const grant = sendOnlyGrant(cfg, agentId);
   const underGrant = !!grant && !!mailbox && grant.mailbox === mailbox;
@@ -964,7 +1263,11 @@ export async function handleMailRequest(
         return a.ok ? null : a.reason;
       };
       try { out = await svc.send(agentId, mailbox!, approved, stillSendable); } catch (e) {
-        try { deps.proposals.unmarkSending(p!.id); } catch { /* stays sending: never resent */ }
+        // A send that may have gone out keeps the card sending, so it is never
+        // sent a second time (issue 101); any other failure returns it to approved.
+        if (!(e instanceof MailError && e.uncertain)) {
+          try { deps.proposals.unmarkSending(p!.id); } catch { /* stays sending: never resent */ }
+        }
         throw e;
       } finally { sendingProposals.delete(p!.id); }
       // The email is out: bookkeeping that fails is logged, never reported as a failed send.
@@ -1113,7 +1416,8 @@ export interface MailAdminDeps {
   getConfig(): MailAccessConfig & { mailboxes?: MailboxRecord[] };
   saveConfig(patch: { mailboxes?: MailboxRecord[]; agentCapabilities?: MailAccessConfig['agentCapabilities'] }): void;
   setSecret(ref: string, value: string): { ok: boolean; error?: string };
-  deleteSecret(ref: string): void;
+  /** False when the secret may still be stored (the file could not be read or written). */
+  deleteSecret(ref: string): boolean;
   /** A Send only grant ended: withdraw its emails, revoke its standing
    *  approvals (D13). Optional so tests can leave it out. */
   endGrant?(agentId: string, mailbox: string, reason: string): void;
@@ -1124,6 +1428,30 @@ export interface MailAdminDeps {
   sendingChanged?(agentId: string, mailbox: string, address: string, sending: SendingMode, handBack: boolean): void;
   /** Whether a team member is on the roster, for a grant's pause. Absent: assumed. */
   present?(agentId: string): boolean;
+  /** Whether this computer can encrypt a password right now. Absent: assumed. */
+  canStoreSecrets?(): boolean;
+}
+
+/** What the owner reads when the password could not be kept encrypted on this
+ *  computer: the OS secret store (Keychain, DPAPI, or a Linux keyring) is
+ *  unavailable or refused. Says what to do, never the raw error. */
+/** Why a password that passed the encryption check was still not saved: the
+ *  keychain went away meanwhile, or the secrets file is damaged (its own plain
+ *  words), or anything else. Never the raw error, which goes to the log. */
+function storeFailedReason(admin: MailAdminDeps, error: string | undefined): string {
+  if (admin.canStoreSecrets && !admin.canStoreSecrets()) return cannotStoreReason();
+  if (error === SECRETS_FILE_UNREADABLE) return error;
+  return "Couldn't store the password securely on this computer, so nothing was saved. Try again.";
+}
+
+export function cannotStoreReason(platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'darwin') {
+    return 'This Mac could not store the password safely in its keychain, so nothing was saved. If macOS asks whether this app may use your keychain, choose Allow. Then try again, and restart the Mac if it keeps happening.';
+  }
+  if (platform === 'linux') {
+    return 'This computer could not store the password safely because no keyring is unlocked, so nothing was saved. Set up a keyring such as GNOME Keyring or KWallet, unlock it, then try again.';
+  }
+  return 'This computer could not store the password safely, so nothing was saved. Restart the computer, then try again.';
 }
 
 export interface AddMailboxInput {
@@ -1154,13 +1482,19 @@ export async function saveMailbox(svc: MailService, admin: MailAdminDeps, preset
   if (existing.some((m) => m.address.toLowerCase() === address.toLowerCase() && m.id !== fixing?.id)) {
     return { ok: false, kind: 'invalid', reason: `${address} is already connected.` };
   }
+  // A password this computer cannot encrypt is never saved, so say so before
+  // logging in to the provider, not after a test that worked.
+  if (admin.canStoreSecrets && !admin.canStoreSecrets()) return { ok: false, kind: 'unsupported', reason: cannotStoreReason() };
   const password = input.password.replace(/\s+/g, '');
   const tested = await svc.test({ address, imap, smtp }, password);
   if (!tested.ok) return { ok: false, kind: tested.kind, reason: tested.reason };
 
   const id = fixing ? fixing.id : mailboxIdFor(address, existing.map((m) => m.id));
   const stored = admin.setSecret(secretRefForMailbox(id), password);
-  if (!stored.ok) return { ok: false, kind: 'unknown', reason: stored.error ?? "Couldn't store the password securely on this Mac." };
+  if (!stored.ok) {
+    console.error('[mail] password not stored:', id, stored.error);
+    return { ok: false, kind: 'unknown', reason: storeFailedReason(admin, stored.error) };
+  }
   const now = Date.now();
   const prior = existing.find((m) => m.id === id);
   const record: MailboxRecord = { id, address, provider: input.provider, imap, smtp, status: 'connected', createdAt: prior?.createdAt ?? now, updatedAt: now };
@@ -1200,7 +1534,7 @@ export function removeMailbox(svc: MailService, admin: MailAdminDeps, id: string
   for (const agentId of ended) {
     try { admin.endGrant?.(agentId, id, `${address} was removed in Settings.`); } catch (e) { console.error('[mail] end grant:', e); }
   }
-  admin.deleteSecret(secretRefForMailbox(id));
+  if (admin.deleteSecret(secretRefForMailbox(id)) === false) console.error('[mail] the mailbox was removed, but its saved password could not be:', id);
   svc.close(id);
   return { ok: true, affected };
 }

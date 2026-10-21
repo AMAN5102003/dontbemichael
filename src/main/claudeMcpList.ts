@@ -5,10 +5,11 @@
  * checks every server, so it takes a few seconds; it runs in the background at
  * app start, when the owner opens Connections, and on Refresh.
  */
-import { execFile } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { homedir } from 'node:os';
 import { buildPtyEnv } from './ptyEnv';
 import { buildCmdCommandLine, type ProcessLaunch } from './pty';
+import { hardKillTree } from './procKill';
 import { userShellPath } from './shellEnv';
 import { parseMcpList, type McpList } from '../shared/claudeConnectors';
 
@@ -40,8 +41,14 @@ export function mcpListLaunch(platform: NodeJS.Platform, binPath: string, comSpe
  *  fails its health check; older versions exited non-zero while still printing
  *  the list, so the output is read whenever there is some and the run is marked
  *  incomplete. A run killed at the time limit printed only part of the list, so
- *  it is reported as timed out. */
-function runMcpList(binPath: string): Promise<{ stdout: string; failed: boolean; timedOut: boolean }> {
+ *  it is reported as timed out.
+ *
+ *  The time limit stops the whole process tree, not just the direct child:
+ *  that child is cmd.exe for a Windows npm install, and `claude` starts every
+ *  MCP server the owner has, so execFile's own timeout left them running. Off
+ *  Windows the run leads its own process group (spawn, since execFile drops
+ *  `detached`), which hardKillTree stops. */
+function runMcpList(binPath: string, timeoutMs: number): Promise<{ stdout: string; failed: boolean; timedOut: boolean }> {
   // Never read the account with connectors switched off: that flag is for agents.
   const env = buildPtyEnv(process.env, process.platform === 'win32' ? (process.env.PATH ?? '') : userShellPath());
   delete env.ENABLE_CLAUDEAI_MCP_SERVERS;
@@ -49,16 +56,33 @@ function runMcpList(binPath: string): Promise<{ stdout: string; failed: boolean;
   // server of the owner's never turns every read into a timeout.
   env.MCP_TIMEOUT = env.MCP_TIMEOUT || '10000';
   return new Promise((resolve) => {
+    let stdout = '';
+    let timedOut = false;
+    let timer: NodeJS.Timeout | undefined;
+    let settled = false;
+    const done = (failed: boolean, signal?: NodeJS.Signals | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ stdout, failed, timedOut: timedOut || !!signal });
+    };
+    let child: ChildProcess;
     try {
       const launch = mcpListLaunch(process.platform, binPath, process.env.ComSpec || 'cmd.exe');
-      execFile(launch.file, launch.args, { timeout: 30_000, encoding: 'utf8', cwd: homedir(), env, windowsVerbatimArguments: launch.windowsVerbatimArguments }, (err, stdout) => {
-        const e = err as (NodeJS.ErrnoException & { killed?: boolean; signal?: string | null }) | null;
-        resolve({ stdout: String(stdout ?? ''), failed: !!e, timedOut: !!(e && (e.killed || e.signal)) });
-      });
+      child = spawn(launch.file, launch.args, { cwd: homedir(), env, windowsVerbatimArguments: launch.windowsVerbatimArguments, detached: process.platform !== 'win32', stdio: ['pipe', 'pipe', 'ignore'] });
     } catch {
-      // execFile throws at once for a binary it cannot start (e.g. a .cmd on Windows).
+      // spawn throws at once for a binary it cannot start (e.g. a .cmd on Windows).
       resolve({ stdout: '', failed: true, timedOut: false });
+      return;
     }
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => { stdout += chunk; });
+    child.on('error', () => done(true));
+    child.on('close', (code, signal) => done(code !== 0, signal));
+    timer = setTimeout(() => {
+      timedOut = true;
+      if (child.pid) hardKillTree(child.pid);
+    }, timeoutMs);
   });
 }
 
@@ -69,9 +93,9 @@ export type McpListFailure = 'no-cli' | 'no-servers' | 'timeout';
  *  the read failed. A run that printed no server line (signed out, a timeout,
  *  a new format) is a failed read; a signed-in account with no connectors
  *  still lists the owner's other servers or, with none at all, nothing. */
-export async function readClaudeMcpList(binPath: string | null): Promise<{ ok: true; list: McpList; complete: boolean } | { ok: false; why: McpListFailure }> {
+export async function readClaudeMcpList(binPath: string | null, timeoutMs = 30_000): Promise<{ ok: true; list: McpList; complete: boolean } | { ok: false; why: McpListFailure }> {
   if (!binPath) return { ok: false, why: 'no-cli' };
-  const { stdout, failed, timedOut } = await runMcpList(binPath);
+  const { stdout, failed, timedOut } = await runMcpList(binPath, timeoutMs);
   if (timedOut) return { ok: false, why: 'timeout' };
   const list = parseMcpList(stdout);
   // A run that exited non-zero may have stopped part way (Claude Code 2.1.287

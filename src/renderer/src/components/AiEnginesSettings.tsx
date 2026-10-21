@@ -106,12 +106,14 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
   };
   const clearKey = async (backend: string) => {
     try {
-      await window.cth.providerKeyClear(backend);
+      const r = await window.cth.providerKeyClear(backend);
+      // Not removed: say why, and keep it shown as set so they can retry.
+      if (!r.ok) { setNote((s) => ({ ...s, [backend]: r.error ?? t('aiEngines.failed') })); return; }
       setHasKey((s) => ({ ...s, [backend]: false }));
       setNote((s) => ({ ...s, [backend]: t('aiEngines.cleared') }));
       // OpenAI key gates Talk — clearing it disables Talk; reflect that immediately.
       if (backend === 'openai') setHasOpenAiKey(false);
-    } catch { /* noop */ }
+    } catch (e) { setNote((s) => ({ ...s, [backend]: e instanceof Error ? e.message : String(e) })); }
   };
 
   const saveBaseUrl = async (id: AgentProvider, value: string) => {

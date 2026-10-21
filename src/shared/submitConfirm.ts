@@ -51,6 +51,7 @@ export async function confirmSubmit(opts: {
   const confirmMs = opts.confirmMs ?? SUBMIT_CONFIRM_MS;
   for (let attempt = 0; attempt <= (opts.retries ?? SUBMIT_RETRIES); attempt++) {
     if (attempt > 0) {
+      if (opts.accepted()) return true;
       if (opts.stillSafe && !opts.stillSafe()) return opts.accepted();
       await opts.pressEnter();
     }

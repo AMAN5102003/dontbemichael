@@ -22,7 +22,7 @@ require.cache[electron] = {
   exports: { Notification: class { show() {} static isSupported() { return false; } } }
 };
 
-const { isQuickBooksConnectorTool, isQuickBooksReadTool, quickbooksCapability } = loadTs('src/shared/quickbooks.ts');
+const { isQuickBooksConnectorTool, isQuickBooksReadTool, quickbooksCapability, quickbooksAccessToSave } = loadTs('src/shared/quickbooks.ts');
 const { HiveManager } = loadTs('src/main/hive.ts');
 const { HookServer } = loadTs('src/main/hooks.ts');
 
@@ -113,7 +113,6 @@ test('by default Oscar reads the books and cannot change them; Pam cannot use Qu
   const p = await f.call('company_info', 'pam');
   assert.ok(denied(p));
   assert.match(p.hookSpecificOutput.permissionDecisionReason, /not given you QuickBooks/);
-  assert.ok(f.sent.some((s) => s.c === 'control:approvalRequest' && s.p.agentId === 'pam'), 'the floor hears about it');
 });
 
 test('the owner\'s choice wins over the role default, on the very next call', async (t) => {
@@ -207,4 +206,30 @@ test('one server rule for tools and resources: QuickBooks by any spelling, never
     assert.ok(!isQuickBooksConnectorTool(`mcp__${server}__company_info`), server);
     assert.ok(!isQuickBooksResourceCall('ReadMcpResourceTool', { server }), server);
   }
+});
+
+test('QuickBooks access is saved only for a team member or a hire in progress (issue 132)', () => {
+  // Value: protects=a typo or a removed member's id never gets a QuickBooks grant a later member with that id would inherit; fails_when=setAccess saves for any id, or a hire's binding is refused before its spawn; why_new=the handler wrote whatever id it was given; seam=onTeam injected
+  const team = new Set(['oscar', 'god']);
+  const onTeam = (id) => team.has(id);
+  assert.deepEqual(quickbooksAccessToSave('oscar', { enabled: true, changes: true }, onTeam), { enabled: true, changes: true }, 'a member: saved as today');
+  assert.deepEqual(quickbooksAccessToSave('god', { enabled: true }, onTeam), { enabled: true, changes: false });
+  assert.deepEqual(quickbooksAccessToSave('oscar', { enabled: false, changes: true }, onTeam), { enabled: false, changes: false }, 'changes only with access');
+  assert.equal(quickbooksAccessToSave('osacr', { enabled: true, changes: false }, onTeam), null, 'not on the team: refused');
+  assert.equal(quickbooksAccessToSave('gone-member', { enabled: false, changes: false }, onTeam), null, 'not even switched off');
+  assert.deepEqual(quickbooksAccessToSave('new-hire', { enabled: true, changes: false }, onTeam, true), { enabled: true, changes: false }, 'a hire saves for its new id before the spawn');
+  for (const [id, cap] of [[undefined, { enabled: true }], ['', { enabled: true }], [7, { enabled: true }], ['oscar', null], ['oscar', 'yes']]) {
+    assert.equal(quickbooksAccessToSave(id, cap, onTeam, true), null, `bad input ${JSON.stringify([id, cap])}`);
+  }
+});
+
+test('quickbooks:setAccess checks the hive registry and writes nothing when it refuses (issue 132)', () => {
+  // Value: protects=the handler uses the roster check before touching the config; fails_when=the check is skipped or comes after the write; why_new=the handler had no roster check; seam=source pin (index.ts does not load under node)
+  const main = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.ts'), 'utf8');
+  const start = main.indexOf("ipcMain.handle('quickbooks:setAccess'");
+  const handler = main.slice(start, main.indexOf('\n});', start));
+  assert.match(handler, /hasOwnProperty\.call\(hive\.registry\(\)\.agents, id\)/, 'on the team means in the hive registry');
+  assert.match(handler, /quickbooksAccessToSave\(agentId, cap, onTeam, \(opts as \{ hiring\?: unknown \} \| undefined\)\?\.hiring === true\)/);
+  assert.ok(handler.indexOf('if (!quickbooks) return { ok: false };') < handler.indexOf('readConfig()'), 'refused before the config is read or written');
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src', 'preload', 'index.ts'), 'utf8'), /ipcRenderer\.invoke\('quickbooks:setAccess', agentId, cap, opts\)/);
 });

@@ -77,9 +77,9 @@ test('the request stays Michael\'s open work until he replies, and is sent only 
 });
 
 test('both hire paths send the first task; a job description update does not', () => {
-  // Value: protects=a hire from Add agent and the onboarding team both get their card, and an existing member never does; fails_when=a path forgets it or an update offer sends one; why_new=new; seam=source pin
+  // Value: protects=a hire from Add agent and the onboarding team both get their card, and an existing member never does, a retried first start does; fails_when=a path forgets it or an update offer sends one; why_new=new; seam=source pin
   assert.match(read('src/renderer/src/components/AddAgentModal.tsx'), /void seedStarterJobs\(sourceCard, id\);[\s\S]{0,600}else if \(sourceCard && chosenJob\?\.source === 'card'\) void window\.cth\.hiveFirstTask\(sourceCard, id, name\.trim\(\)\)/);
-  assert.match(read('src/renderer/src/hooks/useHive.ts'), /await seedStarterJobs\(`\$\{cardPack\.businessType\}\/\$\{id\}`, id\);[\s\S]{0,200}if \(!reg\?\.agents\?\.\[id\]\) await window\.cth\.hiveFirstTask\(`\$\{cardPack\.businessType\}\/\$\{id\}`, id, name\)/);
+  assert.match(read('src/renderer/src/hooks/useHive.ts'), /await seedStarterJobs\(`\$\{cardPack\.businessType\}\/\$\{id\}`, id\);[\s\S]{0,300}if \(retry \|\| !reg\?\.agents\?\.\[id\]\) await window\.cth\.hiveFirstTask\(`\$\{cardPack\.businessType\}\/\$\{id\}`, id, name\)/);
   assert.doesNotMatch(read('src/renderer/src/shell/workStyleOffers.ts'), /hiveFirstTask/);
 });
 

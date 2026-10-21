@@ -70,11 +70,11 @@ export function ProfileTab({ agent }: { agent: Agent }) {
   const agents = useStore((s) => s.agents);
   const [showInstructions, setShowInstructions] = useState(false);
   const [folderError, setFolderError] = useState(false);
-  /** The agent's work folder in Finder (or the OS file browser). fs:revealPath
-   *  opens a folder and never launches a file. */
+  /** The agent's work folder in Finder (or the OS file browser), looked up by
+   *  main from the registry (fs:openAgentFolder). */
   const openFolder = () => {
     setFolderError(false);
-    window.cth.revealPath(agent.cwd)
+    window.cth.openAgentFolder(agent.id)
       .then((r) => { if (!r.ok) setFolderError(true); })
       .catch(() => setFolderError(true));
   };

@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
+const { windowsOnly } = require('./platform.cjs');
 
 // ensureClaudePermissionsAccepted() writes below os.homedir(). Redirect both
 // home variables before loading config.ts so this test can never touch the
@@ -276,5 +277,43 @@ test('~/.claude.json is swapped in whole, keeps its permissions, and leaves no t
   assert.deepEqual(fs.readdirSync(home).filter((f) => f.includes('.dbm-')), [], 'no temp copy left behind');
   assert.equal(JSON.parse(fs.readFileSync(projectConfigPath, 'utf8')).custom, 'keep');
   const src = fs.readFileSync(path.join(__dirname, '../src/main/config.ts'), 'utf8');
-  assert.match(src, /if \(stamp\(\) !== before\) \{ rmSync\(tmp, \{ force: true \}\); continue; \}\s*renameSync\(tmp, p\);/, 'changed under us: start again instead of overwriting');
+  assert.match(src, /if \(stamp\(\) !== before\) \{ rmSync\(tmp, \{ force: true \}\); continue; \}\s*try \{\s*renameSync\(tmp, p\);/, 'changed under us: start again instead of overwriting');
+});
+
+/** Make each rename onto ~/.claude.json fail as Windows does while another
+ *  process holds the file, `times` times; `onHold` runs at each refusal. */
+function holdClaudeJson(times, onHold = () => {}) {
+  const real = fs.renameSync;
+  let held = 0;
+  fs.renameSync = (from, to) => {
+    if (to === projectConfigPath && held < times) {
+      held++;
+      onHold();
+      throw Object.assign(new Error(`EPERM: operation not permitted, rename '${from}' -> '${to}'`), { code: 'EPERM' });
+    }
+    return real(from, to);
+  };
+  return { held: () => held, restore: () => { fs.renameSync = real; } };
+}
+
+test('a ~/.claude.json that Windows briefly holds is saved from a fresh read, keeping what Claude wrote meanwhile', windowsOnly('only Windows refuses a rename onto an open file'), () => {
+  // Value: protects=a key approval or folder trust is not lost when antivirus or a backup tool holds ~/.claude.json for a moment; fails_when=the first EPERM fails the save, or the retry renames the old copy over Claude's edit; why_new=seen on a Windows 11 run of this suite (EPERM on the rename); seam=fs.renameSync
+  fs.writeFileSync(projectConfigPath, JSON.stringify({ theme: 'dark' }), 'utf8');
+  const hold = holdClaudeJson(1, () => fs.writeFileSync(projectConfigPath, JSON.stringify({ theme: 'light' }), 'utf8'));
+  try { assert.equal(approveClaudeApiKey('k'.repeat(30), home), true); } finally { hold.restore(); }
+  const c = JSON.parse(fs.readFileSync(projectConfigPath, 'utf8'));
+  assert.equal(c.theme, 'light', 'the edit Claude made while the file was held is kept');
+  assert.deepEqual(c.customApiKeyResponses, { approved: ['k'.repeat(20)], rejected: [] });
+  assert.deepEqual(fs.readdirSync(home).filter((f) => f.includes('.dbm-')), [], 'no temp copy left behind');
+});
+
+test('a ~/.claude.json that stays held is left as it was, with no temp copy beside it', () => {
+  // Value: protects=a file that never frees fails the save safely, without litter in the home folder or a wait on a Mac; fails_when=the temp copy is left behind, the retry never stops, or it runs off Windows; why_new=the same Windows run; seam=fs.renameSync
+  fs.writeFileSync(projectConfigPath, '{"theme":"dark"}', 'utf8');
+  const hold = holdClaudeJson(Infinity);
+  const warn = console.warn; console.warn = () => {};
+  try { assert.equal(approveClaudeApiKey('k'.repeat(30), home), false); } finally { hold.restore(); console.warn = warn; }
+  assert.equal(fs.readFileSync(projectConfigPath, 'utf8'), '{"theme":"dark"}');
+  assert.deepEqual(fs.readdirSync(home).filter((f) => f.includes('.dbm-')), [], 'no temp copy left behind');
+  assert.equal(hold.held(), process.platform === 'win32' ? 3 : 1, 'three tries on Windows, one elsewhere');
 });
