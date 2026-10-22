@@ -50,6 +50,7 @@ import { randomBytes, createHash, createHmac } from 'node:crypto';
 import { readMessageFile, researchDeliveredId } from './messageFile';
 import { asText, type InboundVerdict, type OutboundVerdict, type TrustLayer } from './trustLayer';
 import { CHECKED_ARCHIVE_DIR, CHECKED_FILE, keepText, splitForArchive, type CheckedOutcome, type CheckedRow } from '../shared/checkedRecord';
+import { ORGANIZED_ARCHIVE_DIR, ORGANIZED_FILE, organizedText, parseOrganized, type OrganizeAction, type OrganizedRow } from '../shared/organizedRecord';
 import { isAnyFixedUpkeep, isFixedUpkeep, type UpkeepKind } from '../shared/upkeep';
 import { heldWaits, heldWhy, tidy, HELD_FILE, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
@@ -74,6 +75,7 @@ import {
   type OwnerRequestFlags, type StuckCard, type ThreadMessage
 } from '../shared/ownerRequests';
 import { expandTilde } from './fs';
+import { MEMBER_SESSIONS_FILE, idsFromRecord } from './memoryReset';
 import { CONNECTOR_UNDECIDED, MCP_RESOURCE_TOOLS, type SpawnConnectorPlan } from '../shared/claudeConnectors';
 import { HOOK_PATH_UNCHECKED, MAX_HOOK_FRAME_BYTES } from '../shared/hookEvents';
 import { isOwnResearchDir, ownResearchDir, readResearchFile } from './researchNotes';
@@ -1194,7 +1196,9 @@ export class HiveManager {
     // Research's folder stays out of the hive's history, which every agent
     // can read with git: its notes are web text the trust layer has not
     // cleaned (owner, 2026-10-13: its folders are its alone).
-    const want = ['fleet.json', 'hooks.sock', 'cost-ledger.jsonl', 'crashes/', '.DS_Store', 'agents/human/', `agents/${RESEARCH_ID}/`];
+    // Members' notes and the tidy up's copies stay out too: each member's
+    // memory is private (owner, 2026-10-16 and 2026-10-22; untrackNotes).
+    const want = ['fleet.json', 'hooks.sock', 'cost-ledger.jsonl', 'crashes/', '.DS_Store', 'agents/human/', `agents/${RESEARCH_ID}/`, 'agents/*/memory.md', 'agents/*/memory/', '/backups/'];
     let lines: string[] = [];
     if (existsSync(gitignore)) { try { lines = readFileSync(gitignore, 'utf8').split('\n'); } catch { lines = []; } }
     const missing = want.filter((w) => !lines.includes(w));
@@ -1792,6 +1796,7 @@ export class HiveManager {
   recordSession(agentId: string, sessionId: string): void {
     const root = this.root();
     if (!root || !sessionId) return;
+    this.recordPrivateSession(agentId, sessionId);
     try {
       const reg = this.registry();
       const agent = reg.agents[agentId];
@@ -1802,6 +1807,72 @@ export class HiveManager {
       this.appendLog({ kind: 'session', agentId, sessionId });
       this.commit(`hive: session ${agentId}`);
     } catch { /* best-effort — never crash a hook handler */ }
+  }
+
+  /** Each member's session ids in the app's private folder, for a memory reset
+   *  (reset-agent-memory.md R5). The registry and log are written by members'
+   *  shells too, so this record keeps its own last id per member and never
+   *  checks against them. Called only from authenticated hook frames. */
+  private recordPrivateSession(agentId: string, sessionId: string): void {
+    const home = this.getHome();
+    if (!home || !/^[\w-]+$/.test(agentId) || !/^[A-Za-z0-9_-]+$/.test(sessionId)) return;
+    const file = join(privateRoot(home), MEMBER_SESSIONS_FILE);
+    try {
+      if (this.privateSessionsFor !== file) {
+        this.privateSessionsFor = file;
+        this.lastPrivateSession = new Map();
+        if (existsSync(file)) {
+          for (const [id, set] of idsFromRecord(readFileSync(file, 'utf8'))) {
+            const last = [...set].pop();
+            if (last) this.lastPrivateSession.set(id, last);
+          }
+        }
+      }
+      if (this.lastPrivateSession.get(agentId) === sessionId) return;
+      mkdirSync(dirname(file), { recursive: true });
+      appendFileSync(file, JSON.stringify({ agentId, sessionId, at: new Date().toISOString() }) + '\n', 'utf8');
+      this.lastPrivateSession.set(agentId, sessionId);
+    } catch { /* best-effort: a hook handler never throws */ }
+  }
+
+  /** The private session record's text, or '' (memory reset). */
+  privateSessionsText(): string {
+    const home = this.getHome();
+    if (!home) return '';
+    try { return readFileSync(join(privateRoot(home), MEMBER_SESSIONS_FILE), 'utf8'); } catch { return ''; }
+  }
+
+  /**
+   * Memory reset (reset-agent-memory.md): every member starts a new
+   * conversation at its next start, and the private record of its old ones is
+   * emptied with them. One log row says what the reset did.
+   */
+  forgetSessions(row: Record<string, unknown>): boolean {
+    const root = this.root();
+    if (!root) return false;
+    let ok = true;
+    try {
+      const path = join(root, 'registry.json');
+      if (existsSync(path)) {
+        // Read here, not through registry(): an unreadable registry reads as
+        // empty there, and writing that back would lose the team, so a bad
+        // one fails this step and stays as it is (pre-landing review).
+        const reg = JSON.parse(readFileSync(path, 'utf8')) as Registry;
+        for (const agent of Object.values(reg.agents ?? {})) delete (agent as { sessionId?: string }).sessionId;
+        this.atomicWriteJson(path, reg);
+      }
+    } catch (e) {
+      ok = false;
+      console.error('[memory reset] registry write failed:', e);
+    }
+    // The record is the trusted source of the ids to delete: it goes only
+    // with the registry's ids, so a reset run again still finds them.
+    const home = this.getHome();
+    if (ok && home) { try { rmSync(join(privateRoot(home), MEMBER_SESSIONS_FILE), { force: true }); } catch { /* next reset finds ids from Pulse */ } }
+    this.privateSessionsFor = null;
+    this.lastPrivateSession = new Map();
+    this.appendLog({ kind: 'memory-reset', ...row, registryCleared: ok });
+    return ok;
   }
 
   /** The last known session_id for an agent, or undefined. Used to build a
@@ -2767,6 +2838,39 @@ export class HiveManager {
     } catch { /* best effort: the count still shows, and the list says how many have no details */ }
   }
   private checkedArchivedAt = 0;
+
+  /** One row per email a member archived, marked read or moved to junk, with
+   *  its sender and subject, in the owner's private folder (owner, 2026-10-21:
+   *  "how to see which emails were organized?"). The office log keeps only
+   *  the inbox numbers. Rows past 62 days move to the archive once a day, as
+   *  the checks record's do. */
+  recordOrganized(moved: { agentId: string; mailbox: string; action: OrganizeAction; folder: string | null; messages: ReadonlyArray<{ from?: unknown; subject?: unknown }> }): void {
+    const home = this.getHome();
+    if (!home || !moved.messages.length) return;
+    const at = Date.now();
+    const agentName = this.registry().agents[moved.agentId]?.name?.trim() || null;
+    const rows: OrganizedRow[] = moved.messages.map((m) => ({
+      at, agentId: moved.agentId, agentName, mailbox: moved.mailbox, action: moved.action, folder: moved.folder,
+      subject: organizedText(m.subject), from: organizedText(m.from)
+    }));
+    const file = join(privateRoot(home), ORGANIZED_FILE);
+    try {
+      mkdirSync(privateRoot(home), { recursive: true });
+      appendFileSync(file, rows.map((r) => `${JSON.stringify(r)}\n`).join(''), 'utf8');
+      if (at - this.organizedArchivedAt > 86_400_000) {
+        this.organizedArchivedAt = at;
+        const { keep: live, archive } = splitForArchive(readFileSync(file, 'utf8').split('\n'), at, parseOrganized);
+        if (archive.size) {
+          // The archive first: a stop in between leaves a row in both, never in neither.
+          const dir = join(privateRoot(home), ORGANIZED_ARCHIVE_DIR);
+          mkdirSync(dir, { recursive: true });
+          for (const [month, lines] of archive) appendFileSync(join(dir, `${month}.jsonl`), `${lines.join('\n')}\n`, 'utf8');
+          writeFileSync(file, live.length ? `${live.join('\n')}\n` : '', 'utf8');
+        }
+      }
+    } catch { /* best effort: the move stands, and the count still shows */ }
+  }
+  private organizedArchivedAt = 0;
 
   /** Start a check, or read the one under way. `key` is the content hash. */
   private trustCheck(key: string, start: () => Promise<InboundVerdict | OutboundVerdict>): InboundVerdict | OutboundVerdict | 'hold' {
@@ -5990,6 +6094,34 @@ export class HiveManager {
 
   /** Has the one-time Codex-home untrack pass run in this process yet? */
   private untrackedCodexHomes = false;
+  /** The private session record this process has read, and each member's
+   *  last id in it (recordPrivateSession). */
+  private privateSessionsFor: string | null = null;
+  private lastPrivateSession = new Map<string, string>();
+  /** Has the one-time notes untrack pass run in this process yet? */
+  private untrackedNotes = false;
+
+  /**
+   * Members' notes and the tidy up's copies of them leave the hive's history,
+   * which every member can read with git (owner, 2026-10-22, R3 of
+   * reset-agent-memory.md; each member's memory is private, 2026-10-16). The
+   * ignore lines keep new notes out; this drops the ones already tracked, once
+   * per process. The files stay on disk; past commits keep their old copies.
+   */
+  private untrackNotes(root: string): void {
+    if (this.untrackedNotes) return;
+    // :(glob) so `*` is one folder name, never a path across folders.
+    const paths = [':(glob)agents/*/memory.md', ':(glob)agents/*/memory/**', ':(glob)backups/**'];
+    // Probe first: a clean repo is never rewritten on every launch. Done for
+    // the run only once git has answered; a failed try runs again next commit.
+    const tracked = this.git(['ls-files', '--', ...paths], root);
+    if (!tracked.ok) return;
+    if (tracked.out.trim()) {
+      if (!this.git(['rm', '-r', '--cached', '-q', '--ignore-unmatch', '--', ...paths], root).ok) return;
+      console.warn('[hive] untracked members\' notes from the hive repo');
+    }
+    this.untrackedNotes = true;
+  }
 
   /**
    * Stop versioning Codex worker homes that are ALREADY in the index.
@@ -6032,6 +6164,7 @@ export class HiveManager {
     if (!root || !existsSync(join(root, '.git'))) return;
     this.untrackCostLedger(root);
     this.untrackCodexHomes(root);
+    this.untrackNotes(root);
     for (let attempt = 0; attempt < 5; attempt++) {
       this.clearStaleLock(root);
       const add = this.git(['add', '-A'], root);

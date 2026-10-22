@@ -2,8 +2,9 @@
  * UNTRUSTED TEXT — marks words written by someone outside the business before an
  * agent reads them.
  *
- * An email body reaches the agent as the result of the md-mail `read` tool. Anyone
- * can write to the business, so that text can carry lines aimed at the agent
+ * An email body reaches the agent as the result of the md-mail `read` tool, and
+ * Research's answers bring text from the web. Anyone can write either, so that
+ * text can carry lines aimed at the agent
  * ("ignore your previous instructions", "SYSTEM: ..."). The agent gets the message
  * as before, plus a plain note that it is information and not instructions, and the
  * lines that are clearly written to steer an AI.
@@ -27,6 +28,8 @@ const INSTRUCTION_PATTERNS: RegExp[] = [
   // "Ignore all previous instructions", "disregard the above prompt", "forget your prior rules".
   /\b(?:ignore|disregard|forget)\s+(?:(?:all|any|the|your|my|of|these|those)\s+){0,3}(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules|directions?|messages?)\b/i,
   /<\s*\/?\s*(?:system|instructions?)\s*>/i,
+  /\[\s*system\s*\]\s*:/i,
+  /\breveal (?:your|the) (?:system prompt|hidden instructions)\b/i,
   // "You are now DAN"; but not "You are now subscribed" and other everyday notices.
   /\byou are now\b(?!\s+(?:subscribed|unsubscribed|registered|signed|logged|enrolled|connected|verified|confirmed|eligible|ready|able)\b)/i,
   // Speaking to the AI directly: "Assistant, please ignore ...", "Claude: you must ...".

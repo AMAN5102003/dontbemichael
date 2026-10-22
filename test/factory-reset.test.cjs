@@ -188,7 +188,16 @@ test('app:resetAll erases the office data before it resets the config', () => {
   assert.match(body, /const kgRoot = knowledge\.root\(\);/, 'the knowledge store where it really is, read before the config resets');
   assert.match(body, /knowledgeRoot: resolve\(kgRoot\) !== resolve\(join\(userData, 'knowledge'\)\) \? kgRoot : null/);
   assert.ok(body.indexOf('const kgRoot') < body.indexOf('\n  resetConfig();'));
-  assert.ok(body.indexOf('hive.stopAllProxyBridges()') > 0 && body.indexOf('stopWebhookServer()') > 0, 'proxy sidecars and the webhook server stop, as on quit');
+  // The stops are shared with Reset memory (stopForReset); the full reset
+  // runs all of them, the store's close included.
+  assert.match(body, /\n  stopForReset\('reset'\);\n/, 'every stop, before anything is erased');
+  assert.ok(body.indexOf("stopForReset('reset')") < erase);
+  const helper = src.slice(src.indexOf('function stopForReset('), src.indexOf("ipcMain.handle('app:resetAll'"));
+  assert.ok(helper.indexOf('hive.stopAllProxyBridges()') > 0 && helper.indexOf('stopWebhookServer()') > 0, 'proxy sidecars and the webhook server stop, as on quit');
+  for (const call of ['clearMissionTimers()', 'hive.stopRouter()', 'hookServer.stop()', 'memoryTidy.stop()', 'ptyManager.killAll()', 'integrationBroker.stop()', 'mailService.closeAll()']) {
+    assert.ok(helper.includes(call), `the shared stops include ${call}`);
+  }
+  assert.match(helper, /if \(!opts\.keepPersist\) step\('persist\.close', \(\) => persist\.close\(\)\);/, 'the full reset closes the store');
   assert.doesNotMatch(body, /hive\.root\(\)|memory\.palacePath\(\)|researchFolders\(\)/, 'office folder paths come only through the office check');
 });
 

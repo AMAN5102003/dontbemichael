@@ -16,15 +16,6 @@
 
 ## Research agent (deferred from the third ship of mit/named-links, 2026-10-13)
 
-### A checked message for Pete is never dropped when delivery fails
-
-**What:** `queueForResearch()` in `src/main/hive.ts` removes the message's row from `research-pending.json` before `deliverToResearch()` and the commit succeed, and a delivery error is only logged. Keep the row until delivery succeeds, requeue it on failure, and tell Michael when it can't be delivered.
-
-**Why:** Found by the Codex adversarial review of the mit/named-links ship (2026-10-14). A disk or git error drops an owner or app message for Pete with no trace, and the record that would have recovered it is already gone.
-
-**Effort:** S
-**Priority:** P2
-
 ### Catch money amounts in the privacy check's pattern recheck
 
 **What:** Add a pattern for money amounts to the recheck in `src/shared/dataClasses.ts`: digits with a currency mark or code before or after them (Rs, INR, ₹, $, USD, €, £ and the like, with the groupings people write, such as `1,35,000` or `2,000.50`). Today the only money pattern is the card number check.
@@ -46,18 +37,6 @@
 
 **Effort:** M
 **Priority:** P1
-**Depends on:** None
-
-### Keep Claude Code's transcripts and history out of agents' reach
-
-**What:** Wall every agent's file tools and shell from Claude Code's projects folder and `history.jsonl` (under `CLAUDE_CONFIG_DIR` or `~/.claude`), apart from what the app itself needs.
-
-**Why:** Any team member can read the other team members' Claude Code conversations there, and the prompts hidden checks send, which can quote what a teammate asked Pete before the trust layer cleaned it. The trust layer now removes each check's transcript as it ends and sweeps leftovers at launch (`src/main/hiddenClaude.ts` dropTranscript), but a check's prompt may also be kept in Claude Code's history.
-
-**Context:** Found by the security review and Codex in the third ship. Pete is already walled from both. Adding `claudeProjectsRoot()` to every agent's read walls needs care: Michael reads his own transcript through the app, not his tools.
-
-**Effort:** S
-**Priority:** P2
 **Depends on:** None
 
 ### Take the internet from team members' shells on Windows
@@ -248,6 +227,30 @@
 **Effort:** M
 **Priority:** P3
 
+### A memory reset clears each other engine's own history before that engine ships
+
+**What:** Before Codex, Grok, Antigravity, Crush, OpenCode or Pi joins `BUILD_ENGINES`, Reset memory deletes that engine's own conversation history for each member (Codex `sessions` and `archived_sessions` and its state database; `.gemini-hive`, `.pi-agent`, `.opencode`, `.crush-data`), never the engine's sign in or settings.
+
+**Why:** Reset memory clears Claude members fully; a member on another engine gets a new conversation but its old history stays in its own folder, where it can look back (owner, 2026-10-22, D8).
+
+**Context:** `docs/designs/reset-agent-memory.md` row R4. History locations: `src/main/hive.ts:5204`, `:5336`, `:5455`, `:5492`, `:5540`. Add it to each engine's ship checklist with a test that the history goes and the sign in stays.
+
+**Effort:** S (human) / S (CC) per engine
+**Priority:** P3
+**Depends on:** The memory reset; the engine joining BUILD_ENGINES
+
+### A memory reset also clears a member's conversations from earlier working folders
+
+**What:** Reset memory deletes a member's recorded Claude Code conversations and auto memory only in the working folders the roster names today (current, restorable and archived, worktrees included). A member moved to another folder earlier keeps its old conversations and auto memory in the old folder's Claude Code project.
+
+**Why:** If the owner points that member back at the old folder, Claude Code's auto memory for it loads again, so the member is not on its first day there (Codex adversarial pass at ship, 2026-10-22). Its old conversations can't be resumed (the session ids are cleared), so the risk is the auto memory.
+
+**Context:** `src/main/memoryReset.ts` `foldersFromRoster` and `memoryResetTargets`. Options: record each member's past working folders in the private record beside its sessions, or delete `<sid>.jsonl` under every project folder for the trusted session ids. Either way, nothing a member can write may name a folder (R5).
+
+**Effort:** S (human) / S (CC)
+**Priority:** P2
+**Depends on:** The memory reset
+
 ## Attachments (from the Codex adversarial review of design/studio-v2, 2026-10-01)
 
 ### Keep each agent's mail pass out of other agents' reach
@@ -255,17 +258,6 @@
 **What:** Move each agent's `md-mail.mcp.json` (it holds that agent's broker token) out of the shared hive folder, or block other agents from reading `<hive>/agents/<other>/md-mail.mcp.json`, and delete it when the agent's terminal closes.
 
 **Why:** Sandboxed team agents cannot reach the broker, but Michael runs unsandboxed and could read a Can send agent's token and send from its mailbox. Found in the pre-landing security review (`src/main/index.ts`, the md-mail block before `ptyManager.spawn`).
-
-**Effort:** S
-**Priority:** P1
-
-### Say "cannot check email" beside a schedule
-
-**What:** When a schedule's agent has email off, show a short note on that schedule ("Pam cannot check email") in the On a schedule section and the office schedule.
-
-**Why:** Plan CEO Section 4. A mail check schedule on an agent without email is silently ignored.
-
-**Context:** Deferred from plan: docs/designs/multi-mailbox.md
 
 **Effort:** S
 **Priority:** P1
@@ -383,24 +375,6 @@
 
 **Effort:** M
 **Priority:** P1
-
-### Base the QuickBooks default on the role, not the agent id
-
-**What:** Give hired agents with a books role the on + Read only default.
-
-**Why:** Only an agent whose id is literally `oscar` gets it (`booksReadRoleIds` in `src/main/index.ts`); a bookkeeper hired later starts off.
-
-**Effort:** S
-**Priority:** P3
-
-### Show a locally added QuickBooks server in the status
-
-**What:** Read non-`claude.ai` QuickBooks servers from `claude mcp list` too.
-
-**Why:** A QuickBooks server added with `claude mcp add` is gated but Settings says it is not connected.
-
-**Effort:** S
-**Priority:** P3
 
 ## Closing time (deferred from ship of feat/closing-time-progress, 2026-09-29)
 
@@ -981,6 +955,24 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Depends on:** nothing.
 
 ## Watch list (no issue seen yet; act only if the symptom shows up)
+
+### The dock scroll test failed once on the macOS runner
+
+**Watch for:** `test/dock-scroll.electron.test.cjs` failing at "bottom follows incoming replies" again, on main or on an unrelated PR.
+
+**What happened:** on PR #209's head 673af795 (CI run 39532678039, first attempt), the non reduced motion run failed at that step: after two replies arrive, the list was not at the bottom, or the new replies button showed. The rerun of the job passed, as did 28 local runs (18 with every core busy). Not reproduced, cause unknown.
+
+**If it shows up:** add the list's `scrollTop`, `scrollHeight`, `clientHeight` and the hook's `following` to that check's message, then look for a scroll event that `useDockScroll` reads as the owner's (`src/renderer/src/shell/useDockScroll.ts`, `onScroll`), for example from a late font swap or a fold measured after the reply arrived.
+
+**Seen again:** on PR #291 (CI run 39539334994, first attempt), same step, again only the normal motion run; the reduced motion run passed. 2 of 3 macOS CI runs.
+
+**Tried (running branch, 2026-10-20, not yet proven on CI):** `useDockScroll` now treats a scroll change under a pixel as layout rounding, and the clamp check (content shrank under the reader) allows a pixel, so a fractional `scrollTop` is no longer read as the owner scrolling up. Every failed check in the dock test page now prints the list's `scrollTop`, `scrollHeight`, `clientHeight` and the catch-up button. If it fails again after 0.2.5 lands, read those numbers first.
+
+**Context:** owner chose to merge #209 and track this, 2026-10-20; on its second failure, chose to fix it on the running branch rather than through a draft PR.
+
+**Effort:** S (CC)
+**Priority:** P3 (watch)
+**Depends on:** nothing.
 
 ### Agents skip their folder or company knowledge
 

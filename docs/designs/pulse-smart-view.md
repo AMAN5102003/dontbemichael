@@ -21,8 +21,10 @@ Mockup: `~/.gstack/projects/agentvivekkumar-dontbemichael/designs/pulse-smart-ti
 ### Information architecture (Pass 1)
 
 - **1A, what counts as data.** A tile shows when its number is above zero in this period, or,
-  while Compare is on, in the span before. Otherwise it is a chip. A drop to zero therefore
-  stays a tile with its two bars; toggling Compare can bring tiles back.
+  while Compare is on, in the span before when its bars draw a change (owner, 2026-10-20:
+  "cards should show when there is some change"; a Web answers card drew 0 and 0 because
+  yesterday's one answer had nothing taken out). Otherwise it is a chip. A drop to zero
+  therefore stays a tile with its two bars; toggling Compare can bring tiles back.
 - **1B, Spent always shows**, in every period, with plan use on a Claude plan ($0.00 included).
 - **1C, Team at work folds the quiet.** Members with no working time in the period fold into
   one last row, "9 more were quiet", which opens to show their rows. A member with any working
@@ -36,7 +38,8 @@ Mockup: `~/.gstack/projects/agentvivekkumar-dontbemichael/designs/pulse-smart-ti
 - **1E, one grid, one chip row.** Every tile with data flows into one grid under "What got
   done", in today's order: emails organized, emails sent, tasks finished, scheduled checks,
   questions to the internet, web answers cleaned, messages held, steps blocked, what the team
-  learned, questions to you, Spent, your time. The Kept safe and row-of-four tiles keep their
+  learned, Spent, your time (Questions to you joined Your time, owner 2026-10-20: both counted
+  the same questions; eng review D1 A). The Kept safe and row-of-four tiles keep their
   own builds. One chip row follows the grid, above Team at work, in the same order.
 
 ```

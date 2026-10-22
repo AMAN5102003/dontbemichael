@@ -225,3 +225,19 @@ test('wiring: tabs after Who talks to whom, never saved, Ask me beside a file, w
     assert.doesNotMatch(JSON.stringify(f), /[–—]/, `${loc}: no dashes`);
   }
 });
+
+test('the files checked for chips are the files drawn as chips, from the same parse', () => {
+  // Value: protects=every chip drawn is checked, so none greys out for a link the renderer reads differently; fails_when=the chip check goes back to its own reader of link syntax; why_new=a link with spaces inside its parentheses drew a chip the old reader never checked; seam=none
+  const { chipPaths } = loadTs('src/renderer/src/markdown/chipPaths.ts');
+  const { askFilePaths } = loadTs('src/shared/askFiles.ts');
+  const spaced = 'Report: [here]( /Users/me/sp.md )';
+  assert.deepEqual(askFilePaths(spaced), [], 'the old reader missed it');
+  assert.deepEqual(chipPaths(spaced), ['/Users/me/sp.md'], 'the drawn chip is checked');
+  // A reference definition draws no chip, so it is not checked either.
+  assert.deepEqual(chipPaths('See /Users/me/x.md\n\n[r]: /Users/me/ref.md\n\n[ref][r]'), ['/Users/me/x.md']);
+  assert.deepEqual(chipPaths('Open [the report](</Users/me/Q3 (final)/report.md>) and `/Users/me/a.md`, twice: /Users/me/a.md'), ['/Users/me/Q3 (final)/report.md', '/Users/me/a.md']);
+  const chip = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/components/FileChip.tsx'), 'utf8');
+  assert.match(chip, /for \(const p of chipPaths\(e\.q\)\)/, 'Ask me cards');
+  assert.match(chip, /const paths = useMemo\(\(\) => chipPaths\(shown\), \[shown\]\);/, 'agent text');
+  assert.doesNotMatch(chip, /askFilePaths\(/);
+});

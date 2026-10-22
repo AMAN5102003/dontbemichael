@@ -88,6 +88,10 @@ moving, and brings you only the decisions that need you.
   notes: to learn what a teammate knows, they ask that teammate, and Michael reads the task board
   and the work each one hands in. On a Mac, Claude members' shells are walled off from each
   other's notes too.
+- Reset memory in Settings gives the whole team a first day again without losing the office:
+  every member, Michael included, forgets its notes, its conversations and the messages it
+  handled, then the app restarts. The team, cards, waiting messages, schedules, settings and
+  company knowledge stay.
 - Company profile and company knowledge (Word, Excel, PowerPoint, PDF, and scans or photos on a Mac or a Windows PC) are
   shared with the whole team, searchable by meaning. Settings lists every document; open one in
   your own app, save it, and the team searches the new version.
@@ -163,6 +167,20 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.5 (2026-10-21)
+- Reset memory in Settings: every member, Michael and Research included, starts on its first day
+  again while the office stays. Notes, recorded conversations, handled messages and Claude Code's
+  notes for each working folder go; the team, cards, waiting messages, schedules, settings and
+  Company knowledge stay. Members' notes are no longer kept in the office's history.
+- Pulse lists the emails organized in a period: subject, sender, where each went and who moved it.
+- The Tasks board has search and filters, and says when it shows only some tasks.
+- A member waiting at a permission prompt is never typed into while a helper it started works,
+  and every file chip in a message opens.
+- Contributor fixes: Pulse can say why a number looks wrong, Ask me answers reach notes before
+  Michael is told, starter jobs for a member with no schedules, card numbers beside an expiry
+  caught, Windows office restore with letter case, terminal zoom, quoted Claude paths, knowledge
+  search ranking and closing time messages.
 
 ### 0.2.4 (2026-10-20)
 - Company foundations: one document in company knowledge with plain questions for each job, one

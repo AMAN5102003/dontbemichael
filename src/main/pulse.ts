@@ -11,6 +11,7 @@
  *   view ─ pulse:undo / pulse:dismiss
  *   view ─ pulse:held(fromMs, toMs) ─► held() ─► private/held.jsonl rows (the held tile's list)
  *   view ─ pulse:checked(fromMs, toMs, way) ─► checked() ─► private/checked.jsonl rows (questions and answers lists)
+ *   view ─ pulse:organized(fromMs, toMs, agentId?) ─► organized() ─► private/organized.jsonl rows (the emails organized list)
  */
 import type Database from 'better-sqlite3';
 import type { ScheduledMission } from '../shared/missions';
@@ -24,6 +25,7 @@ import { planCostFor, scaleSnapshot, type PlanPrice } from '../shared/claudePlan
 import { countFromDay, learnedNotes, learning, type AddedNote, type LearnedNote, type NoteFact } from '../shared/teamLearning';
 import { parseHeld, type HeldRow } from '../shared/heldRecord';
 import { parseChecked, type CheckedList, type CheckedRow } from '../shared/checkedRecord';
+import { parseOrganized, type OrganizedList, type OrganizedRow } from '../shared/organizedRecord';
 import { countFor, foundationsPulse, replayFoundations, type FoundationEvent, type FoundationJob, type FoundationsPulse } from '../shared/foundations';
 import type { TelemetryStore } from './telemetryStore';
 import type { TelemetryProcessor } from './telemetryProcessor';
@@ -52,6 +54,8 @@ export interface PulseDeps {
   readHeld?: () => string;
   /** private/checked.jsonl, the lists of what the check let through or stopped. */
   readChecked?: () => string | Promise<string>;
+  /** The private organized mail record (organizedRecord.ts); '' when there is none. */
+  readOrganized?: () => string | Promise<string>;
   now?: () => number;
   /** Each member's job, for Company foundations (office-foundations.md). */
   memberJobs?: () => Record<string, FoundationJob[]>;
@@ -296,6 +300,16 @@ export class PulseService {
     // The first kept row says from when words are kept (design DD4).
     const since = all.reduce<number | null>((m, r) => (m === null || r.at < m ? r.at : m), null);
     return { rows: all.filter((r) => r.at >= fromMs && r.at <= toMs).sort((a, b) => b.at - a.at), since };
+  }
+
+  /** The emails organized in a span, newest first, all members or one (owner,
+   *  2026-10-21). Throws when the record can't be read, so the list says so. */
+  async organized(fromMs: number, toMs: number, agentId?: string): Promise<OrganizedList> {
+    const text = (await this.d.readOrganized?.()) ?? '';
+    const all = text.split('\n').map(parseOrganized).filter((r): r is OrganizedRow => !!r);
+    // The first kept row says from when emails are named.
+    const since = all.reduce<number | null>((m, r) => (m === null || r.at < m ? r.at : m), null);
+    return { rows: all.filter((r) => r.at >= fromMs && r.at <= toMs && (!agentId || r.agentId === agentId)).sort((a, b) => b.at - a.at), since };
   }
 
   private planPrice(): PlanPrice | null {

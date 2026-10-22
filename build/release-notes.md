@@ -1,5 +1,5 @@
-- **Company foundations** for every job.
-- **Company knowledge** you can open and edit.
-- **No switches** for knowledge search.
-- **Pulse** shows what it sees early.
-- **Windows** reads scans and photos.
+- **Reset memory** gives the team a first day.
+- **Pulse** shows which emails were organized.
+- **Tasks board** search and filters.
+- **Every file chip** opens.
+- Contributor fixes across the app.

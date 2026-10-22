@@ -1,6 +1,6 @@
 {
   "name": "dontbemichael",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "An AI office for small business owners: Michael, your office manager, runs a team of AI agents on your own computer.",
   "main": "out/main/index.js",
@@ -70,7 +70,9 @@
     "react-i18next": "^17.0.11",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
     "tunnelmole": "^2.4.0",
+    "unified": "^11.0.5",
     "unpdf": "^1.8.1",
     "zustand": "^4.5.5"
   },

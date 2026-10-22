@@ -12,8 +12,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { askFileNames, askFilePaths, fileTitle, kindOf, withNamedFiles, type AskFileCheck } from '@shared/askFiles';
+import { askFileNames, fileTitle, kindOf, withNamedFiles, type AskFileCheck } from '@shared/askFiles';
 import { MarkdownPreview, type MarkdownVariant } from '@/markdown/MarkdownPreview';
+import { chipPaths } from '@/markdown/chipPaths';
 import { useStore } from '@/store/store';
 import { Icon } from './Icon';
 
@@ -60,7 +61,7 @@ export function useAskFileChecks(
     for (const e of entries ?? []) {
       const raiser = e.raisedBy ?? '';
       const list = m.get(raiser) ?? [];
-      for (const p of askFilePaths(e.q)) if (!list.includes(p)) list.push(p);
+      for (const p of chipPaths(e.q)) if (!list.includes(p)) list.push(p);
       if (list.length) m.set(raiser, list);
     }
     return [...m];
@@ -255,7 +256,7 @@ export function FileText({ source, who, checks: given, variant = 'card' }: {
   const nameKey = names.join('\n');
   const [named, setNamed] = useState<Checks>({});
   const shown = useMemo(() => withNamedFiles(source, Object.fromEntries(Object.entries(named).map(([n, c]) => [n, c.path]))), [source, named]);
-  const paths = useMemo(() => askFilePaths(shown), [shown]);
+  const paths = useMemo(() => chipPaths(shown), [shown]);
   const key = paths.join('\n');
   const [own, setOwn] = useState<Checks>({});
   // A click that finds the file gone marks it here, over either source.

@@ -57,10 +57,16 @@ export const PRIVATE_ENTRIES = [
   'checked.jsonl',
   'checked-archive',
   'checked-backfill.json',
+  // Pulse's emails organized list and its archive (2026-10-21): senders and
+  // subjects; a reset erases both, nothing else deletes the archive.
+  'organized.jsonl',
+  'organized-archive',
   // Company foundations: the record the app alone writes (office-foundations.md),
   // and the ids of the owner's messages it takes as the owner's words.
   'foundations.json',
-  'owner-said.jsonl'
+  'owner-said.jsonl',
+  // Each member's session ids, for Reset memory (reset-agent-memory.md R5).
+  'member-sessions.jsonl'
 ] as const;
 
 /** The privacy and standing approval checks' own empty folders (index.ts). */

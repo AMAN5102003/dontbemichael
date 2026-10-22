@@ -11,6 +11,7 @@
  */
 
 import { classPhrase, type DataClassId } from './dataClasses';
+import { flagInstructionLike } from './untrustedText';
 
 /** Research's agent id. Reserved: no other hire takes it. */
 export const RESEARCH_ID = 'research';
@@ -166,18 +167,10 @@ export function hasAttachments(partial: unknown): boolean {
 }
 
 /** Classic prompt injection markers in text from the web (owner, 2026-10-12:
- *  only a very high confidence flag, and only to Michael). */
-const INJECTION_MARKERS: RegExp[] = [
-  /\bignore (?:all |any )?(?:the )?(?:previous|prior|above|earlier) (?:instructions|prompts|messages)\b/i,
-  /\bdisregard (?:all |any )?(?:the )?(?:previous|prior|above|earlier) (?:instructions|prompts)\b/i,
-  /\byou are now (?:in )?(?:developer|dan|jailbreak) mode\b/i,
-  /<\s*\/?\s*system\s*>/i,
-  /\[\s*system\s*\]\s*:/i,
-  /\breveal (?:your|the) (?:system prompt|hidden instructions)\b/i
-];
-
+ *  only a very high confidence flag, and only to Michael). The same markers
+ *  as email an agent reads, so web and mail catch the same attacks. */
 export function looksLikeInjection(text: string): boolean {
-  return INJECTION_MARKERS.some((re) => re.test(text));
+  return flagInstructionLike(text).length > 0;
 }
 
 /** The line put before every answer Research sends a teammate (eng A3): the

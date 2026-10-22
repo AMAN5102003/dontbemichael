@@ -81,6 +81,7 @@ function dropHeld(file: string): void {
 export class MemoryTidy {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private halted = false;
 
   /**
    * @param getHome      harnessHome, read lazily so the tidy-up follows the office.
@@ -115,11 +116,19 @@ export class MemoryTidy {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
   }
 
+  /** For a memory reset: stop, and make a pass still waiting on its model
+   *  write nothing when it returns, not even the notes it held, so no old
+   *  note lands after the erase (reset-agent-memory.md). Until the relaunch. */
+  halt(): void {
+    this.halted = true;
+    this.stop();
+  }
+
   /** Tidy every agent that is due (or just `onlyId`, which is tidied if it has
    *  anything to tidy). One at a time; a pass never overlaps the next. */
   async tidyNow(onlyId?: string): Promise<TidyResult[]> {
     const home = this.getHome();
-    if (!home || this.running) return [];
+    if (!home || this.running || this.halted) return [];
     const agentsDir = join(home, 'hive', 'agents');
     let ids: string[] = [];
     try { if (existsSync(agentsDir)) ids = readdirSync(agentsDir); } catch { return []; }
@@ -132,6 +141,7 @@ export class MemoryTidy {
     const results: TidyResult[] = [];
     try {
       for (const id of ids) {
+        if (this.halted) break;
         const r = await this.tidyAgent(home, id, !!onlyId);
         if (r) results.push(r);
       }
@@ -196,9 +206,13 @@ export class MemoryTidy {
     try {
       raw = await this.askModel(home, entries, notes, overBudget);
     } catch (e) {
+      if (this.halted) return null;
       restore();
       return this.abort(id, 'model-failed', String(e));
     }
+    // Halted for a memory reset while the model ran: the memory is gone, so
+    // nothing is written back.
+    if (this.halted) return null;
     // A reply with no list of changes is a failed reply, not "keep nothing":
     // the notes go back to the inbox instead of being dropped.
     if (!(raw && typeof raw === 'object' && Array.isArray((raw as { ops?: unknown }).ops))) {

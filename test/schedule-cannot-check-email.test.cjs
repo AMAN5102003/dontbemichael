@@ -72,6 +72,15 @@ test('a member who reads mail through the Gmail connector is not told they canno
   assert.equal(gmailConnectorOn({ connectorsOn: { 'Google Calendar': true }, agentCapabilities: { pam: { connectors: ['Google Calendar'] } } }, 'pam'), false);
   for (const view of ['AgentSchedules', 'OfficeSchedules']) {
     const src = read('src/renderer/src/components/triggers/ScheduleList.tsx');
-    assert.match(src.slice(src.indexOf(`export function ${view}`)), /cannotCheckEmail\(m, config\.agentCapabilities\?\.\[\w+\]\?\.email, gmailConnectorOn\(config, \w+\)\)/, view);
+    assert.match(src.slice(src.indexOf(`export function ${view}`)), /cannotCheckEmail\(m, \{ enabled: agentMailboxes\(config, \w+\)\.length > 0 \}, gmailConnectorOn\(config, \w+\)\)/, view);
   }
+});
+
+test('a member whose mailbox was removed in Settings is told they cannot check email', () => {
+  // Value: protects=no silent wasted turn after a mailbox is deleted; fails_when=only the email switch is read, not the mailbox the mail tools need; why_new=#348 review (LK-Bharadwaja's case); seam=none
+  const { agentMailboxes } = loadTs('src/shared/mailboxes.ts');
+  const cfg = (mailboxes) => ({ mailboxes, agentCapabilities: { pam: { email: on } } });
+  const has = (c) => ({ enabled: agentMailboxes(c, 'pam').length > 0 });
+  assert.equal(cannotCheckEmail(mk(), has(cfg([{ id: 'mb1' }]))), false, 'its mailbox is there');
+  assert.equal(cannotCheckEmail(mk(), has(cfg([]))), true, 'its mailbox was removed');
 });

@@ -236,6 +236,7 @@
     "title": "Settings",
     "changeHomeTitle": "Change office folder",
     "resetTitle": "Erase this office?",
+    "resetMemoryTitle": "Reset your team's memory?",
     "close": "Close",
     "change": "Change…",
     "apply": "Applying…",
@@ -268,6 +269,13 @@
     "resetConfirm": {
       "body": "This erases your office for good: the team, everyone's memory, your settings, Memory & Knowledge, saved keys and history. Your team's folders and the files in them stay, and so does your Claude sign in. Everyone stops working and the app opens setup again. This cannot be undone."
     },
+    "resetMemoryConfirm": {
+      "body": "Every team member, {{godName}} included, forgets everything it learned: its notes, its conversations and the messages it has handled. Your conversation with {{godName}} starts over too. Everyone stops, the app restarts, and each member begins as on its first day. This cannot be undone.",
+      "keeps": "Your team, cards, waiting messages, schedules, settings and Company knowledge stay.",
+      "folders": "Claude Code's own notes for these folders are erased too, including any you keep there yourself:",
+      "go": "Reset memory & restart",
+      "failed": "Couldn't reset memory. Nothing was erased; try again."
+    },
     "general": {
       "homeFolder": "Office folder",
       "homeFolderDesc": "Where your office keeps its own files: your team's memory, tasks and history.",
@@ -289,7 +297,8 @@
       "language": "Language",
       "languageDesc": "Choose the language for the app interface. English is the default.",
       "dangerZone": "Danger zone",
-      "dangerDesc": "Erases this office and opens setup again. Your team's folders and your Claude sign in stay.",
+      "dangerDesc": "Reset memory: every member starts over and the office stays. Reset & start over: the office is erased and setup opens again. Your team's folders and your Claude sign in stay.",
+      "resetMemory": "Reset memory",
       "resetStartOver": "Reset & start over",
       "arabicTerminal": "Arabic / RTL text in terminals",
       "arabicTerminalDesc": "Renders terminals with the browser's text engine so Arabic joins and reads right to left (xterm has no bidi of its own). Off is the GPU renderer: faster, but it can't lay out right to left text. Applies to open terminals and new ones alike.",
@@ -1577,6 +1586,7 @@
   "integrations": {
     "errLabel": "Give it a label.",
     "errId": "Could not derive a valid id from the label.",
+    "errIdTaken": "Another integration already uses this id, so nothing was saved over it. Change the label, then save again.",
     "errBaseUrl": "Base URL is required.",
     "errBaseUrlFormat": "Base URL must be https:// (or http://127.0.0.1 / localhost for a local target).",
     "errHeader": "Header name must be 1 to 64 characters, using only letters A to Z, digits 0 to 9, or hyphens.",
@@ -2643,8 +2653,8 @@
     "resets": "resets {{day}}",
     "runsOut": "Runs out around {{day}}",
     "yourTime": "Your time",
-    "yourTimeTip": "Questions the team brought you, and how long they waited for your answer.",
-    "questions": "questions",
+    "yourTimeTip": "Questions the team brought you, the typical wait for your answer, and how many per 100 requests the team took: fewer as the team learns. Under 20 requests the rate shows ….",
+    "questionsToYou": "Questions to you",
     "whileAway": "While you were away",
     "awayTip": "Work done while you had not used this computer for 30 minutes, or it was asleep.",
     "awayLine": "of the work happened then",
@@ -2725,8 +2735,6 @@
       "fromYou": "From your answers",
       "onJob": "Learned on the job",
       "fromMichael": "From {{godName}}",
-      "questions": "Questions to you",
-      "questionsSub": "per 100 requests the team took",
       "learned": "What the team learned",
       "sub": {
         "today": "new notes today",
@@ -2734,9 +2742,6 @@
         "this-month": "new notes this month"
       },
       "inAll": "{{notes}} notes and {{procedures}} written ways of working in all",
-      "tooFewRate": "Too few requests to tell yet.",
-      "tooFewBefore": "{{before}} had too few requests to tell.",
-      "counts": "{{asks}} questions in {{turns}} requests",
       "open": "See the notes",
       "none": "No new notes.",
       "removed": "Removed since.",
@@ -2782,7 +2787,8 @@
       "memberTip": "This member's part of your plan's cost for the period, by their share of the work.",
       "ofPlan": "of your {{plan}} ({{monthly}} a month)"
     },
-    "questionsAnswered": "questions, answered in {{time}} on average",
+    "typicalWait": "typical wait",
+    "per100Requests": "per 100 requests",
     "list": {
       "failed": "Couldn't read the list.",
       "retry": "Try again"
@@ -2929,9 +2935,8 @@
         "held": "messages held",
         "rules": "steps blocked",
         "learned": "new notes",
-        "questions": "questions to you",
         "spent": "spent",
-        "yourTime": "your time"
+        "yourTime": "questions to you"
       }
     },
     "foundations": {
@@ -2948,6 +2953,20 @@
       "with": "With it",
       "proofLine": "Work kept as is, before and after the answer.",
       "openQuestion": "Open the {{what}} question"
+    },
+    "organized": {
+      "open": "See the emails",
+      "openOne": "See the emails {{name}} organized",
+      "title": "Emails organized",
+      "titleOne": "Emails {{name}} organized",
+      "noSubject": "No subject",
+      "archived": "Archived",
+      "archivedTo": "Archived to {{folder}}",
+      "markedRead": "Marked read",
+      "movedToJunk": "Moved to junk",
+      "byWho": "{{name}}: {{where}}",
+      "none": "No emails organized in this period.",
+      "earlier": "{{count}} more organized before the app kept their names."
     }
   },
   "foundations": {

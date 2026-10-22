@@ -93,7 +93,7 @@ test('line icons, never emoji; Team at work lists everyone on the team busiest f
   assert.doesNotMatch(view, /pulse\.learning\.headline|pulse\.learning\.trend/, 'no Learning header or headline (owner, 2026-10-15)');
   assert.doesNotMatch(view, /pulse\.work\.perHour|stripOf\(|pulse\.work\.knows/, 'no day strip, per hour or Knows column (owner, 2026-10-15)');
   assert.match(view, /onClick=\{\(\) => setDetail\(m\.agentId\)\}/);
-  for (const i of ['shield', 'search', 'pause', 'lock', 'book', 'help']) assert.match(view, new RegExp(`icon="${i}"`), i);
+  for (const i of ['shield', 'search', 'pause', 'lock', 'book']) assert.match(view, new RegExp(`icon="${i}"`), i);
 });
 
 test('Kept safe counts what was stopped apart from what could not be checked, and held work is the only amber tile', () => {
@@ -184,7 +184,7 @@ test('Compare: the app\'s switch reading Compare, remembered, kept in place and 
   assert.match(ui, /aria-disabled=\{unavailable \|\| undefined\}/);
   assert.match(ui, /onClick=\{unavailable \? undefined : onClick\}/);
   assert.match(ui, /cursor: disabled \? 'progress' : unavailable \? 'default' : 'pointer'/, 'not ready is not busy');
-  assert.equal((view.match(/\bpair\(/g) || []).length, 9, 'got done (one per tile), four Kept safe, questions, spent, your time, while away');
+  assert.equal((view.match(/\bpair\(/g) || []).length, 8, 'got done (one per tile), four Kept safe, spent, your time, while away (questions joined your time, 2026-10-20)');
   assert.equal((view.match(/<WeekBars before /g) || []).length, 2, 'the pair helper and the stacked Learning bars');
   assert.match(view, /outline: '1px solid var\(--cth-ink-3\)'/, 'the earlier bar\'s outline (design D8)');
   assert.match(view, /\{total !== null && \(/, 'a missing value draws no bar (eng O2)');
@@ -272,3 +272,25 @@ test('before advice, Pulse shows what the rules see so far under a bold line, as
   }
 });
 
+
+test('Questions to you is part of Your time: the count, then two small stats, the typical wait and the rate', () => {
+  // Value: protects=the merge the owner chose (2026-10-20, eng review D1 A, D2 A); fails_when=the rate tile returns, Your time loses the rate or its too few line, Compare draws a second pair, or the wait reads as an average; why_new=the Questions to you tile was removed; seam=none; no_claim=pixel layout (live check in the app)
+  const view = read('src/renderer/src/components/pulse/PulseView.tsx');
+  assert.doesNotMatch(view, /\n      questions: \(/, 'no Questions to you tile');
+  const yt = view.slice(view.indexOf('      yourTime: ('), view.indexOf('    // One member'));
+  // Two small stats at the foot (owner, 2026-10-20): the typical wait and the rate, never a rate under 20 requests.
+  assert.match(yt, /<div style=\{label\}>\{t\('pulse\.questionsToYou'\)\}<InfoTip text=\{t\('pulse\.yourTimeTip'\)\} \/><\/div>\s*<div[^>]*>\{s\.yourTime\.asks\}<\/div>/, 'the column is named for what it counts (owner, 2026-10-20)');
+  assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse.questionsToYou, 'Questions to you');
+  assert.match(yt, /\{s\.yourTime\.medianWaitMs !== null \? duration\(s\.yourTime\.medianWaitMs, t\) : '…'\}<\/span>\s*<span[^>]*>\{t\('pulse\.typicalWait'\)\}/);
+  assert.match(yt, /\{rate !== null \? rate\.toFixed\(1\) : '…'\}<\/span>\s*<span[^>]*>\{t\('pulse\.per100Requests'\)\}/);
+  assert.match(yt, /\{pl && <span[^>]*>\{`\$\{pairLabels\[0\]\}: \$\{pl\.per100 !== null \? pl\.per100\.toFixed\(1\) : '…'\}`\}<\/span>\}/, 'with Compare, the span before\'s rate');
+  assert.equal((yt.match(/\bpair\(/g) || []).length, 2, 'one pair on the count, one on the away share');
+  const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).pulse;
+  assert.equal(en.typicalWait, 'typical wait', 'a median is not an average');
+  assert.equal(en.per100Requests, 'per 100 requests');
+  for (const l of ['ar', 'zh-CN']) {
+    const p = JSON.parse(read(`src/renderer/src/i18n/locales/${l}.json`)).pulse;
+    assert.ok(p.typicalWait && p.per100Requests, l);
+    assert.equal(p.quiet.name.questions, undefined, `${l}: no chip name for a tile that is gone`);
+  }
+});

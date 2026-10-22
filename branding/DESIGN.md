@@ -1323,9 +1323,10 @@ half written message survives the switch.
   the What got done, Kept safe and row of four tiles flow into one grid under "What got done",
   in this order: emails organized, emails sent, tasks finished, scheduled checks, questions to
   the internet, web answers cleaned, messages held, steps blocked, what the team learned,
-  questions to you, Spent, your time. Each keeps its own build. A tile shows when something
-  happened in it in the period, or in the span before while Compare is on: web answers count
-  every answer checked, Questions to you the questions, Your time the questions or any work
+  Spent, your time (Questions to you joined Your time, owner 2026-10-20). Each keeps its own build. A tile shows when something
+  happened in it in the period, or in the span before while Compare is on and its bars draw
+  a change (the same figure both spans is no change, so the tile folds): web answers count
+  every answer checked, Your time the questions or any work
   while the owner was away, every other tile its number. Spent always shows. Otherwise the tile
   folds into a **quiet chip**: a 26 px pill, `neutral-soft` fill, no border, a 14 px `ink-3`
   line icon, the name in `t-meta` `ink-2` and the count in mono `ink-3`; on hover the `card`
@@ -1369,16 +1370,19 @@ half written message survives the switch.
   into one line ("17 sent as written") that opens one line items between hairlines. The
   questions list points to the held list when the period has holds. Every text is plain,
   `dir="auto"`; marks carry hidden "taken out:" and "sent instead:" for screen readers.
-- **The four tiles after Kept safe** (owner, 2026-10-15), in the same grid, each only as big as what it
+- **The three tiles after Kept safe** (owner, 2026-10-15; Questions to you joined Your time 2026-10-20), in the same grid, each only as big as what it
   shows, 12/14 px padding: What the team learned (the period's new notes as one mono 24 px number, a bar and legend by
   source: `green` your answers, `ink-4` on the job, `indigo` Michael; under it the notes and
-  written ways of working held in all), Questions to you per 100 requests in the period (one
-  number with its counts; under 20 requests, too few to tell), both following the period
-  select (owner, 2026-10-15), Spent with plan use (a mono 24 px total with what it is beneath at the top;
+  written ways of working held in all), following the period select (owner, 2026-10-15),
+  Spent with plan use (a mono 24 px total with what it is beneath at the top;
   plan use at the foot as a full width 8 px bar with its percent and reset day, on a Claude
   plan only, turning `amber` with a soft "Runs out around …" when the pace says so; who spent
   what is Team at work's job), and Your time with While you were away past a hairline (the
-  number at the top, what it means at the foot).
+  number at the top, what it means at the foot). Its left column, labelled "Questions to you": the questions as the mono
+  number, and at the foot two small stats side by side, a mono 15 px
+  value over an 11 px `ink-3` caption: the median wait ("typical wait") and the questions per
+  100 requests the team took ("…" under 20 requests; with Compare, "Yesterday: 3.1" under it).
+  Compare keeps one pair of bars, on the count (owner, 2026-10-20).
   Each tile spreads its content top to bottom so none holds an empty foot. On a Claude plan with a known price
   (Settings > Agents, else the plan found in the owner's Claude account), every dollar on
   Pulse is a member's part of the plan's real cost for the days so far in the period, split by

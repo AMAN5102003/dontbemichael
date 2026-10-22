@@ -236,6 +236,7 @@
     "title": "设置",
     "changeHomeTitle": "更改办公室文件夹",
     "resetTitle": "抹除这个办公室？",
+    "resetMemoryTitle": "重置团队的记忆？",
     "close": "关闭",
     "change": "更改…",
     "apply": "应用中…",
@@ -268,6 +269,13 @@
     "resetConfirm": {
       "body": "这会永久抹除你的办公室：团队、所有人的记忆、你的设置、“记忆与知识”、保存的密钥和历史记录。团队的文件夹及其中的文件会保留，你的 Claude 登录也会保留。所有人停止工作，应用将重新打开设置。此操作无法撤销。"
     },
+    "resetMemoryConfirm": {
+      "body": "每位团队成员，包括 {{godName}}，都会忘记学到的一切：笔记、对话以及处理过的消息。你与 {{godName}} 的对话也会重新开始。所有人停止工作，应用重新启动，每位成员都像第一天一样开始。此操作无法撤销。",
+      "keeps": "你的团队、卡片、待处理的消息、日程、设置和公司知识都会保留。",
+      "folders": "这些文件夹中 Claude Code 自己的笔记也会被抹除，包括你自己保存在那里的笔记：",
+      "go": "重置记忆并重启",
+      "failed": "无法重置记忆。没有抹除任何内容；请重试。"
+    },
     "general": {
       "homeFolder": "办公室文件夹",
       "homeFolderDesc": "办公室保存自身文件的地方：团队的记忆、任务和历史。",
@@ -289,7 +297,8 @@
       "language": "语言",
       "languageDesc": "选择应用界面的语言。默认英文。",
       "dangerZone": "危险区",
-      "dangerDesc": "抹除这个办公室并重新打开设置。团队的文件夹和你的 Claude 登录会保留。",
+      "dangerDesc": "重置记忆：每位成员重新开始，办公室保留。重置并重新开始：抹除办公室并重新打开设置。团队的文件夹和你的 Claude 登录会保留。",
+      "resetMemory": "重置记忆",
       "resetStartOver": "重置并重新开始",
       "arabicTerminal": "终端中的阿拉伯语 / RTL 文本",
       "arabicTerminalDesc": "用浏览器的文本引擎渲染终端，让阿拉伯语正确连写并从右向左阅读（xterm 自身没有双向文本支持）。关闭则使用 GPU 渲染器：更快，但无法处理从右向左的文本。对已打开和新开的终端同时生效。",
@@ -1577,6 +1586,7 @@
   "integrations": {
     "errLabel": "请给它一个名称。",
     "errId": "无法从该名称派生出有效的 ID。",
+    "errIdTaken": "另一个集成已在使用这个 ID，所以没有覆盖它。请修改名称，然后再保存。",
     "errBaseUrl": "必须填写基础 URL。",
     "errBaseUrlFormat": "基础 URL 必须是 https://（或用于本地目标的 http://127.0.0.1 / localhost）。",
     "errHeader": "请求头名称必须是 1 至 64 个字符，只能使用字母 A 至 Z、数字 0 至 9 或连字符。",
@@ -2643,8 +2653,8 @@
     "resets": "{{day}} 重置",
     "runsOut": "约 {{day}} 用完",
     "yourTime": "你的时间",
-    "yourTimeTip": "团队带给你的问题，以及他们等你回答的时间。",
-    "questions": "个问题",
+    "yourTimeTip": "团队向你提出的问题、等待你回答的通常时间，以及每 100 个团队请求中的提问数：团队学得越多，提问越少。请求少于 20 个时，比率显示为 …。",
+    "questionsToYou": "向你提问",
     "whileAway": "你不在时",
     "awayTip": "你 30 分钟没有使用这台电脑或电脑休眠时完成的工作。",
     "awayLine": "的工作在那时完成",
@@ -2725,8 +2735,6 @@
       "fromYou": "来自你的回答",
       "onJob": "工作中学到",
       "fromMichael": "来自 {{godName}}",
-      "questions": "向你提出的问题",
-      "questionsSub": "每 100 个团队处理的请求",
       "learned": "团队学到的内容",
       "sub": {
         "today": "今天新笔记",
@@ -2734,9 +2742,6 @@
         "this-month": "本月新笔记"
       },
       "inAll": "共 {{notes}} 条笔记和 {{procedures}} 份书面工作方法",
-      "tooFewRate": "请求太少，暂时无法判断。",
-      "tooFewBefore": "{{before}}的请求太少，无法判断。",
-      "counts": "{{turns}} 个请求中有 {{asks}} 个问题",
       "open": "查看笔记",
       "none": "没有新笔记。",
       "removed": "之后已删除。",
@@ -2782,7 +2787,8 @@
       "memberTip": "该成员在本期按其工作份额分摊的套餐费用。",
       "ofPlan": "来自你的 {{plan}}（每月 {{monthly}}）"
     },
-    "questionsAnswered": "个问题，平均 {{time}} 内回答",
+    "typicalWait": "通常等待",
+    "per100Requests": "每 100 个请求",
     "list": {
       "failed": "无法读取列表。",
       "retry": "重试"
@@ -2929,9 +2935,8 @@
         "held": "暂扣的消息",
         "rules": "被阻止的步骤",
         "learned": "新笔记",
-        "questions": "向你提出的问题",
         "spent": "支出",
-        "yourTime": "你的时间"
+        "yourTime": "向你提问"
       }
     },
     "foundations": {
@@ -2948,6 +2953,20 @@
       "with": "有了之后",
       "proofLine": "原样采用的工作，回答之前与之后。",
       "openQuestion": "打开“{{what}}”问题"
+    },
+    "organized": {
+      "open": "查看这些邮件",
+      "openOne": "查看 {{name}} 整理的邮件",
+      "title": "已整理的邮件",
+      "titleOne": "{{name}} 整理的邮件",
+      "noSubject": "无主题",
+      "archived": "已归档",
+      "archivedTo": "已归档到 {{folder}}",
+      "markedRead": "已标为已读",
+      "movedToJunk": "已移到垃圾邮件",
+      "byWho": "{{name}}：{{where}}",
+      "none": "这段时间没有整理邮件。",
+      "earlier": "还有 {{count}} 封是在应用开始记录名称之前整理的。"
     }
   },
   "foundations": {
