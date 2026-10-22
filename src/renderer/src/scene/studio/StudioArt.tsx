@@ -10,6 +10,7 @@ import { Box, EllipseAt, Poly } from './shapes';
 import type { Family, SceneTokens } from './theme';
 import { PROP_ART, hasProp } from '@/scene/office/props';
 import { cutText } from '@shared/cutText';
+import { PROGRAM_MARK } from '@shared/appName';
 
 /** What a desk's screen and floor show (DESIGN.md 3.5, 8.5). */
 export type DeskState = 'working' | 'thinking' | 'waiting' | 'needs' | 'compacting' | 'looping' | 'success' | 'idle';
@@ -74,6 +75,27 @@ export function Platform({ T }: { T: SceneTokens }) {
       {lines}
       <polyline points={pts([P(-A, A), P(A, A), P(A, -A)])} fill="none" stroke={T.edgeF} strokeWidth={1.6} />
       <polyline points={pts([P(-A, A), P(-A, -A), P(A, -A)])} fill="none" stroke={T.edgeB} strokeWidth={1} />
+    </g>
+  );
+}
+
+/* ── Program mark ─────────────────────────────────────────────────────────── */
+
+/**
+ * The program the app is part of, lettered on the ground in front of the
+ * platform's right face like paint on the floor (docs/designs/floor-business-
+ * name.md): from 60 px right of the front corner, 34 px below the face's
+ * bottom edge, rising along the face's 2:1 slope. Left to right in every
+ * language: it is a proper name.
+ */
+export function FloorMark({ T }: { T: SceneTokens }) {
+  const [cx, cy] = P(5, 5, -22);
+  const x = cx + 60;
+  const y = cy - 30 + 34;
+  return (
+    <g transform={`matrix(1 -0.5 0 1 ${x} ${y})`}>
+      <text direction="ltr" fontFamily="Sora, sans-serif" fontWeight={600} fontSize={30} letterSpacing={1.2}
+        fill={T.markFill} fillOpacity={T.markOp}>{PROGRAM_MARK}</text>
     </g>
   );
 }

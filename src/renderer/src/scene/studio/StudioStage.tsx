@@ -36,7 +36,7 @@ import { family, sceneTokens, type Family } from './theme';
 import { HUB, HUB_CARD, POST_GY, cardRect, departmentOf, planStudio, postGx, roleOf, type PodPlan } from './layout';
 import { FLIGHT_MS, bendFor, useStudioLife } from './life';
 import { SHOW_MAILBOXES } from '@shared/buildFeatures';
-import { DECOR, Decor, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
+import { DECOR, Decor, FloorMark, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
 
 
 /** The agent fields the office draws. Changes to anything else (the terminal
@@ -412,6 +412,8 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
         >
           <StudioDefs T={T} families={families} />
           <Platform T={T} />
+          {/* The program the app is part of, on the ground under everything else. */}
+          <FloorMark T={T} />
           {plan.pods.map((pod) => (
             <g key={`glow-${pod.dept}-${pod.members[0].id}`} style={dimStyle(dimmed(pod.members.map((a) => a.id)))}>
               <PodGlow grid={pod.grid} famKey={pod.dept} desks={pod.members.map((a) => ({ st: deskState(a) }))} />
