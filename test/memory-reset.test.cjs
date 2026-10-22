@@ -180,7 +180,8 @@ test('auto memory goes at the repository root for a subfolder or worktree, and t
   const gitTop = (f) => {
     try { return path.resolve(execFileSync('git', ['-C', f, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim()); } catch { return null; }
   };
-  const real = fs.realpathSync(repo);
+  // .native: Windows gives the temp folder as an 8.3 short name (RUNNER~1); git gives the long one.
+  const real = fs.realpathSync.native(repo);
   const seen = [];
   const targets = memoryResetTargets({
     hiveRoot: path.join(root, 'hive'), memberIds: ['pam'], folders: new Map([['pam', [sub]]]),
@@ -525,7 +526,7 @@ test('an unreadable registry is left as it is, never written back empty', async 
 test('a worktree member\'s auto memory is keyed by its main repository', (t) => {
   // Value: protects=the reset and its confirm reach the auto memory Claude Code shares across a repository and its worktrees; fails_when=a linked worktree or subfolder resolves to itself, or a folder outside a repository is given a root; why_new=pre-landing review (ship), and the coverage gap gitTopOf had no seam; seam=a real git repository
   const { gitTopOf } = loadTs('src/main/memoryReset.ts');
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'md-memreset-git-')));
+  const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'md-memreset-git-')));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const repo = path.join(root, 'repo');
   const git = (...a) => execFileSync('git', ['-C', repo, ...a], { stdio: 'ignore' });
