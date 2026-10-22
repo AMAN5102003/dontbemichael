@@ -357,3 +357,5 @@ sits on the platform's right side face, not the ground in front of it. Centered 
 `P(5, 0, -12)`, 10 px Sora 600, between the face's top edge and the light band 16 px down, along the
 same 2:1 slope; white on the light face, a muted violet on the dark one (`markFill`, `markOp`). The
 bottom bar overlap risk (Architecture 1) no longer applies: the face is well above the stage bottom.
+
+Then, same day: "bring it towards the left rather middle": it starts 30 px from the front corner (`P(5, 4.4, -12)`, anchored at its start) and runs right along the face.

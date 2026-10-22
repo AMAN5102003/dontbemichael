@@ -84,15 +84,15 @@ export function Platform({ T }: { T: SceneTokens }) {
 /**
  * The program the app is part of, lettered small on the platform's right side
  * face, like an engraving on the slab's edge (owner, 2026-10-22,
- * docs/designs/floor-business-name.md): centered along the face, between its
+ * docs/designs/floor-business-name.md): from near the front corner along the face, between its
  * top edge and the light band 16 px down, following the face's 2:1 slope. Left
  * to right in every language: it is a proper name.
  */
 export function FloorMark({ T }: { T: SceneTokens }) {
-  const [x, y] = P(5, 0, -12);
+  const [x, y] = P(5, 4.4, -12);
   return (
     <g transform={`matrix(1 -0.5 0 1 ${x} ${y})`}>
-      <text direction="ltr" textAnchor="middle" fontFamily="Sora, sans-serif" fontWeight={600} fontSize={10} letterSpacing={1.4}
+      <text direction="ltr" textAnchor="start" fontFamily="Sora, sans-serif" fontWeight={600} fontSize={10} letterSpacing={1.4}
         fill={T.markFill} fillOpacity={T.markOp}>{PROGRAM_MARK}</text>
     </g>
   );
