@@ -3,8 +3,8 @@ import type { FileHandle } from 'node:fs/promises';
 import { constants, existsSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
-import { imageMimeForPath } from '../shared/imageTypes';
-import { OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, kindOf, type AskFileVerdict } from '../shared/askFiles';
+import { imageMimeForExtension } from '../shared/imageTypes';
+import { NAME_ENDINGS, OPEN_EXTENSIONS, TAB_EXTENSIONS, extensionOf, isNameSpan, kindOf, type AskFileVerdict } from '../shared/askFiles';
 import { isSameOrInside } from './pathInside';
 import { RESEARCH_ID } from '../shared/research';
 
@@ -269,7 +269,7 @@ export async function readFileBinary(root: string, rel: string, maxBytes = MAX_B
     return {
       ok: true,
       bytes,
-      mime: imageMimeForPath(abs) ?? 'application/octet-stream',
+      mime: imageMimeForExtension(extensionOf(abs)) ?? 'application/octet-stream',
       path: abs,
       size: s.size
     };
@@ -482,6 +482,24 @@ export async function askFileVerdict(
 export type AskFileRead =
   | { ok: true; path: string; root: string; real: string; kind: 'markdown' | 'text' | 'json' | 'csv' | 'image'; text?: string; bytes?: Uint8Array<ArrayBuffer>; mime?: string; size: number }
   | { ok: false; error: 'not found' | 'too large' | 'unreadable' };
+
+/**
+ * A file named without its ending, such as `First contact follow up draft
+ * 2026-10-19` for the `.md` in the Sales folder (owner, 2026-10-19): each
+ * ending in NAME_ENDINGS is tried in turn, through the same folder check as
+ * any named file, and the first that exists wins. Null when none does, so the
+ * name stays plain text.
+ */
+export async function askFileByName(
+  name: string,
+  roots: readonly AskFileRoot[]
+): Promise<{ verdict: AskFileVerdict; path: string; tab: boolean } | null> {
+  if (!isNameSpan(name)) return null;
+  // Every ending is checked at once; the first in NAME_ENDINGS order wins.
+  const all = await Promise.all(NAME_ENDINGS.map((ext) => askFileVerdict(`${name.trim()}.${ext}`, roots)));
+  const v = all.find((x) => x.verdict !== 'missing');
+  return v ? { verdict: v.verdict, path: v.path, tab: v.tab } : null;
+}
 
 /**
  * Read a file an Ask me question or a reply names, for its tab. The same check

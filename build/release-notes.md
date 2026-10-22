@@ -1,4 +1,5 @@
-- **Pulse** shows work done and what it costs.
-- **Ask me** choices answer with a click.
-- **Delete** a team member for good.
-- **Stuck members** restart and carry on.
+- **Reset memory** gives the team a first day.
+- **Pulse** shows which emails were organized.
+- **Tasks board** search and filters.
+- **Every file chip** opens.
+- Contributor fixes across the app.

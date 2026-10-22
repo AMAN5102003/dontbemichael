@@ -129,7 +129,7 @@ owner did not ask for.
    inert (E2 skipped); text and JSON as wrapped monospace; CSV/TSV as a table (E3) with a
    sticky header row, first 1,000 rows, then "Showing 1,000 of N rows"; images fitted to
    the width from a blob URL. The view sits in the existing overlay (`App.tsx:464`),
-   leaving room for the bottom bar.
+   which hides the bottom bar on a file tab (owner, 2026-10-16).
 5. **View states.** Reading: a quiet "Reading..." line. Gone (deleted or moved): "Not
    found" with Show in Finder hidden; the tab stays until closed. Too large (over 2 MB
    text or 10 MB image): "Too large to show here" with Open in app (Show in Finder for JSON, which never

@@ -1,49 +1,28 @@
 /**
- * MemoryManager — semantic memory for the hive, backed by the MemPalace CLI.
+ * MemoryManager — search by meaning over COMPANY KNOWLEDGE, backed by the
+ * MemPalace CLI.
  *
- * CLI-only (no MCP): the harness keeps a single shared palace under harnessHome,
- * points every agent's `MEMPALACE_PALACE_PATH` at it, and mines each agent's
- * `memory.md` into its own wing so the whole team can recall by meaning via
- * `mempalace search` / `mempalace wake-up`. Degrades silently to no-op when the
- * `mempalace` CLI isn't installed — the markdown memory still works.
+ * Each team member's memory is private to it (owner, 2026-10-16): no member,
+ * Michael included, searches or reads another's notes; they ask the member.
+ * So the palace under harnessHome holds one section, `company`, mined from the
+ * company knowledge store's mirror; members' notes are never mined into it.
+ * The palace must stay writable for members' searches to open it, so each pass
+ * checks that nothing else was filed there and, if something was (or members'
+ * notes from before this rule are still there), clears it and indexes company
+ * knowledge again. Degrades silently to no-op when `mempalace` isn't installed.
  *
- *   init    : mempalace init <home> --yes --no-llm        (heuristics-only, no LLM)
- *   store   : mempalace mine <agentDir> --wing <id> --agent <id>
- *   recall  : mempalace search "<q>" --results N   /   mempalace wake-up
+ *   store   : mempalace mine <company mirror> --wing company --agent company
+ *   check   : mempalace status (the sections filed)
+ *   recall  : mempalace search "<q>" --wing company
  *
  * Runs in the Electron main process.
  */
-import { existsSync, statSync, readdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { privateRoot } from '../shared/agentPrivatePaths';
 import { spawn, spawnSync } from 'node:child_process';
 import { ensureKilled } from './procKill';
 import { quarantineDirsToReap, quarantineStampMs, nextMineDelayMs } from './palaceReap';
-
-/** Non-memory files `mempalace mine` must not ingest: the Claude Code hooks
- *  config (a large JSON blob that swamps the wake-up digest), the cursor, raw
- *  inbox/outbox message JSON, and a Codex worker's private CODEX_HOME. `mempalace
- *  mine` honors .gitignore, so we drop one in each agent dir rather than touch the
- *  mine command.
- *
- *  MUST STAY IN SYNC with MINE_IGNORE_LINES in hive.ts — that copy is written when
- *  an agent spawns, this one on every mine cycle, and only this one reaches agents
- *  that are not currently running. See hive.ts for why `.codex/` matters beyond
- *  mempalace: it is also what stopped the hive's git repo from versioning every
- *  Codex transcript and sqlite log into a 7.5GB history. */
-const MINE_IGNORE_LINES = ['settings.json', 'cursor.json', 'inbox/', 'outbox/', '.codex/'];
-
-/** Idempotently ensure `<agentDir>/.gitignore` excludes the non-memory files.
- *  Writes only the missing lines (append-only) so it's safe to call every cycle. */
-function ensureMineIgnore(agentDir: string): void {
-  const path = join(agentDir, '.gitignore');
-  let existing = '';
-  try { if (existsSync(path)) existing = readFileSync(path, 'utf8'); } catch { return; }
-  const have = new Set(existing.split('\n').map((l) => l.trim()));
-  const missing = MINE_IGNORE_LINES.filter((l) => !have.has(l));
-  if (missing.length === 0) return; // already covered — don't rewrite every cycle
-  const prefix = existing && !existing.endsWith('\n') ? existing + '\n' : existing;
-  try { writeFileSync(path, prefix + missing.join('\n') + '\n', 'utf8'); } catch { /* best-effort */ }
-}
 
 export type EmbeddingModel = 'minilm' | 'embeddinggemma';
 
@@ -62,7 +41,7 @@ export interface MemoryStatus {
   bin: string | null;
 }
 
-// Re-mine changed memories every 10 min, up from 3.
+// Check and re-index every 10 min, up from 3.
 //
 // Every `mempalace mine` opens the palace, and every open runs MemPalace's
 // quarantine gate — which on a palace stuck in the rename loop means another
@@ -122,23 +101,14 @@ export class MemoryManager {
   private initStarted = false;
   /** True while a mineNow() pass is in flight — serializes palace writers. */
   private mining = false;
-  /** agentId → memory.md mtimeMs at last successful mine (skip unchanged). */
-  private lastMined = new Map<string, string>();
-  /** More than the memory file's time that makes an agent's mined copy stale
-   *  (Research's: the owner's privacy settings). */
-  private mineKey: (id: string) => string = () => '';
-  setMineKey(fn: (id: string) => string): void { this.mineKey = fn; }
-  /** Which folder to mine for an agent: undefined mines its own folder, null
-   *  skips it, a path mines that folder instead (Research's notes go in only
-   *  as a copy its trust layer cleaned, ship review D2.9). */
-  private notesFilter: ((id: string, agentDir: string) => Promise<string | null | undefined>) | null = null;
-  setNotesFilter(fn: ((id: string, agentDir: string) => Promise<string | null | undefined>) | null): void { this.notesFilter = fn; }
 
   /** The company knowledge mirror last indexed, by its document set, so an
    *  unchanged store isn't indexed again (see indexCompanyKnowledge). */
   private companySignature: string | null = null;
   /** Company knowledge changed while a pass was running: run another after it. */
   private companyPending = false;
+  /** The search language changed: clear the palace on the next pass. */
+  private rebuildPending = false;
 
   constructor(
     private getHome: () => string | null,
@@ -215,7 +185,7 @@ export class MemoryManager {
     };
   }
 
-  /** Env merged into each agent's spawn so its `mempalace` CLI hits the shared palace. */
+  /** Env merged into each agent's spawn so its `mempalace` CLI finds company knowledge. */
   env(): Record<string, string> {
     const palace = this.palacePath();
     if (!this.active() || !palace) return {};
@@ -303,38 +273,18 @@ export class MemoryManager {
 
   // — mining (store) —
 
-  /** Mine every agent whose memory changed since last time, one at a time.
-   *  The palace permits a single writer, so mines MUST be serialized — firing
-   *  them concurrently makes all but one fail with "held by another writer".
-   *  `mining` guards against a slow pass overlapping the next interval tick. */
+  /** One pass: keep the palace to company knowledge, then index company
+   *  knowledge if it changed. The palace permits a single writer, so passes are
+   *  serialized; `mining` guards against a slow pass overlapping the next tick. */
   async mineNow(): Promise<void> {
     const home = this.getHome();
     const bin = this.bin();
     if (!this.active() || !home || !bin) return;
     if (this.mining) return; // a previous pass is still running; let it finish
-    const agentsDir = join(home, 'hive', 'agents');
-    let ids: string[] = [];
-    try { if (existsSync(agentsDir)) ids = readdirSync(agentsDir); } catch { /* company knowledge still gets indexed */ }
     this.mining = true;
     try {
-      for (const id of ids) {
-        const agentDir = join(agentsDir, id);
-        const mem = join(agentDir, 'memory.md');
-        if (!existsSync(mem)) continue;
-        let mtime = 0;
-        try { mtime = statSync(mem).mtimeMs; } catch { continue; }
-        let extra = '';
-        try { extra = this.mineKey(id); } catch { extra = 'unreadable'; }
-        const key = `${mtime}:${extra}`;
-        if (this.lastMined.get(id) === key) continue; // unchanged — skip the model load
-        this.lastMined.set(id, key);
-        let dir: string | null | undefined = agentDir;
-        if (this.notesFilter) {
-          try { const d = await this.notesFilter(id, agentDir); if (d !== undefined) dir = d; } catch { dir = null; }
-        }
-        if (dir === null) continue;
-        await this.mineAgent(dir, id); // one writer at a time
-      }
+      if (this.rebuildPending) this.rebuild();
+      await this.keepCompanyOnly();
       await this.indexCompanyKnowledge();
     } finally {
       this.mining = false;
@@ -349,6 +299,27 @@ export class MemoryManager {
     this.mineDelayMs = nextMineDelayMs(
       this.mineDelayMs, MINE_INTERVAL_MS, MINE_BACKOFF_MAX_MS, quarantined
     );
+  }
+
+  /** Members' notes are theirs alone (owner, 2026-10-16). If the palace holds
+   *  any section but company knowledge (members' notes mined before this rule,
+   *  or something a member filed with its own `mempalace mine`), it is cleared
+   *  and company knowledge is indexed again on this pass. Research's cleaned
+   *  copy of its notes, kept for that old mining, goes too. */
+  private async keepCompanyOnly(): Promise<void> {
+    const home = this.getHome();
+    const palace = this.palacePath();
+    if (home) { try { rmSync(join(privateRoot(home), 'research-mined'), { recursive: true, force: true }); } catch { /* next pass */ } }
+    if (!palace || !existsSync(palace)) return;
+    const status = await this.runCli(['status'], 'status');
+    if (!status.ok) return;
+    const others = otherWings(status.output, MemoryManager.COMPANY_WING);
+    if (!others.length) return;
+    try {
+      rmSync(palace, { recursive: true, force: true });
+      this.companySignature = null; // index company knowledge again now
+      console.log(`[memory] cleared ${others.length} section(s) that were not company knowledge`);
+    } catch { /* locked: next pass */ }
   }
 
   /**
@@ -409,43 +380,35 @@ export class MemoryManager {
     if (mined.ok && synced.ok) this.companySignature = src.signature;
   }
 
+  /**
+   * The search language changed (Settings). MemPalace records which model
+   * built each section and refuses a search with another, so the palace is
+   * cleared and company knowledge indexed again with the new one. While off
+   * or not installed, the rebuild waits for the next pass that runs.
+   */
+  modelChanged(): void {
+    this.rebuildPending = true;
+    if (this.mining) { this.companyPending = true; return; } // one follow up pass rebuilds
+    void this.mineNow();
+  }
+
+  /** Clear the palace so the next index builds it with the current model. */
+  private rebuild(): void {
+    const palace = this.palacePath();
+    this.rebuildPending = false;
+    this.companySignature = null;
+    if (!palace || !existsSync(palace)) return;
+    try {
+      rmSync(palace, { recursive: true, force: true });
+      console.log(`[memory] cleared the index to build it with ${this.model()}`);
+    } catch { this.rebuildPending = true; /* locked: next pass */ }
+  }
+
   /** Index company knowledge now, after the owner added or removed a
    *  document, rather than at the next timed pass. */
   companyKnowledgeChanged(): void {
     if (this.mining) { this.companyPending = true; return; }
     void this.mineNow();
-  }
-
-  private mineAgent(agentDir: string, id: string): Promise<void> {
-    return new Promise((resolve) => {
-      const bin = this.bin();
-      if (!bin) { resolve(); return; }
-      ensureMineIgnore(agentDir); // keep settings.json / cursor / messages out of the index
-      // stdin closed (mempalace can prompt); mempalace dedups so re-mining is safe.
-      const proc = spawn(bin, ['mine', agentDir, '--wing', id, '--agent', id], {
-        env: this.childEnv(), stdio: ['ignore', 'ignore', 'pipe']
-      });
-      let err = '';
-      proc.stderr?.on('data', (d) => { err += d.toString(); });
-      // Hard ceiling: a wedged mine used to hold its PID forever AND leave
-      // `mining` stuck true, silently stopping all future passes. Generous cap
-      // because the first run may lazily download the embedding model.
-      const timer = setTimeout(() => {
-        console.error(`[memory] mine ${id} timed out after ${MINE_TIMEOUT_MS / 60000}min — killing`);
-        try { proc.kill('SIGTERM'); } catch { /* gone */ }
-        ensureKilled(proc.pid); // SIGKILL sweep if SIGTERM is ignored
-      }, MINE_TIMEOUT_MS);
-      timer.unref?.();
-      proc.on('close', (code) => {
-        clearTimeout(timer);
-        if (code !== 0) {
-          console.error(`[memory] mine ${id} exited ${code}: ${err.slice(-300)}`);
-          this.lastMined.delete(id); // let the next tick retry
-        }
-        resolve();
-      });
-      proc.on('error', () => { clearTimeout(timer); this.lastMined.delete(id); resolve(); });
-    });
   }
 
   // — recall (read) —
@@ -488,17 +451,16 @@ export class MemoryManager {
     });
   }
 
-  /** Semantic search across the shared palace. Returns the CLI's text output. */
-  search(query: string, opts: { wing?: string; results?: number } = {}): Promise<{ ok: boolean; output: string; error?: string }> {
-    const args = ['search', query, '--results', String(opts.results ?? 5)];
-    if (opts.wing) args.push('--wing', opts.wing);
-    return this.runCli(args, 'search');
-  }
-
   /** Session-start digest (~600-900 tokens). */
   wakeUp(wing?: string): Promise<{ ok: boolean; output: string; error?: string }> {
     const args = ['wake-up'];
     if (wing) args.push('--wing', wing);
     return this.runCli(args, 'wake-up');
   }
+}
+
+/** The sections `mempalace status` lists, other than `keep`. */
+export function otherWings(statusOutput: string, keep: string): string[] {
+  const wings = [...String(statusOutput ?? '').matchAll(/^\s*WING:\s*(\S+)\s*$/gm)].map((m) => m[1]);
+  return Array.from(new Set(wings.filter((w) => w !== keep)));
 }

@@ -43,7 +43,7 @@ test('notes: each bullet or paragraph is one; the old header is not a note', () 
 
 test('the model\'s ops are checked: unknown ids, kinds and ops are dropped, text stays one line', () => {
   const entries = [e('m1', 'fact', 'a')];
-  const ops = mi.validateOps({ ops: [
+  const { ops, dropped } = mi.validateOps({ ops: [
     { op: 'add', kind: 'fact', text: 'x | y\nz', source: 'owner' },
     { op: 'add', kind: 'secret', text: 'no' },
     { op: 'update', id: 'm9', text: 'no' },
@@ -53,6 +53,20 @@ test('the model\'s ops are checked: unknown ids, kinds and ops are dropped, text
   ] }, entries);
   assert.deepEqual(ops.map((o) => o.op), ['add', 'delete', 'procedure']);
   assert.equal(ops[0].text, 'x / y z');
+  assert.deepEqual(dropped, { 'bad-kind': 1, 'unknown-id': 1, 'unknown-op': 1 });
+});
+
+test('dropped ops are counted by reason, and an all-clean reply reports none', () => {
+  const entries = [e('m1', 'fact', 'a')];
+  const { ops, dropped } = mi.validateOps({ ops: [
+    { op: 'add', kind: 'fact', text: '', source: 'task' },
+    { op: 'add', kind: 'fact', text: 'ok', source: 'task' },
+    { op: 'delete', id: 'm9', reason: 'no' },
+    null
+  ] }, entries);
+  assert.deepEqual(ops.map((o) => o.op), ['add']);
+  assert.deepEqual(dropped, { 'missing-text': 1, 'unknown-id': 1, malformed: 1 });
+  assert.deepEqual(mi.validateOps({ ops: [{ op: 'add', kind: 'fact', text: 'fine', source: 'task' }] }, entries).dropped, {});
 });
 
 test('changes are itemised: add, update, delete, procedure; replaced entries are archived', () => {
@@ -68,10 +82,49 @@ test('changes are itemised: add, update, delete, procedure; replaced entries are
   assert.deepEqual(out.archived.map((a) => a.entry.text), ['Price list is v1'], 'the replaced fact is kept in the archive');
   assert.equal(out.procedures[0].slug, 'weekly-money-summary');
   assert.equal(out.entries[3].text, 'Weekly money summary: steps in memory/procedures/weekly-money-summary.md');
-  assert.deepEqual(out.stats, { added: 1, updated: 2, deleted: 0, procedures: 1, repeats: 1 });
+  assert.deepEqual(out.stats, { added: 1, updated: 2, deleted: 0, procedures: 1, repeats: 1, dupes: 0 });
   const del = mi.applyOps(out.entries, [{ op: 'delete', id: 'm3', reason: 'moved' }], '2026-09-26');
   assert.equal(del.entries.length, 3);
   assert.match(mi.archiveLines(del.archived, '2026-09-26'), /archived 2026-09-26: moved$/);
+});
+
+test('duplicate adds are skipped and counted, by normalized text and within one batch', () => {
+  const entries = [e('m1', 'fact', 'Supplier cutoff is Thursday noon')];
+  const out = mi.applyOps(entries, [
+    { op: 'add', kind: 'fact', text: 'Weekly payroll runs Friday', source: 'task' },
+    { op: 'add', kind: 'fact', text: 'weekly payroll runs friday', source: 'task' },
+    { op: 'add', kind: 'fact', text: '  Weekly   payroll runs Friday ', source: 'task' }
+  ], '2026-10-13');
+  assert.equal(out.stats.added, 1);
+  assert.equal(out.stats.dupes, 2);
+  assert.equal(out.entries.length, 2, 'the existing entry plus one add');
+  assert.equal(out.entries[1].text, 'Weekly payroll runs Friday');
+});
+
+test('an add matches the index as it stands: a delete, a merge or an update frees the text up', () => {
+  const text = 'Rent is due on the 1st';
+  const gone = mi.applyOps([e('m1', 'fact', text, 'owner')], [
+    { op: 'delete', id: 'm1', reason: 'wrong kind' },
+    { op: 'add', kind: 'preference', text, source: 'owner' }
+  ], '2026-10-18');
+  assert.deepEqual(gone.entries.map((x) => [x.id, x.kind, x.text]), [['m2', 'preference', text]], 'the deleted entry and its add-back is one entry, not none');
+  assert.deepEqual(gone.stats, { added: 1, updated: 0, deleted: 1, procedures: 0, repeats: 0, dupes: 0 });
+
+  const merged = mi.applyOps([e('m1', 'fact', 'Rent is due on the 1st', 'owner'), e('m2', 'fact', 'Rent is due on the 1st.', 'owner')], [
+    { op: 'delete', id: 'm1', reason: 'merged' },
+    { op: 'delete', id: 'm2', reason: 'merged' },
+    { op: 'add', kind: 'fact', text: 'Rent is due on the 1st', source: 'owner' }
+  ], '2026-10-18');
+  assert.deepEqual(merged.entries.map((x) => x.text), ['Rent is due on the 1st'], 'merging two near duplicates keeps the one line');
+  assert.deepEqual(merged.stats, { added: 1, updated: 0, deleted: 2, procedures: 0, repeats: 0, dupes: 0 });
+
+  const moved = mi.applyOps([e('m1', 'fact', text, 'owner')], [
+    { op: 'update', id: 'm1', text: 'Rent is due on the 5th' },
+    { op: 'add', kind: 'fact', text, source: 'owner' }
+  ], '2026-10-18');
+  assert.deepEqual(moved.entries.map((x) => x.text), ['Rent is due on the 5th', text], 'the old text is no longer in the index, so it can be re-added');
+  assert.equal(moved.stats.added, 1);
+  assert.equal(moved.stats.dupes, 0);
 });
 
 function office(t) {
@@ -191,4 +244,99 @@ test('the tidy up runs with no tools and no MCP servers', () => {
   const hidden = fs.readFileSync(path.resolve(__dirname, '../src/main/hiddenClaude.ts'), 'utf8');
   assert.match(tidy, /noTools: true,/);
   assert.match(hidden, /opts\.noTools \? \['--tools', '', '--strict-mcp-config'\]/);
+});
+
+test('a pass reports only the notes new to the index: an edit, a repeat or a replaced procedure is not new', () => {
+  // Value: protects=Pulse's Learning count (owner, 2026-10-18: 4 notes today were 3 new and 1 edit); fails_when=an update, a repeat or an existing procedure is reported as added, a new procedure pointer is missed, or a note added and deleted in one pass is reported; why_new=the count moved from note dates to add events; seam=none; no_claim=what the notes say
+  const base = [
+    { id: 'm1', kind: 'fact', text: 'Invoices go to the shared box', source: 'owner', date: '2026-10-01' },
+    { id: 'm2', kind: 'procedure', text: 'Close the month: steps in memory/procedures/close-the-month.md', source: 'task', date: '2026-10-02' }
+  ];
+  const out = mi.applyOps(base, [
+    { op: 'update', id: 'm1', text: 'Invoices go to the shared box, copy Oscar' },
+    { op: 'update', id: 'm1', repeat: true },
+    { op: 'procedure', name: 'Close the month', steps: '1. Reconcile', source: 'task' },
+    { op: 'add', kind: 'fact', text: 'Rent is due on the 1st', source: 'michael' },
+    { op: 'procedure', name: 'Weekly money summary', steps: '1. Totals', source: 'owner' },
+    { op: 'add', kind: 'fact', text: 'A note that is gone at once', source: 'task' },
+    { op: 'delete', id: 'm5', reason: 'wrong' }
+  ], '2026-10-18');
+  assert.deepEqual(out.added, [{ id: 'm3', source: 'michael' }, { id: 'm4', source: 'owner' }]);
+});
+
+function addedOffice(t) {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-memadded-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const dir = path.join(home, 'hive', 'agents', 'oscar');
+  fs.mkdirSync(path.join(dir, 'memory'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'memory.md'), mi.renderIndex('Oscar', 'oscar', [{ id: 'm1', kind: 'fact', text: 'Old fact', source: 'task', date: '2026-10-01' }]));
+  fs.writeFileSync(path.join(dir, 'memory', 'inbox.md'), '- a note\n');
+  const reported = [];
+  const tidy = new MemoryTidy(() => home, () => 'claude', () => ({}), () => true, () => 'Oscar', () => {}, () => ({}), (id, added) => reported.push([id, added]));
+  return { dir, tidy, reported };
+}
+
+test('the tidy pass hands its new notes on once the index is written', async (t) => {
+  // Value: protects=the note-added record Pulse counts from (owner, 2026-10-18); fails_when=added notes are not reported or an edit is reported; why_new=the count moved from note dates to the app's own record; seam=temp hive, model stubbed; no_claim=the telemetry store itself
+  const f = addedOffice(t);
+  f.tidy.askModel = async () => ({ ops: [{ op: 'update', id: 'm1', text: 'Old fact, edited' }, { op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  await f.tidy.tidyNow();
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.ok(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').includes('New fact'), 'reported after the index holds it');
+});
+
+test('a pass whose state write fails after the index landed counts its notes once and never hands them back', async (t) => {
+  // Value: protects=one note, one count, one index line; fails_when=a failed step after the index write restores the inbox, so the next pass adds and counts the note again; why_new=ship review (state machine and QA probe); seam=state.json made a folder
+  const f = addedOffice(t);
+  const state = path.join(f.dir, 'memory', 'state.json');
+  fs.mkdirSync(state);
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  await f.tidy.tidyNow();
+  fs.rmdirSync(state);
+  await f.tidy.tidyNow();
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.equal(fs.readFileSync(path.join(f.dir, 'memory.md'), 'utf8').split('\n').filter((l) => l.includes('New fact')).length, 1);
+});
+
+test('held notes that cannot be removed after going back to the inbox come back only once', { skip: process.platform === 'win32' }, async (t) => {
+  // Value: protects=a locked processing file never adds the same notes again each pass; fails_when=the stranded recovery appends and then leaves the file full; why_new=ship review cycle 3; seam=a read only memory folder blocks the delete, not the inbox append
+  const f = addedOffice(t);
+  const mem = path.join(f.dir, 'memory');
+  fs.writeFileSync(path.join(mem, 'inbox.md'), '');
+  fs.writeFileSync(path.join(mem, 'inbox.processing.md'), '- a stranded note\n');
+  fs.chmodSync(mem, 0o500);
+  t.after(() => { try { fs.chmodSync(mem, 0o700); } catch { /* gone */ } });
+  f.tidy.askModel = async () => { throw new Error('no model'); };
+  await f.tidy.tidyNow();
+  await f.tidy.tidyNow();
+  fs.chmodSync(mem, 0o700);
+  const inbox = fs.readFileSync(path.join(mem, 'inbox.md'), 'utf8');
+  assert.equal(inbox.split('a stranded note').length - 1, 1, 'back once');
+});
+
+test('a processing file left after the index landed is never read back into the inbox', async (t) => {
+  // Value: protects=a cleanup that failed (Windows can hold the file open) never adds or counts notes twice; fails_when=the stranded recovery appends notes the index already has; why_new=ship review cycle 2; seam=the processing file emptied as the fallback leaves it
+  const f = addedOffice(t);
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'New fact', source: 'owner' }] });
+  await f.tidy.tidyNow();
+  // What the fallback leaves when the file cannot be removed: an empty file.
+  fs.writeFileSync(path.join(f.dir, 'memory', 'inbox.processing.md'), '');
+  f.tidy.askModel = async () => ({ ops: [] });
+  await f.tidy.tidyNow();
+  assert.deepEqual(f.reported, [['oscar', [{ id: 'm2', source: 'owner' }]]]);
+  assert.doesNotMatch(fs.readFileSync(path.join(f.dir, 'memory', 'inbox.md'), 'utf8').replace(/\s/g, ''), /\S/, 'nothing came back');
+});
+
+// POSIX only: a read only folder is how the write is made to fail, and Windows
+// ignores those permission bits (platform-scoped tests, owner 2026-10-09).
+test('a pass whose index write fails reports no new notes', { skip: process.platform === 'win32' }, async (t) => {
+  // Value: protects=the count never includes a note that did not land; fails_when=the report happens before or without the index write; why_new=owner 2026-10-18; seam=read only agent folder; no_claim=Windows
+  const f = addedOffice(t);
+  fs.chmodSync(f.dir, 0o500);
+  t.after(() => { try { fs.chmodSync(f.dir, 0o700); } catch { /* gone */ } });
+  f.tidy.askModel = async () => ({ ops: [{ op: 'add', kind: 'fact', text: 'Never written', source: 'task' }] });
+  const [r] = await f.tidy.tidyNow();
+  fs.chmodSync(f.dir, 0o700);
+  assert.equal(r.tidied, false, 'the index could not be written');
+  assert.deepEqual(f.reported, []);
 });

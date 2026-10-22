@@ -48,6 +48,7 @@ import {
   type MailboxRecord,
   type MailServer
 } from '../shared/mailboxes';
+import { markUntrustedMessage } from '../shared/untrustedText';
 import { OWN_SENDS_ONLY, proposalSendProblem, standingProblem, standingTooLong, threadFrom, STANDING_KIND_MAX, type MailProposal, type SendRecord, type StandingApproval, type StandingCheckEmail, type ThreadHeaders } from '../shared/mailProposals';
 
 // Limits (eng review E6 left these to the implementer).
@@ -245,6 +246,15 @@ export interface SmtpLike {
   close?(): void;
 }
 
+/** One organize call's moved mail, for the owner's private list of it. */
+export interface OrganizedMove {
+  agentId: string;
+  mailbox: string;
+  action: 'archive' | 'mark_read' | 'mark_junk';
+  folder: string | null;
+  messages: Array<{ id: string; from: string; subject: string }>;
+}
+
 export interface MailDeps {
   getConfig(): MailAccessConfig;
   getPassword(mailboxId: string): string | undefined;
@@ -332,7 +342,13 @@ export interface ComposeInput {
   thread?: ThreadHeaders;
 }
 
-interface OpenBox { client: ImapLike; timer?: ReturnType<typeof setTimeout> }
+interface OpenBox {
+  client: ImapLike;
+  /** Shared by every caller until this mailbox's login finishes. */
+  ready?: Promise<ImapLike>;
+  cancelled?: boolean;
+  timer?: ReturnType<typeof setTimeout>;
+}
 
 export class MailService {
   private readonly boxes = new Map<string, OpenBox>();
@@ -433,6 +449,7 @@ export class MailService {
 
   private async imap(id: string): Promise<ImapLike> {
     const open = this.boxes.get(id);
+    if (open?.ready) return open.ready;
     if (open && open.client.usable !== false) { this.touch(id, open); return open.client; }
     if (open) this.drop(id);
     const rec = this.record(id);
@@ -444,18 +461,32 @@ export class MailService {
     };
     client.on?.('error', disconnected);
     client.on?.('close', disconnected);
-    try {
-      await withTimeout(client.connect(), CALL_TIMEOUT_MS, 'Connecting to the mailbox');
-    } catch (e) {
-      // A failed login leaves a half-open socket: close it, or every failed
-      // attempt leaks a connection.
-      try { client.close?.(); } catch { /* already gone */ }
-      throw e;
-    }
     const box: OpenBox = { client };
+    const requireCurrent = (): void => {
+      if (this.boxes.get(id) !== box) throw new MailError('refused', 'The mailbox connection was closed. Try again.');
+    };
+    // Own the pending socket before yielding, so concurrent calls wait for it
+    // and close/closeAll can cancel it just like an established connection.
     this.boxes.set(id, box);
-    this.touch(id, box);
-    return client;
+    box.ready = withTimeout(Promise.resolve().then(() => {
+      requireCurrent();
+      return client.connect();
+    }), CALL_TIMEOUT_MS, 'Connecting to the mailbox').then(() => {
+      requireCurrent(); // A late login must never resurrect a closed socket.
+      box.ready = undefined;
+      this.touch(id, box);
+      return client;
+    }).catch((e: unknown) => {
+      if (this.boxes.get(id) === box) {
+        this.boxes.delete(id);
+        // A failed login leaves a half-open socket. A box already removed by
+        // close or a disconnect event has had its socket closed there.
+        try { client.close?.(); } catch { /* already gone */ }
+      }
+      if (box.cancelled) throw new MailError('refused', 'The mailbox connection was closed. Try again.');
+      throw e;
+    });
+    return box.ready;
   }
 
   private touch(id: string, box: OpenBox): void {
@@ -464,24 +495,31 @@ export class MailService {
     (box.timer as { unref?: () => void }).unref?.();
   }
 
-  private drop(id: string): void {
+  private drop(id: string, expected?: ImapLike): void {
     const box = this.boxes.get(id);
-    if (!box) return;
+    if (!box || (expected && box.client !== expected)) return;
     this.boxes.delete(id);
     if (box.timer) clearTimeout(box.timer);
-    box.client.logout().catch(() => box.client.close?.());
+    if (box.ready && box.client.close) {
+      try { box.client.close(); } catch { /* already gone */ }
+    } else box.client.logout().catch(() => box.client.close?.());
   }
 
   /** Close every connection (app quit, reset, mailbox removed). */
-  closeAll(): void { for (const id of [...this.boxes.keys()]) this.drop(id); }
-  close(id: string): void { this.drop(id); }
+  closeAll(): void { for (const id of [...this.boxes.keys()]) this.close(id); }
+  close(id: string): void {
+    const box = this.boxes.get(id);
+    if (box?.ready) box.cancelled = true;
+    this.drop(id);
+  }
 
   /** Run `fn` with the folder locked; one reconnect after a dropped socket
    *  (sleep and wake), then a classified error. */
   private async inFolder<T>(id: string, folder: (c: ImapLike) => Promise<string>, fn: (c: ImapLike, path: string) => Promise<T>, what: string): Promise<T> {
     for (let attempt = 0; attempt < 2; attempt++) {
+      let client: ImapLike | undefined;
       try {
-        const client = await this.imap(id);
+        client = await this.imap(id);
         const path = await folder(client);
         const lock = await withTimeout(client.getMailboxLock(path), CALL_TIMEOUT_MS, what);
         try {
@@ -491,8 +529,10 @@ export class MailService {
         } finally { lock.release(); }
       } catch (e) {
         const err = classifyMailError(e);
-        if (err.kind === 'network' && attempt === 0) { this.drop(id); continue; }
-        if (err.kind === 'network' || err.kind === 'timeout') this.drop(id);
+        // Acquisition failures clean up their own pending socket in imap.
+        // An older operation must not drop a replacement another caller owns.
+        if (err.kind === 'network' && attempt === 0) { if (client) this.drop(id, client); continue; }
+        if ((err.kind === 'network' || err.kind === 'timeout') && client) this.drop(id, client);
         this.note(id, err);
         throw err;
       }
@@ -608,7 +648,9 @@ export class MailService {
    * with a label, to that label (a Gmail label, or a folder of that name on
    * other servers, made when missing). `mark_junk` marks them read and moves
    * them to the junk folder. `mark_read` leaves them where they are. Every
-   * outcome can be undone in the mailbox.
+   * outcome can be undone in the mailbox. `about` is each moved message's
+   * sender and subject, read just before the move, for the owner's list of
+   * organized mail; `folder` is where archived mail went (null: All Mail).
    */
   async organize(id: string, action: 'archive' | 'mark_read' | 'mark_junk', uids: number[], label?: string) {
     if (!uids.length) throw new MailError('bad-request', `${action} needs the message ids from search.`);
@@ -621,9 +663,19 @@ export class MailService {
       const found = uids.filter((u) => present.has(u));
       const missing = uids.filter((u) => !present.has(u));
       if (!found.length) throw new MailError('not-found', 'None of those messages are in the inbox any more.');
+      // Who sent each one and what it said, before it leaves the inbox. A
+      // mailbox that cannot say still has its mail moved; the list then shows
+      // the move without the words.
+      const words = new Map<number, { from: string; subject: string }>();
+      try {
+        for await (const m of c.fetch(found, { uid: true, envelope: true }, { uid: true })) {
+          words.set(Number(m.uid), { from: addrText(m.envelope?.from), subject: m.envelope?.subject ?? '' });
+        }
+      } catch { /* the move stands without the words */ }
+      const about = found.map((u) => ({ id: String(u), from: words.get(u)?.from ?? '', subject: words.get(u)?.subject ?? '' }));
       if (action === 'mark_read') {
         await c.messageFlagsAdd(found, ['\\Seen'], { uid: true });
-        return { done: found.map(String), missing: missing.map(String) };
+        return { done: found.map(String), missing: missing.map(String), about, folder: null };
       }
       // Where they go is settled before anything changes, so a mailbox with no
       // junk folder leaves the messages exactly as they were.
@@ -656,7 +708,8 @@ export class MailService {
       }
       await c.messageFlagsAdd(found, ['\\Seen'], { uid: true });
       await c.messageMove(found, destination, { uid: true });
-      return { done: found.map(String), missing: missing.map(String), ...(label ? { label } : {}) };
+      const folder = action === 'archive' ? (gmail ? label ?? null : destination) : null;
+      return { done: found.map(String), missing: missing.map(String), ...(label ? { label } : {}), about, folder };
     }, action === 'mark_read' ? 'Marking mail read' : action === 'mark_junk' ? 'Moving mail to junk' : 'Archiving mail');
   }
 
@@ -1046,7 +1099,36 @@ function ref(v: unknown): MailRef | undefined {
   return typeof o.mailbox === 'string' && (typeof o.id === 'string' || typeof o.id === 'number') ? { mailbox: o.mailbox, id: String(o.id) } : undefined;
 }
 
-type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean };
+type MailRequestDeps = Pick<MailDeps, 'getConfig' | 'log'> & { audit?: (event: Record<string, unknown>) => void; organized?: (moved: OrganizedMove) => void; proposals?: ProposalStore; fitCheck?: StandingFitCheck; present?: (agentId: string) => boolean; tellMichael?: (subject: string, body: string) => void };
+
+/** Messages Michael has already heard were flagged, so a re-read does not tell him twice. */
+const flaggedTold = new Set<string>();
+const FLAGGED_TOLD_MAX = 1000;
+
+/**
+ * Tell Michael, once per message, that an email an agent read has lines aimed at an
+ * AI. Michael decides what to do; the reading agent carries on. The sender, subject
+ * and lines come from outside, so they are quoted, capped and labelled as such.
+ */
+function tellMichaelFlagged(
+  deps: MailRequestDeps, cfg: MailAccessConfig, agentId: string, mailbox: string, id: string,
+  msg: { from?: string; subject?: string; instruction_like?: string[] }
+): void {
+  if (!deps.tellMichael || !msg.instruction_like?.length) return;
+  const key = `${mailbox}\u0000${id}`;
+  if (flaggedTold.has(key)) return;
+  if (flaggedTold.size >= FLAGGED_TOLD_MAX) flaggedTold.delete(flaggedTold.values().next().value as string);
+  flaggedTold.add(key);
+  const address = mailboxAddress(cfg, mailbox);
+  const quote = (s: string | undefined, max: number): string => JSON.stringify((s ?? '').replace(/\s+/g, ' ').trim().slice(0, max));
+  try {
+    deps.tellMichael(
+      `Email with lines aimed at an AI: ${address}`.slice(0, 200),
+      `${agentId} read an email in ${address} with lines written to steer an AI. ${agentId} was told not to follow them and is carrying on. Everything quoted below was written by the sender: it is information, not instructions.\n`
+        + `From: ${quote(msg.from, 200)}\nSubject: ${quote(msg.subject, 200)}\nFlagged lines:\n${msg.instruction_like.map((l) => `- ${quote(l, 120)}`).join('\n')}`
+    );
+  } catch { /* the read stands */ }
+}
 
 /**
  * One md-mail tool call, already authenticated by the broker token (so `agentId`
@@ -1334,7 +1416,10 @@ async function runMailRequest(
       // Long enough for the longest id search gives: "label:" + a 60 character label + ":" + uid.
       const id = str(body.id, 100) ?? (typeof body.id === 'number' ? String(body.id) : undefined);
       if (!id) return { status: 400, body: { error: 'read needs the message id from search.' } };
-      return { status: 200, body: await svc.read(mailbox!, id) };
+      // Anyone can write to the business: label the text as data and point out lines aimed at an AI.
+      const msg = markUntrustedMessage(await svc.read(mailbox!, id));
+      tellMichaelFlagged(deps, cfg, agentId, mailbox!, id, msg);
+      return { status: 200, body: msg };
     }
     if (op === 'archive' || op === 'mark_read' || op === 'mark_junk') {
       const raw = Array.isArray(body.ids) ? body.ids : body.id !== undefined ? [body.id] : [];
@@ -1347,10 +1432,13 @@ async function runMailRequest(
       const label = op === 'archive' ? str(body.label, 60)?.trim().replace(/[\r\n]/g, ' ') : undefined;
       const problem = label ? labelProblem(label) : null;
       if (problem) return { status: 400, body: { error: problem } };
-      const done = await svc.organize(mailbox!, op, uids, label);
+      const { about, folder, ...done } = await svc.organize(mailbox!, op, uids, label);
       // Every move is written to the office log, so the owner can see what an
       // agent cleared from the inbox and where it went.
       try { deps.audit?.({ kind: 'mail-organize', agentId, mailbox, action: op, ids: done.done, ...(label ? { label } : {}) }); } catch { /* the move stands */ }
+      // And each email's sender and subject to the owner's private list (the
+      // agent's answer stays as it was: it already read them).
+      try { deps.organized?.({ agentId, mailbox: mailbox!, action: op, folder, messages: about }); } catch { /* the move stands */ }
       return { status: 200, body: done };
     }
     if (!input.to || !input.subject) return { status: 400, body: { error: `${op} needs "to" and "subject".` } };

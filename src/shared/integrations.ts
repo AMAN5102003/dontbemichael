@@ -86,6 +86,10 @@ export const INTEGRATION_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 export const HEADER_NAME_RE = /^[A-Za-z0-9-]{1,64}$/;
 export const ALL_AUTH_TYPES: readonly IntegrationAuthType[] = ['none', 'bearer', 'header', 'github'];
 export const ALL_KINDS: readonly IntegrationKind[] = ['github', 'custom-rest'];
+/** What main answers when a NEW integration names an id already registered:
+ *  saving under it would replace that integration and its secret (`int:<id>`).
+ *  The form shows its own words for it. */
+export const INTEGRATION_ID_TAKEN = 'An integration with this id already exists, so nothing was saved over it.';
 
 /** The secretRef handle for an integration id (1:1). */
 export function secretRefFor(id: string): string {

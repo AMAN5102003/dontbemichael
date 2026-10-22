@@ -86,6 +86,18 @@ export function shouldSweep(
   return false;
 }
 
+/** Whether a process tree snapshotted before a kill (POSIX) still has a
+ *  member from the snapshot, matched on pid AND start time so a recycled pid
+ *  or pgid never counts. Null when it can't be told: no snapshot, Windows, or
+ *  `ps` failing now. */
+export function snapshotRemains(pid: number, before: Map<number, string> | null): boolean | null {
+  if (process.platform === 'win32' || before === null) return null;
+  const after = groupMembers(pid);
+  if (after === null) return null;
+  for (const [member, started] of after) if (before.get(member) === started) return true;
+  return false;
+}
+
 /** After a graceful kill (node-pty's SIGHUP), make sure the PIDs actually get
  *  released: wait a short grace, then sweep the process tree. Runs even when
  *  the leader died promptly — the sweep is what reaps grandchildren the polite

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { SHOW_FOCUS_MODE } from '@shared/buildFeatures';
 import { useTranslation } from 'react-i18next';
-import { useStore, type FloorView } from '@/store/store';
+import { useStore, type FloorView, ACTION_CLOCKING_IN } from '@/store/store';
+import { stillOut } from './clockingIn';
 import { Icon } from '@/components/Icon';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
 import { notifyThemeChangeAll } from '@/components/terminalPool';
@@ -195,6 +196,12 @@ export function ClockPill() {
   const [now, setNow] = useState(() => new Date());
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  // While the office opens, the pill says so and counts who is in, on every
+  // view (DESIGN.md 7.3, design review 1A); "Office open" once all are in or
+  // at the cap.
+  const opening = useStore((s) => s.opening.kind === 'opening');
+  const total = useStore((s) => s.agents.length);
+  const out = useStore((s) => stillOut(s.agents, ACTION_CLOCKING_IN).length);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 15_000);
@@ -235,11 +242,14 @@ export function ClockPill() {
           fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, color: 'var(--cth-ink-2)'
         }}
       >
-        <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--cth-green)', boxShadow: '0 0 0 3px var(--cth-green-soft)' }} />
+        <span style={opening
+          ? { width: 7, height: 7, borderRadius: '50%', background: 'var(--cth-indigo)', boxShadow: '0 0 0 3px var(--cth-indigo-soft)', animation: 'cth-pulse 1.6s ease-in-out infinite' }
+          : { width: 7, height: 7, borderRadius: '50%', background: 'var(--cth-green)', boxShadow: '0 0 0 3px var(--cth-green-soft)' }} />
         <span style={{ fontFamily: 'var(--cth-font-mono)', fontWeight: 600, color: 'var(--cth-ink)' }}>
           {now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
         </span>
-        <span>{t('shell.officeOpen')}</span>
+        <span>{opening ? t('shell.opening') : t('shell.officeOpen')}</span>
+        {opening && total > 0 && <span style={{ fontFamily: 'var(--cth-font-mono)' }}>{t('shell.openingCount', { count: total - out, total })}</span>}
         <ChevronGlyph />
       </button>
       {open && (

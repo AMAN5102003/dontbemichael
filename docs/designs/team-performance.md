@@ -243,6 +243,13 @@ The view never folds the 400,000 row ledger: it reads the processor's rollups.
 | Try a stronger model | 10 or more decisions and kept as is under 60%, or 3 or more reopens | next tier up in the same provider; Michael included |
 
 - Each recommendation shows its numbers ("Toby: 14 runs, 12 found nothing to do").
+- **Early patterns** (owner, 2026-10-19): before 14 live days the same four rules run on the
+  live days so far, each evidence minimum halved (5 runs; 10 pieces and 5 decisions; 2
+  reopens), with the same shares. What they find shows under a bold "What Pulse sees so far,
+  not advice yet." as plain facts ("Toby's "Benefits inbox check" found nothing to do on 6
+  of 8 runs so far"), at most 3, the most evidence first: no Apply, no Not now, no saving,
+  and a model fact names no model. On day 14 the advice takes over (`adviceFor(input,
+  { from, scale })`, `PulseView.early`).
 - Model advice shows observed cost per piece; a projected saving appears only when
   both models have a known price (`knownPrice(model)` returns nothing for a model the
   table does not list, unlike `priceFor`, which falls back to Sonnet). Add Fable and
@@ -443,7 +450,7 @@ so the view can show what changed and when.
      -> PERSIST (insert telemetry_events, one prepared statement) -> PROCESSOR (cursor) -> rollups, runs, advice -> push
   shadow paths:
     nil agent id or unknown kind ......... dropped, counted in a debug counter (Section 8)
-    empty tasks.json / no cards .......... no card events; view shows zeros, says so
+    empty tasks.json / no cards .......... no card events; those tiles fold into quiet chips (pulse-smart-view.md, owner 2026-10-19)
     malformed tasks.json ................. tick skipped, last good snapshot kept (Section 2)
     insert fails ......................... D15: failure counted per day, flagged, advice skips the day
     duplicate event (replay after crash) . cursor saved in the same transaction as rollups: no double count
@@ -1109,6 +1116,19 @@ Step 0: 4/10. Focus: all 7 passes (owner, D1).
 
 - D8 (2A): the period picker offers This week, Last week and Last 4 weeks; weeks start
   Monday, local time; remembered on this computer. Suggestions always use the last 14 days.
+  Owner, 2026-10-16: the picker offers Today, This week and This month (a calendar month), and
+  a Compare switch sets each against the span before, up to the same day (all of yesterday;
+  last week to the same weekday; last month to the same date, capped). Both spans come from the
+  same snapshot code. Compare waits until the span before starts on or after the first live
+  recorded day. Last week and Last 4 weeks are gone. Reviews: the eng and design review report
+  for this change (2026-10-16). Owner, 2026-10-16: the held tile opens a list of what was held,
+  read from a private record the hive writes at each hold; the count comes from the hive's
+  trust-held line, the same event (docs/designs/research-agent-privacy.md). Owner, 2026-10-16: the
+  questions and web answers tiles open lists of each check, both texts kept whole up to 4,000
+  characters in private/checked.jsonl, shown 62 days and then moved to private/checked-archive
+  (never deleted but by a reset); the counts come from the hive's trust-checked line, one per
+  message, and the trust layer's own lines stop counting from v 3 (eng and design reviews,
+  2026-10-16).
 - D9 (2B): with no suggestion, one calm line "Nothing to change this week." with an (i);
   before 14 days of records, "Suggestions start on <date>." Saved by your changes stays.
 
