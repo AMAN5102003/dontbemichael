@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [Unreleased]
+
+### Fixed
+- When a long reply arrives, the conversation with Michael stays on the latest even while the app is busy: a reply that folds behind More no longer leaves the newest lines just out of view until the next screen update.
+
 ## [0.2.5] (2026-10-21)
 
 ### Added
