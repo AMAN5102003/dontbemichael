@@ -231,12 +231,14 @@ export function AskMeTab() {
       if (!result.ok || result.landed === false) throw new Error('task changed before answer could be saved');
       onCard = true;
       updateNeedsYouTasks(() => next);
-      // 2) The answer reaches Michael as a request about the card, which he
-      //    closes with done once he has routed it, and goes into the memory
-      //    notes of whoever raised the question. The owner only talks to
-      //    Michael (askMeRouting.ts).
+      // 2) The answer goes into the memory notes of whoever raised the
+      //    question, and reaches Michael as a request about the card, which he
+      //    closes with done once he has routed it. The owner only talks to
+      //    Michael (askMeRouting.ts). The note comes first: his request says it
+      //    is there, and a request that fails to go is sent again later.
       const agents = useStore.getState().agents;
       const raiser = raiserOf(open, task, new Set(agents.map((a) => a.id)));
+      await window.cth.hiveRememberOwnerAnswer({ agentId: raiser, task: task.title, q: asked, a: text }).catch(() => undefined);
       const raiserName = agents.find((a) => a.id === raiser)?.name ?? raiser;
       for (const m of answerMessages({ raiser, raiserName, taskId: task.id, title: task.title, q: asked, a: text, answeredAt })) {
         await window.cth.hiveSend({
@@ -245,7 +247,6 @@ export function AskMeTab() {
           ...(m.requires_reply !== undefined ? { requires_reply: m.requires_reply } : {})
         }, 'human');
       }
-      await window.cth.hiveRememberOwnerAnswer({ agentId: raiser, task: task.title, q: asked, a: text }).catch(() => undefined);
       setAnswerDraft(row.key, '');
       setAnswerPick(row.key, {});
       setAnsweredHere((list) => [{ id: row.key, title: task.title, a: text, who: nameFor(typeof task.assignee === 'string' ? task.assignee : undefined), whoId: typeof task.assignee === 'string' ? task.assignee : undefined }, ...list.filter((x) => x.id !== row.key)]);
