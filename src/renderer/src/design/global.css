@@ -672,7 +672,7 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
    180 ms up from the composer's top edge; reduced motion snaps. */
 /* The program mark on the studio platform's side (StudioStage): quiet at rest,
    full and underlined under the pointer or keyboard focus. */
-.cth-st-mark { position: absolute; text-decoration: none; cursor: pointer; opacity: var(--mark-op, 0.9); }
+.cth-st-mark { text-decoration: none; cursor: pointer; opacity: var(--mark-op, 0.9); }
 .cth-st-mark:hover, .cth-st-mark:focus-visible { opacity: 1; text-decoration: underline; }
 .cth-st-mark:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 2px; border-radius: 2px; }
 
