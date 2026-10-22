@@ -138,9 +138,9 @@ test('the program mark is lettered small on the platform\'s side face, under the
   assert.ok(stage.indexOf('<FloorMark') > stage.indexOf('if (plan.compact) {'), 'only in the stage, the compact grid returns first');
   const art = read('src/renderer/src/scene/studio/StudioArt.tsx');
   const mark = art.slice(art.indexOf('export function FloorMark'), art.indexOf('export function FloorMark') + 700);
-  assert.match(mark, /const \[x, y\] = P\(5, 4\.4, -12\);/, 'from near the front corner of the right face, between its top edge and the band 16 px down');
-  assert.match(mark, /textAnchor="start"[^>]*fontSize=\{10\}/, 'small, starting at the left');
-  assert.match(mark, /matrix\(1 -0\.5 0 1 \$\{x\} \$\{y\}\)/, 'along the right face\'s 2:1 slope');
+  assert.match(mark, /const \[x, y\] = P\(4\.5, 5, -12\);/, 'on the front left face, ending just before the front corner, low in the band');
+  assert.match(mark, /textAnchor="end"[^>]*fontSize=\{8\}/, 'small, ending at the corner');
+  assert.match(mark, /matrix\(1 0\.5 0 1 \$\{x\} \$\{y\}\)/, 'along the left face\'s 2:1 slope');
   assert.match(mark, /direction="ltr"/, 'a proper name, never reversed in Arabic');
   assert.match(mark, /fill=\{T\.markFill\} fillOpacity=\{T\.markOp\}/);
   assert.match(mark, /\{PROGRAM_MARK\}/);

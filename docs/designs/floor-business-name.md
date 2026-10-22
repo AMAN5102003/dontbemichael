@@ -359,3 +359,5 @@ same 2:1 slope; white on the light face, a muted violet on the dark one (`markFi
 bottom bar overlap risk (Architecture 1) no longer applies: the face is well above the stage bottom.
 
 Then, same day: "bring it towards the left rather middle": it starts 30 px from the front corner (`P(5, 4.4, -12)`, anchored at its start) and runs right along the face.
+
+Then, same day, with a screenshot: "move it more to the left and ensure the text is not cut. it is ok to reduce the size if needed". On the right face the team pod (slot 8, `layout.ts:52`) covered "AI Labs" and the 10 px letters reached past the slab's top edge. The mark moved to the front left face, which no pod reaches over: it ends just before the front corner (`P(4.5, 5, -12)`, anchored at its end), 8 px, low in the band; a violet on the paler left face in light (`#8A82C9`), the same muted violet in dark.
