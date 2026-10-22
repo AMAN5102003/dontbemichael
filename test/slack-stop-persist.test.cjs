@@ -64,8 +64,12 @@ test('the lifecycle teardowns do not clear the flag', () => {
   // file-wide count both fails a legitimate second clear elsewhere (e.g. clearing
   // the flag when the signing secret is emptied) and passes a teardown that
   // disables via a helper, which is the regression this is here to catch.
+  // Both resets stop Slack through their shared helper (stopForReset), whose
+  // step logs as `[reset] slack.stop` or `[memory reset] slack.stop`.
   for (const tag of ['changeHome', 'quit', 'reset']) {
-    const re = new RegExp(`^.*console\\.error\\('\\[${tag}\\] slack\\.stop:.*$`, 'm');
+    const re = tag === 'reset'
+      ? /^.*step\('slack\.stop', \(\) => stopSlackServer\(\)\);.*$/m
+      : new RegExp(`^.*console\\.error\\('\\[${tag}\\] slack\\.stop:.*$`, 'm');
     const line = src.match(re);
     assert.ok(line, `could not find the ${tag} slack teardown line — has it been renamed?`);
     assert.ok(

@@ -33,7 +33,7 @@ async function floor(t, opts = {}) {
   const hive = new HiveManager(() => home);
   const inj = await hive.ensureAgent(
     { id: 'god-1', name: 'Michael', provider: opts.provider ?? 'claude', cwd: home, isGod: true },
-    { semanticMemory: true, knowledgeGraph: true, kgCliPath: KG_CLI, ...(opts.injectOpts ?? {}) }
+    { knowledgeGraph: true, kgCliPath: KG_CLI, ...(opts.injectOpts ?? {}) }
   );
   return { home, hive, inj, dir: path.join(home, 'hive', 'agents', 'god-1'), root: path.join(home, 'hive') };
 }

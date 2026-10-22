@@ -18,6 +18,7 @@ import { TriggerCard } from './triggers/ui';
 import { WorkersTab } from './WorkersTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
+import { areLogsEqual, type LogEntry } from './activityLog';
 import { Icon } from './Icon';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
@@ -42,6 +43,7 @@ import { BUILD_ENGINES, canReceiveInbox } from '@shared/agentProvider';
 import { isComposingKey } from '@shared/imeGuard';
 import { fmtTokens } from '@shared/tokenFormat';
 import { useRtl } from '@/i18n/useDirection';
+import { SilentPanelLine } from './SilentEngine';
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
  *  when the god agent is selected: terminal + queue, the floor roster (with
@@ -218,10 +220,11 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
 
       {/* Tabs (DESIGN.md 7.11): Profile, Access, Work, Office schedule, History
           (only once a webhook exists), Memory, Advanced. */}
+      <SilentPanelLine agentId={agent.id} name={agent.name} />
       <PanelTabs tabs={visibleTabs.map((tabDef) => ({ key: tabDef.key, label: t(tabDef.labelKey) }))} current={tab} onChange={setTab} />
 
-      {/* Body */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* Body (data-panel-body: see AgentDetailPanel). */}
+      <div data-panel-body data-tab={tab} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {tab === 'terminal' && (
           isFullscreenedHere ? (
             <Centered>{t('commandCenter.terminalFullscreen')}</Centered>
@@ -310,7 +313,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
   const { t } = useTranslation();
   const rtl = useRtl();
   const agents = useStore((s) => s.agents);
-  const godName = agents.find((a) => a.isGod)?.name ?? 'the orchestrator';
+  const godName = agents.find((a) => a.isGod)?.name ?? t('common.orchestrator');
   const select = useStore((s) => s.select);
   const updateAgent = useStore((s) => s.updateAgent);
   const toolCounts = useStore((s) => s.toolCounts);
@@ -422,7 +425,10 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
         rows = oldEntry.term.rows;
       } catch { /* host not sized yet */ }
 
-      const killed = await window.cth.killPty(a.ptyId);
+      // A restart: an isolated member's worktree stays, and it starts again in it
+      // (ship review 2026-10-17).
+      const cwd = a.worktreePath && (await window.cth.gitIsRepo(a.worktreePath)) ? a.worktreePath : a.cwd;
+      const killed = await window.cth.killPty(a.ptyId, { restart: true });
       // A pty that is ALREADY gone is the state this kill was trying to reach, so
       // it is not a failure. This is the single most common way to arrive at
       // "Restart & Continue": the session died on its own — a crash, or Ctrl-C
@@ -452,7 +458,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
       const hive = {
         id: a.id,
         name: a.name,
-        cwd: a.cwd,
+        cwd,
         provider,
         isGod: a.isGod,
         isAssistant: a.isAssistant,
@@ -460,7 +466,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
       };
       const res = await window.cth.spawnPty({
         id: a.ptyId,
-        cwd: a.cwd,
+        cwd,
         command: exe,
         args,
         provider,
@@ -1067,11 +1073,11 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
   // undefined: first read not back yet; null: the read failed.
   const [detail, setDetail] = useState<{ index: string; waiting: number } | null | undefined>(undefined);
   const [showFile, setShowFile] = useState(false);
-  // One search box: exact words across the hive files, or by meaning (MemPalace).
-  const [mode, setMode] = useState<'text' | 'meaning'>('text');
+  // One search box: exact words across the team's notes. Search by meaning
+  // covers company knowledge only, so it lives with it in Settings (owner,
+  // 2026-10-19); members' notes are never indexed by meaning.
   const [query, setQuery] = useState('');
   const [busy, setBusy] = useState(false);
-  const [searchOut, setSearchOut] = useState('');
   const [textResults, setTextResults] = useState<Array<{ source: string; excerpt: string }>>([]);
   const [textSearched, setTextSearched] = useState(false);
 
@@ -1093,16 +1099,11 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
     if (!q) return;
     setBusy(true);
     try {
-      if (mode === 'text') {
-        const res = await window.cth.textSearch(q);
-        setTextResults(res.ok ? res.results.slice(0, 10) : []);
-        setTextSearched(true);
-      } else {
-        const res = await window.cth.searchMemory(q);
-        setSearchOut(res.ok ? (res.output || t('commandCenter.searchNoMatch')) : `${t('commandCenter.dispatchFailed', { error: res.error })}`);
-      }
+      const res = await window.cth.textSearch(q);
+      setTextResults(res.ok ? res.results.slice(0, 10) : []);
+      setTextSearched(true);
     } catch {
-      if (mode === 'text') { setTextResults([]); setTextSearched(true); }
+      setTextResults([]); setTextSearched(true);
     } finally { setBusy(false); }
   };
 
@@ -1163,27 +1164,12 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
 
       {!ownOnly && <section style={{ marginTop: 18, paddingTop: 12, borderTop: '1px solid var(--cth-ink-100)' }}>
         <h3 style={{ margin: '0 0 6px', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink-700)' }}>{t('memoryNotes.searchTitle')}</h3>
-        <div role="radiogroup" aria-label={t('memoryNotes.searchTitle')} style={{ borderRadius: 'var(--cth-r-md)', display: 'inline-flex', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', marginBottom: 6 }}>
-          {(['text', 'meaning'] as const).map((m) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={mode === m}
-              onClick={() => setMode(m)}
-              style={{
-                padding: '2px 10px', border: 'none', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px',
-                background: mode === m ? 'var(--cth-ink-900)' : 'transparent', color: mode === m ? 'var(--cth-cream-50)' : 'var(--cth-ink-900)'
-              }}
-            >{t(m === 'text' ? 'memoryNotes.exactWords' : 'memoryNotes.byMeaning')}</button>
-          ))}
-        </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => { if (isComposingKey(e)) return; if (e.key === 'Enter') search(); }}
-            placeholder={t(mode === 'text' ? 'commandCenter.textSearchPlaceholder' : 'commandCenter.semanticPlaceholder')}
+            placeholder={t('commandCenter.textSearchPlaceholder')}
             aria-label={t('memoryNotes.searchTitle')}
             style={{ ...textareaStyle, height: 30 }}
           />
@@ -1191,7 +1177,7 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
             {busy ? '…' : t('common.search')}
           </PixelButton>
         </div>
-        {mode === 'text' && textResults.length > 0 && (
+        {textResults.length > 0 && (
           <div style={{ marginTop: 6 }}>
             {textResults.map((r, i) => (
               <div key={i} style={{ marginBottom: 4 }}>
@@ -1201,8 +1187,7 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
             ))}
           </div>
         )}
-        {mode === 'text' && textSearched && textResults.length === 0 && <Muted>{t('commandCenter.nothingMatched')}</Muted>}
-        {mode === 'meaning' && searchOut && <Pre>{searchOut}</Pre>}
+        {textSearched && textResults.length === 0 && <Muted>{t('commandCenter.nothingMatched')}</Muted>}
       </section>}
     </div>
   );
@@ -1288,18 +1273,20 @@ function TokenLimitEditor({ value, onSet }: { value?: number; onSet: (tokens: nu
 
 // ─── Activity tab — hive event log + board ───────────────────────────────────
 
-interface LogEntry { ts?: number; kind?: string; [k: string]: unknown }
-
 function ActivityTab({ embedded = false }: { embedded?: boolean }) {
   const Wrap = embedded ? Bare : Scroll;
   const { t } = useTranslation();
   const [log, setLog] = useState<LogEntry[]>([]);
   const [board, setBoard] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
   useEffect(() => {
     const refresh = async () => {
-      try { setLog((await window.cth.hiveLog(60)) as LogEntry[]); } catch { /* noop */ }
+      try {
+        const next = (await window.cth.hiveLog(60)) as LogEntry[];
+        // Same log as last poll: keep the prev reference so React skips the
+        // re-render. IPC returns fresh objects each time, so compare by value.
+        setLog((prev) => (areLogsEqual(prev, next) ? prev : next));
+      } catch { /* noop */ }
       try { setBoard(await window.cth.hiveBoard()); } catch { /* noop */ }
     };
     refresh();

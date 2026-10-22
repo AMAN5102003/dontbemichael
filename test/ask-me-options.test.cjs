@@ -106,7 +106,7 @@ test('the pick and part answers are kept only with the owner\'s own answer', () 
   const planted = [{ ...pete, askedAt: 't0', picked: 1 }, { ...dwight, askedAt: 't0', partAnswers: ['remove', null, null] }];
   const typed = mergeHumanQA(planted, [{ ...pete, askedAt: 't0', a: 'use your judgment' }, { ...dwight, askedAt: 't0', a: 'later' }]);
   // and the card sends only its own: it drops what was on the ask before adding the Reply's pick.
-  assert.match(read('src/renderer/src/components/AskMeTab.tsx'), /\? \{ \.\.\.withoutDetail\(e\), a: text, answeredAt: new Date\(\)\.toISOString\(\), \.\.\.detail \}/);
+  assert.match(read('src/renderer/src/components/AskMeTab.tsx'), /\? \{ \.\.\.withoutDetail\(e\), a: text, answeredAt, \.\.\.detail \}/);
   assert.deepEqual(typed.added, [0, 1]);
   assert.equal(typed.humanQA[0].picked, undefined);
   assert.equal(typed.humanQA[1].partAnswers, undefined);
@@ -134,9 +134,9 @@ test('the card: rows to pick, a line per question, Reply on its own row saying w
   assert.match(tab, /\/\* One row: the answer, and Reply\. \*\/\s*<div style=\{\{ display: 'flex', alignItems: 'flex-end', gap: 6 \}\}>/);
   // A pick is a draft too (3A), and goes with the answer to main.
   assert.match(tab, /const hasDraft = !!draft\.trim\(\) \|\| pk\.pick !== undefined \|\| partsAnswered > 0;/);
-  assert.match(tab, /\? \{ answeredAt: new Date\(\)\.toISOString\(\), \.\.\.detail \}|answeredAt: new Date\(\)\.toISOString\(\), \.\.\.detail \}/);
+  assert.match(tab, /\? \{ answeredAt, \.\.\.detail \}|answeredAt, \.\.\.detail \}/);
   assert.match(tab, /setAnswerPick\(row\.key, \{\}\);/, 'a sent pick is cleared');
-  assert.match(tab, /answerMessages\(\{ raiser, raiserName, taskId: task\.id, title: task\.title, q: asked, a: text \}\)/);
+  assert.match(tab, /answerMessages\(\{ raiser, raiserName, taskId: task\.id, title: task\.title, q: asked, a: text, answeredAt \}\)/);
   assert.match(read('src/renderer/src/components/TasksKanban.tsx'), /q: askAsText\(e\.q, readAskShape\(e\)\)/, 'Task detail shows the options and parts');
 });
 

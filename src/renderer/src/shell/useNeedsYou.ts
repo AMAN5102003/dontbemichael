@@ -5,8 +5,10 @@ import type { OwnerRequest } from '@shared/ownerRequests';
 import type { WorkStyleOffer } from '@shared/workStyleUpdates';
 import type { EngineSetupStatus } from '@shared/engineSetup';
 import { stopNeedsOwner, type OfficeBreakView } from '@shared/officeBreak';
-import { openQuestion, openQuestions, parseTasks, waitsOnHuman, type HiveTask } from '../components/hiveTasks';
+import { openQuestions, parseTasks, type HiveTask } from '../components/hiveTasks';
 import { openReportIndexes } from '@shared/askMeRouting';
+import { silentCards, type SilentEpisode } from '@shared/silentEngine';
+import { foundationAsk, isSnoozed, type FoundationsView } from '@shared/foundations';
 
 const POLL_MS = 5000;
 
@@ -36,6 +38,9 @@ export interface NeedsYouFeed {
   engineSetup: EngineSetupStatus | null;
   /** The office stop or break, if any (office-stopped-account.md). */
   stop: OfficeBreakView | null;
+  /** Members whose engine isn't reporting to the app (issue #326); each card
+   *  (one per engine version, and Michael's) is one in `count`. */
+  silent: SilentEpisode[];
   /** Open asks, passed-on schedule requests, job description offers, emails to
    *  approve, one for an engine Michael cannot start on, and one for a stop
    *  only the owner can fix (out of credit, sign in). */
@@ -44,9 +49,14 @@ export interface NeedsYouFeed {
   reports: number;
   /** The one time Research card after the update (issue #230, design D9): a report. */
   researchNotice: boolean;
+  /** The one time card for an owner who had company knowledge off (a report). */
+  knowledgeNotice: boolean;
+  /** Company foundations as the foundation cards read them (answers, drafts,
+   *  Not now); null until read or from an older main. */
+  foundations: FoundationsView | null;
 }
 
-let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, count: 0, reports: 0, researchNotice: false };
+let feed: NeedsYouFeed = { status: 'unknown', tasks: [], requests: [], ownerRequests: [], offers: [], proposals: [], engineSetup: null, stop: null, silent: [], count: 0, reports: 0, researchNotice: false, knowledgeNotice: false, foundations: null };
 // The offers need the team and the packs, which this module does not import;
 // the app hands it the reader at start (App.tsx).
 let offersSource: (() => Promise<WorkStyleOffer[]>) | null = null;
@@ -93,7 +103,7 @@ let taskReads = 0;
 let requestReads = 0;
 let ownerReads = 0;
 
-function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'researchNotice'>>): void {
+function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests' | 'ownerRequests' | 'offers' | 'proposals' | 'engineSetup' | 'stop' | 'silent' | 'researchNotice' | 'knowledgeNotice' | 'foundations'>>): void {
   // A poll that brings nothing new changes nothing, so nobody re-renders.
   const changed = (Object.keys(next) as Array<keyof typeof next>).some((k) => JSON.stringify(next[k]) !== JSON.stringify(feed[k]));
   if (!changed) return;
@@ -101,14 +111,17 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
   const merged = { ...feed, ...next };
   feed = {
     ...merged,
-    count: merged.tasks.reduce((n, t) => n + openQuestions(t).length, 0) + merged.requests.length + merged.offers.length + merged.proposals.length,
-    reports: merged.tasks.reduce((n, t) => n + openReportIndexes(t.humanQA).length, 0) + (merged.researchNotice ? 1 : 0)
+    count: merged.tasks.reduce((n, t) => n + shownQuestions(t, merged.foundations).length, 0) + merged.requests.length + merged.offers.length + merged.proposals.length,
+    reports: merged.tasks.reduce((n, t) => n + openReportIndexes(t.humanQA).length, 0) + (merged.researchNotice ? 1 : 0) + (merged.knowledgeNotice ? 1 : 0)
   };
   // One more while Michael cannot start for want of his engine (get-michael-ready.md),
   // unless a sign in stop already says so: one problem, one card (eng R3).
   if (setupCardShown(merged)) feed = { ...feed, count: feed.count + 1 };
   // One more for a stop only the owner can fix (office-stopped-account.md, design D2).
   if (stopNeedsOwner(merged.stop)) feed = { ...feed, count: feed.count + 1 };
+  // One per not reporting card (DESIGN.md §7.6b, SD1).
+  const silent = silentCards(merged.silent).length;
+  if (silent) feed = { ...feed, count: feed.count + silent };
   for (const l of [...listeners]) l();
   // Ready after Michael could not start: hand the terminals that could not
   // start to useHive, which restarts exactly those (agents at work keep going).
@@ -117,6 +130,25 @@ function publish(next: Partial<Pick<NeedsYouFeed, 'status' | 'tasks' | 'requests
     && typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
     window.dispatchEvent(new CustomEvent(ENGINE_READY_EVENT, { detail: { restart } }));
   }
+}
+
+/** A card's open questions the board shows: a foundation card the owner put
+ *  off with Not now stays out for its week (office-foundations.md, D2). */
+export function shownQuestions(t: HiveTask, f: FoundationsView | null, now = Date.now()): ReturnType<typeof openQuestions> {
+  return openQuestions(t).filter((e) => { const id = foundationAsk(e); return !id || (!isSnoozed(f?.snoozed, id, now) && !f?.answers?.[id]); });
+}
+
+let foundationReads = 0;
+let foundationsReadAt = 0;
+/** Main pushes every change (onFoundationsChanged), so the poll reads the
+ *  record at most once a minute, a safety net; other callers read at once. */
+function readFoundations(force = true): void {
+  if (!force && Date.now() - foundationsReadAt < 60_000) return;
+  foundationsReadAt = Date.now();
+  const mine = ++foundationReads;
+  void window.cth.foundationsGet?.()
+    .then((v) => { if (mine === foundationReads) publish({ foundations: v ?? null }); })
+    .catch(() => { /* keep the last value */ });
 }
 
 function readTasks(): void {
@@ -132,17 +164,22 @@ function readTasks(): void {
     .catch(() => { /* keep the last value */ });
   readOffers(false);
   readEngine(false);
-  readResearchNotice(false);
+  readNotices(false);
+  readFoundations(false);
 }
 
-// The Research card changes only on the update and when the owner reads it,
-// so the poll reads it at most once a minute; refreshNeedsYou reads it at once.
+// The one time cards (Research's, and company knowledge's for an owner who
+// had it off) change only on the update and when the owner reads them, so the
+// poll reads them at most once a minute; refreshNeedsYou reads them at once.
 let researchReadAt = 0;
-function readResearchNotice(force = true): void {
+function readNotices(force = true): void {
   if (!force && Date.now() - researchReadAt < 60_000) return;
   researchReadAt = Date.now();
   void window.cth.researchStatus?.()
     .then((s) => publish({ researchNotice: !!s?.notice }))
+    .catch(() => { /* keep the last value */ });
+  void window.cth.kgNotice?.()
+    .then((s) => publish({ knowledgeNotice: !!s?.notice }))
     .catch(() => { /* keep the last value */ });
 }
 
@@ -177,6 +214,8 @@ export function setupCardShown(f: Pick<NeedsYouFeed, 'engineSetup' | 'stop'>): b
 }
 
 let offStop: (() => void) | null = null;
+let offSilent: (() => void) | null = null;
+let offFoundations: (() => void) | null = null;
 function readStop(): void {
   void window.cth.officeBreakView?.()
     .then((v) => publish({ stop: v ?? null }))
@@ -196,6 +235,9 @@ export function subscribeNeedsYou(listener: () => void): () => void {
     offEngine = window.cth.onEngineSetupChanged?.(() => readEngine()) ?? null;
     readStop();
     offStop = window.cth.onOfficeBreak?.((v) => publish({ stop: v ?? null })) ?? null;
+    void window.cth.silentList?.().then((list) => publish({ silent: Array.isArray(list) ? list : [] })).catch(() => { /* keep the last value */ });
+    offSilent = window.cth.onSilentChanged?.((list) => publish({ silent: list })) ?? null;
+    offFoundations = window.cth.onFoundationsChanged?.(() => readFoundations()) ?? null;
   }
   return () => {
     listeners.delete(listener);
@@ -210,6 +252,10 @@ export function subscribeNeedsYou(listener: () => void): () => void {
       offEngine = null;
       offStop?.();
       offStop = null;
+      offSilent?.();
+      offSilent = null;
+      offFoundations?.();
+      offFoundations = null;
     }
   };
 }
@@ -240,7 +286,8 @@ export function refreshNeedsYou(): void {
   readRequests();
   readProposals();
   readOffers();
-  readResearchNotice();
+  readNotices();
+  readFoundations();
 }
 
 /** Show a local change at once (an answer just saved, a card dismissed); the
@@ -257,13 +304,16 @@ export function pillState(status: NeedsYouFeed['status'], count: number): 'blank
   return count > 0 ? 'hot' : 'quiet';
 }
 
-/** The newest open ask among these people, for a pod's "for you" chip (D11). */
-export function newestAskFor(memberIds: string[], tasks: HiveTask[]): string | undefined {
+/** The newest open ask among these people, for a pod's "for you" chip (D11):
+ *  only asks Needs you shows (shownQuestions), so the chip never opens it empty. */
+export function newestAskFor(memberIds: string[], tasks: HiveTask[], foundations: FoundationsView | null = null): string | undefined {
   const ids = new Set(memberIds);
   let best: { id: string; at: string } | undefined;
   for (const t of tasks) {
-    if (!t.assignee || !ids.has(t.assignee) || !waitsOnHuman(t)) continue;
-    const at = openQuestion(t)?.askedAt ?? t.createdAt;
+    if (!t.assignee || !ids.has(t.assignee)) continue;
+    const shown = shownQuestions(t, foundations);
+    if (!shown.length) continue;
+    const at = shown[0].askedAt ?? t.createdAt;
     if (!best || at > best.at) best = { id: t.id, at };
   }
   return best?.id;

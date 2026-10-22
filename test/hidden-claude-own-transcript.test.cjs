@@ -43,6 +43,16 @@ test('runHiddenClaude names its session and never picks the newest file in the f
   assert.match(src, /if \(text\) \{ finish\(\{ ok: true, text \}\); return; \}\s*if \(idleTimer\) clearTimeout\(idleTimer\);\s*idleTimer = setTimeout\(captureAndFinish, idleMs\);/);
 });
 
+test('hidden Claude preserves quoted executable paths containing spaces', () => {
+  const src = read('src/main/hiddenClaude.ts');
+
+  assert.match(src, /tokenizeCommand/);
+  assert.match(src, /from '\.\.\/shared\/commandLine'/);
+  assert.match(src, /const binary = tokenizeCommand\(/);
+  assert.doesNotMatch(src, /\.trim\(\)\.split\(\/\\s\+\/\)\[0\]/);
+});
+
+
 test('a quick judgment skips extended thinking and takes its answer the moment it lands', () => {
   // Value: protects=the hire overlap check answers in seconds, not 20 to 60 (owner 2026-10-03: "very slow and frustrating"); fails_when=the checks stop passing thinking: false, the env stops setting MAX_THINKING_TOKENS=0, or a no tools call waits for a quiet screen again; why_new=measured 41.4s before, 9.4s after, same verdict; seam=source pin
   const src = read('src/main/hiddenClaude.ts');

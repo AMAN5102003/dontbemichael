@@ -36,6 +36,7 @@
   --cth-coral-strong: #D4363D;   /* coral fills that carry text (3.2) */
   --cth-on-coral:     #FFFFFF;
   --cth-on-indigo:    #FFFFFF;  /* text on an indigo fill (the dock count) */
+  --cth-on-green:     #14131C;  /* a mark on a green fill (the opening card's check) */
   --cth-act-request:  #5B55C9;   /* message act colors (3.3) */
 
   /* ── v2 shadows and radii (3.7, 6.2) ────────────────────────────────────── */
@@ -171,6 +172,7 @@
   --cth-coral-strong: #FF5A5F;
   --cth-on-coral:     #14131C;
   --cth-on-indigo:    #14131C;
+  --cth-on-green:     #14131C;
   --cth-act-request:  #8F89F2;
 
   --cth-shadow-sm:    0 1px 2px rgba(0, 0, 0, .35);

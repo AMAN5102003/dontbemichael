@@ -22,9 +22,9 @@
  *    renderer's bootGraceUntil),
  *  - delivery paused / agent paused / halted → no nudge (ControlRegistry),
  *  - a permission/HITL notification blocks nudges until the agent moves on
- *    (its next tool call, reply, prompt or session), so an open prompt is never
- *    typed into: the nudge's Enter answered it "Yes" once a timed block ran
- *    out (owner, 2026-10-15),
+ *    (its next tool call, reply, prompt or session, never a subagent's), so an
+ *    open prompt is never typed into: the nudge's Enter answered it "Yes" once
+ *    a timed block ran out (owner, 2026-10-15),
  *  - a per-worker cooldown (NUDGE_COOLDOWN_MS) so the watchdog and the renderer
  *    nudge don't stack on top of each other.
  *
@@ -46,7 +46,9 @@ export const WORKER_WAKE_BOOT_GRACE_MS = 35_000;
 export const WORKER_WAKE_COOLDOWN_MS = 60_000;
 /** Hook events that mean the agent moved past a prompt: a new session ends a
  *  dismissed one; an idle notice does not, since Claude Code can send one while
- *  a permission prompt is still open (the same rule as safeClearer.ts). */
+ *  a permission prompt is still open (the same rule as safeClearer.ts). Only the
+ *  main session's events count: a Task subagent's tool calls go on under an
+ *  open prompt. */
 const MOVED_ON_EVENTS = new Set(['SessionStart', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop']);
 
 /** A hook event message that means "the agent needs the human" — permission /
@@ -107,11 +109,12 @@ export class WorkerWakeWatchdog {
     this.spawnedAt.set(ptyId, at);
   }
 
-  /** Feed hook events (from HookServer) so a HITL prompt blocks nudges. */
-  noteHook(agentId: string | undefined, event: string | undefined, message: string | undefined, at = Date.now()): void {
+  /** Feed hook events (from HookServer) so a HITL prompt blocks nudges.
+   *  `subagent` is true for a Task subagent's frame. */
+  noteHook(agentId: string | undefined, event: string | undefined, message: string | undefined, at = Date.now(), subagent = false): void {
     if (!agentId) return;
     if (classifyHook(event, message) === 'needsHuman') this.lastHumanNeedsAt.set(agentId, at);
-    else if (event && MOVED_ON_EVENTS.has(event)) this.lastMovedOnAt.set(agentId, at);
+    else if (!subagent && event && MOVED_ON_EVENTS.has(event)) this.lastMovedOnAt.set(agentId, at);
   }
 
   /** Forget per-agent state (e.g. the agent's PTY was closed). */

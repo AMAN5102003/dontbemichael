@@ -1,5 +1,11 @@
 import type { Period } from '../shared/teamPerformance';
+import type { HeldRow } from '../shared/heldRecord';
+import type { LearnedNote } from '../shared/teamLearning';
+import type { CheckedList } from '../shared/checkedRecord';
+import type { OrganizedList } from '../shared/organizedRecord';
 import type { PulseView } from '../shared/pulseView';
+import type { FoundationsView } from '../shared/foundations';
+import type { PulseHealthView } from '../shared/pulseHealth';
 import type { ResearchConfig } from '../shared/research';
 import type { DataClassId, DataClassSetting } from '../shared/dataClasses';
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
@@ -18,6 +24,7 @@ export type { IntegrationRecord, IntegrationTemplate } from '../shared/integrati
 import type { UpdateStatus } from '../shared/updateState';
 import type { CliUpdateStatus } from '../shared/cliUpdate';
 import type { OfficeBreakView } from '../shared/officeBreak';
+import type { SilentEpisode } from '../shared/silentEngine';
 export type { UpdateStatus } from '../shared/updateState';
 import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
@@ -332,7 +339,6 @@ export interface HarnessConfig {
   connectorsOn?: { [key: string]: boolean };
   /** Connector keys the owner has seen in Settings. */
   connectorsSeen?: string[];
-  semanticMemory: boolean;
   embeddingModel: 'minilm' | 'embeddinggemma';
   missions?: ScheduledMission[];
   opsStandupSeeded?: boolean;
@@ -402,7 +408,6 @@ export interface MemoryStatus {
 
 /** Enterprise Knowledge Graph — corpus status, one document, and a search hit. */
 export interface KnowledgeStatus {
-  enabled: boolean;
   root: string;
   docCount: number;
   chunkCount: number;
@@ -422,6 +427,8 @@ export interface KnowledgeDoc {
   addedAt: string;
   extractor: string;
   truncated: boolean;
+  /** When an edit the owner saved was last read in. */
+  updatedAt?: string;
 }
 export interface KnowledgeHit {
   docId: string;
@@ -725,8 +732,10 @@ const api = {
   /** A terminal still drawn past its box after a fit: sizes only, to the office log. */
   logTerminalOverflow: (info: Record<string, number | string>): void =>
     ipcRenderer.send('terminal:overflow', info),
-  killPty: (id: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('pty:kill', id),
+  /** `restart`: the same member starts again at once, so its isolated
+   *  worktree stays (ship review 2026-10-17: a restart deleted it). */
+  killPty: (id: string, opts?: { restart?: boolean }): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('pty:kill', id, opts),
   listPtys: (): Promise<Array<{
     id: string;
     cwd: string;
@@ -873,6 +882,10 @@ const api = {
    *  (docs/designs/ask-me-open-file.md). */
   askFiles: (paths: string[], who: { raisedBy?: string; assignee?: string }): Promise<Array<{ verdict: 'open' | 'reveal' | 'missing'; tab: boolean; path: string }>> =>
     ipcRenderer.invoke('fs:askFiles', paths, who),
+  /** Files a question names without their ending: the ones found in the
+   *  office's folders, by name, each with its full path (owner, 2026-10-19). */
+  askFileNames: (names: string[], who: { raisedBy?: string; assignee?: string }): Promise<Record<string, { verdict: 'open' | 'reveal' | 'missing'; tab: boolean; path: string }>> =>
+    ipcRenderer.invoke('fs:askFileNames', names, who),
   /** Read a named file for its office tab (docs/designs/open-file-tab.md). Main
    *  checks the folders again; `place` is 'office' or a team member's id. */
   readAskFile: (p: string, who: { raisedBy?: string; assignee?: string }): Promise<
@@ -1003,6 +1016,9 @@ const api = {
   researchPrepare: (): Promise<{ ok: true; cwd: string } | { ok: false }> => ipcRenderer.invoke('research:prepare'),
   researchOff: (): Promise<{ ok: boolean; returned: number }> => ipcRenderer.invoke('research:off'),
   researchNoticeSeen: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('research:noticeSeen'),
+  /** Company knowledge has no switch now: whether this owner, who had turned it off, is still to be told. */
+  kgNotice: (): Promise<{ notice: boolean }> => ipcRenderer.invoke('kg:notice'),
+  kgNoticeSeen: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('kg:noticeSeen'),
   /** Agents whose connectors changed since they started (missed pushes). */
   connectorsPendingRestarts: (): Promise<string[]> => ipcRenderer.invoke('connectors:pendingRestarts'),
   /** An agent's connectors changed since it started: restart it when idle. */
@@ -1010,6 +1026,28 @@ const api = {
     const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
     ipcRenderer.on('connectors:restartNeeded', listener);
     return () => ipcRenderer.removeListener('connectors:restartNeeded', listener);
+  },
+  /** Members whose engine isn't reporting to the app (issue #326). */
+  silentList: (): Promise<SilentEpisode[]> => ipcRenderer.invoke('silent:list'),
+  onSilentChanged: (cb: (episodes: SilentEpisode[]) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, episodes: SilentEpisode[]) => cb(Array.isArray(episodes) ? episodes : []);
+    ipcRenderer.on('silent:changed', listener);
+    return () => ipcRenderer.removeListener('silent:changed', listener);
+  },
+  silentRestart: (agentIds: string[]): Promise<void> => ipcRenderer.invoke('silent:restart', agentIds),
+  silentKeep: (agentIds: string[]): Promise<void> => ipcRenderer.invoke('silent:keep', agentIds),
+  silentCheckAgain: (agentId: string): Promise<void> => ipcRenderer.invoke('silent:checkAgain', agentId),
+  /** The not reporting watch (or the owner on its card) asks for a restart. */
+  onAgentRestartSilent: (cb: (p: { agentId: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, p: { agentId: string }) => cb(p);
+    ipcRenderer.on('agent:restartSilent', listener);
+    return () => ipcRenderer.removeListener('agent:restartSilent', listener);
+  },
+  /** A click on the not reporting desktop notice: show Needs you. */
+  onSilentOpen: (cb: () => void): (() => void) => {
+    const listener = () => cb();
+    ipcRenderer.on('silent:open', listener);
+    return () => ipcRenderer.removeListener('silent:open', listener);
   },
   /** A member stopped on a prompt: restart it now (hooks.ts stuckOnPrompt). */
   onAgentRestartStuck: (cb: (p: { agentId: string }) => void): (() => void) => {
@@ -1092,8 +1130,6 @@ const api = {
   /** Show a skill's folder in the OS file manager. */
   skillsReveal: (path: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('skills:reveal', path),
-  searchMemory: (query: string, wing?: string): Promise<{ ok: boolean; output: string; error?: string }> =>
-    ipcRenderer.invoke('hive:searchMemory', query, wing),
   memoryWakeUp: (wing?: string): Promise<{ ok: boolean; output: string; error?: string }> =>
     ipcRenderer.invoke('hive:memoryWakeUp', wing),
   mineNow: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('hive:mineNow'),
@@ -1110,6 +1146,15 @@ const api = {
   kgGet: (id: string): Promise<{ meta: KnowledgeDoc; text: string } | null> =>
     ipcRenderer.invoke('kg:get', id),
   kgRemove: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('kg:remove', id),
+  /** Open a document in the owner's own app; a save there is read in again.
+   *  Company foundations opens as a read only copy. */
+  kgOpen: (id: string): Promise<{ ok: true; readOnly: boolean } | { ok: false; error: string }> => ipcRenderer.invoke('kg:open', id),
+  /** A document was read in again after a save, or could not be (`error`). */
+  onKgChanged: (cb: (e: { id: string; error?: string }) => void): (() => void) => {
+    const listener = (_e: unknown, payload: { id: string; error?: string }): void => cb(payload);
+    ipcRenderer.on('kg:changed', listener);
+    return () => ipcRenderer.removeListener('kg:changed', listener);
+  },
   /** Open an OS file picker and ingest the chosen artifacts in one round-trip. */
   kgAddFiles: (): Promise<KnowledgeIngestResult> => ipcRenderer.invoke('kg:addFiles'),
   /** Ingest explicit file paths (e.g. drag-and-drop). */
@@ -1272,6 +1317,8 @@ const api = {
   closingTimeRemind: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:closingTimeRemind', id),
   /** Close without one team member: stop waiting on it; it is back tomorrow. */
   closingTimeExcuse: (id: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('app:closingTimeExcuse', id),
+  /** The last thing each of these agents said, one safe line each, and when (ms). */
+  closingTimeSaid: (ids: string[]): Promise<Record<string, { text: string; at?: number }>> => ipcRenderer.invoke('app:closingTimeSaid', ids),
   /** Progress events for the quit dialog: started → progress → complete (the
    *  app tears down moments later) | timeout | cancelled. Each carries the ACK
    *  counts and the rows: who confirmed, who is still waited on, who the owner
@@ -1287,6 +1334,10 @@ const api = {
   /** Wipe all hive data + the memory palace, reset config, and relaunch the app
    *  into onboarding. The process exits, so this promise never resolves. */
   resetAll: (): Promise<void> => ipcRenderer.invoke('app:resetAll'),
+  /** Every team member forgets and starts as on its first day; the app relaunches. */
+  resetMemory: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('app:resetMemory'),
+  /** The folders whose Claude Code notes a memory reset erases, for its confirm. */
+  memoryResetFolders: (): Promise<string[]> => ipcRenderer.invoke('app:memoryResetFolders'),
 
   // ─── Token telemetry (real usage + est. cost from CC transcripts) ──────────
   /** Sum input/output/cache tokens + estimated USD cost for an agent from its
@@ -1296,7 +1347,7 @@ const api = {
   /** Current context size (tokens) of an agent's live session, read from the
    *  last assistant message of its transcript. Null until the agent's hooks
    *  have fired at least once (the transcript path is learned from them). */
-  agentContext: (agentId: string): Promise<number | null> =>
+  agentContext: (agentId: string): Promise<{ tokens: number; limit?: number } | null> =>
     ipcRenderer.invoke('hive:agentContext', agentId),
 
   // ─── Live telemetry (OTel collector — the usage-provider seam + spans) ──────
@@ -1354,12 +1405,14 @@ const api = {
   /** Atomically append one card against the latest main-process ledger. */
   hiveAddTask: (task: HiveTask): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:addTask', task),
-  /** Record Ask me answers on one card, merged against the card on disk.
-   *  `landed`: at least one answer was added to a question still open there. */
+  /** Record the owner's Ask me answer to question `index` on one card, merged
+   *  against the card on disk. `landed`: it was added to that question, still
+   *  open there. */
   hivePatchTask: (
     id: string,
-    patch: Partial<Omit<HiveTask, 'id'>>
-  ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch),
+    patch: Partial<Omit<HiveTask, 'id'>>,
+    index: number
+  ): Promise<{ ok: boolean; landed?: boolean; error?: string }> => ipcRenderer.invoke('hive:patchTask', id, patch, index),
   /** The owner moves a card; Done is their decision to end it. Michael is told. */
   hiveMoveTask: (id: string, status: HiveTask['status'], reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:moveTask', id, status, reason),
@@ -1367,9 +1420,30 @@ const api = {
   hiveCloseTask: (id: string, reason?: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:closeTask', id, reason),
 
+  // ─── Company foundations (docs/designs/office-foundations.md) ─────────────
+  /** The record as the foundation card reads it: answers, drafts, Not now and hits. */
+  foundationsGet: (): Promise<FoundationsView> => ipcRenderer.invoke('foundations:get'),
+  /** The owner's answer from a foundation card; it always wins. */
+  foundationsAnswer: (id: string, text: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('foundations:answer', id, text),
+  /** Have the member draft it: the draft comes back into the card. */
+  foundationsDraft: (id: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:draft', id, memberId),
+  /** Not now: out of Needs you for a week. */
+  foundationsSnooze: (id: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:snooze', id),
+  onFoundationsChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb();
+    ipcRenderer.on('foundations:changed', listener);
+    return () => ipcRenderer.removeListener('foundations:changed', listener);
+  },
+
   // ─── Pulse (docs/designs/team-performance.md) ─────────────────────────────
   /** What the Pulse view shows for a period. */
-  pulseSnapshot: (period: Period): Promise<PulseView> => ipcRenderer.invoke('pulse:snapshot', period),
+  pulseSnapshot: (period: Period, compare: boolean): Promise<PulseView> => ipcRenderer.invoke('pulse:snapshot', period, compare),
+  pulseHeld: (fromMs: number, toMs: number): Promise<HeldRow[]> => ipcRenderer.invoke('pulse:held', fromMs, toMs),
+  /** The new notes behind Learning's number, for two local days (YYYY-MM-DD). */
+  pulseLearned: (from: string, to: string): Promise<LearnedNote[]> => ipcRenderer.invoke('pulse:learned', from, to),
+  pulseChecked: (fromMs: number, toMs: number, way: 'in' | 'out'): Promise<CheckedList> => ipcRenderer.invoke('pulse:checked', fromMs, toMs, way),
+  /** The emails organized in a span, all members or one (owner, 2026-10-21). */
+  pulseOrganized: (fromMs: number, toMs: number, agentId?: string): Promise<OrganizedList> => ipcRenderer.invoke('pulse:organized', fromMs, toMs, agentId),
   /** The Claude plan found in the owner's Claude account, and its list price a month. */
   claudePlan: (): Promise<{ label: string | null; listMonthly: number | null }> => ipcRenderer.invoke('claude:plan'),
   /** The owner's Apply on a way to save. A model change comes back for the store to make. */
@@ -1381,6 +1455,8 @@ const api = {
   pulseUndo: (appliedId: number): Promise<{ ok: true; kind: 'schedule' } | { ok: true; kind: 'model'; agentId: string; to: string | null } | { ok: false; error: 'stale' | 'unavailable' }> =>
     ipcRenderer.invoke('pulse:undo', appliedId),
   pulseDismiss: (id: string): Promise<boolean> => ipcRenderer.invoke('pulse:dismiss', id),
+  /** Whether Pulse's points are flowing: the last batch, failed writes, refused hook frames. */
+  telemetryHealth: (): Promise<PulseHealthView> => ipcRenderer.invoke('telemetry:health'),
   /** Fires when new telemetry was folded, so an open Pulse view refreshes. */
   onPulseUpdated: (cb: () => void): (() => void) => {
     const listener = (): void => cb();
@@ -1397,6 +1473,10 @@ const api = {
     ipcRenderer.invoke('missions:delete', id),
   setMissionEnabled: (id: string, on: boolean): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('missions:setEnabled', id, on),
+  /** Run one job now, as its clock would (docs/designs/schedule-run-now.md).
+   *  `error` is 'just ran' within a minute of its last run. */
+  runMissionNow: (id: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('missions:runNow', id),
   /** Schedule changes agents asked for, waiting for the owner in ASK ME. */
   listScheduleRequests: (): Promise<ScheduleRequest[]> => ipcRenderer.invoke('scheduleRequests:list'),
   decideScheduleRequest: (id: string, approve: boolean): Promise<{ ok: boolean; error?: string }> =>
@@ -1635,8 +1715,8 @@ const api = {
     ipcRenderer.invoke('integrations:list'),
   integrationsTemplates: (): Promise<IntegrationTemplate[]> =>
     ipcRenderer.invoke('integrations:templates'),
-  integrationsUpsert: (record: IntegrationRecord): Promise<{ ok: true; record: IntegrationRecord } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('integrations:upsert', record),
+  integrationsUpsert: (record: IntegrationRecord, opts?: { isNew?: boolean }): Promise<{ ok: true; record: IntegrationRecord } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('integrations:upsert', record, opts),
   integrationsCanStoreSecrets: (): Promise<{ ok: true } | { ok: false; error: string }> =>
     ipcRenderer.invoke('integrations:canStoreSecrets'),
   integrationsSetSecret: (req: { id: string; secret: string }): Promise<{ ok: boolean; error?: string }> =>

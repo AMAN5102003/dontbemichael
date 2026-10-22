@@ -50,9 +50,14 @@ export interface AnswerMessage {
  *  come from the owner and into Michael's context, so it can never pass for a
  *  new line of instructions. */
 export function cardText(s: string | undefined, max = 120): string {
-  const one = (s ?? '').replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  // C1 controls fold too (a NEL reads as a new line), and format characters
+  // such as a right to left override are dropped, as in toolLine.
+  const one = (s ?? '').replace(/\p{Cf}+/gu, '').replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ').replace(/\s+/g, ' ').trim();
   return one.length > max ? `${one.slice(0, max - 1)}…` : one;
 }
+
+/** Most of a question kept in Michael's request; the card has all of it. */
+const QUESTION_MAX = 2000;
 
 /**
  * The messages an answer sends (docs/designs/card-lifecycle.md): one, a REQUEST
@@ -70,11 +75,15 @@ export function answerMessages(p: {
   title: string;
   q: string;
   a: string;
+  /** When the owner answered; named on the last line (answeredAtOf). */
+  answeredAt?: string;
 }): AnswerMessage[] {
   const title = cardText(p.title);
   // The card id comes from the ledger agents write, so it is cleaned like the title.
   const id = cardText(p.taskId, 60);
-  const qa = [`Q: ${p.q}`, `A: ${p.a}`];
+  // The question is the raiser's text, so it is folded to one labelled line
+  // like the title. The answer is the owner's own words and stays as written.
+  const qa = [`Q (as written on the card): ${cardText(p.q, QUESTION_MAX)}`, `A: ${p.a}`];
   const forMichael: AnswerMessage = {
     to: MICHAEL_ID,
     act: 'request',
@@ -95,10 +104,20 @@ export function answerMessages(p: {
       // one who raised it, who comes back only for what they still need.
       p.raiser === MICHAEL_ID
         ? 'Check each question of the ask against the answer. Settle any the owner left unanswered yourself where you can, and ask the owner again only for what you still need.'
-        : `Check each question of the ask against the answer. Send any the owner left unanswered to ${p.raiserName} with the answers: they settle what they can and file back to you only what they still need. Ask the owner again only for that.`
+        : `Check each question of the ask against the answer. Send any the owner left unanswered to ${p.raiserName} with the answers: they settle what they can and file back to you only what they still need. Ask the owner again only for that.`,
+      ...(p.answeredAt ? [`Answered at ${p.answeredAt}.`] : [])
     ].join('\n')
   };
   return [forMichael];
+}
+
+/** The last line of an answer's request to Michael: which answer it carries,
+ *  so the launch catch-up matches each request to its own answer. */
+const ANSWERED_AT_LINE = /\nAnswered at (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z)\.$/;
+
+/** The answer time a request to Michael names, if it names one. */
+export function answeredAtOf(body: unknown): string | undefined {
+  return typeof body === 'string' ? ANSWERED_AT_LINE.exec(body)?.[1] : undefined;
 }
 
 /**
@@ -147,10 +166,13 @@ export function openReportIndexes(qa: readonly (AskEntry | null | undefined)[] |
  *  the same and still open on disk. Its list is a few seconds old, so a
  *  withdrawal (dismissedAt) Michael wrote since, a slot whose question changed
  *  and an entry added on disk all stand (pre-landing review, 2026-10-05).
+ *  `only`: the one slot being answered; no other slot takes an answer, so a
+ *  stale answer in the list never lands on a question asked again since.
  *  `added`: the slots that took an answer. */
-export function mergeHumanQA(onDisk: unknown[], incoming: unknown[]): { humanQA: unknown[]; added: number[] } {
+export function mergeHumanQA(onDisk: unknown[], incoming: unknown[], only?: number): { humanQA: unknown[]; added: number[] } {
   const added: number[] = [];
   const humanQA = onDisk.map((d, i) => {
+    if (only !== undefined && i !== only) return d;
     const e = incoming[i];
     if (!d || typeof d !== 'object' || !e || typeof e !== 'object') return d;
     const disk = d as AskEntry;

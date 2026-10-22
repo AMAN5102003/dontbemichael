@@ -99,7 +99,7 @@ LISP syntax. Seven semantic fields:
 
 ```jsonc
 {
-  "id":            "2026-05-30T14-03-11-123Z-a1b2",  // unique, time-sortable
+  "id":            "2026-05-30T14-03-11-123Z-a1b2",  // set by the app, unique, time-sortable; one an agent writes is replaced
   "conversation":  "conv-7f3",                        // groups a thread
   "in_reply_to":   "<prev msgid> | null",
   "from":          "agent.researcher",
@@ -186,12 +186,16 @@ is the primary control surface — tune the prompt, not the code.
   agent's Claude Code session (permission prompts). Idle agents are woken when they hold unread inbox messages.
 - **Phase 3 — Semantic memory** ✅ (CLI integration): `memory.ts` wraps the
   **MemPalace CLI** (not MCP, by decision). The harness keeps one shared palace
-  under `harnessHome`, points every agent's `MEMPALACE_PALACE_PATH` at it, mines
-  each agent's `memory.md` into its own wing (mtime-gated), and agents recall via
-  `mempalace search` / `wake-up`. Detect-and-degrade: a no-op when `mempalace`
+  under `harnessHome` and points every agent's `MEMPALACE_PALACE_PATH` at it. The
+  palace holds company knowledge only: each agent's own notes are its own and are
+  never mined (owner, 2026-10-16), so an agent asks a teammate what it knows
+  instead, and searches company knowledge by meaning with `mempalace search`.
+  Detect-and-degrade: a no-op when `mempalace`
   isn't installed (markdown memory still works). Default model `minilm` (light,
-  for low-RAM Macs); `embeddinggemma` is the multilingual opt-in. Michael's **Memory** tab
-  lets the human search the same palace.
+  for low-RAM Macs); `embeddinggemma` is the multilingual opt-in. It has no switch since
+  2026-10-19 (owner): it runs whenever MemPalace is installed, and Settings, Memory &
+  Knowledge shows whether it is ready and sets its search language. Michael's **Memory** tab
+  searches the team's notes by exact words only.
   - `memory.md` is now a short index the app keeps. Agents add notes to
     `memory/inbox.md`, and a background tidy up (`memoryTidy.ts`, Haiku with no
     tools) sorts them in with itemised changes, so memory stays bounded.

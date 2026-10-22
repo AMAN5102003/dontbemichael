@@ -25,7 +25,18 @@ export type TelemetryKind =
   | 'advice-applied'
   // Team at work and Kept safe (proposal 3): working time a backfill read from
   // a past session, a trust layer decision, a step a setting stopped.
-  | 'busy' | 'trust' | 'refused';
+  | 'busy' | 'trust' | 'refused'
+  // A message held because the check could not run (the hive's own line, so
+  // the held count and the held list come from one event, owner 2026-10-16).
+  | 'trust-held'
+  // One per message the check let through or stopped (owner, 2026-10-16).
+  | 'trust-checked'
+  // A note new to a member's memory index, by id and source, never its text
+  // (Learning, owner 2026-10-18: an edit or a repeat is not a new note).
+  | 'note-added'
+  // Company foundations (office-foundations.md, eng finding 4): a question
+  // answered, changed or cleared, or work that hit it while empty, by id.
+  | 'foundation';
 
 export interface TelemetryEvent {
   agentId: string | null;
@@ -59,6 +70,8 @@ export class TelemetryStore {
   private lastCards = new Map<string, Map<string, string>>();
   private away: boolean | null = null;
   private loggedFailure = false;
+  /** Told of each point queued, for the health readout (telemetry:health). */
+  onRecord?: (office: string) => void;
 
   constructor(
     private readonly db: () => Database.Database | null,
@@ -71,6 +84,7 @@ export class TelemetryStore {
     const office = this.office();
     if (!office) return;
     this.buf.push({ ...ev, office });
+    this.onRecord?.(office);
     if (this.buf.length >= MAX_BUFFER) this.flush();
   }
 
@@ -107,15 +121,22 @@ export class TelemetryStore {
 
   /** Days in an office with records that could not be saved, saved or pending. */
   failureDays(office: string): string[] {
-    const days = new Set<string>();
-    for (const key of this.failed.keys()) if (key.startsWith(`${office}\t`)) days.add(key.slice(office.length + 1));
+    return Object.keys(this.failedWrites(office)).sort();
+  }
+
+  /** Records in an office that could not be saved, by day, saved or pending. */
+  failedWrites(office: string): Record<string, number> {
+    const days: Record<string, number> = {};
+    for (const [key, n] of this.failed) if (key.startsWith(`${office}\t`)) days[key.slice(office.length + 1)] = n;
     const db = this.db();
     if (db) {
       try {
-        for (const r of db.prepare('SELECT day FROM telemetry_failures WHERE office = ?').all(office) as Array<{ day: string }>) days.add(r.day);
+        for (const r of db.prepare('SELECT day, count FROM telemetry_failures WHERE office = ?').all(office) as Array<{ day: string; count: number }>) {
+          days[r.day] = (days[r.day] ?? 0) + r.count;
+        }
       } catch { /* the pending ones still count */ }
     }
-    return [...days].sort();
+    return days;
   }
 
   /** A cost sample (running total). Stored only when it changed since the

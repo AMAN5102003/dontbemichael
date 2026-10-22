@@ -23,6 +23,7 @@
 // back. list() returns records with secretRef redacted to hasSecret:boolean.
 
 import {
+  INTEGRATION_ID_TAKEN,
   INTEGRATION_TEMPLATES,
   authTypeNeedsSecret,
   secretRefFor,
@@ -50,8 +51,10 @@ type UpsertResult = { ok: true; record: IntegrationRecord } | { ok: false; error
 export interface IntegrationsClient {
   listTemplates(): Promise<IntegrationTemplate[]>;
   list(): Promise<IntegrationRecordView[]>;
-  /** §6 upsert (metadata, no secret) + §6 setSecret when a new secret was typed. */
-  save(record: IntegrationRecord, secret?: string): Promise<{ ok: boolean; error?: string }>;
+  /** §6 upsert (metadata, no secret) + §6 setSecret when a new secret was typed.
+   *  `isNew`: refused when the id is already registered, so adding never
+   *  replaces an integration or its secret. */
+  save(record: IntegrationRecord, secret?: string, opts?: { isNew?: boolean }): Promise<{ ok: boolean; error?: string }>;
   remove(id: string): Promise<{ ok: boolean }>;
   test(id: string): Promise<TestResult>;
 }
@@ -61,7 +64,7 @@ export interface IntegrationsClient {
 interface IntegrationsBridge {
   integrationsList(): Promise<IntegrationRecordView[]>;
   integrationsTemplates(): Promise<IntegrationTemplate[]>;
-  integrationsUpsert(record: IntegrationRecord): Promise<UpsertResult>;
+  integrationsUpsert(record: IntegrationRecord, opts?: { isNew?: boolean }): Promise<UpsertResult>;
   integrationsCanStoreSecrets(): Promise<{ ok: true } | { ok: false; error: string }>;
   integrationsSetSecret(req: { id: string; secret: string }): Promise<{ ok: boolean; error?: string }>;
   integrationsRemove(req: { id: string }): Promise<{ ok: boolean }>;
@@ -89,11 +92,12 @@ function redact(r: IntegrationRecord): IntegrationRecordView {
 const mockClient: IntegrationsClient = {
   listTemplates: () => Promise.resolve(INTEGRATION_TEMPLATES.map((t) => ({ ...t }))),
   list: () => Promise.resolve(mockRecords.map(redact)),
-  save: (record, secret) => {
+  save: (record, secret, opts) => {
     const v = validateIntegrationRecord(record);
     if (!v.ok) return Promise.resolve({ ok: false, error: v.error });
     const now = Date.now();
     const prev = mockRecords.find((r) => r.id === v.value.id);
+    if (opts?.isNew && prev) return Promise.resolve({ ok: false, error: INTEGRATION_ID_TAKEN });
     const full: IntegrationRecord = { ...v.value, createdAt: prev?.createdAt ?? now, updatedAt: now };
     if (prev) mockRecords = mockRecords.map((r) => (r.id === full.id ? full : r));
     else mockRecords.push(full);
@@ -128,14 +132,15 @@ export const integrationsClient: IntegrationsClient = {
     const b = liveBridge();
     return b ? b.integrationsList() : mockClient.list();
   },
-  save: async (record, secret) => {
+  save: async (record, secret, opts) => {
     const b = liveBridge();
-    if (!b) return mockClient.save(record, secret);
+    if (!b) return mockClient.save(record, secret, opts);
     if (secret && secret.length > 0) {
       const availability = await b.integrationsCanStoreSecrets();
       if (!availability.ok) return availability;
     }
-    const up = await b.integrationsUpsert(record);
+    // Refused for a new integration whose id is taken, before any secret is written.
+    const up = await b.integrationsUpsert(record, { isNew: opts?.isNew === true });
     if (!up.ok) return { ok: false, error: up.error };
     if (secret && secret.length > 0) {
       const ss = await b.integrationsSetSecret({ id: record.id, secret });
@@ -155,8 +160,15 @@ export const integrationsClient: IntegrationsClient = {
 
 // ───────────────────────── small UI helper ─────────────────────────
 
-/** Best-effort slug from a label (server-side validateIntegrationRecord is authoritative). */
-export function slugify(label: string): string {
+/** Best-effort slug from a label (server-side validateIntegrationRecord is authoritative).
+ *  A new integration passes the ids already registered as `taken` and gets the
+ *  next free one (`stripe-2`): saving under an id in use replaces that
+ *  integration and its secret, and every label with no a to z letters (an
+ *  Arabic or Chinese one) slugs to the same `api-x`. */
+export function slugify(label: string, taken: readonly string[] = []): string {
   const base = label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).replace(/-+$/g, '');
-  return base.length >= 2 ? base : `${base || 'api'}-x`;
+  const slug = base.length >= 2 ? base : `${base || 'api'}-x`;
+  let id = slug;
+  for (let n = 2; taken.includes(id); n++) id = `${slug.slice(0, 39 - String(n).length).replace(/-+$/, '')}-${n}`;
+  return id;
 }

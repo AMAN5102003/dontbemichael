@@ -52,10 +52,16 @@ export function urlExtensionOf(p: string): string {
   return base.slice(dot + 1).toLowerCase();
 }
 
+/** The image mime for an extension (lower-case, no dot), or null. A file on
+ *  disk passes `extensionOf` (askFiles.ts), where `#` and `?` are part of the
+ *  name, so "Invoice #12.svg" is still an SVG. */
+export function imageMimeForExtension(ext: string): string | null {
+  return Object.prototype.hasOwnProperty.call(MIME_BY_EXT, ext) ? MIME_BY_EXT[ext] : null;
+}
+
 /** The image mime for `p`, or null when the extension isn't a known image. */
 export function imageMimeForPath(p: string): string | null {
-  const ext = urlExtensionOf(p);
-  return Object.prototype.hasOwnProperty.call(MIME_BY_EXT, ext) ? MIME_BY_EXT[ext] : null;
+  return imageMimeForExtension(urlExtensionOf(p));
 }
 
 /** True when `p` names a raster or vector image we can render. */
