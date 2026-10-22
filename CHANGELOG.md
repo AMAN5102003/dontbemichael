@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
-## [Unreleased]
+## [0.2.5] (2026-10-21)
 
 ### Added
 
@@ -17,6 +17,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **Closing time shows what each waiting agent last said, and how long ago,** so a long job reads differently from a stuck one (contributed in #390).
 - **Pulse shows which emails were organized.** "See the emails" on the emails organized tile lists each email archived, marked read or moved to junk in the period: its subject, its sender, where it went, who moved it and when. A name under the bar lists only that member's. Senders and subjects are kept in the office's private folder for 62 days, then in a monthly archive that only a reset erases; mail organized before this update is counted as having no details.
 - **A team member with no schedules gets up to three starter jobs to add in one click,** taken from its office pack. Each is added paused, so nothing runs until you turn it on (contributed in #407).
+- **The Tasks board can be searched and filtered,** and says when it shows only some tasks, such as "Showing 4 of 12 tasks", or that none match (contributed in #173).
 - **Reset memory in Settings gives the whole team a first day again, office intact.** Every member, Michael and Research included, forgets its notes, its conversations and the messages it has handled, along with Claude Code's own notes for its working folders; your conversation with Michael starts over too. Everyone stops and the app restarts. The team, cards, waiting messages, schedules, settings and Company knowledge stay. It cannot be undone, and only conversations the app recorded are deleted, never one of your own.
 
 ### Fixed
