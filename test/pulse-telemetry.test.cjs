@@ -140,9 +140,11 @@ test('a failed write is counted for its day and the day is reported; records kee
   store.record({ agentId: 'pam', kind: 'email', ts: when, value: 3 });
   store.flush();
   assert.deepEqual(store.failureDays('/office'), ['2026-10-14'], 'pending failure is reported');
+  assert.deepEqual(store.failedWrites('/office'), { '2026-10-14': 1 });
   open = true;
   store.flush();
   assert.deepEqual(store.failureDays('/office'), ['2026-10-14'], 'saved once the store works');
+  assert.deepEqual(store.failedWrites('/office'), { '2026-10-14': 1 }, 'counted once when saved');
 
   const { store: s2, proc } = setup(t);
   const t0 = new Date(2026, 9, 15, 9).getTime();
