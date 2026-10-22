@@ -5,7 +5,7 @@ import { cutText } from '../shared/cutText';
 import { MAX_NAMES } from '../shared/askFiles';
 import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
 import { readCodexContext } from './codexUsage';
-import { execFile, spawn, spawnSync } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
   unlinkSync, mkdirSync, renameSync, createWriteStream, copyFileSync, lstatSync,
@@ -135,7 +135,8 @@ import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, IN
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
 import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
-import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
+import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, gitTopOf, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
+import { groupMembers, hardKillTree, isAlive, KILL_GRACE_MS, snapshotRemains } from './procKill';
 import { buildWorkerLaunch } from './workerLaunch';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
@@ -6598,18 +6599,6 @@ ipcMain.handle('app:resetAll', () => {
   restartApp(app);
 });
 
-/** The git repository root of a folder, or null (memory reset R2: Claude
- *  Code keys its auto memory by repository). Bounded so a slow disk can't
- *  hold the reset. */
-function gitTopOf(folder: string): string | null {
-  try {
-    if (!existsSync(folder)) return null;
-    const r = spawnSync('git', ['-C', folder, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 2000, windowsHide: true });
-    const top = r.status === 0 ? r.stdout.trim() : '';
-    return top ? resolve(top) : null;
-  } catch { return null; }
-}
-
 /** Each member's working folders, from the roster only (memory reset R5). */
 function memoryResetFolders(): Map<string, string[]> {
   return foldersFromRoster(roster.read());
@@ -6632,11 +6621,20 @@ ipcMain.handle('app:resetMemory', async () => {
   try { memoryTidy.halt(); } catch (e) { console.error('[memory reset] memoryTidy.halt:', e); }
   // Buffered cost samples reach the store before their ids are read.
   try { pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
+  // killAll forgets each terminal as it signals it, so the wait watches the
+  // processes themselves, snapshotted first (Codex adversarial, ship).
+  const trees = ptyManager.list().map((s) => ({ id: s.id, pid: s.pid, before: process.platform === 'win32' ? null : groupMembers(s.pid) }));
   stopForReset('memory reset', { keepPersist: true });
-  // Members still stopping could write a note back: wait up to 5 s.
-  const until = Date.now() + 5000;
-  while (ptyManager.list().length && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
-  const stillRunning = ptyManager.list().map((s) => s.id);
+  // Members still stopping could write a note back: wait past the kill grace,
+  // when the sweep reaps a tree that ignored the hangup. A tree that can't be
+  // told apart from a recycled pid (no snapshot, `ps` failing) waits the whole
+  // grace and is never forced; one still holding its own processes is.
+  const until = Date.now() + KILL_GRACE_MS + 2000;
+  const running = (t: (typeof trees)[number]): boolean => snapshotRemains(t.pid, t.before) ?? (Date.now() < until || isAlive(t.pid));
+  let left = trees;
+  while ((left = left.filter(running)).length && Date.now() < until) await new Promise((r) => setTimeout(r, 200));
+  for (const t of left) if (snapshotRemains(t.pid, t.before) === true) hardKillTree(t.pid);
+  const stillRunning = left.map((t) => t.id);
 
   // Session ids only from records members can't write (R5): Pulse's cost
   // samples for this office and the private session record.
@@ -6662,6 +6660,9 @@ ipcMain.handle('app:resetMemory', async () => {
     gitTop: gitTopOf,
     research: { id: RESEARCH_ID, desk: researchDesk() }
   });
+  // Marked before the erase, so a reset cut short (the app killed, power lost)
+  // still shows in the log.
+  hive.appendLog({ kind: 'memory-reset-start', members: memberIds, targets: targets.length });
   const result = eraseMemoryTargets(targets, [hiveRoot, claudeProjectsRoot()]);
   if (result.failed.length) console.error('[memory reset] could not remove:', result.failed);
   if (result.refused.length) console.error('[memory reset] refused (outside its folders):', result.refused);

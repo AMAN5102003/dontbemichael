@@ -1852,15 +1852,23 @@ export class HiveManager {
     if (!root) return false;
     let ok = true;
     try {
-      const reg = this.registry();
-      for (const agent of Object.values(reg.agents ?? {})) delete (agent as { sessionId?: string }).sessionId;
-      this.atomicWriteJson(join(root, 'registry.json'), reg);
+      const path = join(root, 'registry.json');
+      if (existsSync(path)) {
+        // Read here, not through registry(): an unreadable registry reads as
+        // empty there, and writing that back would lose the team, so a bad
+        // one fails this step and stays as it is (pre-landing review).
+        const reg = JSON.parse(readFileSync(path, 'utf8')) as Registry;
+        for (const agent of Object.values(reg.agents ?? {})) delete (agent as { sessionId?: string }).sessionId;
+        this.atomicWriteJson(path, reg);
+      }
     } catch (e) {
       ok = false;
       console.error('[memory reset] registry write failed:', e);
     }
+    // The record is the trusted source of the ids to delete: it goes only
+    // with the registry's ids, so a reset run again still finds them.
     const home = this.getHome();
-    if (home) { try { rmSync(join(privateRoot(home), MEMBER_SESSIONS_FILE), { force: true }); } catch { /* next reset finds ids from Pulse */ } }
+    if (ok && home) { try { rmSync(join(privateRoot(home), MEMBER_SESSIONS_FILE), { force: true }); } catch { /* next reset finds ids from Pulse */ } }
     this.privateSessionsFor = null;
     this.lastPrivateSession = new Map();
     this.appendLog({ kind: 'memory-reset', ...row, registryCleared: ok });
@@ -6102,14 +6110,17 @@ export class HiveManager {
    */
   private untrackNotes(root: string): void {
     if (this.untrackedNotes) return;
-    this.untrackedNotes = true;
     // :(glob) so `*` is one folder name, never a path across folders.
     const paths = [':(glob)agents/*/memory.md', ':(glob)agents/*/memory/**', ':(glob)backups/**'];
-    // Probe first: a clean repo is never rewritten on every launch.
+    // Probe first: a clean repo is never rewritten on every launch. Done for
+    // the run only once git has answered; a failed try runs again next commit.
     const tracked = this.git(['ls-files', '--', ...paths], root);
-    if (!tracked.ok || !tracked.out.trim()) return;
-    this.git(['rm', '-r', '--cached', '-q', '--ignore-unmatch', '--', ...paths], root);
-    console.warn('[hive] untracked members\' notes from the hive repo');
+    if (!tracked.ok) return;
+    if (tracked.out.trim()) {
+      if (!this.git(['rm', '-r', '--cached', '-q', '--ignore-unmatch', '--', ...paths], root).ok) return;
+      console.warn('[hive] untracked members\' notes from the hive repo');
+    }
+    this.untrackedNotes = true;
   }
 
   /**

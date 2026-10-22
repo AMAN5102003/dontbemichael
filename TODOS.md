@@ -239,6 +239,18 @@
 **Priority:** P3
 **Depends on:** The memory reset; the engine joining BUILD_ENGINES
 
+### A memory reset also clears a member's conversations from earlier working folders
+
+**What:** Reset memory deletes a member's recorded Claude Code conversations and auto memory only in the working folders the roster names today (current, restorable and archived, worktrees included). A member moved to another folder earlier keeps its old conversations and auto memory in the old folder's Claude Code project.
+
+**Why:** If the owner points that member back at the old folder, Claude Code's auto memory for it loads again, so the member is not on its first day there (Codex adversarial pass at ship, 2026-10-22). Its old conversations can't be resumed (the session ids are cleared), so the risk is the auto memory.
+
+**Context:** `src/main/memoryReset.ts` `foldersFromRoster` and `memoryResetTargets`. Options: record each member's past working folders in the private record beside its sessions, or delete `<sid>.jsonl` under every project folder for the trusted session ids. Either way, nothing a member can write may name a folder (R5).
+
+**Effort:** S (human) / S (CC)
+**Priority:** P2
+**Depends on:** The memory reset
+
 ## Attachments (from the Codex adversarial review of design/studio-v2, 2026-10-01)
 
 ### Keep each agent's mail pass out of other agents' reach
