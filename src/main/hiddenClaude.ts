@@ -79,7 +79,14 @@ export interface HiddenClaudeOptions {
   /** Remove this session's transcript once it ends: it holds text that must
    *  not stay where agents can read (Research's, red team third ship). */
   dropTranscript?: boolean;
+  /** Pictures to show the model: each absolute path is pasted on its own
+   *  before the prompt, which Claude Code attaches as an image, so a check
+   *  with no tools can still look at a picture (foundation card upload). */
+  images?: string[];
 }
+
+/** How long each pasted picture is given to attach before the next paste. */
+const IMAGE_PASTE_MS = 600;
 
 /** How long after a session ends its transcript is removed again, for a
  *  last write as the process exits. */
@@ -252,9 +259,13 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       if (settled || promptSent) return;
       promptSent = true;
       if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+      // Pictures first, one paste each, so each attaches before the prompt.
+      const images = opts.images ?? [];
+      images.forEach((path, i) => setTimeout(() => { if (!settled) ptyProc.write(`\x1b[200~${path}\x1b[201~`); }, i * IMAGE_PASTE_MS));
+      const afterImages = images.length * IMAGE_PASTE_MS;
       // Bracketed paste + enter — same mechanism as submitToPty in useHive.ts.
-      ptyProc.write(`\x1b[200~${prompt}\x1b[201~`);
-      setTimeout(() => { if (!settled) ptyProc.write('\r'); }, 140);
+      setTimeout(() => { if (!settled) ptyProc.write(`\x1b[200~${prompt}\x1b[201~`); }, afterImages);
+      setTimeout(() => { if (!settled) ptyProc.write('\r'); }, afterImages + 140);
       // Claude writes the prompt to the session's transcript as soon as it
       // takes it. An Enter that lands while Claude is still starting is
       // swallowed and the prompt waits unsent in its input box: at app launch,

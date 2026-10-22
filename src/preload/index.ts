@@ -1425,6 +1425,15 @@ const api = {
   foundationsGet: (): Promise<FoundationsView> => ipcRenderer.invoke('foundations:get'),
   /** The owner's answer from a foundation card; it always wins. */
   foundationsAnswer: (id: string, text: string): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('foundations:answer', id, text),
+  /** One file for a foundation card, from the OS picker. */
+  foundationsPickFile: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFile'),
+  /** Read, check and add a card's file to company knowledge (nothing is added
+   *  unless the check says it fits). */
+  foundationsAddFile: (id: string, path: string): Promise<{ ok: true; docId: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'misfit' | 'unchecked'; reason?: string }> =>
+    ipcRenderer.invoke('foundations:addFile', id, path),
+  /** The owner's answer from a file added with foundationsAddFile. */
+  foundationsAnswerFile: (id: string, docId: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('foundations:answerFile', id, docId, words),
   /** Have the member draft it: the draft comes back into the card. */
   foundationsDraft: (id: string, memberId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('foundations:draft', id, memberId),
   /** Not now: out of Needs you for a week. */

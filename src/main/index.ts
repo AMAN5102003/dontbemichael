@@ -124,6 +124,7 @@ import * as integrations from './integrations';
 import { MailService, handleMailRequest, saveMailbox, removeMailbox, setAgentCapabilities, setSendOnly, cannotStoreReason, type AddMailboxInput } from './mail';
 import { MailApprovals } from './mailApprovals';
 import { standingFitCheck } from './standingCheck';
+import { fileFitCheck } from './fileFitCheck';
 import { terminalOverflowEvent } from '../shared/terminalOverflow';
 import { PROVIDER_PRESETS, grantPaused, hasMailTools, mailAccess, mailboxAddress, secretRefForMailbox, sendOnlyGrant, sendingFor, sendingMode, sendingWords, type SendingMode } from '../shared/mailboxes';
 import { levelFor } from '../shared/agentDefinition';
@@ -767,7 +768,16 @@ const foundations = new Foundations({
     return [cfg.businessFolder, cfg.officeFolder, cwd].some((root) => typeof root === 'string' && !!root && isSameOrInside(expandTilde(root), path));
   },
   tell: (to, subject, body) => { if (hive.enabled()) hive.send({ to, act: 'inform', subject, body }, 'foundations'); },
-  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } }
+  changed: () => { try { liveWebContents()?.send('foundations:changed'); } catch { /* window gone */ } },
+  // A file added on a foundation card (docs/designs/foundation-card-upload.md).
+  readFile: (path) => knowledge.readDocument(path),
+  fitFile: (f) => fileFit(f),
+  addToKnowledge: (path, read, opts) => {
+    const r = knowledge.ingestRead(path, read, opts);
+    memory.companyKnowledgeChanged(); // index it for search by meaning
+    return r.docId;
+  },
+  docTitle: (id) => knowledge.get(id)?.meta.title
 });
 /** What an agent carries of the foundations: its job's part, or all of it for
  *  Michael. Research is left out by the hook itself. */
@@ -1011,6 +1021,24 @@ const standingFit = standingFitCheck({
     mkdirSync(dir, { recursive: true });
     // Trusted up front, as agent folders are at spawn, so the check never
     // stops on Claude Code's "trust this folder" question.
+    try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
+    return dir;
+  },
+  command: () => readConfig().defaultCommand ?? 'claude',
+  modelEngine: () => {
+    const cfg = readConfig();
+    return { engine: cfg.godProvider ?? 'claude', engineModel: cfg.godModel };
+  },
+  env: () => memory.env(),
+  log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+});
+
+/** The fit check for a file added on a foundation card: the standing check's
+ *  folder, command and engine (D3, D10). */
+const fileFit = fileFitCheck({
+  cwd: () => {
+    const dir = join(app.getPath('userData'), STANDING_CHECK_DIR);
+    mkdirSync(dir, { recursive: true });
     try { ensureClaudePermissionsAccepted(dir); } catch { /* the check fails closed */ }
     return dir;
   },
@@ -6884,6 +6912,16 @@ ipcMain.handle('pulse:organized', (_evt, fromMs: unknown, toMs: unknown, agentId
 // record and writes the owner's answer, a draft request or Not now.
 ipcMain.handle('foundations:get', () => foundations.view());
 ipcMain.handle('foundations:answer', (_evt, id: unknown, text: unknown) => foundations.ownerAnswer(id, text));
+// A file from a foundation card: one picked here, or dropped on the card.
+ipcMain.handle('foundations:pickFile', async (evt) => {
+  const win = BrowserWindow.fromWebContents(evt.sender);
+  if (!win) return { ok: false as const, error: 'no window' };
+  const res = await dialog.showOpenDialog(win, { properties: ['openFile'], title: 'Add a file' });
+  if (res.canceled || res.filePaths.length === 0) return { ok: false as const, error: 'cancelled' };
+  return { ok: true as const, path: res.filePaths[0], name: basename(res.filePaths[0]) };
+});
+ipcMain.handle('foundations:addFile', (_evt, id: unknown, path: unknown) => foundations.addFile(id, path));
+ipcMain.handle('foundations:answerFile', (_evt, id: unknown, docId: unknown, words: unknown) => foundations.answerFile(id, docId, words));
 ipcMain.handle('foundations:draft', (_evt, id: unknown, memberId: unknown) => foundations.requestDraft(id, memberId));
 ipcMain.handle('foundations:snooze', (_evt, id: unknown) => foundations.snooze(id));
 ipcMain.handle('pulse:snapshot', (_evt, period: unknown, compare: unknown) => {

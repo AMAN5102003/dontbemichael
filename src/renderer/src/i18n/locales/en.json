@@ -3040,7 +3040,7 @@
       "needs": "needs this",
       "needsAgo": "needs this, {{ago}}",
       "yourAnswer": "Your answer",
-      "hint": "A few plain sentences, under {{n}} characters. For more, name the file that holds it.",
+      "hint": "A few plain sentences, under {{n}} characters, or add a file.",
       "save": "Save answer",
       "draftBy": "Have {{name}} draft it",
       "notNow": "Not now",
@@ -3055,7 +3055,15 @@
       "failedLater": "Couldn't put this off, try again.",
       "sentToMichael": "Sent to {{godName}} to add to Company foundations.",
       "failedGone": "Couldn't add your answer to Company foundations. Tell {{godName}}.",
-      "drafted": "a draft, edit and save"
+      "drafted": "a draft, edit and save",
+      "addFile": "Add a file",
+      "removeFile": "Remove {{name}}",
+      "checking": "Checking the file",
+      "fileMisfit": "{{name}} doesn't look like the answer: {{reason}}",
+      "fileUnreadable": "Couldn't read {{name}}: {{reason}}",
+      "fileUnchecked": "Couldn't check this file, try again.",
+      "filePictureType": "Save this picture as PNG or JPEG and add it again.",
+      "fileMissing": "Couldn't find {{name}}, add it again."
     }
   },
   "knowledgeNotice": {

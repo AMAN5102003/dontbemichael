@@ -178,6 +178,22 @@
 
 ## Company foundations (deferred from the ship of mit/file-tab-no-bottom-bar, 2026-10-20)
 
+### Ordinary Ask me cards take a file
+
+**What:** A member's own question in Needs you (an ordinary Ask me card) gets the same Add a file as a Company foundations card; the file goes to the asking member by path, the way a message attachment does.
+
+**Why:** The owner's ask on 2026-10-22 was to upload right from the Ask me card; the eng review built it for Company foundations cards only (D1 A), so an ordinary question answered with a document still needs its path typed.
+
+**Pros:** The owner never types a path or file name anywhere in Needs you.
+
+**Cons:** A second path from the foundations one: the file goes to one member, not company knowledge, and needs a look at which folders a member may read (the sandbox), plus copying the file somewhere that survives a restart (`pastes.ts` does this for pasted images).
+
+**Context:** `docs/designs/foundation-card-upload.md` (R1, R9). Start from `AskAnswerFields.tsx` and `AskMeTab.tsx`, the answer route in `src/shared/askMeRouting.ts`, and `dialog:attachFiles` (`src/main/index.ts:6402`).
+
+**Effort:** M (human) / S (CC)
+**Priority:** P3
+**Depends on:** The foundation card upload (docs/designs/foundation-card-upload.md)
+
 ### Name a missing foundation's proof in Early look and Recommendations
 
 **What:** Once the kept as is evidence exists for a question, add a line to Early look and Recommendations such as "Answer who we sell to: Ryan's posts are kept as is 45% without it, 85% with", built from the same proof the member detail box shows.

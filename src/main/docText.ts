@@ -53,7 +53,7 @@ const SLIDES = new Set(['pptx', 'pptm', 'ppsx', 'potx']);
 const SHEETS = new Set(['xlsx', 'xlsm', 'xltx', 'xltm']);
 /** Converted by macOS's built-in `textutil` — present on every Mac, nothing to install. */
 const TEXTUTIL = new Set(['doc', 'rtf', 'odt', 'wordml', 'webarchive']);
-const IMAGES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tif', 'tiff', 'heic']);
+export const IMAGES = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'tif', 'tiff', 'heic']);
 
 /** True for images, which an agent should open directly (Claude can see them) rather than convert. */
 export function isImagePath(path: string): boolean {

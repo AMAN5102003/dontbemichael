@@ -3040,7 +3040,7 @@
       "needs": "需要这个",
       "needsAgo": "需要这个，{{ago}}",
       "yourAnswer": "你的回答",
-      "hint": "几句简单的话，少于 {{n}} 个字符。内容更多时，写出存放它的文件。",
+      "hint": "几句简单的话，不超过 {{n}} 个字符，或添加一个文件。",
       "save": "保存回答",
       "draftBy": "让 {{name}} 起草",
       "notNow": "暂不",
@@ -3055,7 +3055,15 @@
       "failedLater": "无法暂缓，请重试。",
       "sentToMichael": "已发给 {{godName}}，由其添加到公司基础信息。",
       "failedGone": "无法把你的回答加入公司基础信息。请告诉 {{godName}}。",
-      "drafted": "草稿，编辑后保存"
+      "drafted": "草稿，编辑后保存",
+      "addFile": "添加文件",
+      "removeFile": "移除 {{name}}",
+      "checking": "正在检查文件",
+      "fileMisfit": "{{name}} 看起来不是这个问题的答案：{{reason}}",
+      "fileUnreadable": "无法读取 {{name}}：{{reason}}",
+      "fileUnchecked": "无法检查这个文件，请重试。",
+      "filePictureType": "请将这张图片另存为 PNG 或 JPEG 后再添加。",
+      "fileMissing": "找不到 {{name}}，请重新添加。"
     }
   },
   "knowledgeNotice": {

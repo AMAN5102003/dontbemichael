@@ -162,7 +162,12 @@ export class KnowledgeManager {
    *  THROWS with a plain-English reason rather than being stored: storing it
    *  anyway is what used to index a .docx as zip bytes and report success. */
   async ingestFile(srcPath: string, opts: { title?: string; tags?: string[]; caption?: string } = {}) {
-    const ex = await this.readDocument(srcPath);
+    return this.ingestRead(srcPath, await this.readDocument(srcPath), opts);
+  }
+
+  /** Ingest a file already read with readDocument, so a caller that looks at
+   *  the text first (the foundation card's fit check) reads it only once. */
+  ingestRead(srcPath: string, ex: DocExtraction, opts: { title?: string; tags?: string[]; caption?: string } = {}) {
     if (ex.kind === 'unreadable') throw new Error(ex.reason);
     if (ex.kind === 'text') {
       return core.ingest(this.root(), {
@@ -174,7 +179,7 @@ export class KnowledgeManager {
 
   /** Parsed in a process of its own: a big or crafted file parsed here would
    *  freeze every window. Without the built doc-text script, it is read here. */
-  private readDocument(srcPath: string): Promise<DocExtraction> {
+  readDocument(srcPath: string): Promise<DocExtraction> {
     const script = join(app.getAppPath(), 'out', 'main', 'docTextCli.js');
     if (!existsSync(script)) return extractDocumentText(srcPath);
     return extractDocumentTextApart(srcPath, { file: process.execPath, args: [script], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
