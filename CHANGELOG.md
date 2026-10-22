@@ -20,6 +20,8 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **Reset memory in Settings gives the whole team a first day again, office intact.** Every member, Michael and Research included, forgets its notes, its conversations and the messages it has handled, along with Claude Code's own notes for its working folders; your conversation with Michael starts over too. Everyone stops and the app restarts. The team, cards, waiting messages, schedules, settings and Company knowledge stay. It cannot be undone, and only conversations the app recorded are deleted, never one of your own.
 
 ### Fixed
+- Your answer on Ask me goes into the asking member's notes before Michael is told it is there, so a request to Michael that has to be sent again never points at a note that was not written (contributed in #511).
+- When a Pulse number looks wrong, the app can now say whether its records stopped coming in, failed to save, or were turned away, and it notes once if they wait unread for five minutes (contributed in #509).
 - Team members' notes are no longer kept in the office's history, where any member could read another's with git. Notes from before this update stay in the old history.
 
 - An agent can no longer write into the office's own files (the board, the task list, memory) through a link in its folder that points into the office, even a link to a file that doesn't exist yet (contributed in #444).
