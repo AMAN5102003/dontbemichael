@@ -1333,6 +1333,10 @@ const api = {
   /** Wipe all hive data + the memory palace, reset config, and relaunch the app
    *  into onboarding. The process exits, so this promise never resolves. */
   resetAll: (): Promise<void> => ipcRenderer.invoke('app:resetAll'),
+  /** Every team member forgets and starts as on its first day; the app relaunches. */
+  resetMemory: (): Promise<{ ok: boolean }> => ipcRenderer.invoke('app:resetMemory'),
+  /** The folders whose Claude Code notes a memory reset erases, for its confirm. */
+  memoryResetFolders: (): Promise<string[]> => ipcRenderer.invoke('app:memoryResetFolders'),
 
   // ─── Token telemetry (real usage + est. cost from CC transcripts) ──────────
   /** Sum input/output/cache tokens + estimated USD cost for an agent from its

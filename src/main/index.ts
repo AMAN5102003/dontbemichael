@@ -5,7 +5,7 @@ import { cutText } from '../shared/cutText';
 import { MAX_NAMES } from '../shared/askFiles';
 import { copyableLink, DEFAULT_COPY_LINK_LABEL, menuLabel } from '../shared/linkMenu';
 import { readCodexContext } from './codexUsage';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import {
   rmSync, existsSync, readFileSync, readdirSync, statSync, writeFileSync,
   unlinkSync, mkdirSync, renameSync, createWriteStream, copyFileSync, lstatSync,
@@ -134,6 +134,7 @@ import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, IN
 import { RosterStore } from './roster';
 import { PASTE_KEEP_MS, pastesDir, savePaste, sweepOldPastes } from './pastes';
 import { CHECK_FOLDERS, STANDING_CHECK_DIR, TRUST_CHECK_DIR, eraseOfficeData } from './factoryReset';
+import { autoMemoryFolders, eraseMemoryTargets, foldersFromRoster, idsFromCostRows, idsFromRecord, memberIdsIn, memoryResetTargets } from './memoryReset';
 import { buildWorkerLaunch } from './workerLaunch';
 import { ControlRegistry } from './control';
 import { WorkerWakeWatchdog, type WorkerWakeFacts } from './workerWake';
@@ -6518,28 +6519,36 @@ ipcMain.handle('app:closingTimeSaid', (_evt, ids: unknown) => {
   return said;
 });
 
+/** What both resets stop first, so nothing writes back into what they erase
+ *  (Reset & start over and Reset memory, reset-agent-memory.md). Reset memory
+ *  keeps the store open: it reads Pulse's records, then closes it itself. */
+function stopForReset(tag: string, opts: { keepPersist?: boolean } = {}): void {
+  const step = (name: string, fn: () => void): void => { try { fn(); } catch (e) { console.error(`[${tag}] ${name}:`, e); } };
+  step('clearMissionTimers', () => clearMissionTimers());
+  step('clearContextTimers', () => clearContextTimers());
+  step('stopWebhookDoneObserver', () => stopWebhookDoneObserver());
+  step('stopWorkerWatcher', () => stopEphemeralWorkerWatcher());
+  step('broker.stop', () => integrationBroker.stop());
+  step('mail.closeAll', () => mailService.closeAll());
+  step('stopRouter', () => hive.stopRouter());
+  step('hookServer.stop', () => hookServer.stop());
+  step('telemetry.stop', () => telemetry.stop());
+  step('slack.stop', () => stopSlackServer());
+  step('memory.stop', () => memory.stop());
+  step('memoryTidy.stop', () => memoryTidy.stop());
+  if (!opts.keepPersist) step('persist.close', () => persist.close());
+  // The same stops as quitting (teardownAndQuit): proxy sidecars and the
+  // webhook server would otherwise outlive the relaunch.
+  step('stopAllProxyBridges', () => hive.stopAllProxyBridges());
+  step('webhook.stop', () => stopWebhookServer());
+  step('killAll', () => ptyManager.killAll());
+}
+
 // ─── IPC: full reset (wipe data + config, relaunch into onboarding) ──────────
 ipcMain.handle('app:resetAll', () => {
   allowQuit = true;
   // Tear everything down first so nothing writes back into the dirs we wipe.
-  try { clearMissionTimers(); } catch (e) { console.error('[reset] clearMissionTimers:', e); }
-  try { clearContextTimers(); } catch (e) { console.error('[reset] clearContextTimers:', e); }
-  try { stopWebhookDoneObserver(); } catch (e) { console.error('[reset] stopWebhookDoneObserver:', e); }
-  try { stopEphemeralWorkerWatcher(); } catch (e) { console.error('[reset] stopWorkerWatcher:', e); }
-  try { integrationBroker.stop(); } catch (e) { console.error('[reset] broker.stop:', e); }
-  try { mailService.closeAll(); } catch (e) { console.error('[reset] mail.closeAll:', e); }
-  try { hive.stopRouter(); } catch (e) { console.error('[reset] stopRouter:', e); }
-  try { hookServer.stop(); } catch (e) { console.error('[reset] hookServer.stop:', e); }
-  try { telemetry.stop(); } catch (e) { console.error('[reset] telemetry.stop:', e); }
-  try { stopSlackServer(); } catch (e) { console.error('[reset] slack.stop:', e); }
-  try { memory.stop(); } catch (e) { console.error('[reset] memory.stop:', e); }
-  try { memoryTidy.stop(); } catch (e) { console.error('[reset] memoryTidy.stop:', e); }
-  try { persist.close(); } catch (e) { console.error('[reset] persist.close:', e); }
-  // The same stops as quitting (teardownAndQuit): proxy sidecars and the
-  // webhook server would otherwise outlive the relaunch.
-  try { hive.stopAllProxyBridges(); } catch (e) { console.error('[reset] stopAllProxyBridges:', e); }
-  try { stopWebhookServer(); } catch (e) { console.error('[reset] webhook.stop:', e); }
-  try { ptyManager.killAll(); } catch (e) { console.error('[reset] killAll:', e); }
+  stopForReset('reset');
   try { hive.removeExposedCodexData(); } catch (e) { console.error('[reset] removeExposedCodexData:', e); }
   // The roster is the renderer's half of the same state, so it retires with the
   // hive — archived into roster-backups/ rather than deleted, and cleared as the
@@ -6574,6 +6583,84 @@ ipcMain.handle('app:resetAll', () => {
   // re-bootstrap from scratch and the renderer lands on onboarding.
   resetConfig();
   restartApp(app);
+});
+
+/** The git repository root of a folder, or null (memory reset R2: Claude
+ *  Code keys its auto memory by repository). Bounded so a slow disk can't
+ *  hold the reset. */
+function gitTopOf(folder: string): string | null {
+  try {
+    if (!existsSync(folder)) return null;
+    const r = spawnSync('git', ['-C', folder, 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 2000, windowsHide: true });
+    const top = r.status === 0 ? r.stdout.trim() : '';
+    return top ? resolve(top) : null;
+  } catch { return null; }
+}
+
+/** Each member's working folders, from the roster only (memory reset R5). */
+function memoryResetFolders(): Map<string, string[]> {
+  return foldersFromRoster(roster.read());
+}
+
+// The folders whose Claude Code notes a memory reset erases (R2), named in
+// its confirm.
+ipcMain.handle('app:memoryResetFolders', () => autoMemoryFolders(memoryResetFolders(), gitTopOf));
+
+// ─── IPC: memory reset (every member starts as on its first day) ─────────────
+// docs/designs/reset-agent-memory.md: notes, handled messages, recorded
+// conversations and Claude Code's auto memory go; the team, cards, waiting
+// messages, schedules, settings and Company knowledge stay. Then a relaunch.
+ipcMain.handle('app:resetMemory', async () => {
+  const home = readConfig().harnessHome;
+  const hiveRoot = hive.root();
+  if (!home || !hiveRoot) return { ok: false };
+  allowQuit = true;
+  // A tidy pass waiting on its model writes nothing when it returns.
+  try { memoryTidy.halt(); } catch (e) { console.error('[memory reset] memoryTidy.halt:', e); }
+  // Buffered cost samples reach the store before their ids are read.
+  try { pulseTelemetry.flush(); } catch (e) { console.error('[memory reset] pulse flush:', e); }
+  stopForReset('memory reset', { keepPersist: true });
+  // Members still stopping could write a note back: wait up to 5 s.
+  const until = Date.now() + 5000;
+  while (ptyManager.list().length && Date.now() < until) await new Promise((r) => setTimeout(r, 100));
+  const stillRunning = ptyManager.list().map((s) => s.id);
+
+  // Session ids only from records members can't write (R5): Pulse's cost
+  // samples for this office and the private session record.
+  const sessions = idsFromRecord(hive.privateSessionsText());
+  try {
+    const db = persist.database();
+    const office = pulseOffice();
+    if (db && office) {
+      idsFromCostRows(db.prepare(
+        "SELECT agent_id, json_extract(attrs, '$.s') AS s FROM telemetry_events WHERE office = ? AND kind = 'cost' GROUP BY agent_id, s"
+      ).all(office) as Array<{ agent_id: unknown; s: unknown }>, sessions);
+    }
+  } catch (e) { console.error('[memory reset] reading session ids:', e); }
+  try { persist.close(); } catch (e) { console.error('[memory reset] persist.close:', e); }
+
+  const memberIds = memberIdsIn(hiveRoot);
+  const targets = memoryResetTargets({
+    hiveRoot,
+    memberIds,
+    folders: memoryResetFolders(),
+    sessions,
+    projectDirsOf: projectDirs,
+    gitTop: gitTopOf,
+    research: { id: RESEARCH_ID, desk: researchDesk() }
+  });
+  const result = eraseMemoryTargets(targets, [hiveRoot, claudeProjectsRoot()]);
+  if (result.failed.length) console.error('[memory reset] could not remove:', result.failed);
+  if (result.refused.length) console.error('[memory reset] refused (outside its folders):', result.refused);
+  hive.forgetSessions({
+    members: memberIds,
+    removed: result.removed,
+    failed: result.failed.length,
+    refused: result.refused.length,
+    stillRunning
+  });
+  restartApp(app);
+  return { ok: true };
 });
 
 // ─── IPC: token telemetry (real usage + est. cost from CC transcripts) ───────

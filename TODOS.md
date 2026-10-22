@@ -240,6 +240,18 @@
 **Effort:** M
 **Priority:** P3
 
+### A memory reset clears each other engine's own history before that engine ships
+
+**What:** Before Codex, Grok, Antigravity, Crush, OpenCode or Pi joins `BUILD_ENGINES`, Reset memory deletes that engine's own conversation history for each member (Codex `sessions` and `archived_sessions` and its state database; `.gemini-hive`, `.pi-agent`, `.opencode`, `.crush-data`), never the engine's sign in or settings.
+
+**Why:** Reset memory clears Claude members fully; a member on another engine gets a new conversation but its old history stays in its own folder, where it can look back (owner, 2026-10-22, D8).
+
+**Context:** `docs/designs/reset-agent-memory.md` row R4. History locations: `src/main/hive.ts:5204`, `:5336`, `:5455`, `:5492`, `:5540`. Add it to each engine's ship checklist with a test that the history goes and the sign in stays.
+
+**Effort:** S (human) / S (CC) per engine
+**Priority:** P3
+**Depends on:** The memory reset; the engine joining BUILD_ENGINES
+
 ## Attachments (from the Codex adversarial review of design/studio-v2, 2026-10-01)
 
 ### Keep each agent's mail pass out of other agents' reach

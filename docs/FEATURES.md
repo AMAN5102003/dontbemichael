@@ -88,6 +88,10 @@ moving, and brings you only the decisions that need you.
   notes: to learn what a teammate knows, they ask that teammate, and Michael reads the task board
   and the work each one hands in. On a Mac, Claude members' shells are walled off from each
   other's notes too.
+- Reset memory in Settings gives the whole team a first day again without losing the office:
+  every member, Michael included, forgets its notes, its conversations and the messages it
+  handled, then the app restarts. The team, cards, waiting messages, schedules, settings and
+  company knowledge stay.
 - Company profile and company knowledge (Word, Excel, PowerPoint, PDF, and scans or photos on a Mac or a Windows PC) are
   shared with the whole team, searchable by meaning. Settings lists every document; open one in
   your own app, save it, and the team searches the new version.

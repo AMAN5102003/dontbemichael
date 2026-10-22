@@ -17,8 +17,10 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **Closing time shows what each waiting agent last said, and how long ago,** so a long job reads differently from a stuck one (contributed in #390).
 - **Pulse shows which emails were organized.** "See the emails" on the emails organized tile lists each email archived, marked read or moved to junk in the period: its subject, its sender, where it went, who moved it and when. A name under the bar lists only that member's. Senders and subjects are kept in the office's private folder for 62 days, then in a monthly archive that only a reset erases; mail organized before this update is counted as having no details.
 - **A team member with no schedules gets up to three starter jobs to add in one click,** taken from its office pack. Each is added paused, so nothing runs until you turn it on (contributed in #407).
+- **Reset memory in Settings gives the whole team a first day again, office intact.** Every member, Michael and Research included, forgets its notes, its conversations and the messages it has handled, along with Claude Code's own notes for its working folders; your conversation with Michael starts over too. Everyone stops and the app restarts. The team, cards, waiting messages, schedules, settings and Company knowledge stay. It cannot be undone, and only conversations the app recorded are deleted, never one of your own.
 
 ### Fixed
+- Team members' notes are no longer kept in the office's history, where any member could read another's with git. Notes from before this update stay in the old history.
 
 - An agent can no longer write into the office's own files (the board, the task list, memory) through a link in its folder that points into the office, even a link to a file that doesn't exist yet (contributed in #444).
 - A card number written next to its expiry date or security code, such as `4111 1111 1111 1111 12/27`, is now caught before a question reaches Research (contributed in #447).

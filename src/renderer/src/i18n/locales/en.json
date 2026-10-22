@@ -236,6 +236,7 @@
     "title": "Settings",
     "changeHomeTitle": "Change office folder",
     "resetTitle": "Erase this office?",
+    "resetMemoryTitle": "Reset your team's memory?",
     "close": "Close",
     "change": "Change…",
     "apply": "Applying…",
@@ -268,6 +269,13 @@
     "resetConfirm": {
       "body": "This erases your office for good: the team, everyone's memory, your settings, Memory & Knowledge, saved keys and history. Your team's folders and the files in them stay, and so does your Claude sign in. Everyone stops working and the app opens setup again. This cannot be undone."
     },
+    "resetMemoryConfirm": {
+      "body": "Every team member, {{godName}} included, forgets everything it learned: its notes, its conversations and the messages it has handled. Your conversation with {{godName}} starts over too. Everyone stops, the app restarts, and each member begins as on its first day. This cannot be undone.",
+      "keeps": "Your team, cards, waiting messages, schedules, settings and Company knowledge stay.",
+      "folders": "Claude Code's own notes for these folders are erased too, including any you keep there yourself:",
+      "go": "Reset memory & restart",
+      "failed": "Couldn't reset memory. Nothing was erased; try again."
+    },
     "general": {
       "homeFolder": "Office folder",
       "homeFolderDesc": "Where your office keeps its own files: your team's memory, tasks and history.",
@@ -289,7 +297,8 @@
       "language": "Language",
       "languageDesc": "Choose the language for the app interface. English is the default.",
       "dangerZone": "Danger zone",
-      "dangerDesc": "Erases this office and opens setup again. Your team's folders and your Claude sign in stay.",
+      "dangerDesc": "Reset memory: every member starts over and the office stays. Reset & start over: the office is erased and setup opens again. Your team's folders and your Claude sign in stay.",
+      "resetMemory": "Reset memory",
       "resetStartOver": "Reset & start over",
       "arabicTerminal": "Arabic / RTL text in terminals",
       "arabicTerminalDesc": "Renders terminals with the browser's text engine so Arabic joins and reads right to left (xterm has no bidi of its own). Off is the GPU renderer: faster, but it can't lay out right to left text. Applies to open terminals and new ones alike.",

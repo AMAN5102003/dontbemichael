@@ -217,6 +217,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const backdrop = useBackdropClose(() => closeFnRef.current());
   const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? t('common.orchestrator');
   const [confirming, setConfirming] = useState(false);
+  // Reset memory's own confirm (docs/designs/reset-agent-memory.md), with the
+  // folders whose Claude Code notes go too.
+  const [confirmingMemory, setConfirmingMemory] = useState(false);
+  const [memoryFolders, setMemoryFolders] = useState<string[]>([]);
+  const [memoryErr, setMemoryErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>(initialSection && VISIBLE_SECTIONS.includes(initialSection) ? initialSection : 'General');
 
@@ -836,6 +841,26 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     await window.cth.resetAll();
   };
 
+  const askResetMemory = async () => {
+    setMemoryErr('');
+    setMemoryFolders([]);
+    setConfirmingMemory(true);
+    setMemoryFolders(await window.cth.memoryResetFolders().catch(() => [] as string[]));
+  };
+
+  const resetMemory = async () => {
+    setBusy(true);
+    setMemoryErr('');
+    // Every member forgets, then the app relaunches; the team and settings
+    // stay, so local state stays too. On success this never resolves.
+    try {
+      const r = await window.cth.resetMemory();
+      if (r?.ok) return;
+    } catch { /* shown below */ }
+    setBusy(false);
+    setMemoryErr(t('settings.resetMemoryConfirm.failed'));
+  };
+
   // --- Change home folder ---
   /** Pick a new folder, then open the move-vs-fresh sub-modal. */
   const pickNewHome = async () => {
@@ -884,9 +909,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
   const modalTitle = changeHome
     ? t('settings.changeHomeTitle')
-    : confirming
-      ? t('settings.resetTitle')
-      : t('settings.title');
+    : confirmingMemory
+      ? t('settings.resetMemoryTitle')
+      : confirming
+        ? t('settings.resetTitle')
+        : t('settings.title');
 
   return (
     <div
@@ -981,6 +1008,50 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                 </PixelButton>
                 <PixelButton variant="primary" size="md" onClick={applyChangeHome} disabled={changeBusy}>
                   {changeBusy ? t('settings.apply') : (changeMode === 'move' ? t('settings.moveAndRestart') : t('settings.switchAndRestart'))}
+                </PixelButton>
+              </div>
+            </div>
+
+          /* === Reset memory confirmation screen === */
+          ) : confirmingMemory ? (
+            <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto' }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                <div style={{
+                  borderRadius: 'var(--cth-r-md)',
+                  width: 32, height: 32,
+                  background: 'var(--cth-coral-light)',
+                  boxShadow: 'inset 0 0 0 1.5px var(--cth-indigo)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0
+                }}>
+                  <Icon name="bell" />
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8, fontSize: 15, lineHeight: '22px', color: 'var(--cth-ink-700)' }}>
+                  <span>{t('settings.resetMemoryConfirm.body', { godName })}</span>
+                  <span>{t('settings.resetMemoryConfirm.keeps')}</span>
+                  {memoryFolders.length > 0 && (
+                    <>
+                      <span>{t('settings.resetMemoryConfirm.folders')}</span>
+                      <ul style={{ margin: 0, paddingInlineStart: 18, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {memoryFolders.map((f) => (
+                          <li key={f}><code dir="ltr" style={{ fontFamily: 'var(--cth-font-mono, monospace)', fontSize: 12, wordBreak: 'break-all', color: 'var(--cth-ink-900)' }}>{f}</code></li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {memoryErr && (
+                <div role="alert" style={{ fontSize: 13, lineHeight: '18px', color: 'var(--cth-coral-text)' }}>{memoryErr}</div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <PixelButton variant="secondary" size="md" onClick={() => setConfirmingMemory(false)} disabled={busy}>
+                  {t('common.cancel')}
+                </PixelButton>
+                <PixelButton variant="destructive" size="md" onClick={resetMemory} disabled={busy}>
+                  {busy ? t('settings.resetting') : t('settings.resetMemoryConfirm.go')}
                 </PixelButton>
               </div>
             </div>
@@ -2343,7 +2414,15 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         <p style={{ margin: 0, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink)' }}>
                           {t('settings.general.dangerDesc')}
                         </p>
-                        <div style={{ marginTop: 6 }}>
+                        <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          <button type="button" onClick={() => void askResetMemory()} style={{
+                            padding: '8px 16px', border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
+                            background: 'var(--cth-card)', color: 'var(--cth-coral-text)',
+                            boxShadow: 'inset 0 0 0 1.5px var(--cth-coral-strong)',
+                            fontFamily: 'var(--cth-font-ui)', fontSize: 13, fontWeight: 700
+                          }}>
+                            {t('settings.general.resetMemory')}
+                          </button>
                           <button type="button" onClick={() => setConfirming(true)} style={{
                             padding: '8px 16px', border: 'none', borderRadius: 'var(--cth-r-md)', cursor: 'pointer',
                             background: 'var(--cth-coral-strong)', color: 'var(--cth-on-coral)',
