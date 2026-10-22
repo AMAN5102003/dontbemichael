@@ -11,6 +11,12 @@ export const APP_NAME = "Don't Be Michael";
  *  never translated. */
 export const PROGRAM_MARK = 'GAACC AI Labs';
 
+/** Where the program mark leads: the chamber's site, opened in the browser. */
+export const PROGRAM_URL = 'https://austinasianchamber.org/';
+
+/** The mark's full name, shown when the pointer rests on it. */
+export const PROGRAM_TITLE = 'Greater Austin Asian Chamber of Commerce';
+
 /** The data folder under Application Support. Pinned explicitly so a future
  *  rename of the app never moves it (Electron would otherwise derive the folder
  *  from the name and start empty). Was `munder-difflin`; the owner chose a clean

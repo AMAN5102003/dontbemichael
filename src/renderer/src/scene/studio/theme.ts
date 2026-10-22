@@ -10,7 +10,7 @@ export interface SceneTokens {
   rim: string; rimOp: number;
   platSh: string; platShOp: number; platL: string; platR: string; bandOp: number;
   floor0: string; floor1: string; grid: string; gridOp: number; edgeF: string; edgeB: string;
-  /** The program mark lettered on the platform's front left side face. */
+  /** The program mark lettered on the platform's right side face. */
   markFill: string; markOp: number;
   flowSh: string; flowShOp: number; under: string; underOp: number;
   papSh: string; papShOp: number; papL: string; papR: string; papTop: string;
@@ -34,7 +34,7 @@ const LIGHT: SceneTokens = {
   rim: '#FFFFFF', rimOp: 0.75,
   platSh: '#8A82C9', platShOp: 0.22, platL: '#D7D3EF', platR: '#C6C0E6', bandOp: 0.45,
   floor0: '#F1EFFB', floor1: '#E4E1F5', grid: '#FFFFFF', gridOp: 0.7, edgeF: '#FFFFFF', edgeB: '#D9D5EF',
-  markFill: '#8A82C9', markOp: 0.85,
+  markFill: '#FFFFFF', markOp: 0.9,
   flowSh: '#6E66B8', flowShOp: 0.1, under: '#FFFFFF', underOp: 0.9,
   papSh: '#3A3170', papShOp: 0.13, papL: '#E4E1F4', papR: '#D2CEEA', papTop: '#FFFFFF',
   postB: ['#FFFFFF', '#DAD6F0', '#C9C4E8'], postP: ['#F4F3FB', '#E3E0F3', '#CFCBE8'], boxFront: '#FFFFFF',

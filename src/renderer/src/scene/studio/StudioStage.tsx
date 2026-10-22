@@ -32,11 +32,16 @@ import { chatCandidates, stillIn } from '@/shell/closingFloor';
 /** Nobody has gone home (not closing time). */
 const NOBODY: ReadonlySet<string> = new Set();
 import { P, STAGE_H, STAGE_W, type Pt } from './iso';
+import { PROGRAM_MARK, PROGRAM_TITLE, PROGRAM_URL } from '@shared/appName';
+
+/** The program mark's letter size on the stage: small enough to sit inside the
+ *  platform's side band, between its top edge and the light line. */
+const MARK_SIZE = 8;
 import { family, sceneTokens, type Family } from './theme';
 import { HUB, HUB_CARD, POST_GY, cardRect, departmentOf, planStudio, postGx, roleOf, type PodPlan } from './layout';
 import { FLIGHT_MS, bendFor, useStudioLife } from './life';
 import { SHOW_MAILBOXES } from '@shared/buildFeatures';
-import { DECOR, Decor, FloorMark, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
+import { DECOR, Decor, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
 
 
 /** The agent fields the office draws. Changes to anything else (the terminal
@@ -412,8 +417,6 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
         >
           <StudioDefs T={T} families={families} />
           <Platform T={T} />
-          {/* The program the app is part of, on the platform's side, under everything else. */}
-          <FloorMark T={T} />
           {plan.pods.map((pod) => (
             <g key={`glow-${pod.dept}-${pod.members[0].id}`} style={dimStyle(dimmed(pod.members.map((a) => a.id)))}>
               <PodGlow grid={pod.grid} famKey={pod.dept} desks={pod.members.map((a) => ({ st: deskState(a) }))} />
@@ -468,6 +471,25 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
           ].sort((a, b) => a.depth - b.depth).map((o) => o.node)}
           {life.svg}
         </svg>
+
+        {/* The program the app is part of (owner, 2026-10-22,
+            docs/designs/floor-business-name.md): a link lettered small on the
+            platform's right side from near its front corner, along the side's
+            2:1 slope. It sits over the scene, so a pod hanging across the side
+            never cuts it, and under the day's light. target _blank goes through
+            the window open handler, so the site opens in the browser. */}
+        {(() => {
+          const [x, y] = P(5, 4.6, -12);
+          const base = MARK_SIZE * 0.8;
+          return (
+            <a href={PROGRAM_URL} target="_blank" rel="noreferrer" title={PROGRAM_TITLE} dir="ltr" className="cth-st-mark"
+              style={{
+                ...at(x, y - base), transformOrigin: `0 ${base * k}px`, transform: 'matrix(1, -0.5, 0, 1, 0, 0)',
+                fontFamily: 'Sora, sans-serif', fontWeight: 600, fontSize: MARK_SIZE * k, lineHeight: 1, letterSpacing: 1.1 * k,
+                whiteSpace: 'nowrap', color: T.markFill, ['--mark-op' as string]: T.markOp
+              }}>{PROGRAM_MARK}</a>
+          );
+        })()}
 
         {/* The light of the day (DESIGN.md 8.12): morning sun from the left, a
             golden evening, a darker night where working desks keep their lamps on. */}

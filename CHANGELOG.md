@@ -11,7 +11,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 ### Added
 - **Add a file right from a Company foundations card.** Pick a file or drop it on the card, such as your brand voice guide, instead of typing where it is. The app reads it and checks that it answers the card's question, pictures included, so a financial statement added to the brand voice card by mistake is turned away with the reason. A file that fits goes into company knowledge, where every team member can read it in full, and the answer names it; your typed words, if any, stay the short answer. A file that can't be read, doesn't fit, or couldn't be checked adds nothing, and the card says why.
 
-- **The office floor carries the GAACC AI Labs mark,** for the Greater Austin Asian Chamber of Commerce open source AI Lab program the app is part of, lettered small along the platform's side in light and dark.
+- **The office floor carries the GAACC AI Labs mark,** for the Greater Austin Asian Chamber of Commerce open source AI Lab program the app is part of, lettered small along the platform's side in light and dark. Click it to open austinasianchamber.org in your browser.
 
 ### Changed
 - Team members and Michael read a company knowledge document a foundations answer names before work that depends on that answer.

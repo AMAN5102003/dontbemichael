@@ -10,7 +10,6 @@ import { Box, EllipseAt, Poly } from './shapes';
 import type { Family, SceneTokens } from './theme';
 import { PROP_ART, hasProp } from '@/scene/office/props';
 import { cutText } from '@shared/cutText';
-import { PROGRAM_MARK } from '@shared/appName';
 
 /** What a desk's screen and floor show (DESIGN.md 3.5, 8.5). */
 export type DeskState = 'working' | 'thinking' | 'waiting' | 'needs' | 'compacting' | 'looping' | 'success' | 'idle';
@@ -75,27 +74,6 @@ export function Platform({ T }: { T: SceneTokens }) {
       {lines}
       <polyline points={pts([P(-A, A), P(A, A), P(A, -A)])} fill="none" stroke={T.edgeF} strokeWidth={1.6} />
       <polyline points={pts([P(-A, A), P(-A, -A), P(A, -A)])} fill="none" stroke={T.edgeB} strokeWidth={1} />
-    </g>
-  );
-}
-
-/* ── Program mark ─────────────────────────────────────────────────────────── */
-
-/**
- * The program the app is part of, lettered small on the platform's front left
- * side face, like an engraving on the slab's edge (owner, 2026-10-22,
- * docs/designs/floor-business-name.md). It ends just before the front corner
- * and follows the face's slope; it sits low in the band, between the face's top
- * edge and the light line 16 px down, so no letter crosses the edge. No pod
- * reaches over this face (the team pod overlapped the right one). Left to
- * right in every language: it is a proper name.
- */
-export function FloorMark({ T }: { T: SceneTokens }) {
-  const [x, y] = P(4.5, 5, -12);
-  return (
-    <g transform={`matrix(1 0.5 0 1 ${x} ${y})`}>
-      <text direction="ltr" textAnchor="end" fontFamily="Sora, sans-serif" fontWeight={600} fontSize={8} letterSpacing={1.1}
-        fill={T.markFill} fillOpacity={T.markOp}>{PROGRAM_MARK}</text>
     </g>
   );
 }
