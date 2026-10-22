@@ -412,7 +412,7 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
         >
           <StudioDefs T={T} families={families} />
           <Platform T={T} />
-          {/* The program the app is part of, on the ground under everything else. */}
+          {/* The program the app is part of, on the platform's side, under everything else. */}
           <FloorMark T={T} />
           {plan.pods.map((pod) => (
             <g key={`glow-${pod.dept}-${pod.members[0].id}`} style={dimStyle(dimmed(pod.members.map((a) => a.id)))}>

@@ -82,19 +82,17 @@ export function Platform({ T }: { T: SceneTokens }) {
 /* ── Program mark ─────────────────────────────────────────────────────────── */
 
 /**
- * The program the app is part of, lettered on the ground in front of the
- * platform's right face like paint on the floor (docs/designs/floor-business-
- * name.md): from 60 px right of the front corner, 34 px below the face's
- * bottom edge, rising along the face's 2:1 slope. Left to right in every
- * language: it is a proper name.
+ * The program the app is part of, lettered small on the platform's right side
+ * face, like an engraving on the slab's edge (owner, 2026-10-22,
+ * docs/designs/floor-business-name.md): centered along the face, between its
+ * top edge and the light band 16 px down, following the face's 2:1 slope. Left
+ * to right in every language: it is a proper name.
  */
 export function FloorMark({ T }: { T: SceneTokens }) {
-  const [cx, cy] = P(5, 5, -22);
-  const x = cx + 60;
-  const y = cy - 30 + 34;
+  const [x, y] = P(5, 0, -12);
   return (
     <g transform={`matrix(1 -0.5 0 1 ${x} ${y})`}>
-      <text direction="ltr" fontFamily="Sora, sans-serif" fontWeight={600} fontSize={30} letterSpacing={1.2}
+      <text direction="ltr" textAnchor="middle" fontFamily="Sora, sans-serif" fontWeight={600} fontSize={10} letterSpacing={1.4}
         fill={T.markFill} fillOpacity={T.markOp}>{PROGRAM_MARK}</text>
     </g>
   );

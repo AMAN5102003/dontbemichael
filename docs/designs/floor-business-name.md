@@ -349,3 +349,11 @@ None in this review.
 - **VERDICT:** ENG REVIEW done with both decisions answered; ISSUES OPEN means mapped work (tasks T1 to T3). No design review has looked at the mark's type and color yet.
 
 NO UNRESOLVED DECISIONS
+
+## Change after build (owner, 2026-10-22)
+
+The owner asked for the mark "much smaller and adjusted within the foundation border area": it now
+sits on the platform's right side face, not the ground in front of it. Centered on the face at
+`P(5, 0, -12)`, 10 px Sora 600, between the face's top edge and the light band 16 px down, along the
+same 2:1 slope; white on the light face, a muted violet on the dark one (`markFill`, `markOp`). The
+bottom bar overlap risk (Architecture 1) no longer applies: the face is well above the stage bottom.

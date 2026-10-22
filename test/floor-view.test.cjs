@@ -129,8 +129,8 @@ test('Tasks and Who talks to whom take the whole window: the right column hides 
   assert.match(store, /rightColumn: 'board',\n\s+centerClaim: 'column',\n\s+\.\.\.officeView\(s\.floorView\),/);
 });
 
-test('the program mark is lettered on the floor in front of the platform, under the scene, left to right, in every office', () => {
-  // Value: protects=GAACC AI Labs shows on the office floor in every install, under pods and people, never reversed and never in the compact grid; fails_when=the mark moves above the scene, into the compact layout, flips in Arabic or loses a theme tone; why_new=owner 2026-10-22, docs/designs/floor-business-name.md D1 C; seam=source pins (the scene needs React); no_claim=its look on a real window (dev app)
+test('the program mark is lettered small on the platform\'s side face, under the scene, left to right, in every office', () => {
+  // Value: protects=GAACC AI Labs shows on the platform's side in every install, inside its border, under pods and people, never reversed and never in the compact grid; fails_when=the mark moves above the scene, into the compact layout, flips in Arabic or loses a theme tone; why_new=owner 2026-10-22, docs/designs/floor-business-name.md D1 C; seam=source pins (the scene needs React); no_claim=its look on a real window (dev app)
   const loadTs = require('./load-ts.cjs');
   assert.equal(loadTs('src/shared/appName.ts').PROGRAM_MARK, 'GAACC AI Labs');
   const stage = read('src/renderer/src/scene/studio/StudioStage.tsx');
@@ -138,7 +138,8 @@ test('the program mark is lettered on the floor in front of the platform, under 
   assert.ok(stage.indexOf('<FloorMark') > stage.indexOf('if (plan.compact) {'), 'only in the stage, the compact grid returns first');
   const art = read('src/renderer/src/scene/studio/StudioArt.tsx');
   const mark = art.slice(art.indexOf('export function FloorMark'), art.indexOf('export function FloorMark') + 700);
-  assert.match(mark, /const \[cx, cy\] = P\(5, 5, -22\);/, 'measured from the front corner\'s foot');
+  assert.match(mark, /const \[x, y\] = P\(5, 0, -12\);/, 'centered on the right face, between its top edge and the band 16 px down');
+  assert.match(mark, /textAnchor="middle"[^>]*fontSize=\{10\}/, 'small, centered');
   assert.match(mark, /matrix\(1 -0\.5 0 1 \$\{x\} \$\{y\}\)/, 'along the right face\'s 2:1 slope');
   assert.match(mark, /direction="ltr"/, 'a proper name, never reversed in Arabic');
   assert.match(mark, /fill=\{T\.markFill\} fillOpacity=\{T\.markOp\}/);
