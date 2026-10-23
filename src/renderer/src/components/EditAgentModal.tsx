@@ -362,7 +362,8 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       onBusy={(b) => { setChanging(b); if (b) setStatus(null); }}
     />
   );
-  // Folded to four lines (DR4), with Undo and the last change under it.
+  // Folded to four lines (DR4), with Undo and the last change under it; the
+  // change box sits below it, after the job is read (owner, 2026-10-23).
   const long = plain.split('\n').length > 4 || plain.length > 320;
   const workStyleRow = (
     <ReadRow label={t('jobChange.howWorks', { name: who })} info={t('jobChange.howWorksInfo', { name: who })}>
@@ -533,13 +534,14 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
             {danger}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
-            {changeRow}
             {workStyleRow}
+            {changeRow}
           </div>
         </div>
       ) : (
-      // One column (DR4): name, role, what they handle, what should change,
-      // how they work, then the jobs and the engine folded away. Field labels
+      // One column (DR4): name, role, what they handle, how they work, then
+      // what should change under the job it changes (owner, 2026-10-23), the
+      // jobs and the engine folded away. Field labels
       // only; explanations sit behind info icons.
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Fields id="name">{nameRow}</Fields>
@@ -547,8 +549,8 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
         <Fields id="briefing">
           {roleRow}
           {handlesRow}
-          {changeRow}
           {workStyleRow}
+          {changeRow}
           {schedules}
         </Fields>
 

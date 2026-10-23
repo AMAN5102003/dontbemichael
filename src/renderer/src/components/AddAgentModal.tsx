@@ -1029,6 +1029,13 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                   <ReadRow label={tr('jobChange.handles', { name: hireWho })} info={tr('addAgent.roleHelp', { godName, name: hireWho })}>
                     <div dir={rtl ? 'auto' : undefined} style={readStyle}>{routing}</div>
                   </ReadRow>
+                  <ReadRow label={tr('jobChange.howWorks', { name: hireWho })} info={tr('jobChange.howWorksInfo', { name: hireWho })}>
+                    <div dir={rtl ? 'auto' : undefined} style={{ ...readStyle, whiteSpace: 'pre-wrap', ...(plainAll ? {} : clampStyle) }}>{plain}</div>
+                    {describing && <span aria-live="polite" style={helperStyle}>{tr('jobChange.describing')}</span>}
+                    {(plain.split('\n').length > 4 || plain.length > 320) && (
+                      <button type="button" aria-expanded={plainAll} onClick={() => setPlainAll((v) => !v)} style={{ ...linkStyle, alignSelf: 'flex-start' }}>{plainAll ? tr('jobChange.showLess') : tr('jobChange.showAll')}</button>
+                    )}
+                  </ReadRow>
                   <JobChangeReview
                     key="change"
                     who={hireWho}
@@ -1038,13 +1045,6 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                     applyLabel={tr('jobChange.apply')}
                     onBusy={setJobBusy}
                   />
-                  <ReadRow label={tr('jobChange.howWorks', { name: hireWho })} info={tr('jobChange.howWorksInfo', { name: hireWho })}>
-                    <div dir={rtl ? 'auto' : undefined} style={{ ...readStyle, whiteSpace: 'pre-wrap', ...(plainAll ? {} : clampStyle) }}>{plain}</div>
-                    {describing && <span aria-live="polite" style={helperStyle}>{tr('jobChange.describing')}</span>}
-                    {(plain.split('\n').length > 4 || plain.length > 320) && (
-                      <button type="button" aria-expanded={plainAll} onClick={() => setPlainAll((v) => !v)} style={{ ...linkStyle, alignSelf: 'flex-start' }}>{plainAll ? tr('jobChange.showLess') : tr('jobChange.showAll')}</button>
-                    )}
-                  </ReadRow>
                 </>
               ) : (
                 <JobChangeReview

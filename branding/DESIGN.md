@@ -1208,9 +1208,9 @@ are sentence case. Closing time is the closing bar (§7.23), not a dialog.
 someone already hired, in one column, laid exactly over the person's panel it edits (its
 box and radius, kept in step on resize; with no panel, 640 wide, full height, on the right,
 left in RTL): Name, Role,
-What they handle (read only text), What should change?, How they work (read only, folded to
-four lines with Show all, Undo last change and "Last change, 22 Oct: ..."), the scheduled
-jobs, then a folded "Engine" line
+What they handle (read only text), How they work (read only, folded to four lines with Show
+all, Undo last change and "Last change, 22 Oct: ..."), What should change? under the job it
+changes (owner, 2026-10-23; wide, the same in the right column), the scheduled jobs, then a folded "Engine" line
 that names the provider and model and opens to change them. Michael and his assistant have
 no What they handle. The footer is Close until Name, Role or the engine is edited, then
 Cancel and Save changes; the job saves only through the preview's Apply. Under the engine, for anyone

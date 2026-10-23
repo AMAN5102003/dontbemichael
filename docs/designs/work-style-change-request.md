@@ -500,7 +500,7 @@ all seven passes; DR2 ran Codex (gpt-5.4) as the outside design voice.
 | ID | Decision (owner answer) |
 |---|---|
 | DR3 | Apply saves the job at once ("Pam's job is updated."). The footer is Close until Name, Role or Engine is edited, then Cancel and Save changes. (A) |
-| DR4 | Order: Name, Role, What Pam handles, What should change?, then How Pam works folded to four lines with Show all, Undo last change and the last change line. (A) |
+| DR4 | Order: Name, Role, What Pam handles, What should change?, then How Pam works folded to four lines with Show all, Undo last change and the last change line. (A) Owner, 2026-10-23, after seeing it built: What should change? moves under How Pam works, the more natural place, in Edit agent and the hire wizard. |
 | DR5 | A clash is answered with two or three option rows (the Ask me radio style), one marked Suggested, plus Something else for a typed answer. The revise result returns these choices. (A) |
 | DR6 | Overlap: "Kelly already chases overdue invoices." with Leave it with Kelly (drops that part, previews again) and Edit my change (box, text kept). Changed meanwhile: the typed change stays; See what changes again reruns it. (A) |
 | DR7 | Undo is instant: "Pam's job is back to before your last change."; Michael's routing line goes back too; no dialog. (A) |
