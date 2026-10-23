@@ -1,9 +1,10 @@
-import { useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { HarnessConfig } from '@/store/config';
 import { cityLine, cleanCompanyProfile, mergeEditedProfile, missingProfileFields, type CompanyProfile } from '@shared/companyProfile';
 import { CompanyProfileFields } from './CompanyProfileFields';
 import { PixelButton } from './PixelButton';
+import { hint } from './fieldText';
 
 /**
  * Settings, Company profile: every field of the company profile, editable
@@ -46,14 +47,11 @@ export function CompanyProfileSettings({ config, onOpenKnowledge }: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ fontSize: 14, lineHeight: '19px', color: 'var(--cth-ink-700)' }}>
+      <div style={hint}>
         {t('companyProfile.intro')}
       </div>
-      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <span style={{ fontSize: 14, color: 'var(--cth-ink-700)' }}>{t('onboarding.business.nameLabel')} *</span>
-        <input value={name} onChange={(e) => { setName(e.target.value); setStatus('idle'); }} style={inputStyle} />
-      </label>
       <CompanyProfileFields
+        businessName={{ value: name, onChange: (v) => { setName(v); setStatus('idle'); } }}
         value={profile}
         onChange={edit}
         parts={['essentials', 'details', 'hint']}
@@ -65,7 +63,7 @@ export function CompanyProfileSettings({ config, onOpenKnowledge }: {
         <PixelButton variant="primary" size="md" onClick={save} disabled={status === 'saving'}>
           {t('companyProfile.save')}
         </PixelButton>
-        <span role="status" style={{ fontSize: 14, color: status === 'failed' ? 'var(--cth-coral)' : 'var(--cth-ink-500)' }}>
+        <span role="status" style={{ ...hint, color: status === 'failed' ? 'var(--cth-coral-text)' : hint.color }}>
           {status === 'saved' ? t('companyProfile.saved')
             : status === 'failed' ? t('companyProfile.saveFailed')
             : gaps.length ? t('companyProfile.stillMissing') : ''}
@@ -75,8 +73,3 @@ export function CompanyProfileSettings({ config, onOpenKnowledge }: {
   );
 }
 
-const inputStyle: CSSProperties = {
-  padding: '6px 8px 4px', border: 'none',
-  background: 'var(--cth-cream-50)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)',
-  fontFamily: 'var(--cth-font-ui)', fontSize: 14, color: 'var(--cth-ink-900)'
-};

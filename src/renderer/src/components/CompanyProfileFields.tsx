@@ -25,6 +25,8 @@ export interface CompanyProfileFieldsProps {
   missing?: RequiredProfileField[];
   /** Settings passes a way to jump to Memory & Knowledge; setup doesn't. */
   onOpenKnowledge?: () => void;
+  /** Settings only: the business name, first in the essentials panel. */
+  businessName?: { value: string; onChange: (v: string) => void };
 }
 
 /** The Mac's time zone, to prefill a new profile. */
@@ -56,7 +58,7 @@ function supported(kind: 'timeZone' | 'currency'): string[] {
   } catch { return []; }
 }
 
-export function CompanyProfileFields({ value, onChange, parts, needsIndustry, missing = [], onOpenKnowledge }: CompanyProfileFieldsProps) {
+export function CompanyProfileFields({ value, onChange, parts, needsIndustry, missing = [], onOpenKnowledge, businessName }: CompanyProfileFieldsProps) {
   const { t, i18n } = useTranslation();
   const timeZones = useMemo(() => supported('timeZone'), []);
   const currencies = useMemo(() => supported('currency'), []);
@@ -80,6 +82,12 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
       {parts.includes('essentials') && (
         <>
           <Panel>
+          {businessName && (
+            <Field label={t('onboarding.business.nameLabel')} required>
+              <input value={businessName.value} onChange={(e) => businessName.onChange(e.target.value)}
+                aria-required className="cth-input" style={fieldStyle} />
+            </Field>
+          )}
           <div style={grid2}>
             <Field label={t('companyProfile.ceo')} required>
               <input value={text(value.ceo)} onChange={(e) => set({ ceo: orUndefined(e.target.value) })}
@@ -233,7 +241,7 @@ function Field({ label, required, hint, children }: { label: string; required?: 
   const { t } = useTranslation();
   return (
     <SharedField
-      label={required ? <>{label}<span style={requiredMark}>{t('companyProfile.required')}</span></> : label}
+      label={required ? <>{label}{' '}<span style={requiredMark}>{t('companyProfile.required')}</span></> : label}
       note={hint}
     >{children}</SharedField>
   );

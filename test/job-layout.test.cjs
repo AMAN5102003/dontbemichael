@@ -100,7 +100,7 @@ test('the schedule editor, company profile and Add a mailbox use the shared fiel
   assert.doesNotMatch(sched, /cream-200/, 'no ringed cream editor');
   const prof = read('src/renderer/src/components/CompanyProfileFields.tsx');
   for (const k of ['addressHead', 'contactHead', 'operateHead', 'moneyHead']) assert.match(prof, new RegExp(`<Panel title=\\{t\\('companyProfile\\.${k}'\\)\\}>`), k);
-  assert.match(prof, /<SharedField\s+label=\{required \? <>\{label\}<span style=\{requiredMark\}>\{t\('companyProfile\.required'\)\}<\/span><\/> : label\}\s+note=\{hint\}/);
+  assert.match(prof, /<SharedField\s+label=\{required \? <>\{label\}\{' '\}<span style=\{requiredMark\}>\{t\('companyProfile\.required'\)\}<\/span><\/> : label\}\s+note=\{hint\}/);
   const mail = read('src/renderer/src/components/AddMailboxDialog.tsx');
   assert.match(mail, /import \{ Field, Panel, hint \} from '\.\/fieldText';/);
   assert.doesNotMatch(mail, /function Field\(/, 'no copy of its own');

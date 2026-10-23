@@ -374,7 +374,7 @@ export function IntegrationsRegistry() {
       </div>
 
       {records.length === 0 ? (
-        <div style={{ borderRadius: 'var(--cth-r-md)', padding: 24, textAlign: 'center', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
+        <div style={{ borderRadius: 'var(--cth-r-lg)', padding: 24, textAlign: 'center', background: 'var(--cth-card)' }}>
           <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{tr('integrations.empty')}</p>
           <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={templates.length === 0}>+ {tr('integrations.addFirst')}</PixelButton>
         </div>
@@ -392,7 +392,7 @@ export function IntegrationsRegistry() {
                   : { dot: '●', color: 'var(--cth-green-text)', text: tr('integrations.enabled') };
               const rt = rowTest[r.id];
               return (
-                <div key={r.id} style={{ borderRadius: 'var(--cth-r-md)', display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
+                <div key={r.id} style={{ borderRadius: 'var(--cth-r-lg)', display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-card)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <Glyph mono={g.mono} bg={g.bg} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>

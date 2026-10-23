@@ -1723,7 +1723,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           </h3>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              <span style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 {t('settings.connections.slackIntegration')}
                                 {/* i - toggles the step-by-step connect guide. */}
                                 <button
@@ -1894,12 +1894,10 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           in the Triggers tab lands here without a refetch (and the
                           other way round). */}
                       <div style={group}>
-                        <h3 style={groupName}>
-                          {t('settings.connections.webhooks')}
-                        </h3>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                            {/* The group's name, with its help toggle (one name, not two). */}
+                            <h3 style={{ ...groupName, display: 'flex', alignItems: 'center', gap: 6 }}>
                               {t('settings.connections.webhooks')}
                               <button
                                 type="button"
@@ -1915,7 +1913,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '16px'
                                 }}
                               >i</button>
-                            </span>
+                            </h3>
                             <span style={hint}>
                               {t('settings.connections.webhooksDesc')}
                             </span>

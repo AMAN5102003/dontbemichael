@@ -157,43 +157,41 @@ export function SetupPanel({ onDone }: { onDone?: () => void } = {}) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 12 }}>{t('setupPanel.title')}</div>
-          <div style={{ fontSize: 12, color: 'var(--cth-ink-500)', marginTop: 2 }}>
+      {/* Where things stand and the headline action, on one soft panel. The
+          action is present but disabled when nothing is missing, so the page
+          reads the same either way rather than the button vanishing. */}
+      <div style={{ ...panelStyle, gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ ...groupName, flex: 1, minWidth: 200 }}>
             {tools === null
               ? t('setupPanel.checking')
-              : t('setupPanel.summary', { ready: readyCount, total: tools.length, missing: missingEssential.length })}
+              : t('setupPanel.summary', {
+                ready: readyCount,
+                total: tools.length,
+                missing: missingEssential.length ? t('setupPanel.summaryMissing', { count: missingEssential.length }) : ''
+              })}
+          </h3>
+          <PixelButton variant="ghost" size="sm" onClick={() => void refresh()} disabled={busy}>
+            {busy ? t('setupPanel.checkingBtn') : t('setupPanel.recheck')}
+          </PixelButton>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ ...hint, flex: 1, minWidth: 220, color: missingEssential.length ? 'var(--cth-ink)' : hint.color }}>
+            {missingEssential.length
+              ? t('setupPanel.askDesc', { count: missingEssential.length })
+              : t('setupPanel.allReady')}
           </div>
+          <PixelButton
+            variant="primary"
+            size="md"
+            onClick={askMichael}
+            disabled={missingEssential.length === 0}
+          >
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <Icon name="sparkle" /> {t('setupPanel.askMichael')}
+            </span>
+          </PixelButton>
         </div>
-        <PixelButton variant="ghost" size="md" onClick={() => void refresh()} disabled={busy}>
-          {busy ? t('setupPanel.checkingBtn') : t('setupPanel.recheck')}
-        </PixelButton>
-      </div>
-
-      {/* The headline action. Present but disabled when nothing is missing, so the
-          page reads the same either way rather than the button vanishing. */}
-      <div style={{
-        borderRadius: 'var(--cth-r-md)',
-        padding: 10, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap',
-        background: missingEssential.length ? 'var(--cth-lemon-light)' : 'var(--cth-cream-100)',
-        boxShadow: 'inset 0 0 0 1px var(--cth-line-2)'
-      }}>
-        <div style={{ flex: 1, minWidth: 220, fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: 1.5 }}>
-          {missingEssential.length
-            ? t('setupPanel.askDesc', { count: missingEssential.length })
-            : t('setupPanel.allReady')}
-        </div>
-        <PixelButton
-          variant="primary"
-          size="md"
-          onClick={askMichael}
-          disabled={missingEssential.length === 0}
-        >
-          <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-            <Icon name="sparkle" /> {t('setupPanel.askMichael')}
-          </span>
-        </PixelButton>
       </div>
 
       {SECTIONS.map((section) => {

@@ -658,7 +658,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <span style={fieldLabel}>
-                      {t('onboarding.business.nameLabel')}
+                      {t('onboarding.business.nameLabel')}{' '}
                       <span style={requiredMark}>{t('companyProfile.required')}</span>
                     </span>
                     <input
@@ -675,7 +675,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 </div>
 
                 <div style={fieldLabel}>
-                  {t('onboarding.business.ask')}
+                  {t('onboarding.business.ask')}{' '}
                   <span style={requiredMark}>{t('companyProfile.required')}</span>
                 </div>
 
