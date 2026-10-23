@@ -49,7 +49,7 @@ globalThis.window = {
       Object.assign(config, patch);
       return config;
     },
-    packsList: async () => { calls.packsList++; return { packs: [], core: null }; },
+    packsList: async () => { calls.packsList++; return sc.readOffers ? { packs: [{ pack: JSON.parse(fs.readFileSync('resources/packs/saas-consulting.json', 'utf8')) }], core: null } : { packs: [], core: null }; },
     listMissions: async () => { calls.listMissions++; return []; },
     upsertMission: async () => { calls.upsert++; return { ok: true }; }
   }
@@ -74,7 +74,8 @@ const offersNow = () => workStyleOffers(storeMod.useStore.getState().agents, car
   let result = null;
   if (sc.choice === 'keep') await W.decideWorkStyleOffer(offer, 'keep');
   else result = await W.adoptWorkStyleOffer(offer, revised, from);
-  process.stdout.write(JSON.stringify({ offer, result, before, after: member(), decided: config.workStyleUpdatesDecided, calls, offersAfter: offersNow().map((o) => o.agentId), id: decisionId(offer.key, offer.agentId) }));
+  const offersRead = sc.readOffers ? (await W.readWorkStyleOffers()).map((o) => o.agentId) : null;
+  process.stdout.write(JSON.stringify({ offer, result, before, after: member(), decided: config.workStyleUpdatesDecided, calls, offersAfter: offersNow().map((o) => o.agentId), offersRead, id: decisionId(offer.key, offer.agentId) }));
   process.exit(0);
 })().catch((e) => { process.stderr.write(String(e && e.stack || e)); process.exit(1); });
 `;
@@ -168,6 +169,14 @@ test('a decision that fails to write once is tried again, and Use it still reads
   assert.equal(r.calls.updateConfig, 2, 'tried once more');
   assert.equal(r.decided[r.id], 'use', 'the second write landed');
   assert.equal(r.after.goal, REVISED.instructions.trim());
+});
+
+test('Use it whose decision can not be written still never offers the update again this session', () => {
+  // Value: protects=the owner's own job one Undo away after Use it; fails_when=the decision write fails twice, the offer returns, and a second Use it leaves Undo holding the adopted job; why_new=cycle 2 correctness review of the reordered adopt; seam=stub window.cth in a child process, real readWorkStyleOffers; no_claim=after a restart, where the unwritten decision is lost
+  const r = runOffer({ member: CHANGED_PAM, choice: 'use', revised: REVISED, roleAnswer: { ok: true }, decideThrows: 2, readOffers: true });
+  assert.equal(r.result, 'applied');
+  assert.equal(r.decided[r.id], undefined, 'neither write landed');
+  assert.deepEqual(r.offersRead, [], 'the offer stays decided for this session');
 });
 
 // ---- 2. The foundation card's save steps ----

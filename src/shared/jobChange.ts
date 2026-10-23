@@ -80,15 +80,17 @@ export function jobBase(job: { goal?: string; description?: string }): string {
   return `${jobFingerprint(job.goal)}:${jobFingerprint(job.description)}`;
 }
 
-/** "Title: handles" with a new handles part; the title is the owner's typed field (OV2). */
-/** `before`'s role line with `now`'s binding lines in place of its own. */
+/** `before`'s role line with `now`'s binding lines in place of its own.
+ *  No line before stays no line. */
 function withBindingsOf(before: string, now: string): string {
+  if (!before?.trim()) return before;
   const was = splitAgentRole(before);
   const lines = splitBindings(splitAgentRole(now).roleDescription).lines;
   const handles = lines.reduce((h, l) => appendOnce(h, l), splitBindings(was.roleDescription).text);
   return withHandles(was.role, handles);
 }
 
+/** "Title: handles" with a new handles part; the title is the owner's typed field (OV2). */
 export function withHandles(title: string, handles: string): string {
   const t = title.trim().replace(/:+$/, '').trim();
   const h = handles.trim();

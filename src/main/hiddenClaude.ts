@@ -1,6 +1,6 @@
 import * as pty from 'node-pty';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveCommand, userShellPath } from './shellEnv';
@@ -150,7 +150,7 @@ export function pasteSafe(text: string): string {
  * the call fails as "never took the prompt", so nothing leaks.
  */
 function isolatedConfigDir(cwd: string, auth: Record<string, string>): { dir: string; env: Record<string, string> } {
-  const dir = mkdtempSync(join(tmpdir(), 'dbm-check-'));
+  const dir = mkdtempSync(join(tmpdir(), ISOLATED_PREFIX));
   let real = cwd;
   try { real = realpathSync.native(cwd); } catch { /* as typed */ }
   const asKey = (f: string) => (process.platform === 'win32' ? f.replaceAll('\\', '/') : f);
@@ -168,6 +168,22 @@ function isolatedConfigDir(cwd: string, auth: Record<string, string>): { dir: st
       CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: '1'
     }
   };
+}
+
+const ISOLATED_PREFIX = 'dbm-check-';
+
+/** Settings folders a check left behind when the app quit or crashed mid
+ *  check: they hold the checked text. Removed once a launch; only old ones,
+ *  so a check under way is never cut short. */
+export function sweepIsolatedLeftovers(olderThanMs = 10 * 60_000): void {
+  const root = tmpdir();
+  const cutoff = Date.now() - olderThanMs;
+  let names: string[] = [];
+  try { names = readdirSync(root); } catch { return; }
+  for (const n of names) {
+    if (!n.startsWith(ISOLATED_PREFIX)) continue;
+    try { if (lstatSync(join(root, n)).mtimeMs < cutoff) rmSync(join(root, n), { recursive: true, force: true, maxRetries: 3 }); } catch { /* next launch */ }
+  }
 }
 
 export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Promise<HiddenClaudeResult> {
@@ -218,7 +234,8 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
     const auth = hiddenClaudeAuthEnv();
     let isolated: { dir: string; env: Record<string, string> } | null = null;
     if (opts.isolateConfig) {
-      try { isolated = isolatedConfigDir(opts.cwd, auth); } catch (e) {
+      // The key approved is the one the session gets, opts.env included.
+      try { isolated = isolatedConfigDir(opts.cwd, { ...auth, ...(opts.env ?? {}) }); } catch (e) {
         resolve({ ok: false, error: `no settings folder for the check: ${e instanceof Error ? e.message : String(e)}` });
         return;
       }

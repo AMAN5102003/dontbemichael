@@ -29,7 +29,7 @@ import {
   claudeAuthStatusCommand, findClaudeFast, isEngineSetupPty, makeClaudeAuthReader, makeNoticeCoalescer, readEngineSetupStatus,
   shouldStartInstall, type EngineSetupStatus, type KeyCheckFetch
 } from './engineSetup';
-import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
+import { runHiddenClaude, setHiddenClaudeAuthEnv, sweepIsolatedLeftovers } from './hiddenClaude';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
 import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';
@@ -8471,6 +8471,10 @@ app.whenReady().then(() => {
   // live session. Force it closed at startup (a real session re-opens it via
   // setMicGate(true)); macOS TCC stays a second gate regardless.
   if (readConfig().realtimeVoiceEnabled) writeConfig({ realtimeVoiceEnabled: false });
+
+  // A file check cut short by a quit or crash leaves its settings folder, with
+  // the checked text, in the temp folder (hiddenClaude.ts isolateConfig).
+  sweepIsolatedLeftovers();
 
   // Anonymous product analytics (PostHog) — the full contract lives in
   // TELEMETRY.md. Off entirely while COLLECT_USAGE_STATS (buildFeatures.ts) is

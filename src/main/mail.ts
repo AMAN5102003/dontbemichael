@@ -520,11 +520,13 @@ export class MailService {
   private async inFolder<T>(id: string, folder: (c: ImapLike) => Promise<string>, fn: (c: ImapLike, path: string) => Promise<T>, what: string, append = false): Promise<T> {
     for (let attempt = 0; attempt < 2; attempt++) {
       let client: ImapLike | undefined;
+      let started = false;
       try {
         client = await this.imap(id);
         const path = await folder(client);
         const lock = await withTimeout(client.getMailboxLock(path), CALL_TIMEOUT_MS, what);
         try {
+          started = true;
           const out = await withTimeout(fn(client, path), CALL_TIMEOUT_MS, what);
           this.note(id);
           return out;
@@ -533,7 +535,9 @@ export class MailService {
         const err = classifyMailError(e);
         // Acquisition failures clean up their own pending socket in imap.
         // An older operation must not drop a replacement another caller owns.
-        if (err.kind === 'network' && attempt === 0) { if (client) this.drop(id, client); continue; }
+        // An append the server may already have kept is not sent again: only
+        // one that failed before it started (connecting, the folder, the lock).
+        if (err.kind === 'network' && attempt === 0 && !(append && started)) { if (client) this.drop(id, client); continue; }
         if ((err.kind === 'network' || err.kind === 'timeout') && client) this.drop(id, client);
         this.note(id, err);
         // A read that timed out clears by itself: its connection was dropped and

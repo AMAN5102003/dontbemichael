@@ -11,6 +11,11 @@ import { seedStarterJobs } from './seedStarterJobs';
  */
 
 let cards: Promise<Map<string, AgentDefinitionV2>> | null = null;
+
+/** Decisions made this session, kept even when writing them failed: an
+ *  offer already used must not come back before the next launch, or a second
+ *  Use it would leave Undo with the adopted job (ship review, 2026-10-23). */
+const decidedHere: Record<string, 'use' | 'keep'> = {};
 function loadCards(): Promise<Map<string, AgentDefinitionV2>> {
   if (!cards) {
     cards = window.cth.packsList()
@@ -30,12 +35,13 @@ function loadCards(): Promise<Map<string, AgentDefinitionV2>> {
 export async function readWorkStyleOffers(): Promise<WorkStyleOffer[]> {
   const [map, config] = await Promise.all([loadCards(), window.cth.getConfig()]);
   const c = config as { businessType?: string; businessName?: string; businessCity?: string; workStyleUpdatesDecided?: Record<string, string> };
-  return workStyleOffers(useStore.getState().agents, map, c.businessType, { name: c.businessName, city: c.businessCity }, c.workStyleUpdatesDecided);
+  return workStyleOffers(useStore.getState().agents, map, c.businessType, { name: c.businessName, city: c.businessCity }, { ...c.workStyleUpdatesDecided, ...decidedHere });
 }
 
 /** The owner's decision, Keep mine or Use it (after adoptWorkStyleOffer
  *  saved the job): recorded once, so the offer never returns. */
 export async function decideWorkStyleOffer(offer: WorkStyleOffer, choice: 'use' | 'keep'): Promise<void> {
+  decidedHere[decisionId(offer.key, offer.agentId)] = choice;
   const config = await window.cth.getConfig() as { workStyleUpdatesDecided?: Record<string, 'use' | 'keep'> };
   await window.cth.updateConfig({ workStyleUpdatesDecided: { ...(config.workStyleUpdatesDecided ?? {}), [decisionId(offer.key, offer.agentId)]: choice } });
 }
