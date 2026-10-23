@@ -218,6 +218,18 @@
 **Priority:** P2
 **Depends on:** None
 
+### Keep the other hidden checks' text out of Claude's history
+
+**What:** Turn on `isolateConfig` (`src/main/hiddenClaude.ts`) for the other hidden checks that paste private text: the Research privacy check (`src/main/index.ts`, the trust layer, which already sets `dropTranscript`) and the mail standing fit check. Measure the cost first: each isolated run is about 1.4 s slower and writes about 1 MB to a temporary folder, and the trust layer can run a dozen checks at app launch.
+
+**Why:** Ship review 2026-10-23 found Claude Code keeps every pasted prompt in its shared `~/.claude/history.jsonl` and `paste-cache`, which dropping the transcript does not touch. The file fit check is isolated now (verified live: nothing written under ~/.claude); a message to Pete and an email's text still land there.
+
+**Context:** Isolation relies on `CLAUDE_SECURESTORAGE_CONFIG_DIR`, found in the Claude Code binary and not documented. If a later Claude drops it the session stops at sign in and the check fails closed, which for the trust layer means every message to Pete is held, so check that before widening it. The API key sign in and Windows are untested. The file fit check is isolated on every platform (owner, 2026-10-23), so check a foundation card file upload on Windows first: Claude keeps its sign in in `.credentials.json` inside the settings folder there, and if the variable doesn't reach it every file is refused as "couldn't check".
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ## Terminal links (from the ship review of mit/named-links, 2026-10-13)
 
 ### A quoted phrase that starts with a slash links as a path
