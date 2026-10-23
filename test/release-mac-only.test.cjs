@@ -105,7 +105,8 @@ test('a notarized Mac build is stapled', async (t) => {
   appleCreds();
   await run();
   assert.equal(sent.teamId, 'T');
-  assert.ok(calls.includes('xcrun stapler staple /out/App.app'));
+  // The hook joins the path the platform's way; it only runs on a Mac, but the test runs everywhere.
+  assert.ok(calls.includes(`xcrun stapler staple ${path.join('/out', 'App.app')}`));
 });
 
 test('a release signed in CI without notarization credentials fails, a local build does not', async (t) => {
