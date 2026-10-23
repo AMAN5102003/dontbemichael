@@ -58,7 +58,7 @@ import {
 import { roleLabel, plainFallback } from '@shared/workStyleText';
 import { jobFingerprint, type JobChangeEntry } from '@shared/jobChange';
 import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
-import { JobParts, fieldLabel, jobPartsFold, readBody } from './fieldText';
+import { Field, JobParts, fieldLabel, jobPartsFold, readBody } from './fieldText';
 import { useRtl } from '@/i18n/useDirection';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { SHOW_IMPORT_HIRE, SHOW_ENGINE_PICKER, SHOW_MAILBOXES } from '@shared/buildFeatures';
@@ -1431,29 +1431,10 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box'
 };
 
-/** A field with its label; `info` puts the explanation behind an info icon
- *  beside the label instead of text on the screen (owner, 2026-09-27). */
-/** A read only field: its label is text, since nothing in it is typed. */
-function ReadRow({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
-  return (
-    <div role="group" aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={fieldLabel}>{label}</span>
-        {info && <InfoTip text={info} label={label} />}
-      </span>
-      {children}
-    </div>
-  );
+/** A field and a read only field, in the app's field style (fieldText). */
+function Row(p: { label: string; info?: string; children: React.ReactNode }) {
+  return <Field label={p.label} info={p.info}>{p.children}</Field>;
 }
-
-function Row({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <span style={fieldLabel}>{label}</span>
-        {info && <InfoTip text={info} label={label} />}
-      </span>
-      {children}
-    </label>
-  );
+function ReadRow(p: { label: string; info?: string; children: React.ReactNode }) {
+  return <Field read label={p.label} info={p.info}>{p.children}</Field>;
 }

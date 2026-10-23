@@ -49,7 +49,7 @@ test('Finalize explains the folder and the model behind info icons; the job is o
   const setup = modal.slice(modal.indexOf("{step === 'setup' && ("));
   for (const k of ['folderPurpose', 'modelPurpose']) assert.match(setup, new RegExp(`info=\\{tr\\('addAgent\\.wizard\\.${k}'`), k);
   assert.doesNotMatch(setup, /jobChange\.|workStyle/, 'Finalize keeps folder and model only (DR12)');
-  assert.match(modal, /\{info && <InfoTip text=\{info\} label=\{label\} \/>\}/);
+  assert.match(modal, /return <Field label=\{p\.label\} info=\{p\.info\}>\{p\.children\}<\/Field>;/, 'the shared Field puts info behind its icon');
   assert.match(modal, /info=\{tr\('addAgent\.roleHelp'/, 'the role screen too');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const w = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).addAgent.wizard;

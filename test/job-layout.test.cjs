@@ -59,3 +59,19 @@ test('the jobs list heading is a field label in Edit agent, beside its count', (
   assert.match(src, /<span style=\{heading === 'section' \? sectionStyle : fieldLabel\}>\{title\}<\/span>/);
   assert.doesNotMatch(src, /<h3/);
 });
+
+test('one Panel and one Field for every form screen, Edit agent and the hire wizard first', () => {
+  // Value: protects=AS1 to AS4, the shared group name, hint, panel and field; fails_when=a screen keeps its own label or panel copy, or the ramp steps change; why_new=T1 of app-style-rollout.md; seam=none; no_claim=source pins, not rendered
+  const ramp = read('src/renderer/src/components/fieldText.tsx');
+  assert.match(ramp, /export const groupName: CSSProperties = \{\s*margin: 0, fontFamily: 'var\(--cth-font-ui\)', fontSize: 15, lineHeight: '20px', fontWeight: 600,/);
+  assert.match(ramp, /export const hint: CSSProperties = \{ fontSize: 12, lineHeight: '17px', fontWeight: 400, color: 'var\(--cth-ink-3\)' \};/);
+  assert.match(ramp, /padding: '14px 16px', borderRadius: 'var\(--cth-r-xl\)', background: 'var\(--cth-bg\)'/);
+  assert.match(ramp, /<h3 style=\{groupName\}>\{title\}<\/h3>/);
+  assert.match(ramp, /\? <div role="group" aria-label=\{typeof label === 'string' \? label : undefined\} style=\{box\}>\{body\}<\/div>\s*: <label style=\{box\}>\{body\}<\/label>;/, 'read only text is a named group, not a label');
+  for (const f of ['EditAgentModal', 'AddAgentModal']) {
+    const src = read(`src/renderer/src/components/${f}.tsx`);
+    assert.match(src, /return <Field label=\{p\.label\} info=\{p\.info\}>\{p\.children\}<\/Field>;/, `${f} Row is the shared Field`);
+    assert.match(src, /return <Field read label=\{p\.label\} info=\{p\.info\}>\{p\.children\}<\/Field>;/, `${f} ReadRow is the shared Field`);
+    assert.doesNotMatch(src, /background: 'var\(--cth-bg\)'/, `${f} has no panel copy of its own`);
+  }
+});

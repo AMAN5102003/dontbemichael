@@ -48,7 +48,9 @@ test('groups on soft panels, field labels only: who, the job, the scheduled jobs
   // Only the wide panel has two columns (wide panel WD2).
   assert.equal((src.match(/gridTemplateColumns/g) ?? []).length, 1);
   assert.match(src, /\{wide \? \(\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*<div style=\{\{ display: 'grid', gridTemplateColumns: 'minmax\(300px, 360px\) minmax\(0, 720px\)', justifyContent: 'center'/);
-  const panel = src.slice(src.indexOf('function Panel('), src.indexOf('function ReadRow('));
+  assert.match(src, /function Panel\(\{ id, children \}[^\n]*\n\s*return <SoftPanel id=\{`edit-agent-\$\{id\}`\}>\{children\}<\/SoftPanel>;/, 'the shared soft panel (fieldText)');
+  const ramp = fs.readFileSync(path.join(__dirname, '..', 'src/renderer/src/components/fieldText.tsx'), 'utf8');
+  const panel = ramp.slice(ramp.indexOf('export const panelStyle'), ramp.indexOf('export function Panel('));
   assert.match(panel, /padding: '14px 16px', borderRadius: 'var\(--cth-r-xl\)', background: 'var\(--cth-bg\)'/);
   assert.doesNotMatch(panel, /boxShadow|border:/, 'no border or shadow');
   const side = src.slice(src.indexOf('// One column (DR4, H2)'));

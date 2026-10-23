@@ -23,7 +23,7 @@ import { splitAgentRole, joinAgentRole } from '@shared/agentRole';
 import { roleLabel, plainFallback } from '@shared/workStyleText';
 import { applyJob, jobBase, jobFingerprint, plainFor, undoJob } from '@shared/jobChange';
 import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
-import { JobParts, fieldLabel, jobPartsFold, readBody } from './fieldText';
+import { Field, JobParts, Panel as SoftPanel, fieldLabel, jobPartsFold, readBody } from './fieldText';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { ScheduledJobsList } from './ScheduledJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
@@ -657,44 +657,16 @@ function Fields({ id, children }: { id: 'name' | 'briefing' | 'engine'; children
   return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
 }
 
-/** One group of fields on a soft panel (owner, 2026-10-23, mockup 2B;
- *  edit-agent-hierarchy.md H1): the ground color, r-xl, no border or shadow,
- *  so the groups read as shapes before any text is read. */
+/** One group of fields on the shared soft panel (owner, 2026-10-23, mockup
+ *  2B; edit-agent-hierarchy.md H1). */
 function Panel({ id, children }: { id: 'name' | 'job' | 'schedules'; children: React.ReactNode }) {
-  return (
-    <div id={`edit-agent-${id}`} data-fields={id} style={{
-      display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0,
-      padding: '14px 16px', borderRadius: 'var(--cth-r-xl)', background: 'var(--cth-bg)'
-    }}>
-      {children}
-    </div>
-  );
+  return <SoftPanel id={`edit-agent-${id}`}>{children}</SoftPanel>;
 }
 
-/** A read only field: its label is text, not a <label>, since nothing in it
- *  is typed (a <label> would send clicks to its first button). */
-function ReadRow({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
-  return (
-    <div role="group" aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={fieldLabel}>{label}</span>
-        {info && <InfoTip text={info} label={label} />}
-      </span>
-      {children}
-    </div>
-  );
+/** A field and a read only field, in the app's field style (fieldText). */
+function Row(p: { label: string; info?: string; children: React.ReactNode }) {
+  return <Field label={p.label} info={p.info}>{p.children}</Field>;
 }
-
-/** A field with its label; `info` puts the explanation behind an info icon
- *  (owner, 2026-09-27: less verbose everywhere). */
-function Row({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={fieldLabel}>{label}</span>
-        {info && <InfoTip text={info} label={label} />}
-      </span>
-      {children}
-    </label>
-  );
+function ReadRow(p: { label: string; info?: string; children: React.ReactNode }) {
+  return <Field read label={p.label} info={p.info}>{p.children}</Field>;
 }
