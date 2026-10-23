@@ -2335,7 +2335,16 @@
   "scheduledJobs": {
     "title": "Scheduled jobs",
     "focus": "Focus: {{focus}}",
-    "noFocus": "No focus area"
+    "noFocus": "No focus area",
+    "info": "Work {{name}} does on a timer. When a job runs, {{name}} works on its focus, the way How {{name}} works says. Add or change jobs on the Access tab.",
+    "infoOffice": "Work {{name}} does on a timer. When a job runs, {{name}} works on its focus, the way How {{name}} works says. Add or change jobs on the Office schedule tab.",
+    "changeOnAccess": "Change on Access",
+    "addOnAccess": "Add on Access",
+    "changeOnOffice": "Change on Office schedule",
+    "none": "None yet",
+    "loadError": "Couldn't read the schedules.",
+    "tryAgain": "Try again",
+    "paused": "Paused"
   },
   "dock": {
     "label": "Conversation with {{godName}}",

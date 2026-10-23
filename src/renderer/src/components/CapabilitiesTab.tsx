@@ -1,5 +1,5 @@
 import { RESEARCH_ID } from '../../../shared/research';
-import { useEffect, useState, type CSSProperties, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, Toggle, TriggerCard, MiniButton } from './triggers/ui';
 import { AgentSchedules, useGodId, useMissions } from './triggers/ScheduleList';
@@ -65,6 +65,19 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   const mine = missionsFor(missions, agent.id, godId);
   const schedulesOn = mine.filter((m) => m.enabled).length;
   const [collapsed, setCollapsed] = useState<Record<SectionKey, boolean>>({ email: true, connectors: true, schedules: true });
+  // "Change on Access" from Edit agent or the Profile tab: On a schedule
+  // opens unfolded and in view, once (edit-agent-scheduled-jobs.md, SJ3).
+  const schedulesRequest = useStore((s) => s.schedulesRequest);
+  const clearSchedulesRequest = useStore((s) => s.clearSchedulesRequest);
+  const schedulesRef = useRef<HTMLDivElement>(null);
+  const [scrollToSchedules, setScrollToSchedules] = useState(false);
+  useEffect(() => {
+    if (!schedulesRequest || schedulesRequest.agentId !== agent.id) return;
+    clearSchedulesRequest();
+    setCollapsed((c) => ({ ...c, schedules: false }));
+    setScrollToSchedules(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedulesRequest?.seq, agent.id]);
   // Unknown until main answers for this agent (the card stays hidden), so
   // Oscar's switch never shows off while the hook treats him as on, and
   // another agent's answer never shows.
@@ -77,6 +90,12 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   const booksDefault = booksAnswer?.id === agent.id ? booksAnswer.on : undefined;
   const setFold = (key: SectionKey, open: boolean): void => setCollapsed({ ...collapsed, [key]: !open });
 
+  // The group exists only once the config has loaded.
+  useEffect(() => {
+    if (!scrollToSchedules || !schedulesRef.current) return;
+    setScrollToSchedules(false);
+    schedulesRef.current.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
   if (!config) return null;
   const mailboxes = config.mailboxes ?? [];
   const email: EmailCapability = config.agentCapabilities?.[agent.id]?.email ?? { enabled: false, mailboxes: [], send: false, sending: 'draft' };
@@ -408,6 +427,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
           )}
         </TriggerCard>
 
+        <div ref={schedulesRef} data-schedules-group style={{ scrollMarginTop: 8 }}>
         <TriggerCard
           title={t('capabilities.schedules')}
           blurb={t('capabilities.schedulesBlurb', { name })}
@@ -417,6 +437,7 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
         >
           <AgentSchedules key={agent.id} agentId={agent.id} agentName={name} businessType={config.businessType} sourceCard={agent.sourceCard} />
         </TriggerCard>
+        </div>
 
         {/* Outside the sections, so a closed Email section still shows them. */}
         <div aria-live="polite">

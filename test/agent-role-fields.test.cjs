@@ -49,8 +49,9 @@ test('Edit Agent shows Role, what they handle read only, What should change and 
   // column or, wide, in two (wide panel WD2).
   const briefing = src.slice(src.indexOf('const roleRow = ('), src.indexOf('const engine = ('));
   const side = src.slice(src.indexOf('<Fields id="briefing">', src.indexOf('// One column (DR4)')));
-  assert.match(side, /^<Fields id="briefing">\s*\{roleRow\}\s*\{handlesRow\}\s*\{workStyleRow\}\s*\{changeRow\}\s*\{schedules\}/, 'one column: role, what they handle, how they work, what should change under it (owner, 2026-10-23), then the jobs');
+  assert.match(side, /^<Fields id="briefing">\s*\{roleRow\}\s*\{handlesRow\}\s*\{workStyleRow\}\s*\{changeRow\}\s*<\/Fields>\s*\{schedules\}\s*\{engine\}/, 'one column: role, what they handle, how they work, what should change under it (owner, 2026-10-23), then the jobs as their own group (SJ2)');
   assert.match(src, /\{workStyleRow\}\s*\{changeRow\}\s*<\/div>/, 'wide: the change box under the job too');
+  assert.match(src, /\{roleRow\}\s*\{handlesRow\}\s*<\/Fields>\s*\{schedules\}\s*\{engine\}/, 'wide: the jobs in the left column, apart from the duties (SJ2)');
   assert.ok(briefing.includes("<Row label={t('editAgent.role')}>"));
   assert.ok(briefing.includes("<ReadRow label={t('editAgent.handles', { name: who })}"));
   assert.ok(briefing.includes("<ReadRow label={t('jobChange.howWorks', { name: who })}"));
@@ -64,7 +65,7 @@ test('Edit Agent shows Role, what they handle read only, What should change and 
     assert.deepEqual(Object.keys(d.editAgent), Object.keys(en.editAgent), `${loc} has every Edit agent string`);
     assert.deepEqual(Object.keys(d.jobChange), Object.keys(en.jobChange), `${loc} has every job change string`);
   }
-  assert.match(briefing, /<ScheduledJobsList agentId=\{agent\.id\} compact \/>/, 'each job and its focus, read only (FA1)');
+  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} name=\{who\} onChange=\{goToSchedules\} \/>/, 'each job and its focus, read only (FA1)');
 });
 
 test('saving joins the typed title with the saved handles, keeps the old role when empty, and tells the registry', () => {

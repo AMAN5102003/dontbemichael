@@ -81,7 +81,7 @@ test('the job reads in place and the body scrolls: no typed job box to grow (wor
   // Value: protects=the scheduled jobs sit under the job and nothing overlaps; fails_when=a typed Work style box or a grow chain returns; why_new=the job became read only; seam=none
   assert.doesNotMatch(src, /<textarea/);
   assert.doesNotMatch(src, /grow \? \{ flex: 1/);
-  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} compact \/>/, 'the jobs list still sits under the job');
+  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} name=\{who\} onChange=\{goToSchedules\} \/>/, 'the jobs list is its own group (SJ2)');
   const dialog = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/shell/Dialog.tsx'), 'utf8');
   assert.match(dialog, /overflowY: 'auto', minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column'/);
 });

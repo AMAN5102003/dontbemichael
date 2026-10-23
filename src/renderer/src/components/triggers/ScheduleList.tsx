@@ -12,7 +12,7 @@ import {
 } from './ui';
 import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
-import { cannotCheckEmail, cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
+import { cannotCheckEmail, cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, orderedJobs, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { remainingStarterMissions, starterSuggestionsFor, type StarterSuggestion } from '@shared/starterJobs';
 import type { OfficePack } from '@shared/officePack';
@@ -666,7 +666,7 @@ export function AgentSchedules({ agentId, agentName, businessType, sourceCard }:
 
   const on = mine.filter((m) => m.enabled);
   const next = on.map((m) => nextRunAt(m, Date.now())).filter((x): x is number => x !== null).sort((a, b) => a - b)[0];
-  const ordered = [...mine].sort((a, b) => (nextRunAt(a, Date.now()) ?? Infinity) - (nextRunAt(b, Date.now()) ?? Infinity));
+  const ordered = orderedJobs(mine, Date.now());
 
   // A focus area is checked against this agent's Work style and its other
   // jobs on save (FA3).

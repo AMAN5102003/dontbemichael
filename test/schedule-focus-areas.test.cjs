@@ -98,11 +98,12 @@ test('a focus area is checked against the Work style and the other jobs; an unre
 test('Profile and Edit agent show each job with its focus, read only', () => {
   // Value: protects=FA1, the focus is visible with the Work style but edited on its job; fails_when=the section disappears or becomes editable there; why_new=new UI; seam=source pin
   const list = read('src/renderer/src/components/ScheduledJobs.tsx');
-  assert.match(list, /t\('scheduledJobs\.focus', \{ focus: m\.focus \}\)/);
+  // Each job's focus under its name, read only (edit-agent-scheduled-jobs.md, SJ5).
+  assert.match(list, /\{job\.focus\?\.trim\(\) \? \(\s*<span style=\{\{ \.\.\.focusStyle, color: off \? 'var\(--cth-ink-3\)' : 'var\(--cth-ink-2\)' \}\}>\{job\.focus\}<\/span>/);
   assert.doesNotMatch(list, /<textarea|<input/);
-  assert.match(list, /<span style=\{\{ color: 'var\(--cth-ink-3\)' \}\}>\{t\('scheduledJobs\.noFocus'\)\}<\/span>/, 'a quiet note, not a call to act on a read only list');
+  assert.match(list, /color: 'var\(--cth-ink-3\)' \}\}>\{t\('scheduledJobs\.noFocus'\)\}<\/span>/, 'a quiet note, not a call to act on a read only list');
   assert.match(read('src/renderer/src/components/WorkStyleUpdateCards.tsx'), /<InfoTip text=\{t\('askMe\.workStyleReplaces', \{ name \}\)\}/, 'the detail sits behind an info icon');
-  assert.match(read('src/renderer/src/components/ProfileTab.tsx'), /<ScheduledJobsSection agentId=\{agent\.id\}/);
+  assert.match(read('src/renderer/src/components/ProfileTab.tsx'), /<ScheduledJobsSection agentId=\{agent\.id\} name=\{name\} god=\{god\} \/>/);
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const d = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`));
     assert.ok(d.scheduledJobs.title && d.scheduledJobs.focus.includes('{{focus}}') && d.scheduledJobs.noFocus, loc);

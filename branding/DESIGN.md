@@ -1210,7 +1210,8 @@ box and radius, kept in step on resize; with no panel, 640 wide, full height, on
 left in RTL): Name, Role,
 What they handle (read only text), How they work (read only, folded to four lines with Show
 all, Undo last change and "Last change, 22 Oct: ..."), What should change? under the job it
-changes (owner, 2026-10-23; wide, the same in the right column), the scheduled jobs, then a folded "Engine" line
+changes (owner, 2026-10-23; wide, the same in the right column), the Scheduled jobs group
+(below; wide, in the left column under What they handle), then a folded "Engine" line
 that names the provider and model and opens to change them. Michael and his assistant have
 no What they handle. The footer is Close until Name, Role or the engine is edited, then
 Cancel and Save changes; the job saves only through the preview's Apply. Under the engine, for anyone
@@ -1219,6 +1220,19 @@ tinted row, r-xl corners and the 1.5 px coral ring of §6.3, its name with an in
 the destructive Delete button. No section headings; field
 labels only, with explanations behind info icons. The character is chosen once, in the hire wizard, and a
 person's color is their department's, set by the job; Edit agent offers neither.
+
+**Scheduled jobs** (`ScheduledJobsList`, `docs/designs/edit-agent-scheduled-jobs.md`, owner
+2026-10-23), in Edit agent and on the Profile tab: a labelled group, never part of the duties
+text. Heading "Scheduled jobs" in the field label style (Profile: its section heading style),
+the count in ink 3, an info icon, and at the right a link style button "Change on Access" ("Add
+on Access" with no jobs; Michael's "Change on Office schedule"). It closes Edit agent through
+its Discard changes? question and opens the Access tab with On a schedule unfolded and in view.
+One row per job, `line` hairlines between: the name (13 px, 600, wraps whole) with the when
+line at the right (IBM Plex Mono 12 px, ink 2; it wraps only between its times and drops under
+a long name), then the focus (12.5 px, ink 2, two lines at most) or "No focus area" in ink 3.
+Paused: a `neutral-soft` "Paused" pill after the name, the row in ink 3; paused jobs last,
+the others soonest first. No jobs: "None yet". A failed read: "Couldn't read the schedules."
+with Try again (`role=alert`). Research has no group.
 
 **What should change?** (`JobChangeReview`, `docs/designs/work-style-change-request.md`, owner
 2026-10-23) is how a job changes: the owner never edits a job's text. A labelled box with an

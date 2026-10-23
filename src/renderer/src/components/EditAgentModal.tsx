@@ -298,8 +298,27 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
     });
   }, [inColumn, agent.id]);
   const requestClose = (): void => { if (dirtyRef.current) setAsking('close'); else onClose(); };
-  const keepEditing = (): void => { if (asking === 'leave') answerLeave(false); setAsking(null); };
-  const discard = (): void => { const leaving = asking === 'leave'; setAsking(null); onClose(); if (leaving) answerLeave(true); };
+  // Where to go once the dialog has closed: the Access tab's On a schedule.
+  const afterClose = useRef<(() => void) | null>(null);
+  const goToSchedules = (): void => {
+    const go = (): void => {
+      if (!docked) useStore.getState().setFullscreen(null);
+      useStore.getState().openSchedules(agent.id);
+    };
+    if (dirtyRef.current) { afterClose.current = go; setAsking('close'); return; }
+    onClose();
+    go();
+  };
+  const keepEditing = (): void => { afterClose.current = null; if (asking === 'leave') answerLeave(false); setAsking(null); };
+  const discard = (): void => {
+    const leaving = asking === 'leave';
+    const after = afterClose.current;
+    afterClose.current = null;
+    setAsking(null);
+    onClose();
+    if (leaving) answerLeave(true);
+    after?.();
+  };
 
   const who = name.trim() || agent.name;
   // What the folded Engine line shows: the provider, and the model when it has one.
@@ -382,7 +401,10 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       )}
     </ReadRow>
   );
-  const schedules = <ScheduledJobsList agentId={agent.id} compact />;
+  // Scheduled jobs are their own group, apart from the duties
+  // (edit-agent-scheduled-jobs.md, SJ2); "Change on Access" closes this
+  // dialog first, asking when something is unsaved (SJ3).
+  const schedules = <ScheduledJobsList agentId={agent.id} name={who} onChange={goToSchedules} />;
   const engine = (
     <>
       {/* The engine rarely changes: one folded line naming it, closed by default. */}
@@ -527,8 +549,8 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
             <Fields id="briefing">
               {roleRow}
               {handlesRow}
-              {schedules}
             </Fields>
+            {schedules}
             {engine}
             <div style={{ flex: 1 }} />
             {danger}
@@ -541,7 +563,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       ) : (
       // One column (DR4): name, role, what they handle, how they work, then
       // what should change under the job it changes (owner, 2026-10-23), the
-      // jobs and the engine folded away. Field labels
+      // scheduled jobs as their own group (SJ2) and the engine folded away. Field labels
       // only; explanations sit behind info icons.
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <Fields id="name">{nameRow}</Fields>
@@ -551,8 +573,9 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
           {handlesRow}
           {workStyleRow}
           {changeRow}
-          {schedules}
         </Fields>
+
+        {schedules}
 
         {engine}
 

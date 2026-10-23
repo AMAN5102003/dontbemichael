@@ -380,6 +380,11 @@ interface State {
   requestEditAgent: (agentId: string, opts?: { engine?: boolean }) => void;
   /** Edit opened for the request: it is used once (ship review 2026-10-17). */
   clearEditAgentRequest: () => void;
+  /** "Change on Access" (edit-agent-scheduled-jobs.md, SJ3): the member's
+   *  Access tab opens with On a schedule unfolded and in view, once. */
+  schedulesRequest: { agentId: string; seq: number } | null;
+  openSchedules: (agentId: string) => void;
+  clearSchedulesRequest: () => void;
   closeTaskDetail: () => void;
   /** One-shot prefill for the Command Center's dispatch box (a task detail's
    *  "assign" from anywhere in the app). seq-keyed like ccTabRequest. */
@@ -1276,6 +1281,12 @@ export const useStore = create<State>((set, get) => ({
     afterLeave(() => set((s) => ({ editAgentRequest: { agentId, engine: !!opts?.engine, seq: (s.editAgentRequest?.seq ?? 0) + 1 } })));
   },
   clearEditAgentRequest: () => set({ editAgentRequest: null }),
+  schedulesRequest: null,
+  openSchedules: (agentId) => {
+    get().setSidebarTab('capabilities');
+    set((s) => ({ schedulesRequest: { agentId, seq: (s.schedulesRequest?.seq ?? 0) + 1 } }));
+  },
+  clearSchedulesRequest: () => set({ schedulesRequest: null }),
   closeTaskDetail: () => set({ taskDetailId: null }),
   dispatchSeedRequest: null,
   requestDispatchSeed: (text) =>

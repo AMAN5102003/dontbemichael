@@ -2335,7 +2335,16 @@
   "scheduledJobs": {
     "title": "定时任务",
     "focus": "重点：{{focus}}",
-    "noFocus": "没有重点"
+    "noFocus": "没有重点",
+    "info": "{{name}} 按时执行的工作。任务运行时，{{name}} 会按「{{name}} 的工作方式」专注于该任务的重点。在“权限”标签页添加或修改任务。",
+    "infoOffice": "{{name}} 按时执行的工作。任务运行时，{{name}} 会按「{{name}} 的工作方式」专注于该任务的重点。在“办公室日程”标签页添加或修改任务。",
+    "changeOnAccess": "在权限中修改",
+    "addOnAccess": "在权限中添加",
+    "changeOnOffice": "在办公室日程中修改",
+    "none": "暂无",
+    "loadError": "无法读取日程。",
+    "tryAgain": "重试",
+    "paused": "已暂停"
   },
   "dock": {
     "label": "与 {{godName}} 的对话",

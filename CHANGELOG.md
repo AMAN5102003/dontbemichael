@@ -17,6 +17,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - **The office floor carries the GAACC AI Labs mark,** for the Greater Austin Asian Chamber of Commerce open source AI Lab program the app is part of, lettered small along the platform's side in light and dark. Click it to open austinasianchamber.org in your browser.
 
 ### Changed
+- Edit agent and the Profile tab show scheduled jobs as their own group, "Scheduled jobs" with the count: each job with when it runs, its focus, and Paused when it is off, soonest first. "Change on Access" takes you straight to where the jobs are set, and a member with none says so instead of showing nothing.
 - A better default job description from a pack keeps your changes: See it shows the new text with each change you made reapplied, and Use it saves it. A team member changed before this release can't carry their earlier edits over, and the card says so.
 - What a team member handles, the line Michael routes work by, is now written by the app from your description and changed only when a change moves duties; a change to tone or approvals leaves it word for word. Lines a hire added to settle an overlap stay as they were.
 - Suggest me is gone from the hire wizard: describing the job once does what it did.
