@@ -101,7 +101,7 @@ in this order; the guard test lands last.
 - [x] **T5 (P2, human: ~3h / CC: ~15min)** Profile tab, Command Center, Workers and Pulse sections use `groupName` (AS3)
   - Files: `ProfileTab.tsx`, `CommandCenterPanel.tsx`, `WorkersTab.tsx`, `pulse/PulseView.tsx`, `GitTab.tsx` if shown
   - Verify: `test/scheduled-jobs-group.test.cjs` (Profile heading) and section pins
-- [ ] **T6 (P1, human: ~2h / CC: ~10min)** The guard test (inline labels, capitals and ringed group cards outside fieldText, a named file exception list for cards, chat, floor and terminal, and a `/* style-guard: micro */` line marker for pills and badges); DESIGN.md §4.2, §7.12 and §7.26 (AS5)
+- [x] **T6 (P1, human: ~2h / CC: ~10min)** The guard test (inline labels, capitals and ringed group cards outside fieldText, a named file exception list for cards, chat, floor and terminal, and a `/* style-guard: micro */` line marker for pills and badges); DESIGN.md §4.2, §7.12 and §7.26 (AS5)
   - Files: `test/field-style-guard.test.cjs`, `branding/DESIGN.md`
   - Verify: the guard passes on the whole renderer; a planted inline label fails it
 

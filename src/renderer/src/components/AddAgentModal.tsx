@@ -884,7 +884,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       all on the team move to the end (owner, 2026-10-03). */}
                   {freeGroupsFirst(CAST_GROUPS, onTeam).map((g) => (
                     <div key={g.key} role="group" aria-label={tr(`addAgent.castGroup.${g.key}`)} style={{ flex: '0 0 auto' }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)', marginBottom: 6 }}>{tr(`addAgent.castGroup.${g.key}`)}</div>
+                      <div style={{ ...fieldLabel, marginBottom: 6 }}>{tr(`addAgent.castGroup.${g.key}`)}</div>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         {g.members.map((m) => CAST_BY_NAME[m]).map((c) => onTeam.has(c.name) ? (
                           <div
@@ -899,7 +899,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                             {/* Faded portrait, readable name: the name stays at ink-3, not
                                 at 40% (ship review 2026-10-03: about 2.4:1 before). */}
                             <span style={{ opacity: 0.4, display: 'flex' }}><SpritePortrait character={c.name} scale={1.5} /></span>
-                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-3)' }}>{c.displayName}</span>
+                            <span style={{ /* style-guard: micro */ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-3)' }}>{c.displayName}</span>
                             {c.name === 'michael' ? (
                               <span style={{ fontSize: 11, lineHeight: '13px', color: 'var(--cth-ink-3)' }}>{tr('addAgent.wizard.onTeamShort')}</span>
                             ) : (
@@ -1197,7 +1197,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
 function JobGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div role="group" aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)', marginTop: 2 }}>{label}</div>
+      <div style={{ ...fieldLabel, marginTop: 2 }}>{label}</div>
       {children}
     </div>
   );

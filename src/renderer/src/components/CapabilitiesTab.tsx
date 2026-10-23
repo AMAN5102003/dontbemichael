@@ -16,6 +16,7 @@ import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { InfoTip } from './InfoTip';
 import { SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { useResearchName } from '@/shell/research';
+import { fieldLabel } from './fieldText';
 
 type SectionKey = 'email' | 'connectors' | 'schedules';
 
@@ -549,14 +550,14 @@ export function RadioRows({ label, value, options, onChange, inline = false }: {
 }
 
 const hint: CSSProperties = { fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' };
-const h13: CSSProperties = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--cth-ink-3)', margin: '14px 0 6px' };
+const h13: CSSProperties = { ...fieldLabel, margin: '14px 0 6px' };
 const row: CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '9px 0', borderTop: '1px solid var(--cth-line)' };
 const notice: CSSProperties = { padding: '8px 10px', borderRadius: 'var(--cth-r-md)', fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink)', marginTop: 8 };
 const mailboxRow: CSSProperties = { padding: '10px 0', borderTop: '1px solid var(--cth-line)' };
 const mailboxTop: CSSProperties = { display: 'flex', alignItems: 'center', gap: 8 };
 const address: CSSProperties = { flex: 1, minWidth: 0, fontFamily: 'var(--cth-font-mono)', fontSize: 12.5, fontWeight: 500, overflowWrap: 'anywhere' };
 const facts: CSSProperties = { display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '6px 12px', alignItems: 'center', marginTop: 8, fontSize: 12.5 };
-const factKey: CSSProperties = { fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--cth-ink-3)' };
+const factKey: CSSProperties = hint;
 const factValue: CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--cth-ink)' };
 const addPanel: CSSProperties = { marginTop: 10, padding: 10, border: '1px solid var(--cth-line)', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card-2)' };
 

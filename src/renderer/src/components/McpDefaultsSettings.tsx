@@ -23,14 +23,6 @@ const TIER_NOTE_KEY: Record<McpTier, string> = {
   'secret': 'mcpDefaults.tiers.secretNote'
 };
 
-const labelStyle: React.CSSProperties = {
-  fontFamily: 'var(--cth-font-display)',
-  fontSize: 10, fontWeight: 600,
-  lineHeight: '12px',
-  color: 'var(--cth-ink-500)',
-  textTransform: 'uppercase'
-};
-
 export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
   const { t } = useTranslation();
   const [note, setNote] = useState('');

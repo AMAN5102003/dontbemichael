@@ -44,7 +44,7 @@ import { isComposingKey } from '@shared/imeGuard';
 import { fmtTokens } from '@shared/tokenFormat';
 import { useRtl } from '@/i18n/useDirection';
 import { SilentPanelLine } from './SilentEngine';
-import { groupName } from './fieldText';
+import { groupName, hint } from './fieldText';
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
  *  when the god agent is selected: terminal + queue, the floor roster (with
@@ -610,7 +610,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
     <Wrap>
       <Section title={t('commandCenter.dispatchViaMichael', { godName: godName.toUpperCase() })}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-          <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, color: 'var(--cth-ink-500)', flexShrink: 0 }}>
+          <span style={{ ...hint, flexShrink: 0 }}>
             {t('commandCenter.suggestedOwner')}
           </span>
           <Select value={dispatchTo} onChange={setDispatchTo}>
@@ -1164,7 +1164,7 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
       )}
 
       {!ownOnly && <section style={{ marginTop: 18, paddingTop: 12, borderTop: '1px solid var(--cth-ink-100)' }}>
-        <h3 style={{ margin: '0 0 6px', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink-700)' }}>{t('memoryNotes.searchTitle')}</h3>
+        <h3 style={{ ...groupName, margin: '0 0 6px' }}>{t('memoryNotes.searchTitle')}</h3>
         <div style={{ display: 'flex', gap: 6 }}>
           <input
             value={query}

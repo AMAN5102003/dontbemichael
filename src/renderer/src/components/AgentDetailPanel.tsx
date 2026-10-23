@@ -26,6 +26,7 @@ import { OneOnOneLine, OwnerViaMichaelBar } from './OwnerViaMichaelBar';
 import { PanelCard, PanelHeader } from '@/shell/PanelChrome';
 import { roleOf } from '@/scene/studio/layout';
 import { SilentPanelLine } from './SilentEngine';
+import { fieldLabel } from './fieldText';
 
 export interface AgentDetailPanelProps {
   agent: Agent;
@@ -235,7 +236,7 @@ function EmptyTab({ title, children }: { title: string; children: React.ReactNod
       alignItems: 'center', justifyContent: 'center',
       padding: 16, gap: 8
     }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{title}</div>
+      <div style={fieldLabel}>{title}</div>
       <p style={{
         margin: 0, fontSize: 13, textAlign: 'center', color: 'var(--cth-ink-700)',
         maxWidth: 280

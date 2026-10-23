@@ -367,6 +367,23 @@ A field label outranks what it labels (owner, 2026-10-23,
 field label `t-ui` 600 `ink` over the text `t-read` (wide) or `t-ui` (side) 400 `ink-2`;
 groups sit on soft panels, not under headings. One source: `components/fieldText.tsx`.
 
+The whole app uses that style (owner, 2026-10-23, `docs/designs/app-style-rollout.md`):
+
+| Piece | Style | From fieldText |
+|---|---|---|
+| Group name | `t-panel` 15/20 600 `ink`, -0.02em, an `h3` at the top of its panel | `groupName`, `Panel title` |
+| Field label | `t-ui` 13/18 600 `ink`, sentence case | `fieldLabel`, `Field` |
+| Text under a label | `t-read` or `t-ui` 400 `ink-2` | `readBody` |
+| Hint | 12/17 400 `ink-3`, under the field or group name | `hint`, `Field note`, `Panel note` |
+| Required | the word "required" in 400 `ink-3` beside the label, not an asterisk | `requiredMark` |
+| Group | the soft panel: `bg`, r-xl, 14 by 16, no border or shadow | `panelStyle`, `Panel` |
+
+Panels sit only on white surfaces (dialogs, the person and Michael panels and their tab
+bodies, Settings, setup), never on the stage. Small grey capitals, 10 to 14 px grey 600
+labels and white ringed group cards are retired; `test/field-style-guard.test.cjs` fails
+on them outside fieldText. Cards, chat, the floor and the terminal keep their own type;
+a pill or badge elsewhere that needs `t-micro` carries a `style-guard: micro` comment.
+
 ### 4.3 Web scale [Web]
 
 | Token | Desktop | Phone (≤ 480 px) | Weight | Use |
@@ -820,8 +837,10 @@ mouse wheel moves it, and each edge with tabs hidden past it fades out over 28 p
 
 ### 7.12 Tab contents
 
-**Access** (CapabilitiesTab). Grouped rows in cards (`card`, `line`, `r-xl`). Only what is
-enforced today:
+**Access** (CapabilitiesTab). Each group is a soft panel (§4.2; owner, 2026-10-23,
+`docs/designs/app-style-rollout.md`): its name in the group name style with one `hint` line
+under it and its fold; the Command Center's Advanced cards and Office schedule groups are
+the same panels, on a white tab body. Only what is enforced today:
 
 | Group | Controls |
 |---|---|
@@ -1204,8 +1223,11 @@ of a blank window. Nothing else: no stack, no codes (they go to the log).
 ### 7.26 Settings and the hire wizard
 
 Keep every section, control and save rule from v1 (see the functional map in
-`docs/designs/studio-home.md`), restyled with §7.7 buttons, §7.12 row groups and §7.23
-dialogs. The hire wizard's steps are numbered circles (done `green` with a check, current
+`docs/designs/studio-home.md`), restyled with §7.7 buttons and §7.23 dialogs. Every Settings
+section is a soft panel with its group name at the top, and the panels' gap replaces the
+hairlines between sections; labels, hints and the required word come from fieldText (§4.2,
+`docs/designs/app-style-rollout.md`). The company profile groups (address, contact, how you
+operate, money) and the Add a mailbox login sit on panels too. The hire wizard's steps are numbered circles (done `green` with a check, current
 `ink`), its character tiles and job rows use the `indigo` soft selection, and its strings
 are sentence case. Closing time is the closing bar (§7.23), not a dialog.
 

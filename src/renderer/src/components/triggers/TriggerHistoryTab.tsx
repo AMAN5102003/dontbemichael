@@ -5,6 +5,7 @@ import { PixelButton } from '../PixelButton';
 import { useStore } from '@/store/store';
 import type { TriggerHistoryEntry } from '@shared/triggers';
 import { useRtl } from '@/i18n/useDirection';
+import { fieldLabel } from '../fieldText';
 
 /**
  * TRIGGER HISTORY — the ledger of everything an outside party said to this hive
@@ -131,8 +132,7 @@ function clampBody(body: string): { text: string; clipped: boolean } {
 /* ───────────────────────────────── styles ────────────────────────────────── */
 
 const tinyCaps: CSSProperties = {
-  fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px',
-  color: 'var(--cth-ink-500)'
+  ...fieldLabel
 };
 const uiText: CSSProperties = {
   fontFamily: 'var(--cth-font-ui)', fontSize: 12, lineHeight: '17px',

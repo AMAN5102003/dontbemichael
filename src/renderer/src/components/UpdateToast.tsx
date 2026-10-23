@@ -41,6 +41,7 @@ import { summarizeReleaseNotes } from '@shared/releaseNotes';
 import { extractDropHtml } from '@shared/releaseDrop';
 import { ReleaseDrop } from '@/components/ReleaseDrop';
 import { REPO_URL, type UpdateStatus } from '@shared/updateState';
+import { fieldLabel } from './fieldText';
 
 /** The toast is the LOUD half — it only interrupts for the two states a user has
  *  to act on. Everything else (checking, available, download progress, errors)
@@ -214,7 +215,7 @@ export function UpdateToast() {
 
       {notes.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+          <div style={fieldLabel}>
             {t('updateToast.whatsNew')}
           </div>
           {/* The digest is already capped at ~280 chars; the clamp is the second

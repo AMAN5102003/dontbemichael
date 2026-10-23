@@ -40,7 +40,7 @@ import { useBackdropClose } from '@/hooks/useBackdropClose';
 import { getNeedsYouFeed, shownQuestions } from '@/shell/useNeedsYou';
 import { FOUNDATION_QUESTIONS, foundationAsk, isFoundationsDoc, type FoundationId, type FoundationsJobRow, type FoundationsMember } from '@shared/foundations';
 import { ADVICE_WINDOW_MS, EARLY_SCALE, REOPEN_MIN } from '@shared/teamAdvice';
-import { groupName } from '../fieldText';
+import { fieldLabel, groupName } from '../fieldText';
 
 const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
@@ -171,7 +171,7 @@ function useLayout(ref: React.RefObject<HTMLElement | null>): Layout {
 }
 
 const card: CSSProperties = { background: 'var(--cth-card)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line), var(--cth-shadow-md)' };
-const label: CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)', display: 'flex', gap: 6, alignItems: 'center' };
+const label: CSSProperties = { /* style-guard: micro */ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)', display: 'flex', gap: 6, alignItems: 'center' };
 const mono: CSSProperties = { fontFamily: 'var(--cth-font-mono)' };
 
 function Section({ title, tip, children }: { title: string; tip?: string; children: ReactNode }) {
@@ -552,7 +552,7 @@ export function PulseView() {
             <span style={{ borderRadius: '50%', boxShadow: `0 0 0 1.5px ${color}`, display: 'inline-flex', flex: 'none' }}><AgentAvatar id={m.agentId} name={nameOf(m.agentId)} size={24} /></span>
             <span style={{ minWidth: 0 }}>
               <span style={{ display: 'block', fontSize: 13, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nameOf(m.agentId)}</span>
-              <span style={{ display: 'block', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{role}</span>
+              <span style={{ /* style-guard: micro */ display: 'block', fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{role}</span>
               {/* The foundations count under the role (D6); gone once all are answered (D9). */}
               {fm && fm.answered < fm.total && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 11, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>
@@ -1054,7 +1054,7 @@ function LearnedDetail({ from, to, nameOf, onClose }: { from: string; to: string
         if (!mine.length) return null;
         return (
           <section key={key} aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+            <div style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: 6 }}>
               <span aria-hidden style={{ width: 7, height: 7, borderRadius: '50%', background: color }} />{label}<span style={{ ...mono, fontWeight: 400, color: 'var(--cth-ink-3)' }}>{mine.length}</span>
             </div>
             <div role="list" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1093,7 +1093,7 @@ function Marked({ parts, context }: { parts: ChangePart[]; context?: boolean }) 
 }
 const srOnly: CSSProperties = { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' };
 const textStyle: CSSProperties = { fontSize: 12, color: 'var(--cth-ink-2)', lineHeight: '18px', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' };
-const capStyle: CSSProperties = { fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)' };
+const capStyle: CSSProperties = { /* style-guard: micro */ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)' };
 const chip = (amber: boolean): CSSProperties => ({ fontSize: 11, fontWeight: 600, borderRadius: 'var(--cth-r-pill)', padding: '2px 8px', background: amber ? 'var(--cth-amber-soft)' : 'var(--cth-green-soft)', color: amber ? 'var(--cth-amber-text)' : 'var(--cth-green-text)' });
 const linkBtn: CSSProperties = { alignSelf: 'flex-start', border: 'none', background: 'none', padding: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, cursor: 'pointer', color: 'var(--cth-ink-2)' };
 const joinText = (x: CheckedRow['wrote']): string => [x.subject ? `“${x.subject}”` : '', x.body].filter(Boolean).join(' ');
