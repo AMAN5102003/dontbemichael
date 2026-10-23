@@ -227,3 +227,30 @@ for (const event of ['close', 'error']) {
     assert.equal(clients[1].logouts, 0);
   });
 }
+
+test('a read that times out says the next try reconnects, and the next check works without a restart', async (t) => {
+  // Value: protects=a slow mail server never turns into a restart request: the next check works on its own and the error says so; fails_when=a timed out connection is kept, the next check reuses it, or the error gives no hint; why_new=owner 2026-10-22, a "restart the app" card after two timed out inbox checks; seam=fake IMAP client and fake timers; no_claim=a real slow server
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { READ_TIMEOUT_NOTE } = loadTs('src/main/mail.ts');
+  const { svc, clients, search } = setup(t, (client, n) => {
+    if (n === 0) client.search = () => new Promise(() => {}); // the server never answers
+  });
+  let first = null;
+  const pending = search().then(() => 'ok', (e) => e).then((v) => { first = v; });
+  for (let i = 0; i < 400 && first === null; i++) { await new Promise((r) => setImmediate(r)); t.mock.timers.tick(1_000); }
+  await pending;
+  assert.equal(first.kind, 'timeout');
+  assert.equal(first.message, `Searching the mailbox took longer than 30 seconds. ${READ_TIMEOUT_NOTE}`);
+  assert.match(READ_TIMEOUT_NOTE, /new connection on the next try[\s\S]*restarting the app is not needed/);
+  assert.doesNotMatch(READ_TIMEOUT_NOTE, /[–—]/, 'no dashes in what an agent may pass on');
+  assert.deepEqual((await search()).messages, [], 'the next check works on the same app');
+  assert.equal(clients.length, 2, 'on a fresh connection');
+  assert.ok(svc);
+  // Only reads say it: a send that timed out may have gone out, so it keeps its own check of Sent.
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src/main/mail.ts'), 'utf8');
+  assert.equal(src.match(/READ_TIMEOUT_NOTE/g).length, 2, 'defined once, used once, in the read path');
+  assert.ok(src.indexOf('${READ_TIMEOUT_NOTE}') > src.indexOf('private async inFolder<T>') && src.indexOf('${READ_TIMEOUT_NOTE}') < src.indexOf('private static async special('));
+  // Michael retries at the next check and never asks the owner to restart (D2 A).
+  const hive = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src/main/hive.ts'), 'utf8');
+  assert.match(hive, /'## Mailbox timeouts',\s*'A mailbox check that times out clears by itself[^']*never ask the owner to restart the app[^']*Only when the same mailbox times out at every check for a whole day[^']*This replaces any earlier note of yours that says otherwise\.'/);
+});

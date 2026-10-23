@@ -53,6 +53,8 @@ import { OWN_SENDS_ONLY, proposalSendProblem, standingProblem, standingTooLong, 
 
 // Limits (eng review E6 left these to the implementer).
 const CALL_TIMEOUT_MS = 30_000;
+/** What a read that timed out tells the agent: it clears on the next try. */
+export const READ_TIMEOUT_NOTE = 'The app opens a new connection on the next try, so try again at your next check; restarting the app is not needed.';
 const SEND_TIMEOUT_MS = 60_000;
 const MX_LOOKUP_TIMEOUT_MS = 5_000;
 const SEARCH_DEFAULT = 20;
@@ -534,6 +536,10 @@ export class MailService {
         if (err.kind === 'network' && attempt === 0) { if (client) this.drop(id, client); continue; }
         if ((err.kind === 'network' || err.kind === 'timeout') && client) this.drop(id, client);
         this.note(id, err);
+        // A read that timed out clears by itself: its connection was dropped and
+        // the next try opens a new one. Say so, or an agent concludes the app
+        // must be restarted and stops checking mail (owner, 2026-10-22).
+        if (err.kind === 'timeout') throw new MailError('timeout', `${err.message} ${READ_TIMEOUT_NOTE}`);
         throw err;
       }
     }
