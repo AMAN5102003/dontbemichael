@@ -52,3 +52,60 @@ test('the afterSign hook seals an unsigned Mac app ad hoc, and only then', () =>
   const builder = read('electron-builder.yml');
   assert.match(builder, /^afterSign: build\/notarize\.cjs$/m);
 });
+
+// A signed Mac release must be notarized too, or it fails (owner, 2026-10-22):
+// a signed but unnotarized download still shows macOS's "cannot verify" warning.
+// Apple's tools are stubbed, so these run on every platform.
+function loadHook(t, notarize) {
+  const cp = require('node:child_process');
+  const calls = [];
+  t.mock.method(cp, 'execFileSync', (cmd, args) => { calls.push([cmd, ...args].join(' ')); });
+  const hookPath = path.join(root, 'build/notarize.cjs');
+  const notarizePath = require.resolve('@electron/notarize', { paths: [root] });
+  const saved = require.cache[notarizePath];
+  require.cache[notarizePath] = { id: notarizePath, filename: notarizePath, loaded: true, exports: { notarize } };
+  delete require.cache[hookPath];
+  const hook = require(hookPath).default;
+  const keys = ['CI', 'CSC_LINK', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'];
+  const env = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  for (const k of keys) delete process.env[k];
+  t.after(() => {
+    for (const k of keys) if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k];
+    if (saved) require.cache[notarizePath] = saved; else delete require.cache[notarizePath];
+    delete require.cache[hookPath];
+  });
+  const context = { electronPlatformName: 'darwin', appOutDir: '/out', packager: { appInfo: { productFilename: 'App' } } };
+  return { run: () => hook(context), calls };
+}
+const appleCreds = () => Object.assign(process.env, { APPLE_ID: 'a@b.c', APPLE_APP_SPECIFIC_PASSWORD: 'x', APPLE_TEAM_ID: 'T' });
+
+test('a failed notarization stops the Mac release instead of shipping it unnotarized', async (t) => {
+  const { run, calls } = loadHook(t, async () => { throw new Error('The submission was rejected'); });
+  appleCreds();
+  await assert.rejects(run(), /notarization failed, so the Mac release stops here[\s\S]*The submission was rejected/);
+  assert.ok(!calls.some((c) => c.startsWith('xcrun stapler')), 'nothing is stapled');
+});
+
+test('a notarized Mac build is stapled', async (t) => {
+  let sent;
+  const { run, calls } = loadHook(t, async (opts) => { sent = opts; });
+  appleCreds();
+  await run();
+  assert.equal(sent.teamId, 'T');
+  assert.ok(calls.includes('xcrun stapler staple /out/App.app'));
+});
+
+test('a release signed in CI without notarization credentials fails, a local build does not', async (t) => {
+  const { run } = loadHook(t, async () => assert.fail('no credentials, no submission'));
+  process.env.CSC_LINK = 'cert';
+  await run();
+  process.env.CI = 'true';
+  await assert.rejects(run(), /signed with a Developer ID but has no APPLE_\* notarization credentials/);
+});
+
+test('the Mac app takes no DYLD entitlement, and keeps library validation off for the team Node runtime', () => {
+  const plist = read('build/entitlements.mac.plist');
+  const keys = [...plist.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1]);
+  assert.ok(!keys.includes('com.apple.security.cs.allow-dyld-environment-variables'));
+  assert.ok(keys.includes('com.apple.security.cs.disable-library-validation'));
+});

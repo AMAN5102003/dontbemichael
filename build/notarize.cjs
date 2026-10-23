@@ -9,6 +9,10 @@
 // Credentials (set whichever pair you use):
 //   App-specific password:  APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 //   App Store Connect key:  APPLE_API_KEY (path to .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER
+//
+// A release that is signed must also be notarized, or it fails. A signed but
+// unnotarized download still gets macOS's "cannot verify" warning, and the
+// release would look done while it is not (owner, 2026-10-22).
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
@@ -54,17 +58,16 @@ exports.default = async function notarizing(context) {
   const hasPassword = !!(APPLE_ID && APPLE_APP_SPECIFIC_PASSWORD && APPLE_TEAM_ID);
   const hasApiKey = !!(APPLE_API_KEY && APPLE_API_KEY_ID && APPLE_API_ISSUER);
   if (!hasPassword && !hasApiKey) {
+    // CI with a Developer ID cert is a real release: never ship it unnotarized.
+    // A local build without credentials stays as it was.
+    if (process.env.CI && process.env.CSC_LINK) {
+      throw new Error('[notarize] the release is signed with a Developer ID but has no APPLE_* notarization credentials. Set APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID.');
+    }
     console.log('[notarize] no APPLE_* credentials in env — skipping notarization (build stays unsigned).');
     return;
   }
 
-  let notarize;
-  try {
-    ({ notarize } = require('@electron/notarize'));
-  } catch {
-    console.warn('[notarize] @electron/notarize not installed — run `npm install`. Skipping.');
-    return;
-  }
+  const { notarize } = require('@electron/notarize');
 
   const appName = context.packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
@@ -80,16 +83,10 @@ exports.default = async function notarizing(context) {
     execFileSync('xcrun', ['stapler', 'staple', appPath], { stdio: 'inherit' });
     console.log('[notarize] done — app is signed, notarized, and stapled.');
   } catch (err) {
-    // Best-effort: notarization talks to Apple's servers and can fail for reasons
-    // outside the build (bad/expired app-specific password, unaccepted Developer
-    // Program agreement, Apple-side outage, a rejected submission). That must NOT
-    // sink the whole cross-platform release — the app is still Developer ID *signed*,
-    // which is what gives the stable identity macOS uses to remember folder-access
-    // grants (the one-time prompt). So we log loudly and ship the signed build;
-    // once the credentials are valid, the next release notarizes with no code change.
-    // Un-notarized = users may need a one-time right-click → Open on first launch.
-    console.warn('[notarize] ⚠️  NOTARIZATION FAILED — shipping a signed-but-unnotarized build.');
-    console.warn('[notarize] Fix the APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID secrets to enable it.');
-    console.warn(`[notarize] notarytool said:\n${err && err.message ? err.message : err}`);
+    // Notarization talks to Apple's servers and can fail for reasons outside the
+    // build (a bad or expired app-specific password, an unaccepted Developer
+    // Program agreement, an Apple outage, a rejected submission). Fail the Mac
+    // build so the release is not published; fix the cause and push the tag again.
+    throw new Error(`[notarize] notarization failed, so the Mac release stops here. notarytool said:\n${err && err.message ? err.message : err}`);
   }
 };
