@@ -75,7 +75,7 @@ const SUMMARY_SHOWN = 6;
  * update card share it.
  */
 export function JobChangeReview(p: JobChangeReviewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const rtl = useRtl();
   const [typed, setTyped] = useState('');
   const [extras, setExtras] = useState<string[]>([]);
@@ -174,15 +174,18 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     panel = <Clash q={state.q} who={p.who} heading={heading} onCancel={cancel}
       onAnswer={(answer) => { void start(extras, { question: state.q.question, answer }); }} />;
   } else if (state.at === 'overlap') {
-    const names = state.names.join(t('jobChange.and'));
+    // The language's own list ("Pam, Erin and Dwight") and the verb agreeing
+    // with how many (owner, 2026-10-23: "Pam and Erin already does").
+    const names = ((): string => { try { return new Intl.ListFormat(i18n.language, { type: 'conjunction' }).format(state.names); } catch { return state.names.join(', '); } })();
+    const count = state.names.length;
     panel = (
       <div role="alert" style={panelStyle}>
-        {head(t('jobChange.overlapTitle', { names }))}
+        {head(t('jobChange.overlapTitle', { names, count }))}
         {state.why && <span style={bodyStyle}>{state.why}</span>}
         <div style={rowEnd}>
           <PixelButton variant="secondary" size="sm" onClick={() => { setExtras([]); setState({ at: 'idle' }); }}>{t('jobChange.editMine')}</PixelButton>
           <PixelButton variant="primary" size="sm" onClick={() => {
-            const more = [...extras, t('jobChange.leaveWithChange', { names })];
+            const more = [...extras, t('jobChange.leaveWithChange', { names, count })];
             setExtras(more);
             void start(more, answerRef.current);
           }}>{t('jobChange.leaveWith', { names })}</PixelButton>

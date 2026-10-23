@@ -102,7 +102,7 @@ test('the preview: working, ok, clash, overlap, error and changed meanwhile, wit
   assert.match(src, /background: 'var\(--cth-indigo-soft\)'/);
   assert.doesNotMatch(src.slice(src.indexOf('const panelStyle')), /boxShadow/, 'no border or shadow on the preview (DR8)');
   assert.match(src, /if \(res\.handles && p\.checkOverlap\) \{/, 'the overlap check runs only when duties changed (D6)');
-  assert.match(src, /const more = \[\.\.\.extras, t\('jobChange\.leaveWithChange', \{ names \}\)\];/, 'Leave it with Kelly adds a change and runs again');
+  assert.match(src, /const more = \[\.\.\.extras, t\('jobChange\.leaveWithChange', \{ names, count \}\)\];/, 'Leave it with Kelly adds a change and runs again');
   assert.match(src, /if \(r === 'moved'\) \{ setState\(\{ at: 'moved' \}\); return; \}/);
   assert.match(src, /className=\{on \? 'cth-askme-opt is-on' : 'cth-askme-opt'\}/, 'the Ask me option rows (DR5)');
   assert.match(src, /if \(runId\.current !== requestId\) return; \/\/ stopped, or a newer run/);
