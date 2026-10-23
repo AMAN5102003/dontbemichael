@@ -1,5 +1,5 @@
-- **Reset memory** gives the team a first day.
-- **Pulse** shows which emails were organized.
-- **Tasks board** search and filters.
-- **Every file chip** opens.
-- Contributor fixes across the app.
+- **Change a job** by saying what should change.
+- **Add a file** right from a Company foundations card.
+- **One look** for every form in the app.
+- Hiring asks what the new person will do, once.
+- Safer background checks and messages to the team.

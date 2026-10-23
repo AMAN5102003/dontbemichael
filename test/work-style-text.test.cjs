@@ -44,27 +44,29 @@ test('the instructions prompt carries the house prompting rules and the previous
   assert.equal(W.cleanAnswer('```\nhello\n```'), 'hello');
 });
 
-test('the wizard shows the plain description and writes instructions only when it changed', () => {
+test('the wizard shows a picked job in plain words and hires with the instructions as written', () => {
+  // Value: protects=the hire gets exactly the job the owner saw, with no second rewrite at Hire (work-style-change-request.md, D2); fails_when=Hire converts again or the picked job is not shown in plain words; why_new=the job became read only; seam=source pin
   const modal = read('src/renderer/src/components/AddAgentModal.tsx');
   assert.match(modal, /setInstructions\(copy\.workStyle, name\.trim\(\), copy\.title\);/);
-  assert.match(modal, /if \(!goal \|\| workStyle\.trim\(\) !== plainOfBase\.trim\(\)\) \{/);
-  assert.match(modal, /workStyleConvert\(\{ to: 'instructions', text: workStyle, ctx: styleCtx\(\), previous: baseInstructions \|\| undefined \}\)/);
-  const start = modal.indexOf('const submit = async');
+  assert.doesNotMatch(modal, /to: 'instructions'/);
+  const start = modal.indexOf('const submitHire = async');
   const flow = modal.slice(start, modal.indexOf('\n  return (', start));
-  assert.ok(flow.indexOf("to: 'instructions'") < flow.indexOf('spawnPty'), 'written before the spawn');
+  assert.match(flow, /const goal = instructions\.trim\(\);/);
+  assert.match(flow, /goalPlain: plainSaved && plain\.trim\(\) \? \{ text: plain\.trim\(\), of: jobFingerprint\(goal\) \} : undefined,/, 'the words the owner read are saved with the job (D5)');
   const main = read('src/main/workStyleConvert.ts');
   assert.match(main, /const INSTRUCTIONS_MODEL = 'claude-sonnet-5';/);
   assert.match(main, /noTools: true,/);
 });
 
-test('Edit Agent shows the plain description and rewrites instructions only when it changed', () => {
+test('Edit Agent shows the saved plain words, writes stale ones once, and never rewrites the job on Save', () => {
+  // Value: protects=the owner reads the words saved with the job, Michael his default (F6), and words another writer left stale are written again once (D5, OV3); fails_when=every open paraphrases again, stale words are saved over newer instructions, or Save touches the goal; why_new=the job became read only; seam=source pin
   const edit = read('src/renderer/src/components/EditAgentModal.tsx');
-  assert.match(edit, /describe\(effectiveWorkStyle\(agent\)\);/, 'opens on the plain description, Michael on his default (F6)');
-  assert.match(edit, /let trimmedGoal = \(agent\.goal \?\? ''\)\.trim\(\);/, 'unchanged keeps the instructions as they are');
-  assert.match(edit, /else if \(goal\.trim\(\) !== plainOfGoal\.trim\(\)\) \{/);
-  assert.match(edit, /to: 'instructions',[\s\S]{0,300}previous: effectiveWorkStyle\(agent\) \|\| undefined/);
-  const save = edit.slice(edit.indexOf('const save = async'));
-  assert.ok(save.indexOf("to: 'instructions'") < save.indexOf('renameAgent('), 'written before anything is saved');
+  assert.match(edit, /const instructions = effectiveWorkStyle\(live\);\s*const savedPlain = plainFor\(live, instructions\);/);
+  assert.match(edit, /if \(savedPlain \|\| !instructions\.trim\(\)\) return;/, 'saved words are shown as they are');
+  assert.match(edit, /if \(now && jobFingerprint\(effectiveWorkStyle\(now\)\) === of\) updateAgent\(agent\.id, \{ goalPlain: \{ text: res\.text, of \} \}\);/, 'only while they still describe the job');
+  assert.match(edit, /if \(gone \|\| res\.source !== 'ai' \|\| !res\.text\) return;/, 'a rules rewrite is shown, never saved');
+  const save = edit.slice(edit.indexOf('const save = async'), edit.indexOf('const remove = async'));
+  assert.doesNotMatch(save, /goal|workStyleConvert|workStyleRevise/);
   assert.doesNotMatch(edit, /Check every number twice/, 'no prompt-style placeholder');
 });
 

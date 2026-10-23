@@ -329,6 +329,24 @@ test('from v 3 the hive\'s trust-checked line is what counts; the trust layer\'s
   assert.deepEqual([k.held, k.heldIn, k.heldOut], [1, 0, 1], 'a line with no known way is skipped');
 });
 
+test('two backfills of one office at once write its history once', async (t) => {
+  // Value: protects=Pulse totals after an office switch; fails_when=a second backfill started while the first is still reading (the owner switched offices and back) writes every point again; why_new=PR #514 review 2026-10-23 (Codex adversarial); seam=two runBackfill calls on one db; no_claim=the app's own one at a time guard in index.ts
+  const { persist } = setup(t);
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'md-bf2-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const hive = path.join(root, 'hive');
+  fs.mkdirSync(hive, { recursive: true }); fs.mkdirSync(path.join(root, 'projects'), { recursive: true });
+  const live = Date.now(), past = live - 2 * 86_400_000;
+  fs.writeFileSync(path.join(hive, 'log.jsonl'), [
+    { ts: past, kind: 'mail-organize', agentId: 'pam', ids: ['a', 'b'] },
+    { ts: past + 1000, kind: 'mail-sent', agentId: 'pam' }
+  ].map((e) => JSON.stringify(e)).join('\n') + '\n');
+  const deps = { db: persist.database(), office: '/office', hiveRoot: hive, projectsRoot: path.join(root, 'projects'), members: new Set(['pam']), now: live };
+  const counts = await Promise.all([runBackfill(deps), runBackfill(deps)]);
+  assert.deepEqual(counts.sort(), [0, 2], 'one run writes, the other finds the marker');
+  assert.equal(persist.database().prepare("SELECT COUNT(*) AS n FROM telemetry_events WHERE office = '/office'").get().n, 2);
+});
+
 test('the backfill reads the office log, sessions and cost ledger once, before the first live point', async (t) => {
   // Value: protects=a fresh Pulse not starting at zero; fails_when=the backfill reads past the live start, counts twice on a second start, misses a session's working time or a refused step, or loses a member's cost across an app restart; why_new=owner proposal 3; seam=temp hive, projects root and db; no_claim=real transcripts' every line shape
   const { persist, store, proc, clock } = setup(t);

@@ -6,6 +6,34 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
+## [0.2.6] (2026-10-23)
+
+### Added
+- **Change a team member's job by saying what should change.** Edit agent shows the job read only, in plain words, with one box: "What should change?". Type something like "also handle the refund emails, and ask me before any refund over $200" and See what changes shows what would be different, the new "What Pam handles" (or Unchanged), and the whole new job, before anything is saved. Apply saves it, and Undo last change puts it back. When a change clashes with the job or your Company foundations you pick the answer, and the suggested one keeps your approvals and spending limits where it can, when it overlaps a teammate the app names them, and one time work like "this week, chase the March invoices" goes to Michael as a card instead of into the job.
+- **Hiring asks what the new person will do, once.** On the Role step you describe the job in your own words, see it written out, and Apply; a job picked from a pack or a teammate shows read only with an optional "Anything to change?". Finalize keeps only the folder and the model.
+
+- **Add a file right from a Company foundations card.** Pick a file or drop it on the card, such as your brand voice guide, instead of typing where it is. The app reads it and checks that it answers the card's question, pictures included, so a financial statement added to the brand voice card by mistake is turned away with the reason. A file that fits goes into company knowledge, where every team member can read it in full, and the answer names it; your typed words, if any, stay the short answer. A file that can't be read, doesn't fit, or couldn't be checked adds nothing, and the card says why. Nothing of a checked file stays in Claude's history on your computer.
+
+- **The office floor carries the GAACC AI Labs mark,** for the Greater Austin Asian Chamber of Commerce open source AI Lab program the app is part of, lettered small along the platform's side in light and dark. Click it to open austinasianchamber.org in your browser.
+
+### Changed
+- Changing a team member's job no longer leaves you staring at a still box. You see each step as it happens (getting ready, reading what you wrote, writing the job), and the summary and the new job's plain words appear as they are written. It is faster too: about 9 seconds where it could take a minute.
+- The whole app reads like Edit agent now. Settings, the Access tab, the Command Center, the company profile, the schedule editor and Add a mailbox group their fields on soft panels with a clear name at the top, field labels are bold and dark instead of small grey capitals, help text sits quietly under its field, and required fields say "required" instead of showing an asterisk.
+- Edit agent groups its fields on soft panels: name and role, then Kelly's job (what Kelly handles and how Kelly works) with what should change under it, then the scheduled jobs. Labels are now bolder and darker than the text they label, and How Kelly works shows its parts (The job, How the work is done, Asks the owner first) on their own lines. The hire wizard and the change preview use the same look.
+- Edit agent and the Profile tab show scheduled jobs as their own group, "Scheduled jobs" with the count: each job with when it runs, its focus, and Paused when it is off, soonest first. "Change on Access" takes you straight to where the jobs are set, and a member with none says so instead of showing nothing.
+- A better default job description from a pack keeps your changes: See it shows the new text with each change you made reapplied, and Use it saves it. A team member changed before this release can't carry their earlier edits over, and the card says so.
+- What a team member handles, the line Michael routes work by, is now written by the app from your description and changed only when a change moves duties; a change to tone or approvals leaves it word for word. Lines a hire added to settle an overlap stay as they were.
+- Suggest me is gone from the hire wizard: describing the job once does what it did.
+- Team members and Michael read a company knowledge document a foundations answer names before work that depends on that answer.
+- When a business mailbox check times out, Michael has the team member try again at its next check and carry on, instead of stopping its mail work and asking you to restart the app. Only a mailbox that times out at every check for a whole day comes to you, about the mailbox itself.
+- A team member who was stuck and gets going again is reported to Michael as working again, so the stuck card on Ask me comes down by itself, or never goes up if they recovered first.
+
+### Fixed
+- Text with hidden terminal control characters, in an email or a file the app checks, can no longer slip extra input into the app's background checks: those characters are dropped before the text is sent.
+- Pulse no longer counts an office's earlier weeks twice when you switch to another office and back while it is still reading them.
+- A mailbox check that times out no longer reads as needing an app restart. The message now says the next try opens a new connection, which it does, so agents keep reading your business inbox.
+- When a long reply arrives, the conversation with Michael stays on the latest even while the app is busy: a reply that folds behind More no longer leaves the newest lines just out of view until the next screen update.
+
 ## [0.2.5] (2026-10-21)
 
 ### Added

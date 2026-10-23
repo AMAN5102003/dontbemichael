@@ -6,6 +6,7 @@ import lockupLight from '@brandkit/logo/lockup/dbm-lockup-horizontal-light.svg?u
 import lockupDark from '@brandkit/logo/lockup/dbm-lockup-horizontal-dark.svg?url';
 import { clearLocalState, restoreLocalState, snapshotLocalState } from '@/store/localState';
 import type { HarnessConfig } from '@/store/config';
+import { fieldLabel } from './fieldText';
 
 // Split on both separators: a Windows office path holds no '/' at all.
 function folderName(path: string): string {
@@ -75,7 +76,7 @@ export function OfficeFolderMissing({ config }: { config: HarnessConfig }) {
     if (!res.ok) { restoreLocalState(snap); setError(res.error ?? t('officeMissing.couldNotOpen')); setBusy(false); }
   };
 
-  const sectionLabel = { fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)', marginBottom: 6 } as const;
+  const sectionLabel = { ...fieldLabel, marginBottom: 6 } as const;
   const hint = { fontSize: 12.5, color: 'var(--cth-ink-3)' } as const;
 
   // A launch screen, not a dialog over the app: nothing is behind it yet.

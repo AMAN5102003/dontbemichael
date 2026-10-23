@@ -10,6 +10,8 @@ export interface SceneTokens {
   rim: string; rimOp: number;
   platSh: string; platShOp: number; platL: string; platR: string; bandOp: number;
   floor0: string; floor1: string; grid: string; gridOp: number; edgeF: string; edgeB: string;
+  /** The program mark lettered on the platform's right side face. */
+  markFill: string; markOp: number;
   flowSh: string; flowShOp: number; under: string; underOp: number;
   papSh: string; papShOp: number; papL: string; papR: string; papTop: string;
   postB: [string, string, string]; postP: [string, string, string]; boxFront: string;
@@ -32,6 +34,7 @@ const LIGHT: SceneTokens = {
   rim: '#FFFFFF', rimOp: 0.75,
   platSh: '#8A82C9', platShOp: 0.22, platL: '#D7D3EF', platR: '#C6C0E6', bandOp: 0.45,
   floor0: '#F1EFFB', floor1: '#E4E1F5', grid: '#FFFFFF', gridOp: 0.7, edgeF: '#FFFFFF', edgeB: '#D9D5EF',
+  markFill: '#4E4791', markOp: 1,
   flowSh: '#6E66B8', flowShOp: 0.1, under: '#FFFFFF', underOp: 0.9,
   papSh: '#3A3170', papShOp: 0.13, papL: '#E4E1F4', papR: '#D2CEEA', papTop: '#FFFFFF',
   postB: ['#FFFFFF', '#DAD6F0', '#C9C4E8'], postP: ['#F4F3FB', '#E3E0F3', '#CFCBE8'], boxFront: '#FFFFFF',
@@ -55,6 +58,7 @@ const DARK: SceneTokens = {
   rim: '#FFFFFF', rimOp: 0.13,
   platSh: '#000000', platShOp: 0.55, platL: '#231F36', platR: '#1C1A2C', bandOp: 0.08,
   floor0: '#302B49', floor1: '#26223B', grid: '#FFFFFF', gridOp: 0.05, edgeF: '#4E4870', edgeB: '#2C2842',
+  markFill: '#8A83C3', markOp: 1,
   flowSh: '#000000', flowShOp: 0.3, under: '#241F38', underOp: 0.85,
   papSh: '#000000', papShOp: 0.35, papL: '#1C1A28', papR: '#161420', papTop: '#2A2838',
   postB: ['#3C3857', '#2C2942', '#232037'], postP: ['#4C4868', '#37334F', '#2B2841'], boxFront: '#34304B',

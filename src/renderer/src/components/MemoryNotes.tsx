@@ -5,6 +5,7 @@ import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useRtl } from '@/i18n/useDirection';
 import { expiryState, procedurePointer, type MemoryEntry, type MemoryView } from '@shared/memoryIndex';
 import { localDay } from '@shared/messageView';
+import { groupName } from './fieldText';
 
 /**
  * An agent's memory as notes, not the raw index (docs/designs/memory-tab-readable.md).
@@ -73,10 +74,7 @@ export function memorySummary(t: (k: string, o?: Record<string, unknown>) => str
 function Group({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
   return (
     <section style={{ marginTop: 16 }}>
-      <h3 style={{
-        margin: '0 0 4px', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px', fontWeight: 600,
-        color: 'var(--cth-ink-700)', display: 'flex', gap: 6
-      }}>
+      <h3 style={{ ...groupName, margin: '0 0 4px', display: 'flex', gap: 6 }}>
         {title}<span style={{ fontWeight: 400, color: 'var(--cth-ink-500)' }}>{count}</span>
       </h3>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>{children}</ul>

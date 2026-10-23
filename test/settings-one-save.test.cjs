@@ -80,17 +80,18 @@ test('Free Flow still saves immediately: it arms a global hotkey', () => {
 
 // --- A2: Connections tidying -------------------------------------------------
 
-test('the section heading is defined once, not written out seventeen times', () => {
-  assert.match(MODAL, /const sectionHead = \{/);
-  // Design v2: the heading is a 10px semibold label (branding/DESIGN.md 4.2).
-  const inline = MODAL.match(/fontFamily: 'var\(--cth-font-display\)', fontSize: 10, fontWeight: 600, lineHeight: '12px',/g) ?? [];
-  assert.equal(inline.length, 1, `${inline.length} inline copies remain — only the const should define it`);
-});
-
-test('the divider between Connections sections is defined once too', () => {
-  assert.match(MODAL, /const sectionRule = \{/);
-  const inline = MODAL.match(/\{\{ height: 2, background: 'var\(--cth-ink-300\)' \}\}/g) ?? [];
-  assert.equal(inline.length, 0, 'an inline divider survived the extraction');
+test('every Settings section is a named group on the soft panel, with no small caps head or hairline', () => {
+  // Value: protects=AS2 and AS3 in Settings (app-style-rollout.md T3); fails_when=a section head or divider is written out again, or a section loses its panel; why_new=replaces the sectionHead and sectionRule pins retired by T3; seam=none; no_claim=source pins, not rendered
+  assert.match(MODAL, /const group: CSSProperties = \{ \.\.\.panelStyle, gap: 10 \};/);
+  assert.doesNotMatch(MODAL, /sectionHead|sectionRule/, 'the old head and rule are retired');
+  assert.doesNotMatch(MODAL, /fontSize: 10, fontWeight: 600|textTransform: 'uppercase'/, 'no small caps');
+  assert.doesNotMatch(MODAL, /\{\{ height: (1|2), background: 'var\(--cth-(line|ink-300)\)'/, 'no hairlines between sections');
+  assert.ok((MODAL.match(/<h3 style=\{groupName\}>/g) ?? []).length >= 12, 'each section names itself');
+  for (const f of ['MailboxesSettings', 'ClaudeConnectorsSettings', 'IntegrationsRegistry', 'ResearchPrivacySettings', 'SetupPanel', 'SettingsHeroCard']) {
+    const src = fs.readFileSync(path.join(__dirname, '..', `src/renderer/src/components/${f}.tsx`), 'utf8');
+    assert.match(src, /panelStyle/, `${f} sits on the soft panel`);
+    assert.match(src, /groupName/, `${f} names its group`);
+  }
 });
 
 test('no integration was removed from Connections', () => {

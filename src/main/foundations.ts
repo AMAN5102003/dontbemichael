@@ -13,14 +13,16 @@
  *     ├─ company profile kept in step (owner wins)
  *     └─ publish soon ─► the Company foundations copy in company knowledge
  */
-import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join } from 'node:path';
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
+import { basename, dirname, extname, isAbsolute, join } from 'node:path';
 import { privateRoot } from '../shared/agentPrivatePaths';
 import { writeFileAtomic } from './atomicFile';
 import {
-  FOUNDATION_CAP, FOUNDATION_QUESTIONS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, cleanRecord, emptyRecord, isFoundationId, isFoundationsDoc, oneLine, questionsFor, renderFoundations,
+  FIT_PICTURES, FIT_TEXT_MAX, FOUNDATION_CAP, FOUNDATION_FILE_TAG, FOUNDATION_QUESTIONS, FOUNDATIONS_TAG, FOUNDATIONS_TITLE, cleanRecord, emptyRecord, fileAnswerLine, isFoundationId, isFoundationsDoc, oneLine, questionsFor, renderFoundations,
   type FoundationAnswer, type FoundationId, type FoundationJob, type FoundationSourceKind, type FoundationsRecord, type FoundationsView
 } from '../shared/foundations';
+import { IMAGES, type DocExtraction } from './docText';
+import type { FileFitCheck } from './fileFitCheck';
 
 /** The profile facts the foundations share (one set of facts, eng finding 6). */
 export interface ProfileFacts { hours?: string; fiscalYearStartMonth?: number }
@@ -55,7 +57,17 @@ export interface FoundationsDeps {
   changed?: () => void;
   /** Delay before a change is published, so a burst publishes once. */
   publishDelayMs?: number;
+  /** A file added on a foundation card (foundation-card-upload.md): read
+   *  once, checked for fit, then added to company knowledge. */
+  readFile?: (path: string) => Promise<DocExtraction>;
+  fitFile?: FileFitCheck;
+  addToKnowledge?: (path: string, read: DocExtraction, opts: { title: string; tags: string[] }) => string;
+  /** A company knowledge document's title, or undefined when it is gone. */
+  docTitle?: (docId: string) => string | undefined;
 }
+
+/** Why a file added on a card was not taken; each has its own card line. */
+export type AddFileError = 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'picture-engine' | 'misfit' | 'unchecked';
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const monthName = (m: number): string => MONTHS[m - 1].charAt(0).toUpperCase() + MONTHS[m - 1].slice(1);
@@ -271,6 +283,59 @@ export class Foundations {
     return { ok: true };
   }
 
+  /** A file the owner adds on the card (D2, D3, D4, D5, D10): read it once;
+   *  an unreadable file stops here with its reason. A picture is shown to the
+   *  check as a picture, anything else by its text. Only a file the check
+   *  says FITS is added to company knowledge, tagged as the card's file and
+   *  never as the foundations copy; a NO, or a check that can't run, adds
+   *  nothing. The card answers itself next, then calls answerFile. */
+  async addFile(id: unknown, path: unknown): Promise<{ ok: true; docId: string; name: string } | { ok: false; error: AddFileError; reason?: string }> {
+    if (!isFoundationId(id)) return { ok: false, error: 'unknown' };
+    if (!this.file()) return { ok: false, error: 'no-office' };
+    if (typeof path !== 'string' || !isAbsolute(path)) return { ok: false, error: 'no-file' };
+    try { if (!statSync(path).isFile()) return { ok: false, error: 'no-file' }; } catch { return { ok: false, error: 'no-file' }; }
+    const { readFile, fitFile, addToKnowledge } = this.d;
+    if (!readFile || !fitFile || !addToKnowledge) return { ok: false, error: 'unchecked' };
+    const name = basename(path);
+    const read = await readFile(path).catch((e: unknown): DocExtraction => ({ kind: 'unreadable', reason: e instanceof Error ? e.message : String(e) }));
+    if (read.kind === 'unreadable') return { ok: false, error: 'unreadable', reason: read.reason };
+    const ext = extname(path).slice(1).toLowerCase();
+    const picture = (FIT_PICTURES as readonly string[]).includes(ext) ? path : undefined;
+    let text = read.kind === 'text' ? read.text : undefined;
+    if (read.kind === 'passthrough') {
+      // A picture Claude can't be shown (HEIC, TIFF), with no words to read.
+      if (IMAGES.has(ext) && !picture) return { ok: false, error: 'picture-type' };
+      // Plain text and CSV, which kg-core reads itself: its start, as text.
+      if (!IMAGES.has(ext)) text = firstText(path);
+    }
+    if (!picture && !text?.trim()) return { ok: false, error: 'unreadable', reason: 'This file is empty.' };
+    const verdict = await fitFile({ id, name, text, picture });
+    if (!verdict) return { ok: false, error: 'unchecked' };
+    if ('engine' in verdict) return { ok: false, error: 'picture-engine' };
+    if (!verdict.fits) return { ok: false, error: 'misfit', reason: verdict.reason };
+    try {
+      const docId = addToKnowledge(path, read, { title: name, tags: [FOUNDATION_FILE_TAG, id] });
+      return { ok: true, docId, name };
+    } catch (e) {
+      return { ok: false, error: 'unreadable', reason: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** The owner's answer from a file (D2, D8): their words, then the document
+   *  members read whole; only the words reach the company profile. */
+  answerFile(id: unknown, docId: unknown, words: unknown): { ok: true; text: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-doc' } {
+    if (!isFoundationId(id)) return { ok: false, error: 'unknown' };
+    if (!this.file()) return { ok: false, error: 'no-office' };
+    const title = typeof docId === 'string' && /^[A-Za-z0-9_-]+$/.test(docId) ? this.d.docTitle?.(docId) : undefined;
+    if (!title) return { ok: false, error: 'no-doc' };
+    const typed = typeof words === 'string' ? oneLine(words).slice(0, FOUNDATION_CAP) : '';
+    const text = fileAnswerLine(typed, docId as string, title);
+    this.save(this.withAnswer(this.read(), id, { text, by: 'owner', source: 'owner', ref: `kg:${docId as string}`, at: this.iso() }, null));
+    if (typed) this.toProfile(id, typed, true);
+    this.publishSoon();
+    return { ok: true, text };
+  }
+
   /** Have a member draft it (design D8): the request is noted on the record
    *  and the member asked; its draft comes back into the card. */
   requestDraft(id: unknown, memberId: unknown): { ok: boolean } {
@@ -459,4 +524,17 @@ export function publishCopy(store: CopyStore, text: string, changed?: () => void
   }
   try { changed?.(); } catch { /* the next pass indexes it */ }
   return r?.docId;
+}
+
+/** The start of a file kg-core reads as text itself (plain text, CSV), for
+ *  the fit check: at most FIT_TEXT_MAX characters, never the whole file. */
+function firstText(path: string): string | undefined {
+  try {
+    const fd = openSync(path, 'r');
+    try {
+      const buf = Buffer.alloc(FIT_TEXT_MAX * 4);
+      const n = readSync(fd, buf, 0, buf.length, 0);
+      return buf.subarray(0, n).toString('utf8').slice(0, FIT_TEXT_MAX);
+    } finally { closeSync(fd); }
+  } catch { return undefined; }
 }

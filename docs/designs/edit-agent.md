@@ -1,5 +1,12 @@
 # Edit agent: only what can change on someone already hired
 
+> 2026-10-23: D3 ("no section headings, field labels only") stands; the groups now sit on soft
+> panels, with labels that outrank their text. See `docs/designs/edit-agent-hierarchy.md` (H1).
+
+> 2026-10-23: the job is read only now. "What X handles" and the Work style change through
+> "What should change?" and its preview; see `docs/designs/work-style-change-request.md`.
+> Sections below that describe typing them are history.
+
 Status: built in the working tree (2026-10-02), not yet run in the app. Owner decisions D1 to D3 below.
 
 ## Problem

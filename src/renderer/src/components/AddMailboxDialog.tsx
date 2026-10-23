@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { Disclosure, Toggle } from './triggers/ui';
 import { useRtl } from '@/i18n/useDirection';
+import { Field, Panel, hint } from './fieldText';
 import {
   IMAPS_PORT, PROVIDER_ORDER, PROVIDER_PRESETS, SMTPS_PORT, SUBMISSION_PORT, guessServers,
   type MailProvider, type MailServer, type MailboxRecord
@@ -130,6 +131,8 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
           </>
         )}
 
+        {/* The login on one soft panel (app-style-rollout.md AS2). */}
+        <Panel style={{ marginTop: 12 }}>
         <Field label={t('mailboxes.address')}>
           <input type="email" value={address} disabled={!!fix || busy} onChange={(e) => setAddress(e.target.value)} className="cth-input" style={input} autoComplete="off" spellCheck={false} />
         </Field>
@@ -152,7 +155,7 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
             <Field label={t('mailboxes.outgoing')}>
               <input value={smtpHost} placeholder={guessed.smtp.host} disabled={busy} onChange={(e) => setSmtpHost(e.target.value)} className="cth-input" style={input} spellCheck={false} />
             </Field>
-            <button type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{ ...linkButton, display: 'inline-flex', alignItems: 'center', gap: 4 }}><Disclosure open={more} />{t('mailboxes.moreSettings')}</button>
+            <button type="button" aria-expanded={more} onClick={() => setMore((v) => !v)} style={{ ...linkButton, marginTop: 0, alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 4 }}><Disclosure open={more} />{t('mailboxes.moreSettings')}</button>
             {more && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <Field label={t('mailboxes.incomingPort')}><input inputMode="numeric" value={imapPort} onChange={(e) => setImapPort(e.target.value.replace(/\D/g, ''))} className="cth-input" style={{ ...input, width: 100 }} /></Field>
@@ -165,6 +168,7 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
             )}
           </>
         )}
+        </Panel>
 
         <div style={{ background: 'var(--cth-blue-soft)', borderRadius: 'var(--cth-r-md)', padding: '9px 12px', fontSize: 12.5, lineHeight: '18px', marginTop: 14, color: 'var(--cth-ink)' }}>
           {t(`mailboxes.help.${provider}`)}
@@ -188,7 +192,6 @@ export function AddMailboxDialog({ fix, onClose, onSaved }: {
   );
 }
 
-const hint: CSSProperties = { fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink-3)' };
 const input: CSSProperties = {
   height: 34, border: 'none', background: 'var(--cth-card)', outline: 'none',
   padding: '0 10px', fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-ink)', minWidth: 0
@@ -197,12 +200,3 @@ const linkButton: CSSProperties = {
   border: 'none', background: 'transparent', padding: 0, marginTop: 10, cursor: 'pointer', textDecoration: 'underline',
   fontFamily: 'var(--cth-font-ui)', fontSize: 12.5, color: 'var(--cth-indigo-text)'
 };
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 12 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
-      {children}
-    </label>
-  );
-}

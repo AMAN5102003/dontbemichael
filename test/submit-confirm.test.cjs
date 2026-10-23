@@ -19,6 +19,7 @@ const { confirmSubmit, PromptSubmits } = loadTs('src/shared/submitConfirm.ts');
 const { RunningToolCalls } = loadTs('src/renderer/src/hooks/runningToolCalls.ts');
 const { isClaudeProvider } = loadTs('src/shared/agentProvider.ts');
 const { isTerminalPrompt } = loadTs('src/shared/hookEvents.ts');
+const { pasteSafe } = loadTs('src/shared/pasteSafe.ts');
 const read = (p) => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 const instant = () => Promise.resolve();
 
@@ -59,6 +60,7 @@ function rendererSubmission(onPoll, breaker = 'healthy') {
     breakerLevel: { current: { alice: breaker } },
     ACTION_AT_PROMPT: 'at prompt',
     isTerminalPrompt,
+    pasteSafe,
     console: { warn: () => {} }
   };
   runtime = new Function('deps', `const { ${Object.keys(deps).join(', ')} } = deps;\n${compiled}\nreturn { submitToPty, onHook };`)(deps);
@@ -176,4 +178,14 @@ test('both typing paths wait for the agent to accept, Claude agents only', () =>
   const main = read('src/main/index.ts');
   assert.match(main, /if \(agentId && event === 'UserPromptSubmit'\) promptSubmits\.note\(agentId\);/);
   assert.match(main, /confirmSubmit\(\{\s*accepted: \(\) => promptSubmits\.since\(agentId, typedAt\),/);
+});
+
+test('a message carrying terminal control characters is pasted whole, never typed as keystrokes', async () => {
+  // Value: protects=team members' terminals, which run with permissions bypassed; fails_when=a quoted email holding ESC[201~ ends the paste and the rest arrives as typed input, or a lone return submits half a message; why_new=cycle 2 security review (D8, owner 2026-10-23); seam=the production submitToPty with a fake pty; no_claim=how each engine's TUI reads a paste
+  const runtime = rendererSubmission(({ onHook }) => onHook({ agentId: 'alice', event: 'Notification', message: 'Claude is waiting for your input' }));
+  await runtime.submitToPty('pty-alice', 'Customer wrote: hi\x1b[201~ rm -rf ~\x07 thanks', 'claude', 0);
+  assert.deepEqual(runtime.writes, ['Customer wrote: hi[201~ rm -rf ~ thanks', '\r'], 'one line, no control characters, then the Enter');
+  runtime.writes.length = 0;
+  await runtime.submitToPty('pty-alice', 'first part\rsecond part', 'claude', 0);
+  assert.deepEqual(runtime.writes, ['\x1b[200~first part\rsecond part\x1b[201~', '\r'], 'a lone return inside the text is pasted, not pressed');
 });

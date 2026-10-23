@@ -136,7 +136,7 @@ const officeCard: CSSProperties = {
   ...plainCard,
   boxShadow: 'inset 0 0 0 1.5px color-mix(in srgb, var(--cth-coral-base) 55%, transparent), 0 1px 2px rgba(30, 27, 46, .04)'
 };
-const kicker: CSSProperties = { fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--cth-coral-text)', marginBottom: 3 };
+const kicker: CSSProperties = { /* style-guard: micro */ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', color: 'var(--cth-coral-text)', marginBottom: 3 };
 const tag: CSSProperties = {
   display: 'inline-block', fontSize: 10, fontWeight: 600, lineHeight: '13px', padding: '1px 7px', borderRadius: 999,
   background: 'var(--cth-amber-soft)', color: 'var(--cth-amber-text)', whiteSpace: 'nowrap'

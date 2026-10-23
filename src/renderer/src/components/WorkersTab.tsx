@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { useStore } from '@/store/store';
 import { fmtWorkerTokens } from '@shared/tokenFormat';
+import { groupName } from './fieldText';
 
 /**
  * WORKERS — live god-triggered ephemeral Slack workers (the Phase-1 spawn loop):
@@ -38,10 +39,8 @@ const metaRow: React.CSSProperties = {
   display: 'flex', flexWrap: 'wrap', gap: '4px 14px', fontFamily: 'var(--cth-font-mono)',
   fontSize: 11, color: 'var(--cth-ink-700)'
 };
-const sectionHead: React.CSSProperties = {
-  fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
-  letterSpacing: 0.5, color: 'var(--cth-ink-900)', margin: '2px 0'
-};
+/** The app's group name (fieldText, app-style-rollout.md AS3). */
+const sectionHead: React.CSSProperties = groupName;
 
 function StatusBadge({ w }: { w: WorkerSnapshot }) {
   const { t } = useTranslation();

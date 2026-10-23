@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { authTypeNeedsSecret as needsSecret, INTEGRATION_ID_TAKEN } from '@shared/integrations';
 import { PixelButton } from './PixelButton';
+import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
 import {
   integrationsClient,
   slugify,
@@ -60,10 +61,10 @@ function glyphFor(kind: string, label: string): { mono: string; bg: string } {
   return GLYPH[kind] ?? { mono: (label.replace(/[^A-Za-z0-9]/g, '').slice(0, 2) || '··'), bg: '#6B5878' };
 }
 
-const dispLabel: CSSProperties = { fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px', color: 'var(--cth-ink-500)', textTransform: 'uppercase' };
-const fieldLabel: CSSProperties = { ...dispLabel, color: 'var(--cth-ink-700)' };
-const subText: CSSProperties = { fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' };
-const hint: CSSProperties = { fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)' };
+/** The three views (gallery, form, list) are one group on the shared soft
+ *  panel, with the app's group name, field labels and hints (fieldText). */
+const groupBox: CSSProperties = { ...panelStyle, gap: 12 };
+const subText = hint;
 const inputStyle: CSSProperties = { width: '100%', padding: '6px 8px', background: 'var(--cth-paper-100)', border: 'none', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-900)' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', padding: 0, alignSelf: 'flex-start', fontSize: 12, color: 'var(--cth-ink-500)' };
 
@@ -216,10 +217,10 @@ export function IntegrationsRegistry() {
   // ───────────────────────── GALLERY ─────────────────────────
   if (view === 'gallery') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={groupBox}>
         <button type="button" onClick={goList} style={linkBtn}>{tr('integrations.backToList')}</button>
         <div>
-          <div style={{ ...dispLabel, marginBottom: 4 }}>{tr('integrations.pickTemplate')}</div>
+          <h3 style={{ ...groupName, marginBottom: 4 }}>{tr('integrations.pickTemplate')}</h3>
           <span style={subText}>{tr('integrations.galleryDesc')}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
@@ -258,7 +259,7 @@ export function IntegrationsRegistry() {
     const showSavedPill = !draft.isNew && draft.hasSecret && !replacing;
     const isUsable = usable(draft);
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ ...groupBox, gap: 14 }}>
         <button type="button" onClick={draft.isNew ? startAdd : goList} style={linkBtn}>{draft.isNew ? tr('integrations.backToTemplates') : tr('integrations.backToList')}</button>
 
         <div style={{ borderRadius: 'var(--cth-r-md)', display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
@@ -363,17 +364,17 @@ export function IntegrationsRegistry() {
   // ───────────────────────── LIST (default) ─────────────────────────
   const usableCount = records.filter(usable).length;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={groupBox}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={dispLabel}>{tr('integrations.title')}</div>
+          <h3 style={groupName}>{tr('integrations.title')}</h3>
           <span style={{ ...subText, maxWidth: 440 }}>{tr('integrations.titleDesc')}</span>
         </div>
         {records.length > 0 && <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={busy || templates.length === 0}>+ {tr('integrations.addIntegration')}</PixelButton>}
       </div>
 
       {records.length === 0 ? (
-        <div style={{ borderRadius: 'var(--cth-r-md)', padding: 24, textAlign: 'center', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
+        <div style={{ borderRadius: 'var(--cth-r-lg)', padding: 24, textAlign: 'center', background: 'var(--cth-card)' }}>
           <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{tr('integrations.empty')}</p>
           <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={templates.length === 0}>+ {tr('integrations.addFirst')}</PixelButton>
         </div>
@@ -391,7 +392,7 @@ export function IntegrationsRegistry() {
                   : { dot: '●', color: 'var(--cth-green-text)', text: tr('integrations.enabled') };
               const rt = rowTest[r.id];
               return (
-                <div key={r.id} style={{ borderRadius: 'var(--cth-r-md)', display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
+                <div key={r.id} style={{ borderRadius: 'var(--cth-r-lg)', display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-card)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <Glyph mono={g.mono} bg={g.bg} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>

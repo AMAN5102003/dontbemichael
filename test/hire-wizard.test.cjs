@@ -42,21 +42,23 @@ test('Setup opens only for a verified role: distinct, or bound; Hire checks agai
   assert.ok(flow.indexOf('roleReady()') < flow.indexOf('spawnPty'), 'checked before spawning');
   assert.match(modal, /const checkSig = `\$\{profile\.name\}\\n\$\{profile\.routing\}`;/, 'a title edit does not reset the check');
   assert.match(modal, /const overlapNames = \[\.\.\.new Set\(\[\.\.\.\(verdict\?\.overlapsWith \?\? \[\]\), \.\.\.ruleOverlaps\]\)\];/, 'the rules always count, live');
-  assert.match(modal, /disabled=\{\(step === 'who' && !!whoError\) \|\| \(step === 'role' && \(checking \|\| \(overlapNames\.length > 0 && !binding\)\)\)\}/);
+  assert.match(modal, /disabled=\{\(step === 'who' && !!whoError\) \|\| \(step === 'role' && \(checking \|\| jobBusy \|\| !instructions\.trim\(\) \|\| \(overlapNames\.length > 0 && !binding\)\)\)\}/, 'Next turns on after Apply (DR13)');
 });
 
-test('Finalize explains the work style, the folder and the model behind info icons', () => {
+test('Finalize explains the folder and the model behind info icons; the job is on the Role step', () => {
   const setup = modal.slice(modal.indexOf("{step === 'setup' && ("));
-  for (const k of ['workStyleIntro', 'folderPurpose', 'modelPurpose']) assert.match(setup, new RegExp(`info=\\{tr\\('addAgent\\.wizard\\.${k}'`), k);
-  assert.match(modal, /\{info && <InfoTip text=\{info\} label=\{label\} \/>\}/);
+  for (const k of ['folderPurpose', 'modelPurpose']) assert.match(setup, new RegExp(`info=\\{tr\\('addAgent\\.wizard\\.${k}'`), k);
+  assert.doesNotMatch(setup, /jobChange\.|workStyle/, 'Finalize keeps folder and model only (DR12)');
+  assert.match(modal, /return <Field label=\{p\.label\} info=\{p\.info\}>\{p\.children\}<\/Field>;/, 'the shared Field puts info behind its icon');
   assert.match(modal, /info=\{tr\('addAgent\.roleHelp'/, 'the role screen too');
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const w = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).addAgent.wizard;
     assert.equal(w.step.setup, { en: 'Finalize', 'zh-CN': '完成', ar: 'إنهاء' }[loc]);
   }
+  assert.equal(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).addAgent.wizard.stepHint.role, 'Name, job, overlap check');
   const role = modal.slice(modal.indexOf("{step === 'role' && ("), modal.indexOf("{step === 'setup' && ("));
   assert.match(role, /<DistinctBox/);
-  assert.doesNotMatch(role, /addAgent\.workStyle'/, 'work style is not on the role screen');
+  assert.ok(role.indexOf("tr('jobChange.whatWillDo'") < role.indexOf('<DistinctBox'), 'the job comes before the overlap check');
 });
 
 test('a binding updates the overlapping teammates\' lines and a mailbox binding is set before the spawn', () => {
@@ -106,15 +108,12 @@ test('the model list starts on the default for agents from Settings, marked defa
   assert.doesNotMatch(modal, /'best' \| 'fast'/, 'no Best or Fast');
 });
 
-test('work style is required, when hiring and when editing (owner, 2026-09-27)', () => {
-  assert.match(modal, /if \(!workStyle\.trim\(\)\) \{ setError\(tr\('addAgent\.wizard\.errWorkStyle'\)\); return; \}/);
+test('a job is required: hiring waits for an applied one, and a change never saves an empty one (owner, 2026-09-27)', () => {
+  assert.match(modal, /onClick=\{submit\} disabled=\{busy \|\| checking \|\| !instructions\.trim\(\)\}/);
+  const text = read('src/shared/workStyleText.ts');
+  assert.match(text, /if \(!instructions \|\| instructions === opening \|\| !plain \|\| summary\.length === 0\) return null;/, 'a rewrite without a job is a failure, never saved');
   const edit = read('src/renderer/src/components/EditAgentModal.tsx');
-  assert.match(edit, /if \(!agent\.isGod && !agent\.isAssistant && !goal\.trim\(\)\) \{ setGoalError\(true\); return; \}/);
   assert.doesNotMatch(edit, /Work style \(optional\)/);
-  for (const loc of ['en', 'zh-CN', 'ar']) {
-    const a = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).addAgent;
-    assert.doesNotMatch(a.workStyle, /optional|可选|اختياري/, loc);
-  }
 });
 
 test('the other businesses\' list leaves out this business\'s own card for the job (owner, 2026-09-27)', () => {
@@ -122,14 +121,15 @@ test('the other businesses\' list leaves out this business\'s own card for the j
   assert.match(modal, /cards\.filter\(\(j\) => \(listAll \|\| inFamily\(j\)\) && !ownBusinessCard\(j\)\)/);
 });
 
-test('the role screen asks what the new hire handles, not what to send (owner, 2026-09-27)', () => {
+test('the role screen asks what the new hire will do, and shows what they handle (owner, 2026-09-27)', () => {
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const a = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).addAgent;
     assert.doesNotMatch(JSON.stringify(a), /what to send|What to send/, `${loc}: no "what to send" left`);
   }
-  const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).addAgent;
-  assert.equal(en.wizard.whatToSend, 'What {{name}} handles');
-  assert.match(modal, /tr\('addAgent\.roleHelp', \{ godName, name: name\.trim\(\) \}\)/);
+  const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).jobChange;
+  assert.equal(en.handles, 'What {{name}} handles');
+  assert.equal(en.whatWillDo, 'What will {{name}} do?');
+  assert.match(modal, /tr\('addAgent\.roleHelp', \{ godName, name: hireWho \}\)/);
 });
 
 test('a bound job says the overlap is resolved instead of repeating it (owner, 2026-09-27)', () => {
@@ -156,16 +156,14 @@ test('going back drops a job check still running, and a title alone is not check
   assert.match(modal, /if \(seq === checkSeq\.current\) setChecking\(false\);/);
 });
 
-test('Next asks for what the new hire handles before any check', () => {
-  // Value: protects=an empty "what they handle" never starts the job check; fails_when=a title alone (a new job keeps the character's role) passes the gate and checks nothing; why_new=owner 2026-10-03; seam=source pin
+test('Next asks for an applied job before any check', () => {
+  // Value: protects=no check runs, and no hire happens, before the job is written and applied (DR13); fails_when=a title alone passes the gate and checks nothing; why_new=owner 2026-10-03, reworked for work-style-change-request.md; seam=source pin
   const modal = read('src/renderer/src/components/AddAgentModal.tsx');
   const gate = modal.slice(modal.indexOf('const roleReady = async'), modal.indexOf('const goTo = async'));
-  assert.match(gate, /if \(!routing\.trim\(\)\) \{ setError\(tr\('addAgent\.wizard\.errJob', \{ name: name\.trim\(\), godName \}\)\); return false; \}/);
-  assert.ok(gate.indexOf('!routing.trim()') < gate.indexOf('runCheck()'), 'asked before the check');
+  assert.match(gate, /if \(!instructions\.trim\(\) \|\| !routing\.trim\(\)\) \{ setError\(tr\('jobChange\.errJobFirst', \{ name: name\.trim\(\) \}\)\); return false; \}/);
+  assert.ok(gate.indexOf('!instructions.trim()') < gate.indexOf('runCheck()'), 'asked before the check');
   for (const loc of ['en', 'ar', 'zh-CN']) {
-    const msg = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).addAgent.wizard.errJob;
-    assert.match(msg, /\{\{name\}\}/, loc);
-    assert.match(msg, /\{\{godName\}\}/, loc);
+    assert.match(JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).jobChange.errJobFirst, /\{\{name\}\}/, loc);
   }
 });
 
@@ -252,7 +250,7 @@ test('binding clears an earlier overlap message, and the message names every way
   const modal = read('src/renderer/src/components/AddAgentModal.tsx');
   const apply = modal.slice(modal.indexOf('const applyBinding ='), modal.indexOf('const clearBinding ='));
   assert.match(apply, /setError\(undefined\);/);
-  assert.match(modal, /onChange=\{\(e\) => \{ setRouting\(e\.target\.value\); setError\(undefined\); \}\}/);
+  assert.match(modal.slice(modal.indexOf('const applyHireJob ='), modal.indexOf('const [sourceCard')), /if \(ok\.handles\) setRouting\(ok\.handles\);[\s\S]*?setError\(undefined\);/, 'a new job clears it too');
   assert.match(JSON.parse(read('src/renderer/src/i18n/locales/en.json')).addAgent.wizard.errOverlap, /a mailbox, a topic or a connection/);
 });
 
@@ -367,7 +365,7 @@ test('who came back with released lines: a returning hire, not a new one, read f
   assert.match(r('src/renderer/src/shell/releaseBindings.ts'), /if \(s\.agents\.some\(\(a\) => a\.id !== agentId && a\.name\.trim\(\) === leaving\.name\.trim\(\)\)\) return;/, 'a newer hire with the name keeps their lines');
   assert.match(r('src/renderer/src/store/store.ts'), /releasedBindings: next\.releasedBindings\.map\(\(b\) => \(\{ \.\.\.b, line: swapName\(b\.line, previousName, nextName\) \}\)\)/, 'a rename keeps released lines true');
   const modal = r('src/renderer/src/components/AddAgentModal.tsx');
-  assert.match(modal, /if \(run\) \{ suggestRun\.current = null; void window\.cth\.workStyleSuggestStop\?\.\(run\.id\)\?\.catch\(\(\) => undefined\); setSuggesting\(false\); \}/, 'going back ends a suggestion for the job left behind');
+  assert.match(modal, /checkSeq\.current\+\+; stopCheckRun\(\); setChecking\(false\); prefetchSig\.current = '';/, 'going back ends a check for the job left behind');
   assert.match(modal, /title=\{cloneCharacter\(c\.name, onTeam, castGroups\) \? undefined : tr\('addAgent\.wizard\.cloneNoneFree'\)\}/);
   for (const loc of ['en', 'ar', 'zh-CN']) assert.ok(JSON.parse(r(`src/renderer/src/i18n/locales/${loc}.json`)).addAgent.wizard.cloneNoneFree, loc);
 });

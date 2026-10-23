@@ -148,7 +148,12 @@ async function runDockTests() {
 
   reset(); await settle();
   await until(() => bottom() <= 1 && !jump(), 'opening starts at latest without a count');
-  append(); await settle();
+  append();
+  // In the same task, before any frame: a reply folding (its More appearing)
+  // must not wait on the next frame's resize observer, which a busy runner
+  // can hold back (it left CI 36px short, the More links' height).
+  check(bottom() <= 1, `replies that fold stay at the latest before a frame (${where()})`);
+  await settle();
   await until(() => bottom() <= 1 && !jump(), 'bottom follows incoming replies');
   passed.push('open and follow at bottom');
 

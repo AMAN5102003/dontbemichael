@@ -163,16 +163,19 @@ test('the old packs\' bare "First task" line is a heading, and a renamed manager
 });
 
 test('a bare First task section ends at the old packs\' bare headings, a typed First task becomes a card, and the cleanup keeps standing duties scheduled', () => {
-  // Value: protects=an old format First task stops at the next bare heading, a First task the owner types in the wizard or Edit goes to Michael as a card (its own id if the hire's first card exists), and hires cleaned of a pack First task get that card's starter jobs; fails_when=sections run into later ones, typed text is dropped, or the cleanup removes a standing duty with no schedule; why_new=ship review pass 3 (SR4, SR5); seam=none
+  // Value: protects=an old format First task stops at the next bare heading, one-time work the owner describes in the wizard or Edit goes to Michael as a card (its own id if the hire's first card exists), and hires cleaned of a pack First task get that card's starter jobs; fails_when=sections run into later ones, typed text is dropped, or the cleanup removes a standing duty with no schedule; why_new=ship review pass 3 (SR4, SR5); seam=none
   const W = loadTs('src/shared/workStyleText.ts');
   const s = W.firstTaskSection("The job\nSort mail.\n\nFirst task\nFind the suppliers.\n\nNeeds the owner's approval\nRefunds.");
   assert.equal(s.body, 'Find the suppliers.');
   assert.equal(s.without, "The job\nSort mail.\n\nNeeds the owner's approval\nRefunds.");
   const add = read('src/renderer/src/components/AddAgentModal.tsx');
-  assert.match(add, /const typedFirstTask = firstTaskSection\(workStyle\)\?\.body\.trim\(\)\.slice\(0, FIRST_TASK_EDITED_MAX\) \|\| '';/);
+  // One-time work the owner describes comes back from the rewrite on its own
+  // (work-style-change-request.md, finding 4) and becomes a card.
+  assert.match(add, /if \(ok\.oneTimeTask\) \{ const task = ok\.oneTimeTask; setHireTask\(\(t\) => \(t\.trim\(\) \? `\$\{t\}\\n\$\{task\}` : task\)\); \}/, 'each applied change adds its one-time work');
+  assert.match(add, /const typedFirstTask = hireTask\.trim\(\)\.slice\(0, FIRST_TASK_EDITED_MAX\);/);
   assert.match(add, /if \(typedFirstTask\) void sendTypedFirstTask\(sourceCard, id, name\.trim\(\), \{ ask: typedFirstTask, role: title\.trim\(\), existing: false \}\);/);
   const edit = read('src/renderer/src/components/EditAgentModal.tsx');
-  assert.match(edit, /void sendTypedFirstTask\(agent\.sourceCard, agent\.id, trimmedName, \{ ask: typedFirstTask, role: role\.trim\(\), existing: true \}\);/);
+  assert.match(edit, /if \(ok\.oneTimeTask && !agent\.isGod\) \{\s*void sendTypedFirstTask\(cur\.sourceCard, agent\.id, cur\.name, \{ ask: ok\.oneTimeTask\.slice\(0, FIRST_TASK_EDITED_MAX\), role: title, existing: true \}\);/);
   const main = read('src/main/index.ts');
   assert.match(main, /first\.card\.id = `\$\{first\.card\.id\}-\$\{now\.getTime\(\)\.toString\(36\)\}`;/);
   assert.match(main, /existing: p\.existing !== false/);

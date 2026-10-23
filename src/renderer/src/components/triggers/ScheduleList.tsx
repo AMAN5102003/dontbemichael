@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { PixelButton } from '../PixelButton';
@@ -12,7 +12,7 @@ import {
 } from './ui';
 import { formatTimes, normalizeTimes, type WhenWords } from '@shared/scheduleTimes';
 import { WhenLines, fieldsFromLines, linesFromMission, sameLines, type LineDraft } from './WhenLines';
-import { cannotCheckEmail, cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
+import { cannotCheckEmail, cleanFocus, FOCUS_MAX, GOD_ALIAS, missionsFor, nextRunAt, orderedJobs, ownerOf, OWNER, runNowOutcome, type ScheduledMission } from '@shared/missions';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { remainingStarterMissions, starterSuggestionsFor, type StarterSuggestion } from '@shared/starterJobs';
 import type { OfficePack } from '@shared/officePack';
@@ -20,6 +20,7 @@ import { gmailConnectorOn } from '@shared/claudeConnectors';
 import { agentMailboxes } from '@shared/mailboxes';
 import { useRtl } from '@/i18n/useDirection';
 import i18n from '@/i18n';
+import { groupName, panelStyle } from '../fieldText';
 
 /**
  * SCHEDULES, per agent (docs/designs/per-agent-schedules.md).
@@ -248,6 +249,8 @@ interface RowProps {
   /** Read only: plain text, no toggle, no editor and no link (the office
    *  schedule; owner, 2026-09-26). */
   readOnly?: boolean;
+  /** The last row in a group's panel: no rule under it, the panel ends it. */
+  last?: boolean;
   ownerName: string;
   /** The agent's email is off, so a job that checks mail is refused each run. */
   noEmail?: boolean;
@@ -255,7 +258,7 @@ interface RowProps {
   focusOwner?: FocusOwner;
 }
 
-function ScheduleRow({ mission, nameOf, readOnly, ownerName, noEmail, focusOwner }: RowProps) {
+function ScheduleRow({ mission, nameOf, readOnly, last, ownerName, noEmail, focusOwner }: RowProps) {
   const { t, i18n } = useTranslation();
   const rtl = useRtl();
   const godName = useResolvedGodName();
@@ -413,7 +416,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, noEmail, focusOwner
     );
 
   return (
-    <div style={{ boxShadow: 'inset 0 -1px 0 var(--cth-ink-100)' }}>
+    <div style={{ boxShadow: last ? undefined : 'inset 0 -1px 0 var(--cth-ink-100)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {header}
         {!readOnly && (
@@ -430,7 +433,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, noEmail, focusOwner
 
       {open && !readOnly && (
         <div
-          style={{ borderRadius: 'var(--cth-r-md)', padding: '4px 8px 12px', background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}
+          style={editorBox}
           onKeyDown={(e) => {
             if (e.key !== 'Escape' || isComposingKey(e.nativeEvent)) return;
             e.stopPropagation();
@@ -558,7 +561,7 @@ function AddSchedule({ to, ownerName, focusOwner }: { to: string; ownerName: str
     );
   }
   return (
-    <div style={{ borderRadius: 'var(--cth-r-md)', marginTop: 12, padding: '4px 8px 12px', background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}>
+    <div style={{ ...editorBox, marginTop: 12 }}>
       <Field label={t('schedulesSection.label')}>
         <input
           autoFocus
@@ -583,6 +586,10 @@ function AddSchedule({ to, ownerName, focusOwner }: { to: string; ownerName: str
     </div>
   );
 }
+
+/** A job's editor: a white box on the On a schedule panel, no ring of its own
+ *  (app-style-rollout.md AS2). */
+const editorBox: CSSProperties = { borderRadius: 'var(--cth-r-lg)', padding: '4px 10px 12px', background: 'var(--cth-card)' };
 
 /* ───────────────────────────── the list modes ───────────────────────────── */
 
@@ -666,7 +673,7 @@ export function AgentSchedules({ agentId, agentName, businessType, sourceCard }:
 
   const on = mine.filter((m) => m.enabled);
   const next = on.map((m) => nextRunAt(m, Date.now())).filter((x): x is number => x !== null).sort((a, b) => a - b)[0];
-  const ordered = [...mine].sort((a, b) => (nextRunAt(a, Date.now()) ?? Infinity) - (nextRunAt(b, Date.now()) ?? Infinity));
+  const ordered = orderedJobs(mine, Date.now());
 
   // A focus area is checked against this agent's Work style and its other
   // jobs on save (FA3).
@@ -759,16 +766,17 @@ export function OfficeSchedules() {
           .filter((m) => ownerOf(m, godId) === owner)
           .sort((a, b) => (nextRunAt(a, Date.now()) ?? Infinity) - (nextRunAt(b, Date.now()) ?? Infinity));
         return (
-          <section key={owner} aria-label={name} style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-900)' }}>
+          <section key={owner} aria-label={name} style={{ ...panelStyle, gap: 4, marginTop: 12 }}>
+            <h3 style={groupName}>
               {isClosed ? t('schedulesSection.closedGroup', { name }) : name}
-            </div>
+            </h3>
             {isClosed && <Hint>{t('schedulesSection.closedNote', { name })}</Hint>}
-            <div style={{ boxShadow: 'inset 0 1px 0 var(--cth-ink-100)' }}>
-              {rows.map((m) => (
+            <div>
+              {rows.map((m, i) => (
                 <ScheduleRow
                   key={m.id}
                   mission={m}
+                  last={i === rows.length - 1}
                   nameOf={nameOf}
                   ownerName={name}
                   noEmail={!!config && cannotCheckEmail(m, { enabled: agentMailboxes(config, owner).length > 0 }, gmailConnectorOn(config, owner))}

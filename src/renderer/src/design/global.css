@@ -668,6 +668,12 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; }
 .cth-dock-sheet .cth-composer { box-shadow: inset 0 0 0 1px var(--cth-line-2); }
 .cth-dock-sheet .cth-composer:focus-within { box-shadow: inset 0 0 0 2px var(--cth-indigo); }
 
+/* The program mark on the studio platform's side (StudioStage): quiet at rest,
+   full and underlined under the pointer or keyboard focus. */
+.cth-st-mark { text-decoration: none; cursor: pointer; opacity: var(--mark-op, 0.9); }
+.cth-st-mark:hover, .cth-st-mark:focus-visible { opacity: 1; text-decoration: underline; }
+.cth-st-mark:focus-visible { outline: 2px solid var(--cth-indigo); outline-offset: 2px; border-radius: 2px; }
+
 /* Michael's conversation dock (docs/designs/michael-replies.md, 21A): slides
    180 ms up from the composer's top edge; reduced motion snaps. */
 .cth-dock { animation: cth-dock-in 180ms ease-out; }

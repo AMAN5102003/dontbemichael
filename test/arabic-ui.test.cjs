@@ -226,7 +226,9 @@ test('no Arabic string is left as its English source', () => {
     'askMe.fileKind.excel',                  // product names (Markdown, Excel,
     'askMe.fileKind.word',                   // Word, PowerPoint)
     'askMe.fileKind.powerpoint',
-    'engineSetup.claude'                     // Claude Code, a product name
+    'engineSetup.claude',                    // Claude Code, a product name
+    'jobChange.shortcutMac',                 // key names as printed on the
+    'jobChange.shortcutOther'                // keyboard (⌘ Enter, Ctrl Enter)
   ]);
   const e = pathsOf(en), a = pathsOf(ar);
   const untranslated = [];

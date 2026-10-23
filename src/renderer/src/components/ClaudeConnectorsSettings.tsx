@@ -5,6 +5,7 @@ import { Toggle, MiniButton, Disclosure } from './triggers/ui';
 import { InfoTip } from './InfoTip';
 import { useHarnessConfig } from '@/hooks/useHarnessConfig';
 import { connectorOn, removedKeys, unseenKeys, type ClaudeConnector } from '@shared/claudeConnectors';
+import { groupName, hint, panelStyle } from './fieldText';
 
 /** Where the owner adds and signs in to connectors on their Claude account. */
 const CLAUDE_CONNECTORS_URL = 'https://claude.ai/settings/connectors';
@@ -75,11 +76,11 @@ export function ClaudeConnectorsSettings() {
       : list.length === 1 ? t('connectors.summaryOne', { on: onCount }) : t('connectors.summaryCount', { count: list.length, on: onCount });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ ...panelStyle, gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" aria-expanded={open} aria-controls={listId} onClick={() => setOpen((o) => !o)} style={foldButton}>
           <Disclosure open={open} />
-          <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px', color: 'var(--cth-ink-500)', textTransform: 'uppercase' }}>
+          <span style={groupName}>
             {t('connectors.title')}
           </span>
           <span style={hint}>{summary}</span>
@@ -163,7 +164,6 @@ function Dot({ color }: { color: string }) {
   return <span aria-hidden="true" style={{ width: 8, height: 8, background: color, display: 'inline-block' }} />;
 }
 
-const hint: CSSProperties = { fontSize: 13, lineHeight: '18px', color: 'var(--cth-ink-500)' };
 const foldButton: CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', border: 'none', background: 'transparent',
   cursor: 'pointer', textAlign: 'start', fontFamily: 'var(--cth-font-ui)', color: 'var(--cth-ink-900)'

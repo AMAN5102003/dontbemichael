@@ -30,6 +30,7 @@ import { missingBusinessFields, type BusinessField } from '@shared/businessProfi
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { teamPlanFromRecord, type OfficeRecord } from '@shared/officeRecord';
 import { COLLECT_USAGE_STATS } from '@shared/buildFeatures';
+import { fieldLabel, groupName, requiredMark } from './fieldText';
 
 export interface OnboardingWizardProps {
   onComplete: (config: HarnessConfig) => void;
@@ -594,9 +595,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
             {step === 'resume' && found && (
               <>
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.resume.headline')}
-                </div>
+                </h3>
                 <p style={{ margin: 0, lineHeight: '22px' }}>
                   {t('onboarding.resume.desc', {
                     business: found.record.businessName ?? t('onboarding.resume.unnamed'),
@@ -656,8 +657,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     ever used as an id or a path. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-2)' }}>
-                      {t('onboarding.business.nameLabel')} *
+                    <span style={fieldLabel}>
+                      {t('onboarding.business.nameLabel')}{' '}
+                      <span style={requiredMark}>{t('companyProfile.required')}</span>
                     </span>
                     <input
                       value={businessName}
@@ -672,8 +674,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
                 </div>
 
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
-                  {t('onboarding.business.ask')} *
+                <div style={fieldLabel}>
+                  {t('onboarding.business.ask')}{' '}
+                  <span style={requiredMark}>{t('companyProfile.required')}</span>
                 </div>
 
                 {/* Tiles come from the pack registry, so a community pack appears
@@ -1122,9 +1125,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 {/* AUTONOMY — one choice that maps to each engine's flag: autoMode →
                     claude bypassPermissions / codex -a never -s workspace-write
                     (sandbox kept), etc.; off → each engine's ask-first default. */}
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.permissions.autonomyHead')}
-                </div>
+                </h3>
                 <label style={{
                   borderRadius: 'var(--cth-r-md)',
                   display: 'flex', alignItems: 'center', gap: 10,
@@ -1155,9 +1158,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 <div style={{ height: 1, background: 'var(--cth-ink-300)', margin: '2px 0' }} />
 
                 {/* RELIABILITY — keeping work firing while you're away. */}
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.permissions.reliabilityHead')}
-                </div>
+                </h3>
                 <p style={{ margin: 0, lineHeight: '20px', fontSize: 14, color: 'var(--cth-ink-700)' }}>
                   {t('onboarding.permissions.reliabilityDesc')}
                 </p>

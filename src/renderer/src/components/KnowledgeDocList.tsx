@@ -4,6 +4,7 @@ import { PixelButton } from './PixelButton';
 import { InfoTip } from './InfoTip';
 import type { KnowledgeDoc } from '../../../preload';
 import { isFoundationsDoc } from '@shared/foundations';
+import { fieldLabel, hint } from './fieldText';
 
 /**
  * The documents in company knowledge (owner, 2026-10-19: "super limited
@@ -41,11 +42,11 @@ export function KnowledgeDocList({ refreshKey }: { refreshKey: number }) {
   const readOnly = (d: KnowledgeDoc): boolean => isFoundationsDoc(d);
 
   return (
-    <div style={{ marginTop: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-700)', marginBottom: 6 }}>
+    <div>
+      <div style={{ ...fieldLabel, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         {t('settings.memory.docs.label')}<InfoTip text={t('settings.memory.docs.tip')} />
       </div>
-      <ul role="list" style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: 300, overflowY: 'auto', borderRadius: 'var(--cth-r-lg)', boxShadow: 'inset 0 0 0 1px var(--cth-line)' }}>
+      <ul role="list" style={{ listStyle: 'none', margin: 0, padding: 0, maxHeight: 300, overflowY: 'auto', borderRadius: 'var(--cth-r-lg)', background: 'var(--cth-card)' }}>
         {docs.map((d, i) => (
           <li key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderTop: i ? '1px solid var(--cth-line)' : 'none' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -57,7 +58,7 @@ export function KnowledgeDocList({ refreshKey }: { refreshKey: number }) {
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: 11.5, lineHeight: '16px', color: 'var(--cth-ink-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ ...hint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {[d.source !== d.title ? d.source : '', d.updatedAt ? t('settings.memory.docs.updated', { date: day(d.updatedAt) }) : t('settings.memory.docs.added', { date: day(d.addedAt) })].filter(Boolean).join(', ')}
               </div>
             </div>

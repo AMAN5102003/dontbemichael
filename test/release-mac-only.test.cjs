@@ -22,11 +22,22 @@ test('the release workflow builds Mac, and Windows as a beta that never blocks i
   assert.match(yml, /continue-on-error: \$\{\{ matrix\.os == 'windows-2022' \}\}/);
 });
 
-test('the release workflow unsets an empty signing cert before packaging', () => {
-  // An empty CSC_LINK is read as a path to the repo folder ("not a file").
+test('the release workflow signs from its own keychain, never CSC_LINK', () => {
+  // electron-builder 25 builds its own keychain from CSC_LINK and then fails
+  // set-key-partition-list on macOS 26.6; an empty CSC_LINK is read as a path to
+  // the repo folder ("not a file"). The job imports the cert itself instead.
   const yml = read('.github/workflows/release.yml');
-  const step = yml.slice(yml.indexOf('- name: Package installers'), yml.indexOf('- name: Generate checksums'));
-  assert.match(step, /if \[ -z "\$CSC_LINK" \]; then unset CSC_LINK CSC_KEY_PASSWORD; fi\n\s*npx electron-builder/);
+  const live = yml.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+  const imp = live.slice(live.indexOf('- name: Import the Mac signing certificate'), live.indexOf('- name: Package installers'));
+  assert.match(imp, /if: matrix\.os == 'macos-latest'/);
+  assert.match(imp, /if \[ -z "\$P12" \]; then .*exit 0; fi/, 'an unsigned build still works');
+  assert.match(imp, /security create-keychain -p "\$KEYCHAIN_PASSWORD"/);
+  assert.match(imp, /security set-key-partition-list -S apple-tool:,apple: -s -k "\$KEYCHAIN_PASSWORD"/, 'the keychain password, not the cert password');
+  assert.match(imp, /rm -f "\$RUNNER_TEMP\/cert\.p12"/);
+  assert.match(imp, /echo "CSC_KEYCHAIN=\$KEYCHAIN" >> "\$GITHUB_ENV"/);
+  const pack = live.slice(live.indexOf('- name: Package installers'), live.indexOf('- name: Generate checksums'));
+  assert.match(pack, /unset CSC_LINK CSC_KEY_PASSWORD\n\s*npx electron-builder/);
+  assert.doesNotMatch(pack, /CSC_LINK:|CSC_KEY_PASSWORD:/);
 });
 
 test('RELEASE.md advertises the Mac DMG, and Windows only inside its strippable section', () => {
@@ -51,4 +62,93 @@ test('the afterSign hook seals an unsigned Mac app ad hoc, and only then', () =>
   assert.match(hook, /'--options', 'runtime', '--entitlements'/);
   const builder = read('electron-builder.yml');
   assert.match(builder, /^afterSign: build\/notarize\.cjs$/m);
+});
+
+// A signed Mac release must be notarized too, or it fails (owner, 2026-10-22):
+// a signed but unnotarized download still shows macOS's "cannot verify" warning.
+// Apple's tools are stubbed, so these run on every platform.
+function loadHook(t, notarize, team = 'B5EHD4JBD2') {
+  const cp = require('node:child_process');
+  const calls = [];
+  t.mock.method(cp, 'execFileSync', (cmd, args) => { calls.push([cmd, ...args].join(' ')); });
+  // codesign -dv prints to stderr, as the real one does.
+  t.mock.method(cp, 'spawnSync', () => ({ status: 0, stdout: '', stderr: `Identifier=app\nTeamIdentifier=${team}\n` }));
+  const hookPath = path.join(root, 'build/notarize.cjs');
+  const notarizePath = require.resolve('@electron/notarize', { paths: [root] });
+  const saved = require.cache[notarizePath];
+  require.cache[notarizePath] = { id: notarizePath, filename: notarizePath, loaded: true, exports: { notarize } };
+  delete require.cache[hookPath];
+  const hook = require(hookPath).default;
+  const keys = ['CI', 'CSC_LINK', 'CSC_KEYCHAIN', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'];
+  const env = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  for (const k of keys) delete process.env[k];
+  t.after(() => {
+    for (const k of keys) if (env[k] === undefined) delete process.env[k]; else process.env[k] = env[k];
+    if (saved) require.cache[notarizePath] = saved; else delete require.cache[notarizePath];
+    delete require.cache[hookPath];
+  });
+  const context = { electronPlatformName: 'darwin', appOutDir: '/out', packager: { appInfo: { productFilename: 'App' } } };
+  return { run: () => hook(context), calls };
+}
+const appleCreds = () => Object.assign(process.env, { APPLE_ID: 'a@b.c', APPLE_APP_SPECIFIC_PASSWORD: 'x', APPLE_TEAM_ID: 'T' });
+
+test('a failed notarization stops the Mac release instead of shipping it unnotarized', async (t) => {
+  const { run, calls } = loadHook(t, async () => { throw new Error('The submission was rejected'); });
+  appleCreds();
+  await assert.rejects(run(), /notarization failed, so the Mac release stops here[\s\S]*The submission was rejected/);
+  assert.ok(!calls.some((c) => c.startsWith('xcrun stapler')), 'nothing is stapled');
+});
+
+test('a notarized Mac build is stapled', async (t) => {
+  let sent;
+  const { run, calls } = loadHook(t, async (opts) => { sent = opts; });
+  appleCreds();
+  await run();
+  assert.equal(sent.teamId, 'T');
+  // The hook joins the path the platform's way; it only runs on a Mac, but the test runs everywhere.
+  assert.ok(calls.includes(`xcrun stapler staple ${path.join('/out', 'App.app')}`));
+});
+
+test('a release signed in CI without notarization credentials fails, a local build does not', async (t) => {
+  const { run } = loadHook(t, async () => assert.fail('no credentials, no submission'));
+  process.env.CSC_LINK = 'cert';
+  await run();
+  process.env.CI = 'true';
+  await assert.rejects(run(), /signed with a Developer ID but has no APPLE_\* notarization credentials/);
+});
+
+test('the Mac app takes no DYLD entitlement, and keeps library validation off for the team Node runtime', () => {
+  const plist = read('build/entitlements.mac.plist');
+  const keys = [...plist.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1]);
+  assert.ok(!keys.includes('com.apple.security.cs.allow-dyld-environment-variables'));
+  assert.ok(keys.includes('com.apple.security.cs.disable-library-validation'));
+});
+
+test('a release signed by any team but the owner\'s fails before notarizing', async (t) => {
+  const { run } = loadHook(t, async () => assert.fail('a wrong team is never submitted'), 'A4X5Y2CSWQ');
+  appleCreds();
+  Object.assign(process.env, { CI: 'true', CSC_KEYCHAIN: '/tmp/signing.keychain-db' });
+  await assert.rejects(run(), /must be signed by Apple team B5EHD4JBD2, but it was signed by A4X5Y2CSWQ/);
+});
+
+test('a release that ended up unsigned fails', async (t) => {
+  const unsigned = loadHook(t, async () => assert.fail('never submitted'), 'not set');
+  Object.assign(process.env, { CI: 'true', CSC_LINK: 'cert' });
+  await assert.rejects(unsigned.run(), /signed by no team/);
+});
+
+test('the notarization team must be the release team too', async (t) => {
+  const { run } = loadHook(t, async () => assert.fail('never submitted'));
+  appleCreds();
+  Object.assign(process.env, { CI: 'true', CSC_LINK: 'cert', APPLE_TEAM_ID: 'OTHERTEAM1' });
+  await assert.rejects(run(), /APPLE_TEAM_ID is OTHERTEAM1, not the release team B5EHD4JBD2/);
+});
+
+test('a release signed by the owner\'s team is notarized', async (t) => {
+  let sent;
+  const { run } = loadHook(t, async (opts) => { sent = opts; });
+  appleCreds();
+  Object.assign(process.env, { CI: 'true', CSC_LINK: 'cert', APPLE_TEAM_ID: 'B5EHD4JBD2' });
+  await run();
+  assert.equal(sent.teamId, 'B5EHD4JBD2');
 });

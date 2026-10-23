@@ -194,16 +194,19 @@ export function useDockScroll(
     publish();
   });
 
+  // Content changed size: follow the latest, or keep the passage being read.
+  const relayout = (el: HTMLElement) => {
+    readPendingScroll(el);
+    if (following.current) el.scrollTop = el.scrollHeight;
+    else restore(el, position.current);
+    remember(el);
+  };
+
   useLayoutEffect(() => {
     const el = list.current;
     const body = content.current;
     if (!open || !el || !body) return;
-    const observer = new ResizeObserver(() => {
-      readPendingScroll(el);
-      if (following.current) el.scrollTop = el.scrollHeight;
-      else restore(el, position.current);
-      remember(el);
-    });
+    const observer = new ResizeObserver(() => relayout(el));
     observer.observe(el);
     observer.observe(body);
     return () => observer.disconnect();
@@ -212,6 +215,10 @@ export function useDockScroll(
   return {
     onScroll,
     jumpToLatest: () => { if (list.current) follow(list.current); },
+    // A reply folded or unfolded in its own commit, after this hook placed the
+    // list: place it again now rather than on the next frame's resize
+    // observer, which a busy renderer can hold back.
+    replyResized: () => { if (open && list.current) relayout(list.current); },
     // A quoted question is a reading action inside the dock: it moves the
     // list only, and never claims the center as opening the dock does.
     showQuestion: (id: string) => {

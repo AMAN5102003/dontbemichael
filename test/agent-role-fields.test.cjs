@@ -42,34 +42,40 @@ test('joining uses whichever field is filled, and nothing when both are empty', 
   assert.equal(joinAgentRole('  ', ''), '');
 });
 
-test('Edit Agent shows Role, Role description and Work style, with plain notes', () => {
+test('Edit Agent shows Role, what they handle read only, What should change and How they work', () => {
+  // Value: protects=the owner reads the job and changes it by saying what should change (work-style-change-request.md, DR4); fails_when=the order changes, a typed job field comes back, or a label loses its info; why_new=the job became read only; seam=source pin
   const src = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/EditAgentModal.tsx'), 'utf8');
-  // The rows are built once (roleRow to workStyleNotes) and laid out in one
+  // The rows are built once (roleRow to schedules) and laid out in one
   // column or, wide, in two (wide panel WD2).
   const briefing = src.slice(src.indexOf('const roleRow = ('), src.indexOf('const engine = ('));
-  const side = src.slice(src.indexOf('<Fields id="briefing" grow>'), src.indexOf('</Fields>', src.indexOf('<Fields id="briefing" grow>')));
-  assert.match(side, /\{roleRow\}\s*\{handlesRow\}\s*\{workStyleRow\}\s*\{schedules\}\s*\{workStyleNotes\}/, 'one column: role, what they handle, work style, then the jobs');
-  for (const label of ["<Row label={t('editAgent.role')}>", "label={t('editAgent.handles', { name: who })}", "label={t('editAgent.workStyle')}"]) {
-    assert.ok(briefing.includes(label), label);
-  }
-  assert.doesNotMatch(briefing, /label="Description"|label="Goal/, 'the old labels are gone');
+  // Groups on soft panels (owner, 2026-10-23, mockup 2B; edit-agent-hierarchy.md
+  // H1, H2): name and role, the whole job with what should change under it,
+  // then the scheduled jobs and the engine.
+  // One keyed tree for both layouts (revise-progress.test.cjs keeps the run).
+  const tree = src.slice(src.indexOf('{/* One tree for both layouts'));
+  assert.match(tree, /<div key="side" style=\{column\}>\s*<Panel id="name">\{nameRow\}\{roleRow\}<\/Panel>\s*\{wide && \(\s*<>\s*\{!isResearch && <Panel id="schedules">\{schedules\}<\/Panel>\}\s*\{engine\}/, 'wide left: who, the jobs, the engine');
+  assert.match(tree, /<div key="job" style=\{column\}>\s*<Panel id="job">\s*\{handlesRow\}\s*\{workStyleRow\}\s*<\/Panel>\s*\{changeRow\}\s*<\/div>/, 'the whole job, the change box under it (H2)');
+  assert.match(tree, /\{!wide && \(\s*<div key="more" style=\{column\}>\s*\{!isResearch && <Panel id="schedules">\{schedules\}<\/Panel>\}\s*\{engine\}\s*\{danger\}/, 'one column: then the jobs, the engine, the danger zone');
+  assert.ok(tree.indexOf('key="side"') < tree.indexOf('key="job"') && tree.indexOf('key="job"') < tree.indexOf('key="more"'), 'one column: who, the job, the rest');
+  assert.ok(briefing.includes("<Row label={t('editAgent.role')}>"));
+  assert.ok(briefing.includes("<ReadRow label={t('editAgent.handles', { name: who })}"));
+  assert.ok(briefing.includes("<ReadRow label={t('jobChange.howWorks', { name: who })}"));
+  assert.doesNotMatch(briefing, /<textarea/, 'nothing in the job is typed here');
   assert.match(briefing, /info=\{t\('editAgent\.handlesInfo', \{ manager: godName, name: who \}\)\}/, 'the office manager by the name the office uses');
-  assert.doesNotMatch(briefing, /Role description/, 'the plain label replaced it (owner, 2026-09-27)');
-  assert.match(briefing, /info=\{t\('editAgent\.workStyleInfo', \{ name: who \}\)\}/);
-  const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/i18n/locales/en.json'), 'utf8')).editAgent;
-  assert.match(en.handlesInfo, /^\{\{manager\}\} reads this to decide what goes to \{\{name\}\}\./);
-  assert.match(en.workStyleInfo, /^How \{\{name\}\} does the job:.*Each scheduled job adds its focus area, set on the job\.$/);
+  assert.match(briefing, /const handlesRow = !lead && \(/, 'Michael and his assistant have none (finding 5)');
+  const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/i18n/locales/en.json'), 'utf8'));
+  assert.match(en.editAgent.handlesInfo, /^\{\{manager\}\} reads this to decide what goes to \{\{name\}\}\./);
   for (const loc of ['en', 'zh-CN', 'ar']) {
-    const keys = Object.keys(JSON.parse(fs.readFileSync(path.resolve(__dirname, `../src/renderer/src/i18n/locales/${loc}.json`), 'utf8')).editAgent);
-    assert.deepEqual(keys, Object.keys(en), `${loc} has every Edit agent string`);
+    const d = JSON.parse(fs.readFileSync(path.resolve(__dirname, `../src/renderer/src/i18n/locales/${loc}.json`), 'utf8'));
+    assert.deepEqual(Object.keys(d.editAgent), Object.keys(en.editAgent), `${loc} has every Edit agent string`);
+    assert.deepEqual(Object.keys(d.jobChange), Object.keys(en.jobChange), `${loc} has every job change string`);
   }
-  assert.doesNotMatch(briefing, /Michael doesn't use it\./, 'Michael has a Work style now (schedule-focus-areas.md F6)');
-  assert.match(briefing, /<ScheduledJobsList agentId=\{agent\.id\} compact \/>/, 'each job and its focus, read only (FA1)');
+  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} name=\{who\} onChange=\{goToSchedules\} \/>/, 'each job and its focus, read only (FA1)');
 });
 
-test('saving joins the fields, keeps the old role when both are empty, and tells the registry', () => {
+test('saving joins the typed title with the saved handles, keeps the old role when empty, and tells the registry', () => {
   const src = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/components/EditAgentModal.tsx'), 'utf8');
-  assert.match(src, /const trimmedDescription = joinAgentRole\(role, roleDescription\) \|\| agent\.description;/);
+  assert.match(src, /const trimmedDescription = joinAgentRole\(role, splitAgentRole\(cur\.description\)\.roleDescription\) \|\| cur\.description;/);
   assert.doesNotMatch(src, /a fresh harness/);
-  assert.match(src, /if \(trimmedDescription !== agent\.description\) \{\s*void window\.cth\.hivePatchAgentRole\(agent\.id, trimmedDescription\)/);
+  assert.match(src, /if \(trimmedDescription !== cur\.description\) \{\s*void window\.cth\.hivePatchAgentRole\(agent\.id, trimmedDescription\)/);
 });

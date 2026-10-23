@@ -346,7 +346,7 @@ test('Settings, General: one About card carries the version once and the update 
   assert.match(upd, /notes: quiet \? \[\] : notes/, 'notes only for a newer version');
   // In Settings' scrolling flex column a card with overflow hidden shrank to
   // 1px (owner, 2026-10-01: "I no longer see the entire merged section").
-  assert.match(card, /<div style=\{\{ flexShrink: 0, background: 'var\(--cth-card\)'/);
+  assert.match(card, /<div style=\{\{ flexShrink: 0, background: panelStyle\.background, borderRadius: panelStyle\.borderRadius \}\}>/, 'on the soft panel (app-style-rollout.md AS2)');
   assert.doesNotMatch(card, /overflow: 'hidden'/);
 });
 
@@ -393,7 +393,7 @@ test('Settings, General hides Explain things simply and Arabic / RTL text in ter
 test('Settings, General hides the Language section (owner, 2026-10-02)', () => {
   assert.equal(loadTs('src/shared/buildFeatures.ts').SHOW_LANGUAGE_PICKER, false);
   const modal = read('src/renderer/src/components/SettingsModal.tsx');
-  assert.match(modal, /\{SHOW_LANGUAGE_PICKER && \(<>\s*<div style=\{\{ height: 1, background: 'var\(--cth-line\)' \}\} \/>\s*\{\/\* Language — app UI language \(i18n\) \*\/\}/);
+  assert.match(modal, /\{SHOW_LANGUAGE_PICKER && \(<>\s*\{\/\* Language — app UI language \(i18n\) \*\/\}/);
   // The saved choice, else English: never the OS locale.
   assert.match(read('src/renderer/src/i18n/index.ts'), /return 'en';\s*\}/);
 });

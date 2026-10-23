@@ -74,7 +74,7 @@ test('Edit agent shows the Danger zone under the engine, behind canDeleteTeamMem
   const danger = src.indexOf('const danger = canDeleteTeamMember(agent) && (');
   assert.ok(engine > 0 && danger > engine, 'Danger zone comes after the engine');
   // Laid out under the engine in both layouts (wide panel WD2).
-  assert.equal((src.match(/\{engine\}\s*(?:<div style=\{\{ flex: 1 \}\} \/>\s*)?\{danger\}/g) ?? []).length, 2);
+  assert.equal((src.match(/\{engine\}\s*(?:<div style=\{\{ flex: 1 \}\} \/>\s*)?\{danger\}/g) ?? []).length, 2, 'both widths');
   const zone = src.slice(danger, src.indexOf('</div>', danger));
   assert.match(zone, /data-fields="danger"/);
   // The Settings Danger zone's card: coral tint, r-xl corners, its 55% coral ring (DESIGN.md 6.3).

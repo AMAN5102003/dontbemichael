@@ -178,6 +178,22 @@
 
 ## Company foundations (deferred from the ship of mit/file-tab-no-bottom-bar, 2026-10-20)
 
+### Ordinary Ask me cards take a file
+
+**What:** A member's own question in Needs you (an ordinary Ask me card) gets the same Add a file as a Company foundations card; the file goes to the asking member by path, the way a message attachment does.
+
+**Why:** The owner's ask on 2026-10-22 was to upload right from the Ask me card; the eng review built it for Company foundations cards only (D1 A), so an ordinary question answered with a document still needs its path typed.
+
+**Pros:** The owner never types a path or file name anywhere in Needs you.
+
+**Cons:** A second path from the foundations one: the file goes to one member, not company knowledge, and needs a look at which folders a member may read (the sandbox), plus copying the file somewhere that survives a restart (`pastes.ts` does this for pasted images).
+
+**Context:** `docs/designs/foundation-card-upload.md` (R1, R9). Start from `AskAnswerFields.tsx` and `AskMeTab.tsx`, the answer route in `src/shared/askMeRouting.ts`, and `dialog:attachFiles` (`src/main/index.ts:6402`).
+
+**Effort:** M (human) / S (CC)
+**Priority:** P3
+**Depends on:** The foundation card upload (docs/designs/foundation-card-upload.md)
+
 ### Name a missing foundation's proof in Early look and Recommendations
 
 **What:** Once the kept as is evidence exists for a question, add a line to Early look and Recommendations such as "Answer who we sell to: Ryan's posts are kept as is 45% without it, 85% with", built from the same proof the member detail box shows.
@@ -200,6 +216,38 @@
 
 **Effort:** M (human) / S (CC)
 **Priority:** P2
+**Depends on:** None
+
+### Keep the other hidden checks' text out of Claude's history
+
+**What:** Turn on `isolateConfig` (`src/main/hiddenClaude.ts`) for the other hidden checks that paste private text: the Research privacy check (`src/main/index.ts`, the trust layer, which already sets `dropTranscript`) and the mail standing fit check. Measure the cost first: each isolated run is about 1.4 s slower and writes about 1 MB to a temporary folder, and the trust layer can run a dozen checks at app launch.
+
+**Why:** Ship review 2026-10-23 found Claude Code keeps every pasted prompt in its shared `~/.claude/history.jsonl` and `paste-cache`, which dropping the transcript does not touch. The file fit check is isolated now (verified live: nothing written under ~/.claude); a message to Pete and an email's text still land there.
+
+**Context:** Isolation relies on `CLAUDE_SECURESTORAGE_CONFIG_DIR`, found in the Claude Code binary and not documented. If a later Claude drops it the session stops at sign in and the check fails closed, which for the trust layer means every message to Pete is held, so check that before widening it. The API key sign in and Windows are untested. The file fit check is isolated on every platform (owner, 2026-10-23), so check a foundation card file upload on Windows first: Claude keeps its sign in in `.credentials.json` inside the settings folder there, and if the variable doesn't reach it every file is refused as "couldn't check".
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### Give the other job helpers the job change's settings
+
+**What:** `convertWorkStyle` (plain words) and `checkFocusArea` in `src/main/workStyleConvert.ts` still start their hidden session with the office folder's settings and hooks and keep the transcript. Give them what `reviseWorkStyle` has: `settingSources: 'user'`, `disableAllHooks` and `dropTranscript`.
+
+**Why:** Codex adversarial pass 2 (2026-10-23): the job text reaches any hook of the owner's or the office folder's. The job change itself keeps no isolated folder by the owner's choice (D9: speed; Claude's history is already closed to members), so its prompt stays in the owner's own Claude history.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
+### A foundation file the card did not take is always removed
+
+**What:** In `saveFileAnswer` (`src/renderer/src/shell/foundationSave.ts`), when the card refuses the answer and `kgRemove` also fails, keep the document id, say so on the card, and remove it again at the next launch. Also ingest the bytes that were checked, not the path again (`src/main/foundations.ts` addFile, `knowledge.ts` ingest), so a file replaced in the seconds between check and save can't slip in.
+
+**Why:** Codex adversarial passes 1 and 2 (2026-10-23). Both need two things to go wrong at once, so they were left out of the ship.
+
+**Effort:** S
+**Priority:** P3
 **Depends on:** None
 
 ## Terminal links (from the ship review of mit/named-links, 2026-10-13)
@@ -452,18 +500,6 @@
 **Depends on:** nothing.
 
 ## Agents and 1:1
-
-### Show the rewritten instructions before saving a work style
-
-**What:** When the owner edits a plain work style (hire or Edit Agent), show the instructions the app wrote from it and let them accept or undo, instead of saving straight away.
-
-**Why:** The owner edits a summary; details the summary left out could still be lost in a rewrite. The prompt now keeps them, but the owner can't see the result.
-
-**Context:** From the /ship pre-landing review of feat/hire-wizard (2026-09-27). `src/main/workStyleConvert.ts`, `toInstructionsPrompt` in `src/shared/workStyleText.ts`, AddAgentModal and EditAgentModal save paths.
-
-**Effort:** S
-**Priority:** P2
-**Depends on:** nothing.
 
 ### End a hidden Claude call early when it can't answer
 
@@ -955,24 +991,6 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Depends on:** nothing.
 
 ## Watch list (no issue seen yet; act only if the symptom shows up)
-
-### The dock scroll test failed once on the macOS runner
-
-**Watch for:** `test/dock-scroll.electron.test.cjs` failing at "bottom follows incoming replies" again, on main or on an unrelated PR.
-
-**What happened:** on PR #209's head 673af795 (CI run 39532678039, first attempt), the non reduced motion run failed at that step: after two replies arrive, the list was not at the bottom, or the new replies button showed. The rerun of the job passed, as did 28 local runs (18 with every core busy). Not reproduced, cause unknown.
-
-**If it shows up:** add the list's `scrollTop`, `scrollHeight`, `clientHeight` and the hook's `following` to that check's message, then look for a scroll event that `useDockScroll` reads as the owner's (`src/renderer/src/shell/useDockScroll.ts`, `onScroll`), for example from a late font swap or a fold measured after the reply arrived.
-
-**Seen again:** on PR #291 (CI run 39539334994, first attempt), same step, again only the normal motion run; the reduced motion run passed. 2 of 3 macOS CI runs.
-
-**Tried (running branch, 2026-10-20, not yet proven on CI):** `useDockScroll` now treats a scroll change under a pixel as layout rounding, and the clamp check (content shrank under the reader) allows a pixel, so a fractional `scrollTop` is no longer read as the owner scrolling up. Every failed check in the dock test page now prints the list's `scrollTop`, `scrollHeight`, `clientHeight` and the catch-up button. If it fails again after 0.2.5 lands, read those numbers first.
-
-**Context:** owner chose to merge #209 and track this, 2026-10-20; on its second failure, chose to fix it on the running branch rather than through a draft PR.
-
-**Effort:** S (CC)
-**Priority:** P3 (watch)
-**Depends on:** nothing.
 
 ### Agents skip their folder or company knowledge
 

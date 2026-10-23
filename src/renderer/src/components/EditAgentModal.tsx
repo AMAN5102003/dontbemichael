@@ -20,7 +20,10 @@ import {
 } from '@/store/config';
 import { BUILD_ENGINES } from '@shared/agentProvider';
 import { splitAgentRole, joinAgentRole } from '@shared/agentRole';
-import { firstTaskSection, roleLabel, plainFallback } from '@shared/workStyleText';
+import { roleLabel, plainFallback } from '@shared/workStyleText';
+import { applyJob, jobBase, jobFingerprint, plainFor, undoJob } from '@shared/jobChange';
+import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
+import { Field, JobParts, Panel as SoftPanel, fieldLabel, jobPartsFold, readBody } from './fieldText';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { ScheduledJobsList } from './ScheduledJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
@@ -46,17 +49,19 @@ export interface EditAgentModalProps {
 
 /**
  * Edit what can change on someone already hired (docs/designs/edit-agent.md):
- * name, job, work style and engine, in one column. The character and its
+ * name, role, job and engine, in one column. The job is read only: the owner
+ * says what should change and Apply saves the rewrite
+ * (docs/designs/work-style-change-request.md). The character and its
  * color are chosen once, in the hire wizard: picking another here turned Pam
  * into a second Michael, and the color drew almost nowhere (owner,
- * 2026-10-02). Save patches the durable roster via updateAgent; engine changes
- * apply on the next restart. Under the engine, a Danger zone deletes the team
+ * 2026-10-02). Save patches the name, role title and engine via updateAgent;
+ * engine changes apply on the next restart. Under the engine, a Danger zone deletes the team
  * member for good (owner, 2026-10-14). Opened wide (wide panel WD1 to WD4) it
  * lays over the wide panel in two columns, and leaving with unsaved changes,
  * by any way out, asks first.
  */
 export function EditAgentModal({ agent, onClose, docked = true, engineOpen: openEngine = false }: EditAgentModalProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const researchName = useResearchName();
   const updateAgent = useStore((s) => s.updateAgent);
   const godName = useResolvedGodName();
@@ -74,6 +79,9 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   // a change of panel waits on the answer (leaveGuard.ts).
   const [asking, setAsking] = useState<'close' | 'leave' | null>(null);
 
+  // The member as saved now: Apply and Undo write it while the dialog is open.
+  const live = useStore((s) => s.agents.find((a) => a.id === agent.id)) ?? agent;
+  const lead = !!(agent.isGod || agent.isAssistant);
   const [name, setName] = useState(agent.name);
   const isResearch = agent.id === RESEARCH_ID;
   const [provider, setProvider] = useState<AgentProvider>(
@@ -87,40 +95,43 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   const [model, setModel] = useState<string | undefined>(agent.model);
   // Folded by default: the engine rarely changes after hiring.
   const [engineOpen, setEngineOpen] = useState(openEngine);
-  // The stored role is one string ("Finance: Keeps track of..."), shown here as
-  // two fields and joined back on save (agentRole.ts).
+  // The stored role is one string ("Finance: Keeps track of..."): the title is
+  // the owner's typed field; "What X handles" changes only through "What
+  // should change?" (work-style-change-request.md, D6 and OV2).
   const [role, setRole] = useState(() => splitAgentRole(agent.description).role);
-  const [roleDescription, setRoleDescription] = useState(() => splitAgentRole(agent.description).roleDescription);
-  // Work style in two forms (owner, 2026-09-27): the owner edits a plain
-  // description (`goal` here); the agent keeps its instructions (agent.goal),
-  // rewritten from the description on save only when it changed.
+  const saved = splitAgentRole(live.description);
+  // The job is read only, in the plain words saved with it (eng D5). Words
+  // that no longer describe the instructions (another writer changed them)
+  // show the quick rewrite at once and are written again once, here.
   // Michael starts from his default Work style (schedule-focus-areas.md F6).
-  const [goal, setGoal] = useState(() => plainFallback(effectiveWorkStyle(agent), roleLabel(splitAgentRole(agent.description).role)));
-  const [plainOfGoal, setPlainOfGoal] = useState(() => plainFallback(effectiveWorkStyle(agent), roleLabel(splitAgentRole(agent.description).role)));
+  const instructions = effectiveWorkStyle(live);
+  const savedPlain = plainFor(live, instructions);
+  const [quickPlain, setQuickPlain] = useState<{ of: string; text: string } | null>(null);
   const [describing, setDescribing] = useState(false);
-  const [writing, setWriting] = useState(false);
-  const [goalError, setGoalError] = useState(false);
-  const [writeError, setWriteError] = useState(false);
-  const describeSeq = useRef(0);
-  /** Show the agent's instructions as a plain description: the quick rewrite
-   *  at once, the model's when it arrives, unless the owner started typing. */
-  const describe = (instructions: string): void => {
-    const seq = ++describeSeq.current;
-    const quick = instructions.trim() ? plainFallback(instructions, roleLabel(splitAgentRole(agent.description).role)) : '';
-    setGoal(quick);
-    setPlainOfGoal(quick);
-    if (!instructions.trim()) { setDescribing(false); return; }
+  const plain = savedPlain ?? (quickPlain?.of === jobFingerprint(instructions) ? quickPlain.text : plainFallback(instructions, roleLabel(saved.role)));
+  useEffect(() => {
+    if (savedPlain || !instructions.trim()) return;
+    const of = jobFingerprint(instructions);
+    let gone = false;
     setDescribing(true);
-    const title = splitAgentRole(agent.description).role;
-    window.cth.workStyleConvert({ to: 'plain', text: instructions, ctx: { name: agent.name, title: title || undefined, manager: godName } })
+    window.cth.workStyleConvert({ to: 'plain', text: instructions, ctx: { name: live.name, title: saved.role || undefined, manager: godName } })
       .then((res) => {
-        if (seq !== describeSeq.current || res.source !== 'ai' || !res.text) return;
-        setGoal((cur) => (cur === quick ? res.text : cur));
-        setPlainOfGoal((cur) => (cur === quick ? res.text : cur));
+        if (gone || res.source !== 'ai' || !res.text) return;
+        setQuickPlain({ of, text: res.text });
+        // Saved only while they still describe the instructions.
+        const now = useStore.getState().agents.find((a) => a.id === agent.id);
+        if (now && jobFingerprint(effectiveWorkStyle(now)) === of) updateAgent(agent.id, { goalPlain: { text: res.text, of } });
       })
       .catch(() => { /* the quick rewrite stays */ })
-      .finally(() => { if (seq === describeSeq.current) setDescribing(false); });
-  };
+      .finally(() => { if (!gone) setDescribing(false); });
+    return () => { gone = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agent.id, savedPlain ? '' : jobFingerprint(instructions)]);
+  const [showAll, setShowAll] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [focusKey, setFocusKey] = useState(0);
+  const [draft, setDraft] = useState(false);
+  const [changing, setChanging] = useState(false);
 
   useEffect(() => {
     void window.cth.getConfig().then(setConfig).catch(() => setConfig(null));
@@ -132,8 +143,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
     setProvider(inferAgentProvider(agent.command, agent.provider));
     setModel(agent.model);
     setRole(splitAgentRole(agent.description).role);
-    setRoleDescription(splitAgentRole(agent.description).roleDescription);
-    describe(effectiveWorkStyle(agent));
+    setStatus(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.id]);
 
@@ -148,37 +158,78 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   };
 
   const preset = providerPreset(provider);
+  const business = { name: config?.businessName, city: config?.businessCity };
+  const current = () => useStore.getState().agents.find((a) => a.id === agent.id) ?? live;
 
-  const save = async () => {
-    if (saving || writing) return;
-    const trimmedName = name.trim() || agent.name;
-    // Work style is required for a team member (owner, 2026-09-27); Michael and
-    // his assistant have none.
-    if (!agent.isGod && !agent.isAssistant && !goal.trim()) { setGoalError(true); return; }
-    setGoalError(false);
-    // The instructions: unchanged when the description is, else written from
-    // it to the house prompting guidelines, keeping the old wording that fits.
-    let trimmedGoal = (agent.goal ?? '').trim();
-    // Michael and his assistant may clear theirs; that saves no work style.
-    if (!goal.trim()) trimmedGoal = '';
-    else if (goal.trim() !== plainOfGoal.trim()) {
-      setWriting(true);
-      setWriteError(false);
-      const res = await window.cth.workStyleConvert({
-        to: 'instructions',
-        text: goal,
-        ctx: {
-          name: trimmedName,
-          title: role.trim() || undefined,
-          business: { name: config?.businessName, city: config?.businessCity },
-          manager: godName
-        },
-        previous: effectiveWorkStyle(agent) || undefined
-      }).catch(() => null);
-      setWriting(false);
-      if (!res?.text?.trim()) { setWriteError(true); return; }
-      trimmedGoal = res.text.trim();
+  /** "What should change?": main rewrites the job from this one change. */
+  const runChange = ({ typed, extras, answer, requestId }: ReviseRun) => {
+    const cur = current();
+    const split = splitAgentRole(cur.description);
+    return window.cth.workStyleRevise({
+      requestId,
+      ctx: { name: cur.name, title: split.role || undefined, business, manager: godName },
+      current: { instructions: effectiveWorkStyle(cur), handles: lead ? '' : split.roleDescription },
+      changes: [typed, ...extras],
+      answer,
+      lead
+    });
+  };
+  /** New duties are checked against every teammate's, as a hire is (D6). */
+  const checkOverlap = async (ok: ReviseOk): Promise<{ names: string[]; why: string } | null> => {
+    const cur = current();
+    const mailboxes = config?.mailboxes ?? [];
+    const team = useStore.getState().agents
+      .filter((a) => a.id !== agent.id && !a.isGod && !a.isAssistant)
+      .map((a) => {
+        const split = splitAgentRole(a.description);
+        const email = config?.agentCapabilities?.[a.id]?.email;
+        return { name: a.name, title: split.role, routing: split.roleDescription, workStyle: a.goal, mailbox: email?.enabled ? mailboxes.find((m) => m.id === email.mailboxes[0])?.address : undefined };
+      });
+    if (!team.length || !ok.handles) return null;
+    const v = await window.cth.hireCheckDistinct({ name: cur.name, title: splitAgentRole(cur.description).role, routing: ok.handles, workStyle: ok.instructions }, team);
+    return v.overlapsWith.length ? { names: v.overlapsWith, why: v.why } : null;
+  };
+  /** Apply saves the job at once (DR3): the instructions, the plain words,
+   *  "What X handles" and Michael's routing line, the change kept for Undo and
+   *  a pack's next default. Refused when the job moved since the run began (A3). */
+  const applyChange = async (ok: ReviseOk, change: string, from: string): Promise<'applied' | 'moved' | 'failed'> => {
+    const cur = current();
+    if (jobBase(cur) !== from) return 'moved';
+    const title = splitAgentRole(cur.description).role;
+    const patch = applyJob(cur, ok, { title, change, now: new Date().toISOString() });
+    // Michael routes work by the role in the office registry: it goes first,
+    // and nothing saves if it can't (as a pack update does).
+    if (patch.description !== cur.description) {
+      const r = await window.cth.hivePatchAgentRole(agent.id, patch.description).catch(() => null);
+      if (!r?.ok) return 'failed';
     }
+    updateAgent(agent.id, patch);
+    // One-time work is a card for Michael, never part of the job (finding 4).
+    if (ok.oneTimeTask && !agent.isGod) {
+      void sendTypedFirstTask(cur.sourceCard, agent.id, cur.name, { ask: ok.oneTimeTask.slice(0, FIRST_TASK_EDITED_MAX), role: title, existing: true });
+    }
+    setStatus(t('jobChange.applied', { name: cur.name }));
+    return 'applied';
+  };
+  /** Undo: the job before the last change, at once, routing line too (DR7). */
+  const undoChange = async (): Promise<void> => {
+    const cur = current();
+    const patch = undoJob(cur);
+    if (!patch) return;
+    if (patch.description !== cur.description) {
+      const r = await window.cth.hivePatchAgentRole(agent.id, patch.description).catch(() => null);
+      if (!r?.ok) { setStatus(t('jobChange.undoFailed')); return; }
+    }
+    updateAgent(agent.id, patch);
+    setStatus(t('jobChange.undone', { name: cur.name }));
+    setFocusKey((k) => k + 1);
+  };
+
+  // Save is for what is typed here: the name, the role title and the engine.
+  // The job saves through Apply.
+  const save = async () => {
+    if (saving) return;
+    const trimmedName = name.trim() || agent.name;
     // A new name goes through the office registry first, the rename Michael
     // and the team read names from. If it's refused (say, the name is taken),
     // the dialog stays open and nothing is saved (owner, 2026-09-25).
@@ -189,8 +240,9 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       if (!renamed.ok) { setNameError(renamed.error ?? t('editAgent.errRename')); return; }
     }
     setNameError(undefined);
-    // Both fields cleared keeps the role it had, rather than saving a blank.
-    const trimmedDescription = joinAgentRole(role, roleDescription) || agent.description;
+    const cur = current();
+    // A cleared title keeps the role it had, rather than saving a blank.
+    const trimmedDescription = joinAgentRole(role, splitAgentRole(cur.description).roleDescription) || cur.description;
     const command = config
       ? buildSpawnCommand(config, model, provider)
       : agent.command;
@@ -199,18 +251,11 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       provider,
       model,
       command,
-      description: trimmedDescription,
-      goal: trimmedGoal || undefined
+      description: trimmedDescription
     });
-    // A First task the owner typed is one-time work, which the instructions
-    // leave out: it goes to Michael as a card instead (ship review SR5).
-    const typedFirstTask = goal.trim() !== plainOfGoal.trim() ? firstTaskSection(goal)?.body.trim().slice(0, FIRST_TASK_EDITED_MAX) : '';
-    if (typedFirstTask && !agent.isGod) {
-      void sendTypedFirstTask(agent.sourceCard, agent.id, trimmedName, { ask: typedFirstTask, role: role.trim(), existing: true });
-    }
     // Michael routes work by the role in the office registry. Update it now, so
     // he sees the change on his next message instead of after a restart.
-    if (trimmedDescription !== agent.description) {
+    if (trimmedDescription !== cur.description) {
       void window.cth.hivePatchAgentRole(agent.id, trimmedDescription).catch(() => undefined);
     }
     // A new engine for a member that isn't reporting starts it on that engine
@@ -221,7 +266,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
 
   // Deleting is final (owner, 2026-10-14): one confirm, then they are gone.
   const remove = async () => {
-    if (deleting || saving || writing) return;
+    if (deleting || saving || changing) return;
     if (!confirm(deleteConfirmText(agent.id, agent.name, t))) return;
     setDeleting(true);
     const st = useStore.getState();
@@ -238,9 +283,10 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
     onClose();
   };
 
-  const saved = splitAgentRole(agent.description);
-  const dirty = name !== agent.name || role !== saved.role || roleDescription !== saved.roleDescription
-    || goal.trim() !== plainOfGoal.trim() || provider !== inferAgentProvider(agent.command, agent.provider) || model !== agent.model;
+  // The footer is Close until a typed field changes (DR3).
+  const edited = name !== agent.name || role !== splitAgentRole(agent.description).role
+    || provider !== inferAgentProvider(agent.command, agent.provider) || model !== agent.model;
+  const dirty = edited || draft;
   const dirtyRef = useRef(dirty);
   dirtyRef.current = dirty;
   // A change of panel that would take this one away waits while there are
@@ -253,15 +299,34 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
     });
   }, [inColumn, agent.id]);
   const requestClose = (): void => { if (dirtyRef.current) setAsking('close'); else onClose(); };
-  const keepEditing = (): void => { if (asking === 'leave') answerLeave(false); setAsking(null); };
-  const discard = (): void => { const leaving = asking === 'leave'; setAsking(null); onClose(); if (leaving) answerLeave(true); };
+  // Where to go once the dialog has closed: the Access tab's On a schedule.
+  const afterClose = useRef<(() => void) | null>(null);
+  const goToSchedules = (): void => {
+    const go = (): void => {
+      if (!docked) useStore.getState().setFullscreen(null);
+      useStore.getState().openSchedules(agent.id);
+    };
+    if (dirtyRef.current) { afterClose.current = go; setAsking('close'); return; }
+    onClose();
+    go();
+  };
+  const keepEditing = (): void => { afterClose.current = null; if (asking === 'leave') answerLeave(false); setAsking(null); };
+  const discard = (): void => {
+    const leaving = asking === 'leave';
+    const after = afterClose.current;
+    afterClose.current = null;
+    setAsking(null);
+    onClose();
+    if (leaving) answerLeave(true);
+    after?.();
+  };
 
   const who = name.trim() || agent.name;
   // What the folded Engine line shows: the provider, and the model when it has one.
   const providerLabel = AGENT_PROVIDER_PRESETS.find((p) => p.id === provider)?.label ?? provider;
   const modelLabel = preset.supportsModel && model ? (modelsForProvider(provider).find((m) => m.id === model)?.label ?? model) : '';
-  const busy = saving || writing || deleting;
-  const readText: CSSProperties = wide ? { fontSize: 14, lineHeight: '22px' } : {};
+  const busy = saving || deleting;
+  const lastChange = live.jobChanges?.[live.jobChanges.length - 1];
 
   const nameRow = (
     // The owner names the Research member (owner, ship 2 D17); whatever its
@@ -294,56 +359,54 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       />
     </Row>
   );
-  const handlesRow = (
-    <Row
-      label={t('editAgent.handles', { name: who })}
-      info={t('editAgent.handlesInfo', { manager: godName, name: who })}
-    >
-      <textarea
-        value={roleDescription}
-        onChange={(e) => setRoleDescription(e.target.value)}
-        placeholder={t('editAgent.handlesPlaceholder')}
-        rows={5}
-        className="cth-input"
-        dir="auto"
-        style={{ ...inputStyle, ...readText, fontFamily: 'var(--cth-font-ui)', resize: 'vertical', minHeight: wide ? 180 : 110 }}
-      />
-    </Row>
+  // Michael and his assistant have no "What X handles" (finding 5).
+  const handlesRow = !lead && (
+    <ReadRow label={t('editAgent.handles', { name: who })} info={t('editAgent.handlesInfo', { manager: godName, name: who })}>
+      <div dir="auto" style={readBody(wide)}>{saved.roleDescription || t('jobChange.noWorkStyle', { name: who })}</div>
+    </ReadRow>
   );
+  const changeRow = (
+    <JobChangeReview
+      who={who}
+      lead={lead}
+      box={{ label: t('jobChange.whatChange'), info: t('jobChange.whatChangeInfo', { name: who }), placeholder: t('jobChange.whatChangePlaceholder'), button: t('jobChange.see') }}
+      run={runChange}
+      checkOverlap={lead ? undefined : checkOverlap}
+      base={() => jobBase(current())}
+      apply={applyChange}
+      applyLabel={t('jobChange.apply')}
+      status={status}
+      focusKey={focusKey}
+      onDraft={setDraft}
+      onBusy={(b) => { setChanging(b); if (b) setStatus(null); }}
+      sendsTask={!agent.isGod}
+    />
+  );
+  // In its parts, folded to the first (H4), with Undo and the last change
+  // under it; the change box sits below it, after the job is read (owner,
+  // 2026-10-23).
+  const long = jobPartsFold(plain);
   const workStyleRow = (
-    <Row
-      grow
-      label={t('editAgent.workStyle')}
-      info={t('editAgent.workStyleInfo', { name: who })}
-    >
-      <textarea
-        value={goal}
-        onChange={(e) => { describeSeq.current++; setDescribing(false); setGoal(e.target.value); if (e.target.value.trim()) setGoalError(false); }}
-        aria-invalid={goalError || undefined}
-        placeholder={t('editAgent.workStylePlaceholder', { name: who })}
-        rows={4}
-        className="cth-input"
-        dir="auto"
-        style={{ ...inputStyle, ...readText, fontFamily: 'var(--cth-font-ui)', resize: 'none', minHeight: 320, flex: 1 }}
-      />
-    </Row>
-  );
-  const schedules = <ScheduledJobsList agentId={agent.id} compact />;
-  const workStyleNotes = (
-    <>
-      {goalError && (
-        <span role="alert" style={{ ...helperStyle, color: 'var(--cth-coral-text)' }}>
-          {t('editAgent.errWorkStyle', { name: agent.name })}
-        </span>
+    <ReadRow label={t('jobChange.howWorks', { name: who })} info={t('jobChange.howWorksInfo', { name: who })}>
+      {plain.trim() ? (
+        <JobParts plain={plain} wide={wide} folded={!showAll} />
+      ) : (
+        <span style={helperStyle}>{t('jobChange.noWorkStyle', { name: who })}</span>
       )}
-      {describing && <span aria-live="polite" style={helperStyle}>{t('editAgent.describing')}</span>}
-      {writeError && (
-        <span role="alert" style={{ ...helperStyle, color: 'var(--cth-coral-text)' }}>
-          {t('editAgent.errWrite')}
-        </span>
+      {describing && <span aria-live="polite" style={helperStyle}>{t('jobChange.describing')}</span>}
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        {long && <button type="button" aria-expanded={showAll} onClick={() => setShowAll((v) => !v)} style={linkStyle}>{showAll ? t('jobChange.showLess') : t('jobChange.showAll')}</button>}
+        {live.jobPrevious && <button type="button" onClick={() => { void undoChange(); }} disabled={changing} style={linkStyle}>{t('jobChange.undo')}</button>}
+      </div>
+      {lastChange && (
+        <span style={helperStyle}>{t('jobChange.lastChange', { date: new Date(lastChange.at).toLocaleDateString(i18n.language, { day: 'numeric', month: 'short' }), text: lastChange.text })}</span>
       )}
-    </>
+    </ReadRow>
   );
+  // Scheduled jobs are their own group, apart from the duties
+  // (edit-agent-scheduled-jobs.md, SJ2); "Change on Access" closes this
+  // dialog first, asking when something is unsaved (SJ3).
+  const schedules = <ScheduledJobsList agentId={agent.id} name={who} onChange={goToSchedules} />;
   const engine = (
     <>
       {/* The engine rarely changes: one folded line naming it, closed by default. */}
@@ -358,7 +421,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
         }}
       >
         <Disclosure open={engineOpen} />
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{t('editAgent.engine')}</span>
+        <span style={fieldLabel}>{t('editAgent.engine')}</span>
         {!engineOpen && (
           <span style={{ fontSize: 12, color: 'var(--cth-ink-3)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {modelLabel ? `${providerLabel}, ${modelLabel}` : providerLabel}
@@ -465,62 +528,58 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       below={wide}
       dim={!wide}
       actions={inColumn ? <WideButton disabled={busy} size={30} /> : undefined}
-      footer={(
+      footer={edited ? (
         <>
           <PixelButton variant="ghost" size="md" onClick={requestClose}>{t('editAgent.cancel')}</PixelButton>
           <div style={{ flex: 1 }} />
-          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={busy}>{writing ? t('editAgent.writing') : t('editAgent.save')}</PixelButton>
+          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={busy || changing}>{t('editAgent.save')}</PixelButton>
+        </>
+      ) : (
+        <>
+          <div style={{ flex: 1 }} />
+          <PixelButton variant="secondary" size="md" onClick={requestClose}>{t('editAgent.close')}</PixelButton>
         </>
       )}
     >
-      {wide ? (
-        // Two columns (WD2): the short fields at 300 to 360 px, the work
-        // style beside them at most 720 px across; the pair centers. In
-        // Arabic the grid mirrors with the page.
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 32, flex: 1, minHeight: 0 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
-            <Fields id="name">{nameRow}</Fields>
-            <Fields id="briefing">
-              {roleRow}
-              {handlesRow}
-              {schedules}
-            </Fields>
+      {/* One tree for both layouts (owner, 2026-10-23: going wide mid change
+          lost the run and the typed words): the job and What should change?
+          stay in the column keyed "job", so React keeps them, and their run,
+          when the panel goes wide or back. Wide (WD2): two columns, who they
+          are, their timers and engine at 300 to 360 px, the whole job beside
+          them at most 720 px across; in Arabic the grid mirrors with the page.
+          One column (DR4, H2): name and role, the job with what should change
+          under it, then the scheduled jobs and the engine. Each group sits on
+          its own soft panel, field labels only (mockup 2B; edit-agent-hierarchy.md
+          H1, H2). */}
+      <div style={wide
+        ? { display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 32, flex: 1, minHeight: 0 }
+        : { display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div key="side" style={column}>
+          <Panel id="name">{nameRow}{roleRow}</Panel>
+          {wide && (
+            <>
+              {!isResearch && <Panel id="schedules">{schedules}</Panel>}
+              {engine}
+              <div style={{ flex: 1 }} />
+              {danger}
+            </>
+          )}
+        </div>
+        <div key="job" style={column}>
+          <Panel id="job">
+            {handlesRow}
+            {workStyleRow}
+          </Panel>
+          {changeRow}
+        </div>
+        {!wide && (
+          <div key="more" style={column}>
+            {!isResearch && <Panel id="schedules">{schedules}</Panel>}
             {engine}
-            <div style={{ flex: 1 }} />
             {danger}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-            {workStyleRow}
-            {workStyleNotes}
-          </div>
-        </div>
-      ) : (
-      // One column (D3): name, job, work style, then the engine folded away, so
-      // what they handle and the work style get the room (owner, 2026-10-02).
-      // Field labels only; explanations sit behind info icons.
-      //
-      // The whole window's height (owner, 2026-10-02): the work style box
-      // takes whatever the other fields leave, and the body scrolls only on
-      // a window too short for its minimum. No `minHeight: 0` on this column,
-      // the briefing fields or the work style row: each must keep its content's
-      // height, or the work style box (min 320) spills out of its row and the
-      // scheduled jobs under it draw on top of it (owner, 2026-10-10).
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
-        <Fields id="name">{nameRow}</Fields>
-
-        <Fields id="briefing" grow>
-          {roleRow}
-          {handlesRow}
-          {workStyleRow}
-          {schedules}
-          {workStyleNotes}
-        </Fields>
-
-        {engine}
-
-        {danger}
+        )}
       </div>
-      )}
     </Dialog>
     {asking && (
       // WD4: leaving with unsaved changes asks; Keep editing is the default.
@@ -583,22 +642,31 @@ const lockedValueStyle: CSSProperties = {
   fontSize: 13, color: 'var(--cth-ink)', fontFamily: 'var(--cth-font-ui)'
 };
 
-/** A group of fields with no heading (D3: field labels only). `id` names the
- *  group for tests and the reader; nothing shows it. */
-function Fields({ id, grow, children }: { id: 'name' | 'briefing' | 'engine'; grow?: boolean; children: React.ReactNode }) {
-  return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12, ...(grow ? { flex: 1 } : {}) }}>{children}</div>;
+/** A quiet underlined link: Show all, Undo. */
+const linkStyle: CSSProperties = {
+  padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
+  fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)', textDecoration: 'underline', textUnderlineOffset: 2
+};
+
+/** The engine's fields, unfolded under its line. `id` names the group for
+ *  tests and the reader; nothing shows it. */
+function Fields({ id, children }: { id: 'engine'; children: React.ReactNode }) {
+  return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
 }
 
-/** A field with its label; `info` puts the explanation behind an info icon
- *  (owner, 2026-09-27: less verbose everywhere). */
-function Row({ label, info, grow, children }: { label: string; info?: string; grow?: boolean; children: React.ReactNode }) {
-  return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, ...(grow ? { flex: 1 } : {}) }}>
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
-        {info && <InfoTip text={info} label={label} />}
-      </span>
-      {children}
-    </label>
-  );
+/** A column of groups, 14 px apart, in either layout. */
+const column: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 };
+
+/** One group of fields on the shared soft panel (owner, 2026-10-23, mockup
+ *  2B; edit-agent-hierarchy.md H1). */
+function Panel({ id, children }: { id: 'name' | 'job' | 'schedules'; children: React.ReactNode }) {
+  return <SoftPanel id={`edit-agent-${id}`}>{children}</SoftPanel>;
+}
+
+/** A field and a read only field, in the app's field style (fieldText). */
+function Row(p: { label: string; info?: string; children: React.ReactNode }) {
+  return <Field label={p.label} info={p.info}>{p.children}</Field>;
+}
+function ReadRow(p: { label: string; info?: string; children: React.ReactNode }) {
+  return <Field read label={p.label} info={p.info}>{p.children}</Field>;
 }

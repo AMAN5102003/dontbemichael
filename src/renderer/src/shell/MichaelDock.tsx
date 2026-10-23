@@ -275,6 +275,7 @@ export function MichaelDock({ dock, refresh, godId, onFillComposer, onReply, com
           const question = dock.items.find((q): q is DockQuestion => q.kind === 'owner' && q.id === it.replyTo);
           return [divider, <ReplyBubble key={key} dataKey={key} r={it} wide={wide} godId={godId} godName={godName} quote={quote}
             expanded={!!expanded[key]} onMore={() => { scroll.pauseForExpansion(); setExpanded((e) => ({ ...e, [key]: true })); }}
+            onFold={scroll.replyResized}
             onQuote={() => scroll.showQuestion(it.replyTo)}
             canReply={canReply.has(it)}
             onReply={() => question && onReply({ inReplyTo: it.id, conversation: question.conversation, text: firstSentence(it.text) })} />];
@@ -352,8 +353,8 @@ function statusWords(q: DockQuestion, ahead: number, godName: string, t: (k: str
   }
 }
 
-function ReplyBubble({ dataKey, r, wide, godId, godName, quote, expanded, onMore, onQuote, canReply, onReply }: {
-  dataKey: string; r: DockReply; wide: boolean; godId: string; godName: string; quote?: DockQuestion; expanded: boolean; onMore: () => void; onQuote: () => void;
+function ReplyBubble({ dataKey, r, wide, godId, godName, quote, expanded, onMore, onFold, onQuote, canReply, onReply }: {
+  dataKey: string; r: DockReply; wide: boolean; godId: string; godName: string; quote?: DockQuestion; expanded: boolean; onMore: () => void; onFold: () => void; onQuote: () => void;
   canReply: boolean; onReply: () => void;
 }) {
   const { t } = useTranslation();
@@ -379,6 +380,14 @@ function ReplyBubble({ dataKey, r, wide, godId, godName, quote, expanded, onMore
     return () => ro.disconnect();
   }, [text, open]);
   const folded = !open && clipped;
+  // Folding shows More (and unfolding hides it) in a commit after the dock
+  // placed its list, so the dock places it again; not on the first render,
+  // which the dock's own commit already placed.
+  const placed = useRef(false);
+  useLayoutEffect(() => {
+    if (placed.current) onFold();
+    placed.current = true;
+  }, [folded]);
   return (
     <div data-k={dataKey} style={{ display: 'flex', gap: 8, alignItems: 'flex-start', maxWidth: '92%' }}>
       <AgentAvatar id={godId} name={godName} size={22} />

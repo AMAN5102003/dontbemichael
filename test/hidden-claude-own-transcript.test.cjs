@@ -37,7 +37,9 @@ test('each session reads its own transcript, even when a neighbour finished a mo
 test('runHiddenClaude names its session and never picks the newest file in the folder', () => {
   const src = read('src/main/hiddenClaude.ts');
   assert.match(src, /'--session-id', sessionId,/);
-  assert.match(src, /lastAssistantText\(transcriptFile\(projectDir\(opts\.cwd\), sessionId\)\)/);
+  assert.match(src, /lastAssistantText\(transcriptFile\(sessionDir\(\), sessionId\)\)/);
+  // The session's folder: the throwaway settings folder when isolated, else the project's.
+  assert.match(src, /const sessionDir = \(\): string => \(isolated \? join\(isolated\.dir, 'projects', projectKey\(opts\.cwd\)\) : projectDir\(opts\.cwd\)\);/);
   assert.doesNotMatch(src, /readdirSync|mtime/, 'no newest-file guess');
   // A quiet screen without an answer waits instead of failing.
   assert.match(src, /if \(text\) \{ finish\(\{ ok: true, text \}\); return; \}\s*if \(idleTimer\) clearTimeout\(idleTimer\);\s*idleTimer = setTimeout\(captureAndFinish, idleMs\);/);
@@ -63,8 +65,10 @@ test('a quick judgment skips extended thinking and takes its answer the moment i
   const convert = read('src/main/workStyleConvert.ts');
   const focus = convert.slice(convert.indexOf('export async function checkFocusArea'));
   assert.match(focus, /thinking: false,/);
-  // Writing a work style is not a quick judgment: it keeps the CLI's setting.
-  assert.doesNotMatch(convert.slice(0, convert.indexOf('export async function checkFocusArea')), /thinking: false/);
+  // Writing a work style from plain words keeps the CLI's setting; a job change
+  // runs without thinking (owner, 2026-10-23: 7s of model time against 12 to 35s).
+  assert.doesNotMatch(convert.slice(0, convert.indexOf('export async function reviseWorkStyle')), /thinking: false/);
+  assert.match(convert.slice(convert.indexOf('export async function reviseWorkStyle'), convert.indexOf('export async function checkFocusArea')), /thinking: false,/);
 });
 
 test('an answer is only taken once its text block is complete', () => {
