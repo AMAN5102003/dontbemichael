@@ -58,6 +58,7 @@ import {
 import { roleLabel, plainFallback } from '@shared/workStyleText';
 import { jobFingerprint, type JobChangeEntry } from '@shared/jobChange';
 import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
+import { JobParts, fieldLabel, jobPartsFold, readBody } from './fieldText';
 import { useRtl } from '@/i18n/useDirection';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { SHOW_IMPORT_HIRE, SHOW_ENGINE_PICKER, SHOW_MAILBOXES } from '@shared/buildFeatures';
@@ -1027,12 +1028,12 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
               {instructions.trim() ? (
                 <>
                   <ReadRow label={tr('jobChange.handles', { name: hireWho })} info={tr('addAgent.roleHelp', { godName, name: hireWho })}>
-                    <div dir={rtl ? 'auto' : undefined} style={readStyle}>{routing}</div>
+                    <div dir={rtl ? 'auto' : undefined} style={readBody(false)}>{routing}</div>
                   </ReadRow>
                   <ReadRow label={tr('jobChange.howWorks', { name: hireWho })} info={tr('jobChange.howWorksInfo', { name: hireWho })}>
-                    <div dir={rtl ? 'auto' : undefined} style={{ ...readStyle, whiteSpace: 'pre-wrap', ...(plainAll ? {} : clampStyle) }}>{plain}</div>
+                    <JobParts plain={plain} folded={!plainAll} />
                     {describing && <span aria-live="polite" style={helperStyle}>{tr('jobChange.describing')}</span>}
-                    {(plain.split('\n').length > 4 || plain.length > 320) && (
+                    {jobPartsFold(plain) && (
                       <button type="button" aria-expanded={plainAll} onClick={() => setPlainAll((v) => !v)} style={{ ...linkStyle, alignSelf: 'flex-start' }}>{plainAll ? tr('jobChange.showLess') : tr('jobChange.showAll')}</button>
                     )}
                   </ReadRow>
@@ -1437,22 +1438,19 @@ function ReadRow({ label, info, children }: { label: string; info?: string; chil
   return (
     <div role="group" aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
+        <span style={fieldLabel}>{label}</span>
         {info && <InfoTip text={info} label={label} />}
       </span>
       {children}
     </div>
   );
 }
-const readStyle: CSSProperties = { fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)' };
-/** The job folded to four lines, as Edit agent shows it (DR4). */
-const clampStyle: CSSProperties = { display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
 
 function Row({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
+        <span style={fieldLabel}>{label}</span>
         {info && <InfoTip text={info} label={label} />}
       </span>
       {children}

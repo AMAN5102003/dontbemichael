@@ -327,6 +327,44 @@ export function instructionsFallback(plain: string, ctx: WorkStyleContext): stri
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/** One part of the plain words: its label ("The job") and its words. */
+export interface PlainPart {
+  label: string;
+  text: string;
+}
+
+/** The labels the plain words use (toPlainPrompt, plainFallback). */
+const KNOWN_PART = /^(the job|how the work is done|asks (?:you|the owner) first)\s*[:：]\s*(.*)$/i;
+/** Any short label alone on its line ("Refunds:"); it starts with a letter, so
+ *  "9:00" never counts, and a colon before "//" is a link, not a label. */
+const LONE_PART = /^(\p{L}[^:：/\n]{0,39})[:：]$/u;
+
+/**
+ * The plain words in their parts, for How X works (docs/designs/edit-agent-hierarchy.md,
+ * H4): a part starts at a label alone on its line, or at one of the three
+ * known labels with words after it. Words before the first label are a part
+ * with no label; text with no labels is one part.
+ */
+export function plainParts(plain: string): PlainPart[] {
+  const parts: PlainPart[] = [];
+  let cur: PlainPart | null = null;
+  for (const raw of plain.replace(/\r/g, '').split('\n')) {
+    const line = raw.trim();
+    const known = KNOWN_PART.exec(line);
+    const lone = known ? null : LONE_PART.exec(line);
+    if (known || lone) {
+      cur = { label: (known ? known[1] : lone![1]).trim(), text: known ? known[2] : '' };
+      parts.push(cur);
+      continue;
+    }
+    if (!cur) { cur = { label: '', text: '' }; parts.push(cur); }
+    cur.text = cur.text ? `${cur.text}\n${line}` : line;
+  }
+  return parts
+    .map((p) => ({ label: p.label.charAt(0).toUpperCase() + p.label.slice(1), text: p.text.replace(/\n{3,}/g, '\n\n').trim() }))
+    .filter((p) => p.label || p.text);
+}
+
 /** A model answer cleaned for use: fences and a leading label dropped. */
 export function cleanAnswer(text: string): string {
   return text.trim().replace(/^```[a-z]*\n?/i, '').replace(/\n?```$/, '').trim();

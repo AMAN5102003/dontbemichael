@@ -54,7 +54,7 @@ test('the group: a heading with the count and an info icon, rows with when, focu
   // Value: protects=SJ1, SJ4 to SJ6 in the shared group; fails_when=the heading, count, pill, None yet or the failed read line goes, or Research shows a group; why_new=the group is new; seam=none; no_claim=source pins, not rendered
   const src = read('src/renderer/src/components/ScheduledJobs.tsx');
   assert.match(src, /role="group" aria-label=\{jobs\.length \? `\$\{title\}, \$\{jobs\.length\}` : title\}/);
-  assert.match(src, /\{jobs\.length > 0 && <span style=\{\{ fontSize: 12, color: 'var\(--cth-ink-3\)' \}\}>\{jobs\.length\}<\/span>\}/);
+  assert.match(src, /\{jobs\.length > 0 && <span style=\{\{ fontSize: heading === 'panel' \? 15 : 12, color: 'var\(--cth-ink-3\)' \}\}>\{jobs\.length\}<\/span>\}/);
   assert.match(src, /<InfoTip text=\{t\(office \? 'scheduledJobs\.infoOffice' : 'scheduledJobs\.info', \{ name \}\)\} label=\{title\} \/>/);
   assert.match(src, /const jobs = orderedJobs\(all, Date\.now\(\)\);/);
   assert.match(src, /fontFamily: 'var\(--cth-font-mono\)'/, 'the when line in mono (DESIGN.md)');

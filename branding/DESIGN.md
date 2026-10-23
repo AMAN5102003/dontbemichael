@@ -354,13 +354,18 @@ Rules:
 | `t-view` | 20 / 26 | 600 | View title on the stage ("Office", "Tasks") |
 | `t-panel` | 15 / 20 | 600 | Right column heading, person name in the panel header |
 | `t-ui` | 13 / 18 | 400 to 600 | Base UI: tabs, buttons, inputs, body |
-| `t-read` | 14 / 22 | 400 | Long text boxes in a wide panel only (what a person handles, their work style), and the wide 1:1's questions and replies (§7.19) |
+| `t-read` | 14 / 22 | 400 | Long text boxes in a wide panel only (what a person handles, their work style), and the wide 1:1's questions and replies (§7.19); read only text under a field label is `ink-2` |
 | `t-body` | 12 / 16.5 | 400 | Card body text, Michael's questions, descriptions |
 | `t-meta` | 11 / 15 | 400 to 600 | Captions, chips, meta lines, hints |
 | `t-micro` | 10 / 13 | 600 | Uppercase micro labels, status pills, badges |
 
 Floor: nothing below 10 px, and 10 px only for uppercase micro labels, pills and
 badges.
+
+A field label outranks what it labels (owner, 2026-10-23,
+`docs/designs/edit-agent-hierarchy.md`): in forms and read only fields the ramp is a
+section heading `t-panel` 600 `ink`, a field label `t-ui` 600 `ink`, and the text `t-read`
+(wide) or `t-ui` (side) 400 `ink-2`. One source: `components/fieldText.tsx`.
 
 ### 4.3 Web scale [Web]
 
@@ -1204,10 +1209,16 @@ dialogs. The hire wizard's steps are numbered circles (done `green` with a check
 `ink`), its character tiles and job rows use the `indigo` soft selection, and its strings
 are sentence case. Closing time is the closing bar (§7.23), not a dialog.
 
-**Edit agent** (`docs/designs/edit-agent.md`, owner 2026-10-02) changes only what can change on
+**Edit agent** (`docs/designs/edit-agent.md`, owner 2026-10-02; sections since
+`docs/designs/edit-agent-hierarchy.md`, owner 2026-10-23) changes only what can change on
 someone already hired, in one column, laid exactly over the person's panel it edits (its
 box and radius, kept in step on resize; with no panel, 640 wide, full height, on the right,
-left in RTL): Name, Role,
+left in RTL). It reads by sections, each but a column's first under a 1 px `line` hairline with
+20 px above, its heading an `h3` in `t-panel` 600: Name and Role at the top with no heading
+(the dialog title says who); "Kelly's job" (wide: the whole right column) with What they
+handle, How they work in its parts (each part's name 12 px 600 over its words, folded to the
+first part) and What should change?; then Scheduled jobs; then the Engine line. In one
+column, in that order. Older order, for reference: Name, Role,
 What they handle (read only text), How they work (read only, folded to four lines with Show
 all, Undo last change and "Last change, 22 Oct: ..."), What should change? under the job it
 changes (owner, 2026-10-23; wide, the same in the right column), the Scheduled jobs group
@@ -1218,7 +1229,7 @@ Cancel and Save changes; the job saves only through the preview's Apply. Under t
 who can be deleted (never Michael, his assistant or Pete), the Danger zone: one coral
 tinted row, r-xl corners and the 1.5 px coral ring of §6.3, its name with an info icon and
 the destructive Delete button. No section headings; field
-labels only, with explanations behind info icons. The character is chosen once, in the hire wizard, and a
+labels and section headings (owner, 2026-10-23), with explanations behind info icons. The character is chosen once, in the hire wizard, and a
 person's color is their department's, set by the job; Edit agent offers neither.
 
 **Scheduled jobs** (`ScheduledJobsList`, `docs/designs/edit-agent-scheduled-jobs.md`, owner

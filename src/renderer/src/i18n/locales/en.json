@@ -3068,6 +3068,7 @@
     "previewTitle": "Here's what changes",
     "previewTitleNew": "Here's {{name}}'s job",
     "oneTimeTask": "This task goes to {{manager}} as a card: {{task}}",
+    "jobOf": "{{name}}'s job",
     "handles": "What {{name}} handles",
     "unchanged": "Unchanged",
     "seeWhole": "See the whole new job",

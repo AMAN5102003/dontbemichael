@@ -5,6 +5,7 @@ import { whenParts } from '@shared/scheduleTimes';
 import { RESEARCH_ID } from '@shared/research';
 import { useStore } from '@/store/store';
 import { InfoTip } from './InfoTip';
+import { fieldLabel, sectionHeading } from './fieldText';
 import { useGodId, useMissions, whenText } from './triggers/ScheduleList';
 
 /**
@@ -24,8 +25,9 @@ export interface ScheduledJobsListProps {
   agentId: string;
   /** The agent's name, for the info icon. */
   name: string;
-  /** 'label' in Edit agent (the field label style), 'section' on the Profile tab. */
-  heading?: 'label' | 'section';
+  /** 'panel' in Edit agent (its section heading, edit-agent-hierarchy.md H3),
+   *  'section' on the Profile tab, 'label' as a field label. */
+  heading?: 'label' | 'section' | 'panel';
   /** "Change on Access": Edit agent closes itself first; the default opens the
    *  Access tab with On a schedule unfolded. */
   onChange?: () => void;
@@ -46,11 +48,13 @@ export function ScheduledJobsList({ agentId, name, heading = 'label', onChange, 
   return (
     <div role="group" aria-label={jobs.length ? `${title}, ${jobs.length}` : title} data-scheduled-jobs style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-          <span style={heading === 'section' ? sectionStyle : labelStyle}>{title}</span>
-          {jobs.length > 0 && <span style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{jobs.length}</span>}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+          {heading === 'panel'
+            ? <h3 style={{ ...sectionHeading, display: 'inline' }}>{title}</h3>
+            : <span style={heading === 'section' ? sectionStyle : fieldLabel}>{title}</span>}
+          {jobs.length > 0 && <span style={{ fontSize: heading === 'panel' ? 15 : 12, color: 'var(--cth-ink-3)' }}>{jobs.length}</span>}
           <InfoTip text={t(office ? 'scheduledJobs.infoOffice' : 'scheduledJobs.info', { name })} label={title} />
-        </span>
+        </div>
         {status !== 'loading' && (
           <button type="button" onClick={change} style={linkStyle}>
             {office ? t('scheduledJobs.changeOnOffice') : status === 'ready' && jobs.length === 0 ? t('scheduledJobs.addOnAccess') : t('scheduledJobs.changeOnAccess')}
@@ -103,7 +107,6 @@ function JobRow({ job, first }: { job: ScheduledMission; first: boolean }) {
   );
 }
 
-const labelStyle: CSSProperties = { fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' };
 const sectionStyle: CSSProperties = { fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink-700)' };
 const linkStyle: CSSProperties = {
   flexShrink: 0, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',

@@ -23,6 +23,7 @@ import { splitAgentRole, joinAgentRole } from '@shared/agentRole';
 import { roleLabel, plainFallback } from '@shared/workStyleText';
 import { applyJob, jobBase, jobFingerprint, plainFor, undoJob } from '@shared/jobChange';
 import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
+import { JobParts, fieldLabel, jobPartsFold, readBody, sectionHeading } from './fieldText';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { ScheduledJobsList } from './ScheduledJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
@@ -325,7 +326,6 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   const providerLabel = AGENT_PROVIDER_PRESETS.find((p) => p.id === provider)?.label ?? provider;
   const modelLabel = preset.supportsModel && model ? (modelsForProvider(provider).find((m) => m.id === model)?.label ?? model) : '';
   const busy = saving || deleting;
-  const readText: CSSProperties = wide ? { fontSize: 14, lineHeight: '22px' } : {};
   const lastChange = live.jobChanges?.[live.jobChanges.length - 1];
 
   const nameRow = (
@@ -362,7 +362,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   // Michael and his assistant have no "What X handles" (finding 5).
   const handlesRow = !lead && (
     <ReadRow label={t('editAgent.handles', { name: who })} info={t('editAgent.handlesInfo', { manager: godName, name: who })}>
-      <div dir="auto" style={{ ...readStyle, ...readText }}>{saved.roleDescription || t('jobChange.noWorkStyle', { name: who })}</div>
+      <div dir="auto" style={readBody(wide)}>{saved.roleDescription || t('jobChange.noWorkStyle', { name: who })}</div>
     </ReadRow>
   );
   const changeRow = (
@@ -381,13 +381,14 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       onBusy={(b) => { setChanging(b); if (b) setStatus(null); }}
     />
   );
-  // Folded to four lines (DR4), with Undo and the last change under it; the
-  // change box sits below it, after the job is read (owner, 2026-10-23).
-  const long = plain.split('\n').length > 4 || plain.length > 320;
+  // In its parts, folded to the first (H4), with Undo and the last change
+  // under it; the change box sits below it, after the job is read (owner,
+  // 2026-10-23).
+  const long = jobPartsFold(plain);
   const workStyleRow = (
     <ReadRow label={t('jobChange.howWorks', { name: who })} info={t('jobChange.howWorksInfo', { name: who })}>
       {plain.trim() ? (
-        <div dir="auto" style={{ ...readStyle, ...readText, whiteSpace: 'pre-wrap', ...(showAll || !long ? {} : clampStyle) }}>{plain}</div>
+        <JobParts plain={plain} wide={wide} folded={!showAll} />
       ) : (
         <span style={helperStyle}>{t('jobChange.noWorkStyle', { name: who })}</span>
       )}
@@ -404,7 +405,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   // Scheduled jobs are their own group, apart from the duties
   // (edit-agent-scheduled-jobs.md, SJ2); "Change on Access" closes this
   // dialog first, asking when something is unsaved (SJ3).
-  const schedules = <ScheduledJobsList agentId={agent.id} name={who} onChange={goToSchedules} />;
+  const schedules = <ScheduledJobsList agentId={agent.id} name={who} heading="panel" onChange={goToSchedules} />;
   const engine = (
     <>
       {/* The engine rarely changes: one folded line naming it, closed by default. */}
@@ -419,7 +420,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
         }}
       >
         <Disclosure open={engineOpen} />
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{t('editAgent.engine')}</span>
+        <span style={fieldLabel}>{t('editAgent.engine')}</span>
         {!engineOpen && (
           <span style={{ fontSize: 12, color: 'var(--cth-ink-3)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {modelLabel ? `${providerLabel}, ${modelLabel}` : providerLabel}
@@ -540,44 +541,41 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       )}
     >
       {wide ? (
-        // Two columns (WD2): the short fields at 300 to 360 px, the job beside
-        // them at most 720 px across; the pair centers. In Arabic the grid
+        // Two columns (WD2): who they are, their timers and engine at 300 to
+        // 360 px; the whole job beside them at most 720 px across, under its
+        // own heading (edit-agent-hierarchy.md, H1 and H2). In Arabic the grid
         // mirrors with the page.
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 32, flex: 1, minHeight: 0 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
-            <Fields id="name">{nameRow}</Fields>
-            <Fields id="briefing">
-              {roleRow}
-              {handlesRow}
-            </Fields>
-            {schedules}
-            {engine}
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 40, flex: 1, minHeight: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
+            <Fields id="name">{nameRow}{roleRow}</Fields>
+            {!isResearch && <Section id="schedules">{schedules}</Section>}
+            <Section id="engine">{engine}</Section>
             <div style={{ flex: 1 }} />
             {danger}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+          <Section id="job" title={t('jobChange.jobOf', { name: who })} first>
+            {handlesRow}
             {workStyleRow}
             {changeRow}
-          </div>
+          </Section>
         </div>
       ) : (
-      // One column (DR4): name, role, what they handle, how they work, then
-      // what should change under the job it changes (owner, 2026-10-23), the
-      // scheduled jobs as their own group (SJ2) and the engine folded away. Field labels
-      // only; explanations sit behind info icons.
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <Fields id="name">{nameRow}</Fields>
+      // One column (DR4, H2): name and role, then the job under its heading
+      // (what they handle, how they work, what should change, owner
+      // 2026-10-23), the scheduled jobs and the engine, each in its own
+      // section; explanations sit behind info icons.
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <Fields id="name">{nameRow}{roleRow}</Fields>
 
-        <Fields id="briefing">
-          {roleRow}
+        <Section id="job" title={t('jobChange.jobOf', { name: who })}>
           {handlesRow}
           {workStyleRow}
           {changeRow}
-        </Fields>
+        </Section>
 
-        {schedules}
+        {!isResearch && <Section id="schedules">{schedules}</Section>}
 
-        {engine}
+        <Section id="engine">{engine}</Section>
 
         {danger}
       </div>
@@ -645,9 +643,6 @@ const lockedValueStyle: CSSProperties = {
 };
 
 /** Read only text: the job as saved, in plain words. */
-const readStyle: CSSProperties = { fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)' };
-/** The job folded to four lines (DR4). */
-const clampStyle: CSSProperties = { display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
 const linkStyle: CSSProperties = {
   padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
   fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)', textDecoration: 'underline', textUnderlineOffset: 2
@@ -659,13 +654,28 @@ function Fields({ id, children }: { id: 'name' | 'briefing' | 'engine'; children
   return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
 }
 
+/** A section of the dialog (edit-agent-hierarchy.md, H1): a hairline above,
+ *  then its heading when it has one, then its fields. The first section of a
+ *  column has no hairline. */
+function Section({ id, title, first, children }: { id: 'job' | 'schedules' | 'engine'; title?: string; first?: boolean; children: React.ReactNode }) {
+  return (
+    <section id={`edit-agent-${id}-section`} data-section={id} aria-labelledby={title ? `edit-agent-${id}-heading` : undefined} style={{
+      display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0,
+      ...(first ? {} : { borderTop: '1px solid var(--cth-line)', paddingTop: 20 })
+    }}>
+      {title && <h3 id={`edit-agent-${id}-heading`} style={{ ...sectionHeading, marginBottom: -4 }}>{title}</h3>}
+      {children}
+    </section>
+  );
+}
+
 /** A read only field: its label is text, not a <label>, since nothing in it
  *  is typed (a <label> would send clicks to its first button). */
 function ReadRow({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
   return (
     <div role="group" aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
+        <span style={fieldLabel}>{label}</span>
         {info && <InfoTip text={info} label={label} />}
       </span>
       {children}
@@ -679,7 +689,7 @@ function Row({ label, info, children }: { label: string; info?: string; children
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
+        <span style={fieldLabel}>{label}</span>
         {info && <InfoTip text={info} label={label} />}
       </span>
       {children}

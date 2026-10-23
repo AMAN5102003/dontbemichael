@@ -6,6 +6,7 @@ import { InfoTip } from './InfoTip';
 import { Disclosure } from './triggers/ui';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useRtl } from '@/i18n/useDirection';
+import { JobParts, fieldLabel } from './fieldText';
 
 export type ReviseResult = Awaited<ReturnType<Window['cth']['workStyleRevise']>>;
 export type ReviseOk = Extract<ReviseResult, { kind: 'ok' }>;
@@ -215,7 +216,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{p.box.label}</span>
+          <span style={fieldLabel}>{p.box.label}</span>
           {p.box.info && <InfoTip text={p.box.info} label={p.box.label} />}
         </span>
         {state.at === 'idle' && (
@@ -265,7 +266,7 @@ function Preview({ ok, who, lead, title, heading, applyLabel, applying, failed, 
       )}
       {!lead && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{t('jobChange.handles', { name: who })}</span>
+          <span style={fieldLabel}>{t('jobChange.handles', { name: who })}</span>
           {ok.handles
             ? <span style={bodyStyle}>{ok.handles}</span>
             : <span style={unchangedTag}>{t('jobChange.unchanged')}</span>}
@@ -274,7 +275,7 @@ function Preview({ ok, who, lead, title, heading, applyLabel, applying, failed, 
       <button type="button" aria-expanded={whole} onClick={() => setWhole((v) => !v)} style={{ ...linkStyle, display: 'inline-flex', alignItems: 'center', gap: 4, textDecoration: 'none' }}>
         <Disclosure open={whole} />{t('jobChange.seeWhole')}
       </button>
-      {whole && <div style={{ ...bodyStyle, whiteSpace: 'pre-wrap', padding: '8px 10px', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card)' }}>{ok.plain}</div>}
+      {whole && <div style={{ padding: '8px 10px', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card)' }}><JobParts plain={ok.plain} /></div>}
       {failed && <span role="alert" style={{ fontSize: 12, color: 'var(--cth-coral-text)' }}>{t('jobChange.applyFailed')}</span>}
       {/* The decision stays in reach on a short window (DR11). */}
       <div style={{ ...rowEnd, position: 'sticky', bottom: 0, paddingTop: 6, background: 'var(--cth-indigo-soft)' }}>

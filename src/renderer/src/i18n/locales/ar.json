@@ -3068,6 +3068,7 @@
     "previewTitle": "هذا ما يتغير",
     "previewTitleNew": "هذه وظيفة {{name}}",
     "oneTimeTask": "هذه المهمة تذهب إلى {{manager}} كبطاقة: {{task}}",
+    "jobOf": "وظيفة {{name}}",
     "handles": "ما يتولاه {{name}}",
     "unchanged": "بلا تغيير",
     "seeWhole": "اعرض الوظيفة الجديدة كاملة",
