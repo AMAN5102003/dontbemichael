@@ -63,7 +63,7 @@ exports.default = async function notarizing(context) {
   sealAdHocIfUnsigned(path.join(appOutDir, `${context.packager.appInfo.productFilename}.app`));
 
   // CI with a cert is a real release: it must be signed by the owner's team.
-  if (process.env.CI && process.env.CSC_LINK) {
+  if (process.env.CI && (process.env.CSC_LINK || process.env.CSC_KEYCHAIN)) {
     const team = signingTeam(path.join(appOutDir, `${context.packager.appInfo.productFilename}.app`));
     if (team !== RELEASE_TEAM_ID) {
       throw new Error(`[sign] the release must be signed by Apple team ${RELEASE_TEAM_ID}, but it was signed by ${team || 'no team'}. Check the APPLE_CERTIFICATE_P12 secret.`);
@@ -83,7 +83,7 @@ exports.default = async function notarizing(context) {
   if (!hasPassword && !hasApiKey) {
     // CI with a Developer ID cert is a real release: never ship it unnotarized.
     // A local build without credentials stays as it was.
-    if (process.env.CI && process.env.CSC_LINK) {
+    if (process.env.CI && (process.env.CSC_LINK || process.env.CSC_KEYCHAIN)) {
       throw new Error('[notarize] the release is signed with a Developer ID but has no APPLE_* notarization credentials. Set APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID.');
     }
     console.log('[notarize] no APPLE_* credentials in env — skipping notarization (build stays unsigned).');

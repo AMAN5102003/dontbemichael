@@ -134,7 +134,7 @@ mac:
   # cert is found, electron-builder warns and produces an unsigned build, so
   # contributors without an Apple account can still build.
   #   To sign: install your "Developer ID Application" cert into the keychain.
-  #   (Override with CSC_LINK=<path-to.p12> + CSC_KEY_PASSWORD for CI.)
+  #   CI imports it into its own keychain and sets CSC_KEYCHAIN (release.yml).
   # Notarization happens in the root-level `afterSign` hook (top of this file).
   # dmg is what humans download; zip is what Squirrel.Mac (electron-updater)
   # actually updates from — latest-mac.yml points at it. Both universal.

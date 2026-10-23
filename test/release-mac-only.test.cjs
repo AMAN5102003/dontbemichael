@@ -22,11 +22,22 @@ test('the release workflow builds Mac, and Windows as a beta that never blocks i
   assert.match(yml, /continue-on-error: \$\{\{ matrix\.os == 'windows-2022' \}\}/);
 });
 
-test('the release workflow unsets an empty signing cert before packaging', () => {
-  // An empty CSC_LINK is read as a path to the repo folder ("not a file").
+test('the release workflow signs from its own keychain, never CSC_LINK', () => {
+  // electron-builder 25 builds its own keychain from CSC_LINK and then fails
+  // set-key-partition-list on macOS 26.6; an empty CSC_LINK is read as a path to
+  // the repo folder ("not a file"). The job imports the cert itself instead.
   const yml = read('.github/workflows/release.yml');
-  const step = yml.slice(yml.indexOf('- name: Package installers'), yml.indexOf('- name: Generate checksums'));
-  assert.match(step, /if \[ -z "\$CSC_LINK" \]; then unset CSC_LINK CSC_KEY_PASSWORD; fi\n\s*npx electron-builder/);
+  const live = yml.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');
+  const imp = live.slice(live.indexOf('- name: Import the Mac signing certificate'), live.indexOf('- name: Package installers'));
+  assert.match(imp, /if: matrix\.os == 'macos-latest'/);
+  assert.match(imp, /if \[ -z "\$P12" \]; then .*exit 0; fi/, 'an unsigned build still works');
+  assert.match(imp, /security create-keychain -p "\$KEYCHAIN_PASSWORD"/);
+  assert.match(imp, /security set-key-partition-list -S apple-tool:,apple: -s -k "\$KEYCHAIN_PASSWORD"/, 'the keychain password, not the cert password');
+  assert.match(imp, /rm -f "\$RUNNER_TEMP\/cert\.p12"/);
+  assert.match(imp, /echo "CSC_KEYCHAIN=\$KEYCHAIN" >> "\$GITHUB_ENV"/);
+  const pack = live.slice(live.indexOf('- name: Package installers'), live.indexOf('- name: Generate checksums'));
+  assert.match(pack, /unset CSC_LINK CSC_KEY_PASSWORD\n\s*npx electron-builder/);
+  assert.doesNotMatch(pack, /CSC_LINK:|CSC_KEY_PASSWORD:/);
 });
 
 test('RELEASE.md advertises the Mac DMG, and Windows only inside its strippable section', () => {
@@ -68,7 +79,7 @@ function loadHook(t, notarize, team = 'B5EHD4JBD2') {
   require.cache[notarizePath] = { id: notarizePath, filename: notarizePath, loaded: true, exports: { notarize } };
   delete require.cache[hookPath];
   const hook = require(hookPath).default;
-  const keys = ['CI', 'CSC_LINK', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'];
+  const keys = ['CI', 'CSC_LINK', 'CSC_KEYCHAIN', 'APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'];
   const env = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   for (const k of keys) delete process.env[k];
   t.after(() => {
@@ -115,7 +126,7 @@ test('the Mac app takes no DYLD entitlement, and keeps library validation off fo
 test('a release signed by any team but the owner\'s fails before notarizing', async (t) => {
   const { run } = loadHook(t, async () => assert.fail('a wrong team is never submitted'), 'A4X5Y2CSWQ');
   appleCreds();
-  Object.assign(process.env, { CI: 'true', CSC_LINK: 'cert' });
+  Object.assign(process.env, { CI: 'true', CSC_KEYCHAIN: '/tmp/signing.keychain-db' });
   await assert.rejects(run(), /must be signed by Apple team B5EHD4JBD2, but it was signed by A4X5Y2CSWQ/);
 });
 
