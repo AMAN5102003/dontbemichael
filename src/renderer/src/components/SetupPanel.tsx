@@ -21,6 +21,7 @@ import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useStore } from '@/store/store';
 import { prerequisiteRows, setupPrompt, type ToolStatus, type ToolKind } from '../../../shared/toolCatalog';
+import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
 
 const SECTIONS: { kind: ToolKind; titleKey: string; blurbKey: string }[] = [
   { kind: 'prerequisite', titleKey: 'setupPanel.sections.prerequisites.title', blurbKey: 'setupPanel.sections.prerequisites.blurb' },
@@ -55,17 +56,18 @@ function ToolRow({ tool }: { tool: ToolStatus }) {
     );
   };
   return (
+    // One tool: a white row on its group's soft panel (app-style-rollout.md AS2).
     <div style={{
       borderRadius: 'var(--cth-r-md)',
       padding: 10, display: 'flex', flexDirection: 'column', gap: 6,
-      background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)'
+      background: 'var(--cth-card)'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 11, flex: 1, minWidth: 0 }}>
-          {tool.label.toUpperCase()}
+        <span style={{ ...fieldLabel, flex: 1, minWidth: 0 }}>
+          {tool.label}
         </span>
         {tool.essential && !tool.found && (
-          <span style={{ fontSize: 10, color: 'var(--cth-ink-500)', flexShrink: 0 }}>{t('setupPanel.recommended')}</span>
+          <span style={{ ...hint, flexShrink: 0 }}>{t('setupPanel.recommended')}</span>
         )}
         <StatusChip tool={tool} />
       </div>
@@ -198,12 +200,9 @@ export function SetupPanel({ onDone }: { onDone?: () => void } = {}) {
         const rows = (tools ?? []).filter((t) => t.kind === section.kind);
         if (rows.length === 0) return null;
         return (
-          <div key={section.kind} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div style={{
-              fontFamily: 'var(--cth-font-display)', fontSize: 10, letterSpacing: 0.5,
-              color: 'var(--cth-ink-500)', textTransform: 'uppercase'
-            }}>{t(section.titleKey)}</div>
-            <div style={{ fontSize: 11, color: 'var(--cth-ink-500)', marginTop: -2 }}>{t(section.blurbKey)}</div>
+          <div key={section.kind} style={{ ...panelStyle, gap: 6 }}>
+            <h3 style={groupName}>{t(section.titleKey)}</h3>
+            <div style={{ ...hint, marginBottom: 4 }}>{t(section.blurbKey)}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {rows.map((t) => <ToolRow key={t.id} tool={t} />)}
             </div>
