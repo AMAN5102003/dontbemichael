@@ -51,10 +51,12 @@ test('Edit Agent shows Role, what they handle read only, What should change and 
   // Groups on soft panels (owner, 2026-10-23, mockup 2B; edit-agent-hierarchy.md
   // H1, H2): name and role, the whole job with what should change under it,
   // then the scheduled jobs and the engine.
-  const side = src.slice(src.indexOf('// One column (DR4, H2)'));
-  assert.match(side, /<Panel id="name">\{nameRow\}\{roleRow\}<\/Panel>\s*<Panel id="job">\s*\{handlesRow\}\s*\{workStyleRow\}\s*<\/Panel>\s*\{changeRow\}\s*\{!isResearch && <Panel id="schedules">\{schedules\}<\/Panel>\}\s*\{engine\}/, 'one column: who, the job, what should change, the jobs, the engine');
-  assert.match(src, /<Panel id="name">\{nameRow\}\{roleRow\}<\/Panel>\s*\{!isResearch && <Panel id="schedules">\{schedules\}<\/Panel>\}\s*\{engine\}/, 'wide left: who, the jobs, the engine');
-  assert.match(src, /<Panel id="job">\s*\{handlesRow\}\s*\{workStyleRow\}\s*<\/Panel>\s*\{changeRow\}\s*<\/div>\s*<\/div>/, 'wide right: the whole job, the change box under it (H2)');
+  // One keyed tree for both layouts (revise-progress.test.cjs keeps the run).
+  const tree = src.slice(src.indexOf('{/* One tree for both layouts'));
+  assert.match(tree, /<div key="side" style=\{column\}>\s*<Panel id="name">\{nameRow\}\{roleRow\}<\/Panel>\s*\{wide && \(\s*<>\s*\{!isResearch && <Panel id="schedules">\{schedules\}<\/Panel>\}\s*\{engine\}/, 'wide left: who, the jobs, the engine');
+  assert.match(tree, /<div key="job" style=\{column\}>\s*<Panel id="job">\s*\{handlesRow\}\s*\{workStyleRow\}\s*<\/Panel>\s*\{changeRow\}\s*<\/div>/, 'the whole job, the change box under it (H2)');
+  assert.match(tree, /\{!wide && \(\s*<div key="more" style=\{column\}>\s*\{!isResearch && <Panel id="schedules">\{schedules\}<\/Panel>\}\s*\{engine\}\s*\{danger\}/, 'one column: then the jobs, the engine, the danger zone');
+  assert.ok(tree.indexOf('key="side"') < tree.indexOf('key="job"') && tree.indexOf('key="job"') < tree.indexOf('key="more"'), 'one column: who, the job, the rest');
   assert.ok(briefing.includes("<Row label={t('editAgent.role')}>"));
   assert.ok(briefing.includes("<ReadRow label={t('editAgent.handles', { name: who })}"));
   assert.ok(briefing.includes("<ReadRow label={t('jobChange.howWorks', { name: who })}"));

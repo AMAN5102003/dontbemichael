@@ -106,3 +106,13 @@ test('the box shows the three steps and what is written so far, and stops listen
     assert.equal(jc.workingNote, undefined, `${loc} drops the old note`);
   }
 });
+
+test('going wide or back mid change keeps the run and the typed words', () => {
+  // Value: protects=a run survives the panel's expand button (owner, 2026-10-23: going wide lost the progress and the words); fails_when=the two layouts render the change box under different parents again, so React remounts it, its unmount stops the run and the typed text is lost; why_new=the layout switch remounted it; seam=none; no_claim=source pin on the tree shape, checked live by hand
+  const src = read('src/renderer/src/components/EditAgentModal.tsx');
+  const body = src.slice(src.indexOf('{/* One tree for both layouts'), src.indexOf('</Dialog>', src.indexOf('{/* One tree for both layouts')));
+  assert.equal((body.match(/\{changeRow\}/g) ?? []).length, 1, 'the change box is rendered in one place');
+  assert.match(body, /<div key="job" style=\{column\}>\s*<Panel id="job">\s*\{handlesRow\}\s*\{workStyleRow\}\s*<\/Panel>\s*\{changeRow\}\s*<\/div>/);
+  assert.ok(body.indexOf('<div key="side"') < body.indexOf('<div key="job"'), 'the job column keeps its place');
+  assert.doesNotMatch(body, /\{wide \? \(/, 'no second tree per layout');
+});

@@ -540,49 +540,45 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
         </>
       )}
     >
-      {wide ? (
-        // Two columns (WD2): who they are, their timers and engine at 300 to
-        // 360 px; the whole job beside them at most 720 px across. Each group
-        // sits on its own soft panel, field labels only (owner, 2026-10-23:
-        // mockup 2B; edit-agent-hierarchy.md H1, H2). In Arabic the grid
-        // mirrors with the page.
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 32, flex: 1, minHeight: 0 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
-            <Panel id="name">{nameRow}{roleRow}</Panel>
+      {/* One tree for both layouts (owner, 2026-10-23: going wide mid change
+          lost the run and the typed words): the job and What should change?
+          stay in the column keyed "job", so React keeps them, and their run,
+          when the panel goes wide or back. Wide (WD2): two columns, who they
+          are, their timers and engine at 300 to 360 px, the whole job beside
+          them at most 720 px across; in Arabic the grid mirrors with the page.
+          One column (DR4, H2): name and role, the job with what should change
+          under it, then the scheduled jobs and the engine. Each group sits on
+          its own soft panel, field labels only (mockup 2B; edit-agent-hierarchy.md
+          H1, H2). */}
+      <div style={wide
+        ? { display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 32, flex: 1, minHeight: 0 }
+        : { display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div key="side" style={column}>
+          <Panel id="name">{nameRow}{roleRow}</Panel>
+          {wide && (
+            <>
+              {!isResearch && <Panel id="schedules">{schedules}</Panel>}
+              {engine}
+              <div style={{ flex: 1 }} />
+              {danger}
+            </>
+          )}
+        </div>
+        <div key="job" style={column}>
+          <Panel id="job">
+            {handlesRow}
+            {workStyleRow}
+          </Panel>
+          {changeRow}
+        </div>
+        {!wide && (
+          <div key="more" style={column}>
             {!isResearch && <Panel id="schedules">{schedules}</Panel>}
             {engine}
-            <div style={{ flex: 1 }} />
             {danger}
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
-            <Panel id="job">
-              {handlesRow}
-              {workStyleRow}
-            </Panel>
-            {changeRow}
-          </div>
-        </div>
-      ) : (
-      // One column (DR4, H2): name and role, then the job (what they handle,
-      // how they work) with what should change under it (owner, 2026-10-23),
-      // then the scheduled jobs, each group on its own soft panel, then the
-      // engine; explanations sit behind info icons.
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <Panel id="name">{nameRow}{roleRow}</Panel>
-
-        <Panel id="job">
-          {handlesRow}
-          {workStyleRow}
-        </Panel>
-        {changeRow}
-
-        {!isResearch && <Panel id="schedules">{schedules}</Panel>}
-
-        {engine}
-
-        {danger}
+        )}
       </div>
-      )}
     </Dialog>
     {asking && (
       // WD4: leaving with unsaved changes asks; Keep editing is the default.
@@ -656,6 +652,9 @@ const linkStyle: CSSProperties = {
 function Fields({ id, children }: { id: 'name' | 'briefing' | 'engine'; children: React.ReactNode }) {
   return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
 }
+
+/** A column of groups, 14 px apart, in either layout. */
+const column: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 };
 
 /** One group of fields on the shared soft panel (owner, 2026-10-23, mockup
  *  2B; edit-agent-hierarchy.md H1). */
