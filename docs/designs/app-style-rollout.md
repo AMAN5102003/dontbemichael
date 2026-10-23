@@ -86,10 +86,10 @@ Updated by the eng review (2026-10-23): phased landing (D1), F1 (TriggerCard's t
 screens), R1 (Command Center body white), WorkersTab's `sectionHead`. One commit per task,
 in this order; the guard test lands last.
 
-- [ ] **T1 (P1, human: ~2h / CC: ~10min)** fieldText: `groupName` (t-panel h3), `hint` (12/17 ink 3), shared `Panel` and `Field` (label, optional info, hint, child); Edit agent and the hire wizard switch to them (AS1 to AS4)
+- [x] **T1 (P1, human: ~2h / CC: ~10min)** fieldText: `groupName` (t-panel h3), `hint` (12/17 ink 3), shared `Panel` and `Field` (label, optional info, hint, child); Edit agent and the hire wizard switch to them (AS1 to AS4)
   - Files: `components/fieldText.tsx`, `EditAgentModal.tsx`, `AddAgentModal.tsx`
   - Verify: `test/field-style-guard.test.cjs` contract tests for Field, Panel, groupName; existing Edit agent and wizard pins
-- [ ] **T2 (P1, human: ~4h / CC: ~20min)** `TriggerCard` becomes a soft panel with a group name and hint, fold kept, on Access, the Command Center and the Office schedule; the Command Center tab body and empty state turn white (AS2 to AS4, F1, R1)
+- [x] **T2 (P1, human: ~4h / CC: ~20min)** `TriggerCard` becomes a soft panel with a group name and hint, fold kept, on Access, the Command Center and the Office schedule; the Command Center tab body and empty state turn white (AS2 to AS4, F1, R1)
   - Files: `triggers/ui.tsx`, `CapabilitiesTab.tsx`, `CommandCenterPanel.tsx`, `triggers/TriggersTab.tsx`
   - Verify: `test/michael-tabs.test.cjs`, `test/multi-mailbox-ui.test.cjs` rewritten where they pin the card
 - [ ] **T3 (P1, human: ~1 day / CC: ~45min)** Settings: every tab's sections on panels with group names; labels and hints from fieldText; `sectionHead` and `sectionRule` retired (AS1 to AS4)

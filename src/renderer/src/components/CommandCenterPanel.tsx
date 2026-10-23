@@ -1117,7 +1117,7 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
   return (
     <div style={{
       flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: 10,
-      background: 'var(--cth-paper-200)', display: 'flex', flexDirection: 'column'
+      background: 'var(--cth-card)', display: 'flex', flexDirection: 'column'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <h2 style={{ margin: 0, flex: 1, minWidth: 0, fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '20px', fontWeight: 400, color: 'var(--cth-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1331,7 +1331,7 @@ function Scroll({ children }: { children: React.ReactNode }) {
   // minWidth:0 + overflowX:hidden keep wide children (native selects, long paths,
   // budget rows) from forcing a horizontal scrollbar in the narrow sidebar — they
   // wrap/shrink instead. Vertical scroll stays.
-  return <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: 10, background: 'var(--cth-paper-200)' }}>{children}</div>;
+  return <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', overflowX: 'hidden', padding: 10, background: 'var(--cth-card)' }}>{children}</div>;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -1345,7 +1345,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, textAlign: 'center', color: 'var(--cth-ink-700)', fontSize: 13, background: 'var(--cth-paper-200)' }}>
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, textAlign: 'center', color: 'var(--cth-ink-700)', fontSize: 13, background: 'var(--cth-card)' }}>
       {children}
     </div>
   );

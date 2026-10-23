@@ -75,3 +75,18 @@ test('one Panel and one Field for every form screen, Edit agent and the hire wiz
     assert.doesNotMatch(src, /background: 'var\(--cth-bg\)'/, `${f} has no panel copy of its own`);
   }
 });
+
+test('Access, Command Center and Office schedule groups are soft panels, on white tab bodies', () => {
+  // Value: protects=AS2 to AS4 on TriggerCard's three screens (F1) and R1, a panel never sits on a tinted body; fails_when=the ring or white fill comes back, the fold goes, or a Command Center body turns tinted again; why_new=T2 of app-style-rollout.md; seam=none; no_claim=source pins, not rendered
+  const ui = read('src/renderer/src/components/triggers/ui.tsx');
+  const card = ui.slice(ui.indexOf('export function TriggerCard('), ui.indexOf('export function SubCard('));
+  assert.match(card, /background: panelStyle\.background, borderRadius: panelStyle\.borderRadius/);
+  assert.doesNotMatch(card, /boxShadow|borderTop|var\(--cth-card\)/, 'no ring, no rule, no white fill');
+  assert.match(card, /<span style=\{\{ \.\.\.groupName, display: 'block' \}\}>\{title\}<\/span>/);
+  assert.match(card, /<span style=\{\{ \.\.\.hint, display: 'block', marginTop: 2 \}\}>\{blurb\}<\/span>/);
+  assert.match(card, /aria-expanded=\{open\}\s*aria-controls=\{bodyId\}/, 'the fold is kept');
+  const cc = read('src/renderer/src/components/CommandCenterPanel.tsx');
+  assert.match(cc, /function Scroll[\s\S]*?padding: 10, background: 'var\(--cth-card\)' \}\}>\{children\}<\/div>;/);
+  assert.match(cc, /function Centered[\s\S]*?fontSize: 13, background: 'var\(--cth-card\)' \}\}>/);
+  assert.doesNotMatch(cc, /overflowX: 'hidden', padding: 10,\s*background: 'var\(--cth-paper-200\)'/, 'no tab body is tinted');
+});
