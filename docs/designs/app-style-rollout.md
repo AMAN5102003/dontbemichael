@@ -95,7 +95,7 @@ in this order; the guard test lands last.
 - [x] **T3 (P1, human: ~1 day / CC: ~45min)** Settings: every tab's sections on panels with group names; labels and hints from fieldText; `sectionHead` and `sectionRule` retired (AS1 to AS4)
   - Files: `SettingsModal.tsx`, MailboxesSettings, ClaudeConnectorsSettings, ResearchPrivacySettings, AiEnginesSettings, McpDefaultsSettings, IntegrationsRegistry, KnowledgeDocList, SettingsHeroCard as they apply
   - Verify: `test/settings-one-save.test.cjs`, `test/hidden-surfaces.test.cjs` rewritten where they pin the old heads
-- [ ] **T4 (P1, human: ~4h / CC: ~20min)** Schedule editor, company profile (setup and Settings), Add a mailbox: fields from fieldText on one panel (AS1, AS2, AS4)
+- [x] **T4 (P1, human: ~4h / CC: ~20min)** Schedule editor, company profile (setup and Settings), Add a mailbox: fields from fieldText on one panel (AS1, AS2, AS4)
   - Files: `triggers/ui.tsx` `Field`, `triggers/ScheduleList.tsx`, `CompanyProfileFields.tsx`, `AddMailboxDialog.tsx`, `OnboardingWizard.tsx` where it shows fields
   - Verify: `test/onboarding-currency-defaults.test.cjs`, `test/schedule-focus-areas.test.cjs` rewritten where they pin labels
 - [ ] **T5 (P2, human: ~3h / CC: ~15min)** Profile tab, Command Center, Workers and Pulse sections use `groupName` (AS3)

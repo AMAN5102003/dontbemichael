@@ -1904,7 +1904,8 @@
       "city": "Add the city.",
       "country": "Add the country.",
       "industry": "Say what kind of business this is."
-    }
+    },
+    "required": "required"
   },
   "clearedBanner": {
     "text": "{{name}} got a fresh start {{ago}}. Nothing was lost.",

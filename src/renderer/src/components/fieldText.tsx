@@ -30,6 +30,9 @@ export const groupName: CSSProperties = {
 /** Help under a field or a group name (AS4): quieter than any label. */
 export const hint: CSSProperties = { fontSize: 12, lineHeight: '17px', fontWeight: 400, color: 'var(--cth-ink-3)' };
 
+/** "required" beside a field's label (AS4): a quiet word, not an asterisk. */
+export const requiredMark: CSSProperties = { marginInlineStart: 6, fontWeight: 400, color: 'var(--cth-ink-3)' };
+
 /** The soft panel every group sits on (AS2): the ground color, so it shows
  *  on white surfaces (dialogs, panels, Settings) and never on the stage. */
 export const panelStyle: CSSProperties = {

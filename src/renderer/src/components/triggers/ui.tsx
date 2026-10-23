@@ -1,7 +1,7 @@
 import { useId, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRtl } from '@/i18n/useDirection';
-import { groupName, hint, panelStyle } from '../fieldText';
+import { fieldLabel, groupName, hint, panelStyle } from '../fieldText';
 import { TRIGGER_MODES, type TriggerMode } from '@shared/triggers';
 import { MAX_INTERVAL_MS } from '@shared/missions';
 import {
@@ -171,14 +171,12 @@ export function Select({ value, onChange, children, style, label }: {
 }
 
 /** Label above a control. Stacked, never side-by-side — the sidebar is too
- *  narrow for a label column that does not truncate the thing it labels. */
+ *  narrow for a label column that does not truncate the thing it labels. The
+ *  app's field label (fieldText), not small grey capitals. */
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{
-        fontFamily: 'var(--cth-font-ui)', fontSize: 10, fontWeight: 600, lineHeight: '13px', textTransform: 'uppercase',
-        letterSpacing: '0.05em', color: 'var(--cth-ink-3)', marginBottom: 5
-      }}>{label}</div>
+    <div style={{ marginTop: 10 }}>
+      <div style={{ ...fieldLabel, marginBottom: 5 }}>{label}</div>
       {children}
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { PixelButton } from '../PixelButton';
@@ -20,6 +20,7 @@ import { gmailConnectorOn } from '@shared/claudeConnectors';
 import { agentMailboxes } from '@shared/mailboxes';
 import { useRtl } from '@/i18n/useDirection';
 import i18n from '@/i18n';
+import { groupName, panelStyle } from '../fieldText';
 
 /**
  * SCHEDULES, per agent (docs/designs/per-agent-schedules.md).
@@ -430,7 +431,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, noEmail, focusOwner
 
       {open && !readOnly && (
         <div
-          style={{ borderRadius: 'var(--cth-r-md)', padding: '4px 8px 12px', background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}
+          style={editorBox}
           onKeyDown={(e) => {
             if (e.key !== 'Escape' || isComposingKey(e.nativeEvent)) return;
             e.stopPropagation();
@@ -558,7 +559,7 @@ function AddSchedule({ to, ownerName, focusOwner }: { to: string; ownerName: str
     );
   }
   return (
-    <div style={{ borderRadius: 'var(--cth-r-md)', marginTop: 12, padding: '4px 8px 12px', background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)' }}>
+    <div style={{ ...editorBox, marginTop: 12 }}>
       <Field label={t('schedulesSection.label')}>
         <input
           autoFocus
@@ -583,6 +584,10 @@ function AddSchedule({ to, ownerName, focusOwner }: { to: string; ownerName: str
     </div>
   );
 }
+
+/** A job's editor: a white box on the On a schedule panel, no ring of its own
+ *  (app-style-rollout.md AS2). */
+const editorBox: CSSProperties = { borderRadius: 'var(--cth-r-lg)', padding: '4px 10px 12px', background: 'var(--cth-card)' };
 
 /* ───────────────────────────── the list modes ───────────────────────────── */
 
@@ -759,10 +764,10 @@ export function OfficeSchedules() {
           .filter((m) => ownerOf(m, godId) === owner)
           .sort((a, b) => (nextRunAt(a, Date.now()) ?? Infinity) - (nextRunAt(b, Date.now()) ?? Infinity));
         return (
-          <section key={owner} aria-label={name} style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-900)' }}>
+          <section key={owner} aria-label={name} style={{ ...panelStyle, gap: 4, marginTop: 12 }}>
+            <h3 style={groupName}>
               {isClosed ? t('schedulesSection.closedGroup', { name }) : name}
-            </div>
+            </h3>
             {isClosed && <Hint>{t('schedulesSection.closedNote', { name })}</Hint>}
             <div style={{ boxShadow: 'inset 0 1px 0 var(--cth-ink-100)' }}>
               {rows.map((m) => (

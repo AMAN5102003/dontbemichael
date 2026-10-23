@@ -90,3 +90,22 @@ test('Access, Command Center and Office schedule groups are soft panels, on whit
   assert.match(cc, /function Centered[\s\S]*?fontSize: 13, background: 'var\(--cth-card\)' \}\}>/);
   assert.doesNotMatch(cc, /overflowX: 'hidden', padding: 10,\s*background: 'var\(--cth-paper-200\)'/, 'no tab body is tinted');
 });
+
+test('the schedule editor, company profile and Add a mailbox use the shared fields on panels', () => {
+  // Value: protects=AS1, AS2 and AS4 on T4's screens; fails_when=a 10 px capital, 14 px grey or 12 px label comes back, or a group loses its panel; why_new=T4 of app-style-rollout.md; seam=none; no_claim=source pins, not rendered
+  const ui = read('src/renderer/src/components/triggers/ui.tsx');
+  assert.match(ui, /<div style=\{\{ \.\.\.fieldLabel, marginBottom: 5 \}\}>\{label\}<\/div>/, 'the schedule editor label');
+  const sched = read('src/renderer/src/components/triggers/ScheduleList.tsx');
+  assert.match(sched, /const editorBox: CSSProperties = \{ borderRadius: 'var\(--cth-r-lg\)', padding: '4px 10px 12px', background: 'var\(--cth-card\)' \};/);
+  assert.doesNotMatch(sched, /cream-200/, 'no ringed cream editor');
+  const prof = read('src/renderer/src/components/CompanyProfileFields.tsx');
+  for (const k of ['addressHead', 'contactHead', 'operateHead', 'moneyHead']) assert.match(prof, new RegExp(`<Panel title=\\{t\\('companyProfile\\.${k}'\\)\\}>`), k);
+  assert.match(prof, /<SharedField\s+label=\{required \? <>\{label\}<span style=\{requiredMark\}>\{t\('companyProfile\.required'\)\}<\/span><\/> : label\}\s+note=\{hint\}/);
+  const mail = read('src/renderer/src/components/AddMailboxDialog.tsx');
+  assert.match(mail, /import \{ Field, Panel, hint \} from '\.\/fieldText';/);
+  assert.doesNotMatch(mail, /function Field\(/, 'no copy of its own');
+  for (const loc of ['en', 'ar', 'zh-CN']) {
+    const w = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).companyProfile.required;
+    assert.ok(w && !/[—–]| - /.test(w), `${loc} required`);
+  }
+});

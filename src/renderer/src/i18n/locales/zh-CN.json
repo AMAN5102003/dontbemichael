@@ -1904,7 +1904,8 @@
       "city": "请填写城市。",
       "country": "请填写国家。",
       "industry": "请说明这是什么类型的业务。"
-    }
+    },
+    "required": "必填"
   },
   "clearedBanner": {
     "text": "{{name}} 于{{ago}}重新开始了对话。没有丢失任何内容。",
