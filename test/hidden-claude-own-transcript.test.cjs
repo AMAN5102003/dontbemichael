@@ -37,7 +37,9 @@ test('each session reads its own transcript, even when a neighbour finished a mo
 test('runHiddenClaude names its session and never picks the newest file in the folder', () => {
   const src = read('src/main/hiddenClaude.ts');
   assert.match(src, /'--session-id', sessionId,/);
-  assert.match(src, /lastAssistantText\(transcriptFile\(projectDir\(opts\.cwd\), sessionId\)\)/);
+  assert.match(src, /lastAssistantText\(transcriptFile\(sessionDir\(\), sessionId\)\)/);
+  // The session's folder: the throwaway settings folder when isolated, else the project's.
+  assert.match(src, /const sessionDir = \(\): string => \(isolated \? join\(isolated\.dir, 'projects', projectKey\(opts\.cwd\)\) : projectDir\(opts\.cwd\)\);/);
   assert.doesNotMatch(src, /readdirSync|mtime/, 'no newest-file guess');
   // A quiet screen without an answer waits instead of failing.
   assert.match(src, /if \(text\) \{ finish\(\{ ok: true, text \}\); return; \}\s*if \(idleTimer\) clearTimeout\(idleTimer\);\s*idleTimer = setTimeout\(captureAndFinish, idleMs\);/);

@@ -35,6 +35,8 @@ export function fileFitCheck(deps: { cwd: () => string; command: () => string; m
         // The file may be private (the financial statement picked by mistake):
         // nothing of it stays in a transcript after the check.
         dropTranscript: true,
+        // Nor in Claude Code's shared prompt history or paste cache.
+        isolateConfig: true,
         ...(f.picture ? { images: [f.picture] } : {})
       });
       if (f.picture && result.error === 'engine unavailable') return { engine: true };
