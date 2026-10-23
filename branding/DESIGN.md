@@ -1272,7 +1272,7 @@ with Try again (`role=alert`). Research has no group.
 info icon, then a right aligned row with the shortcut (⌘ Enter, Ctrl Enter elsewhere, `ink-3`)
 and the secondary "See what changes". Running, the preview takes the box's place: `indigo-soft`
 fill, r-xl, no border or shadow, 12 by 14 padding. Each state has a 13 px 600 heading that takes
-focus. Working: "Working out what changes for Pam…", "This can take up to a minute." and Stop
+focus. Working: "Working out what changes for Pam…", then its three real steps (Getting ready, Reading what you wrote, Writing Pam's job: a green check when done, the spinner on the current one, a grey dot ahead; the steps are the status, owner 2026-10-23), a white "So far" box with the summary lines and plain words as they are written (not announced), and Stop
 (`role=status`). Ready: "Here's what changes", up to six summary lines (plain text after a 6 px
 `indigo` dot) then Show all, a one-time task as one more line ("goes to Michael as a card"),
 "What Pam handles" with the new line or a `card` pill "Unchanged", a "See the whole new job"

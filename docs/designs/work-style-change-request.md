@@ -529,7 +529,7 @@ all seven passes; DR2 ran Codex (gpt-5.4) as the outside design voice.
 |---|---|---|---|
 | 1 | Opens Edit Pam | "Where do I change her job?" | DR4: the box sits under the one line of duties |
 | 2 | Types the change, presses See what changes | unsure it's final | DR9: the label says it only shows |
-| 3 | Waits up to a minute | impatient | DR10 status line "Working out what changes for Pam…", Stop |
+| 3 | Waits (about 9 seconds since 2026-10-23, no hidden thinking) | impatient | DR10 status line "Working out what changes for Pam…", its real steps and the words as they are written, Stop |
 | 4 | Reads the change lines | checking it understood | summary lines, handles "Unchanged" tag, See the whole new job |
 | 5 | Hits a clash or an overlap | stuck | DR5 option rows; DR6 Leave it with Kelly or Edit my change |
 | 6 | Presses Apply | done, wants proof | DR3 "Pam's job is updated.", focus back in the box |
