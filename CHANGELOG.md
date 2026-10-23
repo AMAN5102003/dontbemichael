@@ -19,6 +19,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 - A team member who was stuck and gets going again is reported to Michael as working again, so the stuck card on Ask me comes down by itself, or never goes up if they recovered first.
 
 ### Fixed
+- Pulse no longer counts an office's earlier weeks twice when you switch to another office and back while it is still reading them.
 - A mailbox check that times out no longer reads as needing an app restart. The message now says the next try opens a new connection, which it does, so agents keep reading your business inbox.
 - When a long reply arrives, the conversation with Michael stays on the latest even while the app is busy: a reply that folds behind More no longer leaves the newest lines just out of view until the next screen update.
 

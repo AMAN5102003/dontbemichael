@@ -228,10 +228,13 @@ export async function runBackfill(d: BackfillDeps): Promise<number> {
   const mark = db.prepare(`INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
   // The points and the marker land together or not at all, so a backfill cut
   // short (quit, crash, a full disk) runs again from nothing instead of
-  // counting its first rows twice.
-  db.transaction(() => {
+  // counting its first rows twice. A second run for the same office (the
+  // owner switched away and back while the first was still reading) finds the
+  // first one's marker here and writes nothing.
+  return db.transaction(() => {
+    if (backfilled(db, office)) return 0;
     for (const e of points) ins.run(office, e.agentId, e.kind, Math.round(e.ts), e.value ?? null, e.attrs ? JSON.stringify(e.attrs) : null);
     mark.run(markerKey(office), JSON.stringify({ v: 1, since, until, points: points.length }), d.now);
+    return points.length;
   })();
-  return points.length;
 }
