@@ -114,6 +114,49 @@ test('the app\'s own wake note never starts a restart loop: a prompt soon after 
   assert.match(stuck.body, /restarting Pam did not clear it/);
 });
 
+test('a member who gets going after Michael heard they are stuck is reported working again, once', async (t) => {
+  // Value: protects=a stuck card leaves Ask me once the member works again; fails_when=Michael only ever hears "stuck", a message arriving counts as recovery, or a member who never got stuck sends a note; why_new=owner 2026-10-23 (Pete's card went up three minutes after Pete answered, and stayed 22 hours); seam=HookServer.stuckProgress
+  const { hive, server } = await office(t);
+  let clock = 1_000_000;
+  server.now = () => clock;
+  server.restartStuck = () => true;
+  const prompt = { agent_id: 'pam', session_id: 's', hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use WebFetch' };
+  const subjects = () => hive.inbox('god').map((m) => m.subject);
+  // Pete on 22 Oct: a prompt, the restart, the wake note, the prompt again 18 seconds on.
+  await server.handle(prompt);
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'SessionStart', source: 'resume' });
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'UserPromptSubmit', prompt: 'check your inbox' });
+  clock += 18_000;
+  await server.handle(prompt);
+  assert.deepEqual(subjects(), ['Pam was restarted', 'Pam is stuck']);
+  // A message arriving is not recovery.
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'UserPromptSubmit', prompt: 'a new question from Nick' });
+  assert.equal(hive.inbox('god').length, 2);
+  // Real work is.
+  clock += 60_000;
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'PostToolUse', tool_name: 'WebFetch' });
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'Stop' });
+  assert.deepEqual(subjects(), ['Pam was restarted', 'Pam is stuck', 'Pam is working again'], 'told once');
+  const back = hive.inbox('god')[2];
+  assert.match(back.body, /If you put a question on the owner's Ask me board saying Pam is stuck, withdraw it; if you have not raised it yet, don't\./);
+  assert.doesNotMatch(back.body, /[\u2013\u2014]|terminal|session|1:1/i);
+  // Stuck again soon after: news for Michael again, still no second restart.
+  clock += 60_000;
+  await server.handle(prompt);
+  assert.equal(subjects().at(-1), 'Pam is stuck');
+});
+
+test('a member restarted in time and back at work sends Michael no working again note', async (t) => {
+  const { hive, server } = await office(t);
+  let clock = 1_000_000;
+  server.now = () => clock;
+  server.restartStuck = () => true;
+  await server.handle({ agent_id: 'pam', session_id: 's', hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission to use Bash' });
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'SessionStart', source: 'resume' });
+  await server.handle({ agent_id: 'pam', session_id: 's2', hook_event_name: 'PostToolUse', tool_name: 'Read' });
+  assert.deepEqual(hive.inbox('god').map((m) => m.subject), ['Pam was restarted']);
+});
+
 test('a restart whose new session never starts is no restart: Michael hears the member is still stuck', async (t) => {
   const { hive, server } = await office(t);
   let clock = 1_000_000;

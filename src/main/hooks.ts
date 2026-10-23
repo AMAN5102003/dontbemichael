@@ -1172,7 +1172,17 @@ export class HookServer {
       const name = this.displayName(agentId);
       this.tellMichael(agentId, `${name} was restarted after all`, `${name}'s session started again after all, so the restart went through and ${name} is not stuck. Leave ${name}'s open work with them, and if you asked the owner whether ${name} is stuck, withdraw that question.`);
     } else if (STUCK_MOVED_ON.has(event)) {
+      // A message arriving is not recovery: a member still on its prompt gets
+      // them too. Keep a raised episode until real work shows.
+      if (ep.escalated && event === 'UserPromptSubmit') return;
       this.stuckEpisodes.delete(agentId);
+      if (!ep.escalated) return;
+      // Michael heard the member is stuck: tell him it is over, or the card he
+      // raised stays on Ask me long after the member got going (owner,
+      // 2026-10-23: Pete answered at 05:27, the card went up at 05:30).
+      this.relayedPrompts.delete(agentId);
+      const name = this.displayName(agentId);
+      this.tellMichael(agentId, `${name} is working again`, `${name} got past what stopped them and is working again, so ${name} is not stuck. If you put a question on the owner's Ask me board saying ${name} is stuck, withdraw it; if you have not raised it yet, don't. ${name} can take work again.`);
     }
   }
 

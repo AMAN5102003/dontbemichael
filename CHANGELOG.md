@@ -16,6 +16,7 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 ### Changed
 - Team members and Michael read a company knowledge document a foundations answer names before work that depends on that answer.
 - When a business mailbox check times out, Michael has the team member try again at its next check and carry on, instead of stopping its mail work and asking you to restart the app. Only a mailbox that times out at every check for a whole day comes to you, about the mailbox itself.
+- A team member who was stuck and gets going again is reported to Michael as working again, so the stuck card on Ask me comes down by itself, or never goes up if they recovered first.
 
 ### Fixed
 - A mailbox check that times out no longer reads as needing an app restart. The message now says the next try opens a new connection, which it does, so agents keep reading your business inbox.
