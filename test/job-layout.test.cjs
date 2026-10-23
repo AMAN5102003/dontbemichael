@@ -30,10 +30,9 @@ test('the plain words split into their parts, and nothing else splits', () => {
   assert.deepEqual(plainParts('the job: lower case label'), [{ label: 'The job', text: 'lower case label' }]);
 });
 
-test('one ramp for headings, labels and read text, used everywhere a field shows', () => {
+test('one ramp for labels and read text, used everywhere a field shows', () => {
   // Value: protects=H3 and R1, labels outrank their text in Edit agent, the hire wizard, the change box and the jobs list; fails_when=a copy of the old 12 px grey label comes back or a screen stops using the ramp; why_new=fieldText is new; seam=none; no_claim=source pins, not rendered
   const ramp = read('src/renderer/src/components/fieldText.tsx');
-  assert.match(ramp, /export const sectionHeading: CSSProperties = \{\s*margin: 0, fontFamily: 'var\(--cth-font-ui\)', fontSize: 15, lineHeight: '20px', fontWeight: 600,\s*letterSpacing: '-0\.02em', color: 'var\(--cth-ink\)'/);
   assert.match(ramp, /export const fieldLabel: CSSProperties = \{ fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var\(--cth-ink\)' \};/);
   assert.match(ramp, /\? \{ fontSize: 14, lineHeight: '22px', fontWeight: 400, color: 'var\(--cth-ink-2\)' \}\s*: \{ fontSize: 13, lineHeight: '20px', fontWeight: 400, color: 'var\(--cth-ink-2\)' \};/);
   for (const f of ['EditAgentModal', 'AddAgentModal', 'JobChangeReview', 'ScheduledJobs']) {
@@ -54,12 +53,9 @@ test('How X works shows its parts, folded to the first, in Edit agent, the hire 
   assert.match(read('src/renderer/src/components/JobChangeReview.tsx'), /<JobParts plain=\{ok\.plain\} \/>/, 'the preview shows them all, no fold');
 });
 
-test('the jobs list heading is a section heading in Edit agent', () => {
-  // Value: protects=H1 and H3 for Scheduled jobs; fails_when=the heading drops back to a label under its own job names; why_new=heading panel variant; seam=none; no_claim=source pin
+test('the jobs list heading is a field label in Edit agent, beside its count', () => {
+  // Value: protects=H3 for Scheduled jobs on its panel; fails_when=the heading drops back to the old grey label under its own job names; why_new=2B keeps field labels; seam=none; no_claim=source pin
   const src = read('src/renderer/src/components/ScheduledJobs.tsx');
-  assert.match(src, /\? <h3 style=\{\{ \.\.\.sectionHeading, display: 'inline' \}\}>\{title\}<\/h3>/);
-  for (const loc of ['en', 'ar', 'zh-CN']) {
-    const v = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).jobChange.jobOf;
-    assert.match(v, /\{\{name\}\}/, loc);
-  }
+  assert.match(src, /<span style=\{heading === 'section' \? sectionStyle : fieldLabel\}>\{title\}<\/span>/);
+  assert.doesNotMatch(src, /<h3/);
 });

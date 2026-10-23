@@ -3068,7 +3068,6 @@
     "previewTitle": "改动如下",
     "previewTitleNew": "这是 {{name}} 的工作",
     "oneTimeTask": "这项任务会以卡片形式交给 {{manager}}：{{task}}",
-    "jobOf": "{{name}} 的工作",
     "handles": "{{name}} 负责的事",
     "unchanged": "未改变",
     "seeWhole": "查看完整的新工作",

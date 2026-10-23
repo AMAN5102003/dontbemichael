@@ -33,14 +33,13 @@ voices skipped (D2 B). Decisions numbered H so they don't clash with earlier rev
 
 | ID | Issue | Decision (owner answer) |
 |---|---|---|
-| H1 | Grouping | Section headings with a hairline above: "Kelly's job" and "Scheduled jobs" (Engine keeps its folded line under a hairline; Danger zone as today). Name and Role sit at the top with no heading: the dialog title already says who. Reverses edit-agent.md D3 "field labels only" (owner, 2026-10-02), which predates the read only job. (D3 A, mockup 2A) |
+| H1 | Grouping | Soft panels, field labels only (owner, 2026-10-23, after seeing 2A built: "i liked 2B"): each group on the ground color (`bg`), r-xl, 14 by 16 padding, no border or shadow; Name and Role, the job (What X handles, How X works), Scheduled jobs; What should change? sits under the job panel, the Engine line and Danger zone below the panels. edit-agent.md D3 (no section headings) stands. History: first answered A, section headings (D3 A), built in 8dcf4ca6, then changed to B. |
 | H2 | Where What X handles sits | Under "Kelly's job" in the right column: What Kelly handles, How Kelly works, What should change?. Left column: Name, Role, Scheduled jobs, Engine, Danger zone. Supersedes the column split of SJ2 for the duties line only. One column: Name, Role, Kelly's job (handles, how she works, what should change), Scheduled jobs, Engine, Danger zone. (D4 A) |
 | H3 | Type ramp | Section heading `t-panel` 15/20 600 ink, tracking -0.02em; field label `t-ui` 13/18 600 ink; read only body `t-read` 14/22 400 ink 2 in the wide layout, `t-ui` 13/20 400 ink 2 in one column. The Scheduled jobs heading uses the section step; each job name stays 13 600 ink. (D5 A) |
 | H4 | How X works parts | The plain words split on their part labels ("The job:", "How the work is done:", "Asks the owner first:" with or without words after them, or any short "Label:" alone on its line, so a sentence with a colon never splits; build note): each part's name on its own line (12/16 600 ink), its words under it in body, 10 px between parts. Folded, the whole first part shows, then Show all; text without labels shows as one block, folded at four lines as before. (D6 A) |
 | H5 | Hire wizard | The same label, body and parts treatment on the hire wizard (its `Row` and `ReadRow`, so every step's field labels), and on the shared change box; no section headings there. (D7 A) |
 
-Spacing and a11y (mechanics of H1): each heading is an `h3`, 24 px above it with the 1 px
-`line` hairline, 12 px below; fields within a section 16 px apart.
+Spacing (mechanics of H1): panels 14 px apart, fields within a panel 14 px apart.
 
 ### Pass ratings
 
@@ -57,11 +56,11 @@ Spacing and a11y (mechanics of H1): each heading is an `h3`, 24 px above it with
 
 | Screen/Section | Mockup Path | Direction | Notes |
 |---|---|---|---|
-| Edit agent wide | /Users/moblizeit/.gstack/projects/agentvivekkumar-dontbemichael/designs/edit-agent-hierarchy-20261023/edit-agent-hierarchy.html | section 2A | HTML with DESIGN.md light tokens (owner rule); 2B not chosen; body 14 px in the build (mockup drew 13.5) |
+| Edit agent wide | /Users/moblizeit/.gstack/projects/agentvivekkumar-dontbemichael/designs/edit-agent-hierarchy-20261023/edit-agent-hierarchy.html | section 2B | HTML with DESIGN.md light tokens (owner rule); 2A built first, then replaced; body 14 px in the build (mockup drew 13.5); panel color `bg` (the mockup's #F6F5FA) |
 
 ### NOT in scope
 
-- Soft panels per group (D3 B).
+- Section headings (first chosen as D3 A, replaced by 2B).
 - Uppercase micro labels (D5 B).
 - Section headings in the hire wizard (D7: its steps are the sections).
 

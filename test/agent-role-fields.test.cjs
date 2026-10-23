@@ -48,12 +48,13 @@ test('Edit Agent shows Role, what they handle read only, What should change and 
   // The rows are built once (roleRow to schedules) and laid out in one
   // column or, wide, in two (wide panel WD2).
   const briefing = src.slice(src.indexOf('const roleRow = ('), src.indexOf('const engine = ('));
-  // Sections (edit-agent-hierarchy.md, H1, H2): name and role at the top,
-  // the whole job under its heading, then the scheduled jobs and the engine.
+  // Groups on soft panels (owner, 2026-10-23, mockup 2B; edit-agent-hierarchy.md
+  // H1, H2): name and role, the whole job with what should change under it,
+  // then the scheduled jobs and the engine.
   const side = src.slice(src.indexOf('// One column (DR4, H2)'));
-  assert.match(side, /<Fields id="name">\{nameRow\}\{roleRow\}<\/Fields>\s*<Section id="job" title=\{t\('jobChange\.jobOf', \{ name: who \}\)\}>\s*\{handlesRow\}\s*\{workStyleRow\}\s*\{changeRow\}\s*<\/Section>\s*\{!isResearch && <Section id="schedules">\{schedules\}<\/Section>\}\s*<Section id="engine">\{engine\}<\/Section>/, 'one column: who, the job, the jobs, the engine');
-  assert.match(src, /<Fields id="name">\{nameRow\}\{roleRow\}<\/Fields>\s*\{!isResearch && <Section id="schedules">\{schedules\}<\/Section>\}\s*<Section id="engine">\{engine\}<\/Section>/, 'wide left: who, the jobs, the engine');
-  assert.match(src, /<Section id="job" title=\{t\('jobChange\.jobOf', \{ name: who \}\)\} first>\s*\{handlesRow\}\s*\{workStyleRow\}\s*\{changeRow\}\s*<\/Section>/, 'wide right: the whole job (H2)');
+  assert.match(side, /<Panel id="name">\{nameRow\}\{roleRow\}<\/Panel>\s*<Panel id="job">\s*\{handlesRow\}\s*\{workStyleRow\}\s*<\/Panel>\s*\{changeRow\}\s*\{!isResearch && <Panel id="schedules">\{schedules\}<\/Panel>\}\s*\{engine\}/, 'one column: who, the job, what should change, the jobs, the engine');
+  assert.match(src, /<Panel id="name">\{nameRow\}\{roleRow\}<\/Panel>\s*\{!isResearch && <Panel id="schedules">\{schedules\}<\/Panel>\}\s*\{engine\}/, 'wide left: who, the jobs, the engine');
+  assert.match(src, /<Panel id="job">\s*\{handlesRow\}\s*\{workStyleRow\}\s*<\/Panel>\s*\{changeRow\}\s*<\/div>\s*<\/div>/, 'wide right: the whole job, the change box under it (H2)');
   assert.ok(briefing.includes("<Row label={t('editAgent.role')}>"));
   assert.ok(briefing.includes("<ReadRow label={t('editAgent.handles', { name: who })}"));
   assert.ok(briefing.includes("<ReadRow label={t('jobChange.howWorks', { name: who })}"));
@@ -67,7 +68,7 @@ test('Edit Agent shows Role, what they handle read only, What should change and 
     assert.deepEqual(Object.keys(d.editAgent), Object.keys(en.editAgent), `${loc} has every Edit agent string`);
     assert.deepEqual(Object.keys(d.jobChange), Object.keys(en.jobChange), `${loc} has every job change string`);
   }
-  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} name=\{who\} heading="panel" onChange=\{goToSchedules\} \/>/, 'each job and its focus, read only (FA1)');
+  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} name=\{who\} onChange=\{goToSchedules\} \/>/, 'each job and its focus, read only (FA1)');
 });
 
 test('saving joins the typed title with the saved handles, keeps the old role when empty, and tells the registry', () => {

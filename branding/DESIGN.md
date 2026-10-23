@@ -364,8 +364,8 @@ badges.
 
 A field label outranks what it labels (owner, 2026-10-23,
 `docs/designs/edit-agent-hierarchy.md`): in forms and read only fields the ramp is a
-section heading `t-panel` 600 `ink`, a field label `t-ui` 600 `ink`, and the text `t-read`
-(wide) or `t-ui` (side) 400 `ink-2`. One source: `components/fieldText.tsx`.
+field label `t-ui` 600 `ink` over the text `t-read` (wide) or `t-ui` (side) 400 `ink-2`;
+groups sit on soft panels, not under headings. One source: `components/fieldText.tsx`.
 
 ### 4.3 Web scale [Web]
 
@@ -1213,12 +1213,12 @@ are sentence case. Closing time is the closing bar (§7.23), not a dialog.
 `docs/designs/edit-agent-hierarchy.md`, owner 2026-10-23) changes only what can change on
 someone already hired, in one column, laid exactly over the person's panel it edits (its
 box and radius, kept in step on resize; with no panel, 640 wide, full height, on the right,
-left in RTL). It reads by sections, each but a column's first under a 1 px `line` hairline with
-20 px above, its heading an `h3` in `t-panel` 600: Name and Role at the top with no heading
-(the dialog title says who); "Kelly's job" (wide: the whole right column) with What they
-handle, How they work in its parts (each part's name 12 px 600 over its words, folded to the
-first part) and What should change?; then Scheduled jobs; then the Engine line. In one
-column, in that order. Older order, for reference: Name, Role,
+left in RTL). Its groups sit on soft panels (owner, 2026-10-23, `docs/designs/edit-agent-hierarchy.md`
+H1): the `bg` ground color, r-xl, 14 by 16 padding, no border or shadow, 14 px apart. Wide:
+left, a panel with Name and Role, the Scheduled jobs panel, the Engine line, the Danger zone;
+right, the job panel (What they handle, How they work in its parts: each part's name 12 px 600
+over its words, folded to the first part) with What should change? under it. One column: Name
+and Role, the job, What should change?, Scheduled jobs, Engine. Older order, for reference: Name, Role,
 What they handle (read only text), How they work (read only, folded to four lines with Show
 all, Undo last change and "Last change, 22 Oct: ..."), What should change? under the job it
 changes (owner, 2026-10-23; wide, the same in the right column), the Scheduled jobs group
@@ -1229,7 +1229,7 @@ Cancel and Save changes; the job saves only through the preview's Apply. Under t
 who can be deleted (never Michael, his assistant or Pete), the Danger zone: one coral
 tinted row, r-xl corners and the 1.5 px coral ring of §6.3, its name with an info icon and
 the destructive Delete button. No section headings; field
-labels and section headings (owner, 2026-10-23), with explanations behind info icons. The character is chosen once, in the hire wizard, and a
+labels only, the groups on panels (owner, 2026-10-23), with explanations behind info icons. The character is chosen once, in the hire wizard, and a
 person's color is their department's, set by the job; Edit agent offers neither.
 
 **Scheduled jobs** (`ScheduledJobsList`, `docs/designs/edit-agent-scheduled-jobs.md`, owner

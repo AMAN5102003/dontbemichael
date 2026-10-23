@@ -4,16 +4,11 @@ import { useRtl } from '@/i18n/useDirection';
 
 /**
  * The type ramp for Edit agent, the hire wizard and the job change preview
- * (docs/designs/edit-agent-hierarchy.md, H3 and R1): a section heading, then a
- * field label, then the read only text, so a label always outranks what it
- * labels. One place, so the screens never drift apart.
+ * (docs/designs/edit-agent-hierarchy.md, H3 and R1): a field label, then the
+ * read only text, so a label always outranks what it labels. Groups sit on
+ * soft panels rather than under headings (owner, 2026-10-23, mockup 2B). One
+ * place, so the screens never drift apart.
  */
-
-/** A section heading (`t-panel`): "Kelly's job", "Scheduled jobs". */
-export const sectionHeading: CSSProperties = {
-  margin: 0, fontFamily: 'var(--cth-font-ui)', fontSize: 15, lineHeight: '20px', fontWeight: 600,
-  letterSpacing: '-0.02em', color: 'var(--cth-ink)'
-};
 
 /** A field label (`t-ui` 600): darker and bolder than the text under it. */
 export const fieldLabel: CSSProperties = { fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink)' };

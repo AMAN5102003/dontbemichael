@@ -42,18 +42,18 @@ test('Edit agent changes only name, role, job and engine; never the character or
   assert.match(patch, /provider,\s*model,\s*command,\s*description: trimmedDescription\s*$/);
 });
 
-test('sections with headings: who, the job, the scheduled jobs, the engine (owner, 2026-10-23, reverses D3)', () => {
-  // Value: protects=H1 and H2, a layout read by its headings; fails_when=the job heading, the hairlines or the order go; why_new=edit-agent-hierarchy.md H1 reverses "field labels only"; seam=none; no_claim=source pin, not rendered
-  assert.doesNotMatch(src, /width=\{940\}|hint="/);
+test('groups on soft panels, field labels only: who, the job, the scheduled jobs, then the engine (owner, 2026-10-23, mockup 2B)', () => {
+  // Value: protects=H1 and H2, groups read as shapes with no headings (D3 kept); fails_when=a heading comes back, a panel gains a border or shadow, or the order changes; why_new=edit-agent-hierarchy.md H1 (2B); seam=none; no_claim=source pin, not rendered
+  assert.doesNotMatch(src, /width=\{940\}|<Section|<h3|hint="/);
   // Only the wide panel has two columns (wide panel WD2).
   assert.equal((src.match(/gridTemplateColumns/g) ?? []).length, 1);
   assert.match(src, /\{wide \? \(\s*\/\/[^\n]*\n(?:\s*\/\/[^\n]*\n)*\s*<div style=\{\{ display: 'grid', gridTemplateColumns: 'minmax\(300px, 360px\) minmax\(0, 720px\)', justifyContent: 'center'/);
-  const section = src.slice(src.indexOf('function Section('), src.indexOf('function ReadRow('));
-  assert.match(section, /\.\.\.\(first \? \{\} : \{ borderTop: '1px solid var\(--cth-line\)', paddingTop: 20 \}\)/, 'a hairline above each section but the first');
-  assert.match(section, /\{title && <h3 id=\{`edit-agent-\$\{id\}-heading`\} style=\{\{ \.\.\.sectionHeading/, 'a real heading, named for screen readers');
+  const panel = src.slice(src.indexOf('function Panel('), src.indexOf('function ReadRow('));
+  assert.match(panel, /padding: '14px 16px', borderRadius: 'var\(--cth-r-xl\)', background: 'var\(--cth-bg\)'/);
+  assert.doesNotMatch(panel, /boxShadow|border:/, 'no border or shadow');
   const side = src.slice(src.indexOf('// One column (DR4, H2)'));
   const at = (s) => side.indexOf(s);
-  assert.ok(at('<Fields id="name">') > 0 && at('<Fields id="name">') < at('<Section id="job"') && at('<Section id="job"') < at('<Section id="schedules">') && at('<Section id="schedules">') < at('<Section id="engine">'));
+  assert.ok(at('<Panel id="name">') > 0 && at('<Panel id="name">') < at('<Panel id="job">') && at('<Panel id="job">') < at('<Panel id="schedules">') && at('<Panel id="schedules">') < at('{engine}'));
 });
 
 // Owner, 2026-10-02: fold the engine away so what they handle and the work
@@ -84,7 +84,7 @@ test('the job reads in place and the body scrolls: no typed job box to grow (wor
   // Value: protects=the scheduled jobs sit under the job and nothing overlaps; fails_when=a typed Work style box or a grow chain returns; why_new=the job became read only; seam=none
   assert.doesNotMatch(src, /<textarea/);
   assert.doesNotMatch(src, /grow \? \{ flex: 1/);
-  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} name=\{who\} heading="panel" onChange=\{goToSchedules\} \/>/, 'the jobs list is its own section (SJ2, H1)');
+  assert.match(src, /<ScheduledJobsList agentId=\{agent\.id\} name=\{who\} onChange=\{goToSchedules\} \/>/, 'the jobs list is its own group (SJ2, H1)');
   const dialog = fs.readFileSync(path.resolve(__dirname, '../src/renderer/src/shell/Dialog.tsx'), 'utf8');
   assert.match(dialog, /overflowY: 'auto', minHeight: 0, flex: 1, display: 'flex', flexDirection: 'column'/);
 });

@@ -23,7 +23,7 @@ import { splitAgentRole, joinAgentRole } from '@shared/agentRole';
 import { roleLabel, plainFallback } from '@shared/workStyleText';
 import { applyJob, jobBase, jobFingerprint, plainFor, undoJob } from '@shared/jobChange';
 import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
-import { JobParts, fieldLabel, jobPartsFold, readBody, sectionHeading } from './fieldText';
+import { JobParts, fieldLabel, jobPartsFold, readBody } from './fieldText';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
 import { ScheduledJobsList } from './ScheduledJobs';
 import { sendTypedFirstTask } from '@/shell/typedFirstTask';
@@ -405,7 +405,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
   // Scheduled jobs are their own group, apart from the duties
   // (edit-agent-scheduled-jobs.md, SJ2); "Change on Access" closes this
   // dialog first, asking when something is unsaved (SJ3).
-  const schedules = <ScheduledJobsList agentId={agent.id} name={who} heading="panel" onChange={goToSchedules} />;
+  const schedules = <ScheduledJobsList agentId={agent.id} name={who} onChange={goToSchedules} />;
   const engine = (
     <>
       {/* The engine rarely changes: one folded line naming it, closed by default. */}
@@ -542,40 +542,43 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
     >
       {wide ? (
         // Two columns (WD2): who they are, their timers and engine at 300 to
-        // 360 px; the whole job beside them at most 720 px across, under its
-        // own heading (edit-agent-hierarchy.md, H1 and H2). In Arabic the grid
+        // 360 px; the whole job beside them at most 720 px across. Each group
+        // sits on its own soft panel, field labels only (owner, 2026-10-23:
+        // mockup 2B; edit-agent-hierarchy.md H1, H2). In Arabic the grid
         // mirrors with the page.
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 40, flex: 1, minHeight: 0 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0 }}>
-            <Fields id="name">{nameRow}{roleRow}</Fields>
-            {!isResearch && <Section id="schedules">{schedules}</Section>}
-            <Section id="engine">{engine}</Section>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 360px) minmax(0, 720px)', justifyContent: 'center', gap: 32, flex: 1, minHeight: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+            <Panel id="name">{nameRow}{roleRow}</Panel>
+            {!isResearch && <Panel id="schedules">{schedules}</Panel>}
+            {engine}
             <div style={{ flex: 1 }} />
             {danger}
           </div>
-          <Section id="job" title={t('jobChange.jobOf', { name: who })} first>
-            {handlesRow}
-            {workStyleRow}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
+            <Panel id="job">
+              {handlesRow}
+              {workStyleRow}
+            </Panel>
             {changeRow}
-          </Section>
+          </div>
         </div>
       ) : (
-      // One column (DR4, H2): name and role, then the job under its heading
-      // (what they handle, how they work, what should change, owner
-      // 2026-10-23), the scheduled jobs and the engine, each in its own
-      // section; explanations sit behind info icons.
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <Fields id="name">{nameRow}{roleRow}</Fields>
+      // One column (DR4, H2): name and role, then the job (what they handle,
+      // how they work) with what should change under it (owner, 2026-10-23),
+      // then the scheduled jobs, each group on its own soft panel, then the
+      // engine; explanations sit behind info icons.
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <Panel id="name">{nameRow}{roleRow}</Panel>
 
-        <Section id="job" title={t('jobChange.jobOf', { name: who })}>
+        <Panel id="job">
           {handlesRow}
           {workStyleRow}
-          {changeRow}
-        </Section>
+        </Panel>
+        {changeRow}
 
-        {!isResearch && <Section id="schedules">{schedules}</Section>}
+        {!isResearch && <Panel id="schedules">{schedules}</Panel>}
 
-        <Section id="engine">{engine}</Section>
+        {engine}
 
         {danger}
       </div>
@@ -654,18 +657,17 @@ function Fields({ id, children }: { id: 'name' | 'briefing' | 'engine'; children
   return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
 }
 
-/** A section of the dialog (edit-agent-hierarchy.md, H1): a hairline above,
- *  then its heading when it has one, then its fields. The first section of a
- *  column has no hairline. */
-function Section({ id, title, first, children }: { id: 'job' | 'schedules' | 'engine'; title?: string; first?: boolean; children: React.ReactNode }) {
+/** One group of fields on a soft panel (owner, 2026-10-23, mockup 2B;
+ *  edit-agent-hierarchy.md H1): the ground color, r-xl, no border or shadow,
+ *  so the groups read as shapes before any text is read. */
+function Panel({ id, children }: { id: 'name' | 'job' | 'schedules'; children: React.ReactNode }) {
   return (
-    <section id={`edit-agent-${id}-section`} data-section={id} aria-labelledby={title ? `edit-agent-${id}-heading` : undefined} style={{
-      display: 'flex', flexDirection: 'column', gap: 16, minWidth: 0,
-      ...(first ? {} : { borderTop: '1px solid var(--cth-line)', paddingTop: 20 })
+    <div id={`edit-agent-${id}`} data-fields={id} style={{
+      display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0,
+      padding: '14px 16px', borderRadius: 'var(--cth-r-xl)', background: 'var(--cth-bg)'
     }}>
-      {title && <h3 id={`edit-agent-${id}-heading`} style={{ ...sectionHeading, marginBottom: -4 }}>{title}</h3>}
       {children}
-    </section>
+    </div>
   );
 }
 
