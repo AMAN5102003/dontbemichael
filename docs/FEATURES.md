@@ -1,6 +1,6 @@
 # Don't Be Michael: features and changes
 
-Everything the app does today, and every release that got it here (0.0.1 to 0.2.4). Part 1 is
+Everything the app does today, and every release that got it here (0.0.1 to 0.2.6). Part 1 is
 written to be lifted onto the GitHub page and the website as it is; Part 2 is the full list, release
 by release.
 
@@ -49,8 +49,10 @@ moving, and brings you only the decisions that need you.
   business. Or write a new one.
 - No two teammates do the same work. The app checks every new job against the team by what each
   one handles; an overlap has to be tied to its own mailbox or topic before you can hire.
-- The work style is in plain words you can edit, or Suggest me writes a first one for you. The app
-  turns it into the agent's instructions.
+- Describe the job once, in your own words, and see it written out before you hire. The app turns
+  it into the agent's instructions.
+- Change any job later by saying what should change in Edit agent. You see the steps as it works,
+  then exactly what changes, before anything is saved, and Undo puts it back.
 - A new hire's one time first job is a card Michael hands out, not a line in their work style.
 - Every hire gets its own private folder and starts working.
 - Delete a team member for good from the Danger zone in Edit agent: they stop, their schedules
@@ -97,7 +99,8 @@ moving, and brings you only the decisions that need you.
   your own app, save it, and the team searches the new version.
 - Company foundations: one document of what each job needs to know about your business (who you
   sell to, how you sound, your financial year), filled by you, the company profile and what the
-  team learns. When work needs an empty answer, a card on Needs you asks you once.
+  team learns. When work needs an empty answer, a card on Needs you asks you once; answer it in
+  words or with a file, which the app checks fits the question before the team can read it.
 
 ### 6. You stay in charge
 - Every connector on your Claude account (HubSpot, Google Drive, Gmail, QuickBooks and the rest)
@@ -167,6 +170,21 @@ moving, and brings you only the decisions that need you.
   the file was kept.
 
 ## Part 2: Every change, release by release
+
+### 0.2.6 (2026-10-23)
+- Change a team member's job by saying what should change: Edit agent shows the job in plain
+  words with one box, then the steps and the new words as they are written, what changes and the
+  whole new job, before Apply. Undo puts it back. A clash becomes one question whose suggested
+  answer keeps your approvals; an overlap names the teammates; one time work goes to Michael.
+- Hiring asks what the new person will do once; a pack update keeps your earlier changes.
+- Add a file right from a Company foundations card, pictures included: it is checked against the
+  question before it joins company knowledge, and nothing of it stays in Claude's history.
+- Settings, Access, the Command Center, the company profile, the schedule editor and Add a mailbox
+  share Edit agent's panels and labels. Edit agent shows scheduled jobs as their own group.
+- A mailbox check that times out tries again by itself; a recovered stuck member is reported to
+  Michael; the office floor carries the GAACC AI Labs mark.
+- Messages typed into a team member's terminal and the app's background checks drop hidden
+  control characters first. The Mac release is signed with the owner's own Apple team.
 
 ### 0.2.5 (2026-10-21)
 - Reset memory in Settings: every member, Michael and Research included, starts on its first day

@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The format is based on
 
 Don't Be Michael keeps its own version line, starting at 0.0.1.
 
-## [Unreleased]
+## [0.2.6] (2026-10-23)
 
 ### Added
 - **Change a team member's job by saying what should change.** Edit agent shows the job read only, in plain words, with one box: "What should change?". Type something like "also handle the refund emails, and ask me before any refund over $200" and See what changes shows what would be different, the new "What Pam handles" (or Unchanged), and the whole new job, before anything is saved. Apply saves it, and Undo last change puts it back. When a change clashes with the job or your Company foundations you pick the answer, and the suggested one keeps your approvals and spending limits where it can, when it overlaps a teammate the app names them, and one time work like "this week, chase the March invoices" goes to Michael as a card instead of into the job.
