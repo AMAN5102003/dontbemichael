@@ -56,10 +56,12 @@ test('the afterSign hook seals an unsigned Mac app ad hoc, and only then', () =>
 // A signed Mac release must be notarized too, or it fails (owner, 2026-10-22):
 // a signed but unnotarized download still shows macOS's "cannot verify" warning.
 // Apple's tools are stubbed, so these run on every platform.
-function loadHook(t, notarize) {
+function loadHook(t, notarize, team = 'B5EHD4JBD2') {
   const cp = require('node:child_process');
   const calls = [];
   t.mock.method(cp, 'execFileSync', (cmd, args) => { calls.push([cmd, ...args].join(' ')); });
+  // codesign -dv prints to stderr, as the real one does.
+  t.mock.method(cp, 'spawnSync', () => ({ status: 0, stdout: '', stderr: `Identifier=app\nTeamIdentifier=${team}\n` }));
   const hookPath = path.join(root, 'build/notarize.cjs');
   const notarizePath = require.resolve('@electron/notarize', { paths: [root] });
   const saved = require.cache[notarizePath];
@@ -108,4 +110,33 @@ test('the Mac app takes no DYLD entitlement, and keeps library validation off fo
   const keys = [...plist.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<key>([^<]+)<\/key>/g)].map((m) => m[1]);
   assert.ok(!keys.includes('com.apple.security.cs.allow-dyld-environment-variables'));
   assert.ok(keys.includes('com.apple.security.cs.disable-library-validation'));
+});
+
+test('a release signed by any team but the owner\'s fails before notarizing', async (t) => {
+  const { run } = loadHook(t, async () => assert.fail('a wrong team is never submitted'), 'A4X5Y2CSWQ');
+  appleCreds();
+  Object.assign(process.env, { CI: 'true', CSC_LINK: 'cert' });
+  await assert.rejects(run(), /must be signed by Apple team B5EHD4JBD2, but it was signed by A4X5Y2CSWQ/);
+});
+
+test('a release that ended up unsigned fails', async (t) => {
+  const unsigned = loadHook(t, async () => assert.fail('never submitted'), 'not set');
+  Object.assign(process.env, { CI: 'true', CSC_LINK: 'cert' });
+  await assert.rejects(unsigned.run(), /signed by no team/);
+});
+
+test('the notarization team must be the release team too', async (t) => {
+  const { run } = loadHook(t, async () => assert.fail('never submitted'));
+  appleCreds();
+  Object.assign(process.env, { CI: 'true', CSC_LINK: 'cert', APPLE_TEAM_ID: 'OTHERTEAM1' });
+  await assert.rejects(run(), /APPLE_TEAM_ID is OTHERTEAM1, not the release team B5EHD4JBD2/);
+});
+
+test('a release signed by the owner\'s team is notarized', async (t) => {
+  let sent;
+  const { run } = loadHook(t, async (opts) => { sent = opts; });
+  appleCreds();
+  Object.assign(process.env, { CI: 'true', CSC_LINK: 'cert', APPLE_TEAM_ID: 'B5EHD4JBD2' });
+  await run();
+  assert.equal(sent.teamId, 'B5EHD4JBD2');
 });

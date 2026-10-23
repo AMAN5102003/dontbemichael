@@ -13,8 +13,20 @@
 // A release that is signed must also be notarized, or it fails. A signed but
 // unnotarized download still gets macOS's "cannot verify" warning, and the
 // release would look done while it is not (owner, 2026-10-22).
-const { execFileSync } = require('node:child_process');
+const { execFileSync, spawnSync } = require('node:child_process');
 const path = require('node:path');
+
+/** The only Apple team a release is signed by: the owner's own account, never
+ *  an employer's or a contributor's (owner, 2026-10-22). It is public; every
+ *  signed copy of the app carries it. */
+const RELEASE_TEAM_ID = 'B5EHD4JBD2';
+
+/** The team that signed the app, or null when it is unsigned or ad hoc. */
+function signingTeam(appPath) {
+  const out = spawnSync('codesign', ['-dv', '--verbose=2', appPath], { encoding: 'utf8' });
+  const m = /^TeamIdentifier=(\S+)$/m.exec(`${out.stdout || ''}${out.stderr || ''}`);
+  return m && m[1] !== 'not' ? m[1] : null;
+}
 
 /**
  * Without a Developer ID cert electron-builder skips signing entirely, which
@@ -49,6 +61,17 @@ exports.default = async function notarizing(context) {
   if (electronPlatformName !== 'darwin') return; // mac only
 
   sealAdHocIfUnsigned(path.join(appOutDir, `${context.packager.appInfo.productFilename}.app`));
+
+  // CI with a cert is a real release: it must be signed by the owner's team.
+  if (process.env.CI && process.env.CSC_LINK) {
+    const team = signingTeam(path.join(appOutDir, `${context.packager.appInfo.productFilename}.app`));
+    if (team !== RELEASE_TEAM_ID) {
+      throw new Error(`[sign] the release must be signed by Apple team ${RELEASE_TEAM_ID}, but it was signed by ${team || 'no team'}. Check the APPLE_CERTIFICATE_P12 secret.`);
+    }
+    if (process.env.APPLE_TEAM_ID && process.env.APPLE_TEAM_ID !== RELEASE_TEAM_ID) {
+      throw new Error(`[notarize] APPLE_TEAM_ID is ${process.env.APPLE_TEAM_ID}, not the release team ${RELEASE_TEAM_ID}.`);
+    }
+  }
 
   const {
     APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID,
