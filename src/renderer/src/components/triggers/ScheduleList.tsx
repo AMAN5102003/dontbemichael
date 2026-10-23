@@ -249,6 +249,8 @@ interface RowProps {
   /** Read only: plain text, no toggle, no editor and no link (the office
    *  schedule; owner, 2026-09-26). */
   readOnly?: boolean;
+  /** The last row in a group's panel: no rule under it, the panel ends it. */
+  last?: boolean;
   ownerName: string;
   /** The agent's email is off, so a job that checks mail is refused each run. */
   noEmail?: boolean;
@@ -256,7 +258,7 @@ interface RowProps {
   focusOwner?: FocusOwner;
 }
 
-function ScheduleRow({ mission, nameOf, readOnly, ownerName, noEmail, focusOwner }: RowProps) {
+function ScheduleRow({ mission, nameOf, readOnly, last, ownerName, noEmail, focusOwner }: RowProps) {
   const { t, i18n } = useTranslation();
   const rtl = useRtl();
   const godName = useResolvedGodName();
@@ -414,7 +416,7 @@ function ScheduleRow({ mission, nameOf, readOnly, ownerName, noEmail, focusOwner
     );
 
   return (
-    <div style={{ boxShadow: 'inset 0 -1px 0 var(--cth-ink-100)' }}>
+    <div style={{ boxShadow: last ? undefined : 'inset 0 -1px 0 var(--cth-ink-100)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {header}
         {!readOnly && (
@@ -769,11 +771,12 @@ export function OfficeSchedules() {
               {isClosed ? t('schedulesSection.closedGroup', { name }) : name}
             </h3>
             {isClosed && <Hint>{t('schedulesSection.closedNote', { name })}</Hint>}
-            <div style={{ boxShadow: 'inset 0 1px 0 var(--cth-ink-100)' }}>
-              {rows.map((m) => (
+            <div>
+              {rows.map((m, i) => (
                 <ScheduleRow
                   key={m.id}
                   mission={m}
+                  last={i === rows.length - 1}
                   nameOf={nameOf}
                   ownerName={name}
                   noEmail={!!config && cannotCheckEmail(m, { enabled: agentMailboxes(config, owner).length > 0 }, gmailConnectorOn(config, owner))}

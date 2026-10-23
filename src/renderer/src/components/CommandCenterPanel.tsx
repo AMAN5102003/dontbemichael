@@ -44,7 +44,7 @@ import { isComposingKey } from '@shared/imeGuard';
 import { fmtTokens } from '@shared/tokenFormat';
 import { useRtl } from '@/i18n/useDirection';
 import { SilentPanelLine } from './SilentEngine';
-import { groupName, hint } from './fieldText';
+import { fieldLabel, groupName, hint } from './fieldText';
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
  *  when the god agent is selected: terminal + queue, the floor roster (with
@@ -1121,7 +1121,7 @@ export function MemoryTab({ godId, who: controlledWho, onWho, ownOnly = false }:
       background: 'var(--cth-card)', display: 'flex', flexDirection: 'column'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <h2 style={{ margin: 0, flex: 1, minWidth: 0, fontFamily: 'var(--cth-font-display)', fontSize: 12, lineHeight: '20px', fontWeight: 400, color: 'var(--cth-ink-900)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <h2 style={{ ...fieldLabel, margin: 0, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {t('memoryNotes.title', { name })}
         </h2>
         {!ownOnly && (
