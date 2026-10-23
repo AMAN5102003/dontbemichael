@@ -29,6 +29,8 @@ export function fileFitCheck(deps: { cwd: () => string; command: () => string; m
         noTools: true,
         // Only the owner's own user settings: no project settings or hooks.
         settingSources: 'user',
+        // No hook sees the file, whatever settings the check finds.
+        settingsJson: JSON.stringify({ disableAllHooks: true }),
         thinking: false,
         env: deps.env?.(),
         timeoutMs: TIMEOUT_MS,

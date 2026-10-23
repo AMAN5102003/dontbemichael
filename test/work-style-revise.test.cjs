@@ -56,6 +56,17 @@ test('the request is read as short strings, needs a name and a change, and nothi
   assert.equal(many.changes[19], 'c29', 'the newest are kept');
 });
 
+test('a job change runs with no hooks, only user settings, and leaves no transcript', async () => {
+  // Value: protects=the job and the saved answers in a job change prompt; fails_when=the hidden session loads the office folder's settings or a hook, or keeps its transcript; why_new=Codex adversarial pass 1, 2026-10-23; seam=stubbed hidden model; no_claim=what Claude Code does with the flags (the trust layer uses the same, verified live)
+  const calls = stub({ ok: true, text: JSON.stringify(okReply()) });
+  await W.reviseWorkStyle({ ctx: { name: 'Pam', title: 'Customer Support' }, current: { instructions: 'x', handles: 'y' }, changes: ['Shorter replies'] }, { command: 'claude', cwd: '/office' });
+  const o = calls[0].opts;
+  assert.equal(o.settingSources, 'user');
+  assert.deepEqual(JSON.parse(o.settingsJson), { disableAllHooks: true });
+  assert.equal(o.dropTranscript, true);
+  assert.equal(o.noTools, true);
+});
+
 test('an ok answer becomes the new job; unchanged duties stay null', async () => {
   // Value: protects=a tone change never rewrites the routing line Michael reads (eng D6); fails_when=handles null is replaced or the opening check is lost; why_new=T1; seam=stubbed hidden model
   stub({ ok: true, text: okReply() });

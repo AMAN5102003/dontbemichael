@@ -879,6 +879,7 @@ test('the file fit check fails closed and keeps nothing of the file: only FITS o
   assert.match(logs.at(-1).reason, /session gone/);
   const o = calls[0].opts;
   assert.deepEqual([o.noTools, o.settingSources, o.dropTranscript, o.cwd, o.command, o.engine, o.engineModel, 'images' in o], [true, 'user', true, '/check', 'claude', 'claude', 'm1', false]);
+  assert.deepEqual([o.isolateConfig, JSON.parse(o.settingsJson)], [true, { disableAllHooks: true }], 'its own settings folder, and no hook sees the file');
   const nonce = (p) => /--- FILE (\S+) ---/.exec(p)[1];
   assert.notEqual(nonce(calls[0].prompt), nonce(calls[1].prompt), 'a file cannot learn its delimiter from an earlier run');
   assert.match(calls[0].prompt, /We sound warm and plain\./);

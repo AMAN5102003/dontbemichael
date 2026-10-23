@@ -170,6 +170,12 @@ export async function reviseWorkStyle(
       cwd: deps.cwd,
       command: deps.command,
       noTools: true,
+      // The job and the saved answers stay with the app: only the owner's
+      // own user settings, no hook of theirs or the office folder's sees the
+      // prompt, and no transcript stays (Codex adversarial, 2026-10-23).
+      settingSources: 'user',
+      settingsJson: JSON.stringify({ disableAllHooks: true }),
+      dropTranscript: true,
       env: deps.env,
       timeoutMs: TIMEOUT_MS,
       // No hidden thinking (owner, 2026-10-23): measured on a real change, the
