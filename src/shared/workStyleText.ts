@@ -16,7 +16,6 @@
  * or node imports: main and the renderer use it, tests load it directly.
  */
 
-import { swapName } from './hireTemplates';
 import { ownValue } from './ownValue';
 
 export interface WorkStyleContext {
@@ -113,49 +112,127 @@ export function toInstructionsPrompt(plain: string, ctx: WorkStyleContext, previ
   ].join('\n');
 }
 
-/** What "Suggest me" knows about the new hire (owner, 2026-10-03: writing a
- *  good work style from scratch is hard). */
-export interface SuggestRequest {
+/**
+ * "What should change?" (docs/designs/work-style-change-request.md, owner
+ * 2026-10-23): the owner never edits a job's text; they say what should change,
+ * and one hidden call writes the new instructions, the plain words the owner
+ * reads, and "What X handles" when the duties changed. A new hire is the same
+ * call with no current job and the owner's description as the one change.
+ */
+export interface ReviseInput {
   ctx: WorkStyleContext;
-  /** What the new hire handles: their role description. */
+  /** The standing instructions now; empty for a new job. */
+  instructions: string;
+  /** "What X handles" now, without its binding lines; empty for a new job. */
   handles: string;
-  /** The business type, as onboarding names it ("Restaurant & Food"). */
-  businessType?: string;
-  /** Teammates and what each handles, so the suggestion stays clear of them. */
-  team: Array<{ name: string; title?: string; handles?: string }>;
+  /** The owner's change requests, oldest first: each is applied in turn. */
+  changes: string[];
+  /** The owner's answer to the question the last run asked. */
+  answer?: { question: string; answer: string };
+  /** Michael or his assistant: a work style only, no "What X handles". */
+  lead?: boolean;
+  /** The company foundations answers, "question: answer": a change that
+   *  contradicts one is asked about; they are never copied into the job. */
+  foundations?: string[];
 }
 
-/**
- * The hidden call behind "Suggest me" on the hire wizard: a first work style
- * the owner reviews and edits, in the plain three part form the field already
- * shows (toPlainPrompt's), built from the role, what they handle, the business
- * and the team. It becomes the agent's instructions at Hire, as any edit does.
- */
-export function suggestWorkStylePrompt(req: SuggestRequest): string {
-  const { ctx } = req;
+/** What the call answers: the new job, or one question for the owner. */
+export type ReviseAnswer =
+  | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string }
+  | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> };
+
+/** At most this many summary lines and question choices are kept. */
+const SUMMARY_MAX = 8;
+const CHOICES_MAX = 3;
+
+export function toRevisePrompt(input: ReviseInput): string {
+  const { ctx } = input;
   const michael = ctx.manager?.trim() || 'Michael';
-  const kind = req.businessType?.trim() ? `, a ${req.businessType.trim()} business` : '';
-  const role = ctx.title?.trim() || 'team member';
-  // No one is named in a work style (owner, 2026-10-03: names change): the
-  // hire and every teammate are given to the model by role only, and a name
-  // inside someone's role line becomes that person's role.
-  const people = [{ name: ctx.name, title: role }, ...req.team.map((m) => ({ name: m.name, title: m.title?.trim() || 'a teammate' }))];
-  const unname = (text: string) => people.reduce((t, p) => swapName(t, p.name, p.title), text);
-  const flat = (text: string) => unname(text.replace(/\s+/g, ' ').trim());
-  const team = req.team.slice(0, 20).map((m) => `- ${m.title?.trim() || 'A teammate'}: ${flat(m.handles ?? '').slice(0, 300)}`);
+  const role = roleLabel(ctx.title);
+  const fresh = !input.instructions.trim();
+  const changes = input.changes.map((c) => c.trim()).filter(Boolean);
   return [
-    `Write a first work style for a new AI team member whose job is ${role}, at ${where(ctx.business)}${kind}. The owner will read it, change what they want, and save it.`,
-    `What the ${role} handles: "${flat(req.handles)}"`,
+    fresh
+      ? `The owner of a small business is describing a new job for ${ctx.name}, an AI team member${ctx.title ? ` whose job is ${ctx.title}` : ''} at ${where(ctx.business)}. Write the whole job from the owner's words below.`
+      : `The owner of a small business wants to change the job of ${ctx.name}, an AI team member${ctx.title ? ` whose job is ${ctx.title}` : ''} at ${where(ctx.business)}. Apply the owner's ${changes.length > 1 ? 'changes, in order,' : 'change'} to the current job below and write the job again.`,
+    `${michael} is the office manager: he hands out work, and team members send reports and approvals to him, never to the owner directly.`,
     '',
-    `The rest of the team, by role, so this work stays clear of theirs:`,
-    ...(team.length ? team : ['- (nobody yet)']),
+    'Answer with one JSON object and nothing else, in one of two shapes.',
     '',
-    `${michael} is the office manager: he hands out work and brings the owner whatever needs them. The ${role} reports and asks for approvals through ${michael}, asks a teammate directly for a fact, and goes to ${michael} when nobody can help or someone else has to do work.`,
-    'Write in everyday words a busy owner reads in a minute. Use three short parts, each a label on its own line followed by a few sentences: "The job:" (the outcome and why it matters for this kind of business), "How the work is done:" (four to six concrete habits for this job in this business, each with its reason after "because" or "so"), "Asks the owner first:" (what must wait for the owner\'s approval, with the reason).',
-    `Name no person, because names change: start each sentence with what is done ("Checks contact records for duplicates, because...") or say "this role", and call a teammate by their role, such as "the Sales Director". ${michael} is the only name you may use.`,
-    `Stay inside what the ${role} handles and leave teammates' work to them. Say nothing about how often or at what time the work runs, because schedules set that. Leave out any first task. Invent no prices, dates, tools, names or policies the owner has not given; say "the owner's" price list, policy or tool instead.`,
-    'No markdown symbols, no bullet characters, no dashes; use commas, colons and periods. Keep it under 200 words. Answer with the description only.'
+    `Shape 1, the new job: {"kind": "ok", "instructions": "...", "plain": "...", "handles": ${input.lead ? 'null' : '"..." or null'}, "summary": ["...", "..."], "oneTimeTask": "..." or null}`,
+    `"instructions": the standing work style ${ctx.name} reads at the start of every session. Start with exactly this line: "${instructionsOpening(ctx.business)}" Then three sections with these markdown headings, leaving out a section with nothing in it: "### The job" (the outcome and why it matters), "### How to work" (short sentences, each with its reason after "because" or "so"), "### Needs the owner's approval" (what goes to ${michael} for the owner's approval first, with the reason). Address the team member as "you". Name no team member, because names change: call a teammate by their role. ${michael} is the only name to use. State each rule directly, at normal volume, without "must", "never" or capitals unless the owner said them. Under 300 words.`,
+    fresh
+      ? '"instructions" hold every duty, habit, limit and approval the owner described, and nothing the owner did not.'
+      : '"instructions" keep every duty, habit, limit and approval of the current job that the changes do not touch, word for word where you can, including specifics such as file names, formats, amounts and deadlines.',
+    `"plain": the same job for the owner to read, in everyday words, about the team member by role, never by name: start a sentence with what is done ("Sorts the inbox every morning, so...") or say "${role}". Never write "you" or "your". Three short parts, each a label on its own line followed by a few sentences: "The job:", "How the work is done:", "Asks the owner first:". Leave out a part with nothing in it.`,
+    input.lead
+      ? `"handles": always null; ${ctx.name} runs the office and has no "What ${ctx.name} handles" line.`
+      : fresh
+        ? `"handles": what ${ctx.name} handles, for ${michael} to route work by: one to three sentences that start with what is done ("Answers customers who write to the support inbox, and..."), naming nobody, ending with "Send here for " and the kinds of requests that belong here.`
+        : `"handles": null when the changes leave the duties as they are (a change to tone, habits or approvals). Only when a duty is added, removed or moved, the new "What ${ctx.name} handles" line for ${michael} to route work by, written like the current one and naming nobody.`,
+    `"summary": one to six short sentences for the owner on what ${fresh ? `${ctx.name} will do` : 'is different now'}, each starting with "${ctx.name}" ("${ctx.name} will now answer refund emails."). Say only what changed or was described.`,
+    `"oneTimeTask": work to be done once, such as "this week, chase the March invoices", in the owner's words. It goes to ${michael} as a card on the board and stays out of the instructions and the plain words, which hold only standing duties. null when there is none.`,
+    '',
+    `Shape 2, one question: {"kind": "question", "question": "...", "choices": [{"label": "...", "suggested": true}, {"label": "..."}]}`,
+    'Ask only when you cannot tell what the owner wants: a change contradicts one of the company foundations below, or it conflicts with an approval rule in the current job without saying it replaces it. A plain change to the job is not a contradiction: the owner\'s newest words win. "question" is one or two short sentences naming both sides; "choices" are two or three short answers the owner can pick, one of them marked "suggested".',
+    '',
+    'Everywhere: commas, colons and periods, never dashes, no bullet characters in "plain".',
+    ...(input.foundations?.length
+      ? ['', '--- COMPANY FOUNDATIONS (check a change against these; never copy them into the job) ---', ...input.foundations]
+      : []),
+    ...(fresh ? [] : [
+      '',
+      '--- CURRENT INSTRUCTIONS ---',
+      input.instructions.trim(),
+      ...(input.lead ? [] : ['', `--- CURRENT "WHAT ${ctx.name.toUpperCase()} HANDLES" ---`, input.handles.trim() || '(none written yet)'])
+    ]),
+    '',
+    fresh ? '--- THE OWNER\'S DESCRIPTION ---' : '--- THE OWNER\'S CHANGES, OLDEST FIRST ---',
+    ...changes.map((c, i) => (changes.length > 1 ? `${i + 1}. ${c}` : c)),
+    ...(input.answer
+      ? ['', '--- THE OWNER ANSWERED YOUR QUESTION; APPLY THE ANSWER AND DO NOT ASK AGAIN ---', `Question: ${input.answer.question.trim()}`, `Answer: ${input.answer.answer.trim()}`]
+      : [])
   ].join('\n');
+}
+
+const line = (v: unknown, max: number): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '');
+
+/**
+ * The call's answer, checked: the instructions must open with the house line,
+ * and anything else unreadable is null, a failure that saves nothing (a free
+ * text change has no rules fallback; plan A1).
+ */
+export function parseRevise(answer: string, ctx: WorkStyleContext, lead = false): ReviseAnswer | null {
+  const text = cleanAnswer(answer);
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  let o: Record<string, unknown>;
+  try { o = JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>; } catch { return null; }
+  if (!o || typeof o !== 'object') return null;
+  if (o.kind === 'question') {
+    const question = line(o.question, 400);
+    const choices = (Array.isArray(o.choices) ? o.choices : [])
+      .map((c) => (c && typeof c === 'object' ? c as Record<string, unknown> : {}))
+      .map((c) => ({ label: line(c.label, 200), suggested: c.suggested === true }))
+      .filter((c) => c.label)
+      .slice(0, CHOICES_MAX);
+    if (!question || choices.length < 2) return null;
+    // One suggestion at most; the first marked one stays.
+    const first = choices.findIndex((c) => c.suggested);
+    return { kind: 'question', question, choices: choices.map((c, i) => (i === first ? c : { label: c.label })) };
+  }
+  if (o.kind !== 'ok') return null;
+  const raw = typeof o.instructions === 'string' ? o.instructions.trim() : '';
+  const opening = instructionsOpening(ctx.business);
+  const at = raw.indexOf(opening);
+  const instructions = at >= 0 ? withoutFirstTask(raw.slice(at)).trim() : '';
+  const plain = typeof o.plain === 'string' ? withoutFirstTask(o.plain.trim()) : '';
+  const handles = lead ? null : line(o.handles, 1500) || null;
+  const summary = (Array.isArray(o.summary) ? o.summary : []).map((s) => line(s, 300)).filter(Boolean).slice(0, SUMMARY_MAX);
+  const oneTimeTask = line(o.oneTimeTask, 1500) || undefined;
+  if (!instructions || instructions === opening || !plain || summary.length === 0) return null;
+  return { kind: 'ok', instructions, plain, handles, summary, ...(oneTimeTask ? { oneTimeTask } : {}) };
 }
 
 const HEADING_LABEL: Record<string, string> = {

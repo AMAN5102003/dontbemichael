@@ -9,11 +9,17 @@ Don't Be Michael keeps its own version line, starting at 0.0.1.
 ## [Unreleased]
 
 ### Added
+- **Change a team member's job by saying what should change.** Edit agent shows the job read only, in plain words, with one box: "What should change?". Type something like "also handle the refund emails, and ask me before any refund over $200" and See what changes shows what would be different, the new "What Pam handles" (or Unchanged), and the whole new job, before anything is saved. Apply saves it, and Undo last change puts it back. When a change clashes with the job or your Company foundations you pick the answer, when it overlaps a teammate the app names them, and one time work like "this week, chase the March invoices" goes to Michael as a card instead of into the job.
+- **Hiring asks what the new person will do, once.** On the Role step you describe the job in your own words, see it written out, and Apply; a job picked from a pack or a teammate shows read only with an optional "Anything to change?". Finalize keeps only the folder and the model.
+
 - **Add a file right from a Company foundations card.** Pick a file or drop it on the card, such as your brand voice guide, instead of typing where it is. The app reads it and checks that it answers the card's question, pictures included, so a financial statement added to the brand voice card by mistake is turned away with the reason. A file that fits goes into company knowledge, where every team member can read it in full, and the answer names it; your typed words, if any, stay the short answer. A file that can't be read, doesn't fit, or couldn't be checked adds nothing, and the card says why.
 
 - **The office floor carries the GAACC AI Labs mark,** for the Greater Austin Asian Chamber of Commerce open source AI Lab program the app is part of, lettered small along the platform's side in light and dark. Click it to open austinasianchamber.org in your browser.
 
 ### Changed
+- A better default job description from a pack keeps your changes: See it shows the new text with each change you made reapplied, and Use it saves it. A team member changed before this release can't carry their earlier edits over, and the card says so.
+- What a team member handles, the line Michael routes work by, is now written by the app from your description and changed only when a change moves duties; a change to tone or approvals leaves it word for word. Lines a hire added to settle an overlap stay as they were.
+- Suggest me is gone from the hire wizard: describing the job once does what it did.
 - Team members and Michael read a company knowledge document a foundations answer names before work that depends on that answer.
 - When a business mailbox check times out, Michael has the team member try again at its next check and carry on, instead of stopping its mail work and asking you to restart the app. Only a mailbox that times out at every check for a whole day comes to you, about the mailbox itself.
 - A team member who was stuck and gets going again is reported to Michael as working again, so the stuck card on Ask me comes down by itself, or never goes up if they recovered first.

@@ -22,7 +22,7 @@ import { buildPtyEnv } from './ptyEnv';
 import { isSameOrInside } from './pathInside';
 import { Foundations, publishCopy } from './foundations';
 import { KnowledgeEdits } from './knowledgeEdits';
-import { FOUNDATION_JOBS, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
+import { FOUNDATION_JOBS, FOUNDATION_QUESTIONS, isFoundationId, jobOf, knowledgeNoticeDue, michaelFoundations, sectionFor, type FoundationJob } from '../shared/foundations';
 import type { DepartmentSource } from '../shared/officeRoles';
 import {
   apiKeyShapeOk, checkAnthropicKey, claudeInstallScript, claudeMissingScript, ENGINE_INSTALL_PTY, ENGINE_SIGNIN_PTY,
@@ -77,7 +77,7 @@ import { MemoryManager } from './memory';
 import { KnowledgeManager } from './knowledge';
 import { MemoryTidy } from './memoryTidy';
 import { checkDistinct, readJobProfile } from './hireCheck';
-import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readSuggestRequest, suggestWorkStyle } from './workStyleConvert';
+import { checkFocusArea, convertWorkStyle, readConvertRequest, readFocusCheckRequest, readReviseRequest, reviseWorkStyle } from './workStyleConvert';
 import { SafeClearer, type SafeClearDeps } from './safeClearer';
 import { PersistStore } from './db';
 import { TelemetryStore } from './telemetryStore';
@@ -6056,41 +6056,35 @@ ipcMain.handle('hire:checkStop', (_evt, requestId: unknown) => {
   return { ok: true };
 });
 
-/** "Suggest me" on the hire wizard: a first work style for the owner to edit.
- *  The draft streams to the window as `workStyle:suggestText` while it is
- *  written, and `workStyle:suggestStop` ends it (owner, 2026-10-03). */
-const suggestRuns = new Map<string, AbortController>();
-ipcMain.handle('workStyle:suggest', async (evt, payload: unknown) => {
-  const req = readSuggestRequest(payload);
-  if (!req) return { text: '' };
-  const raw = (payload ?? {}) as { requestId?: unknown };
-  const requestId = typeof raw.requestId === 'string' ? raw.requestId.slice(0, 80) : '';
-  const stop = new AbortController();
-  if (requestId) suggestRuns.set(requestId, stop);
-  const cfg = readConfig();
-  try {
-    return await suggestWorkStyle(req, {
-      engine: cfg.godProvider ?? 'claude',
-      engineModel: cfg.godModel,
-      cwd: cfg.harnessHome ?? app.getPath('home'),
-      command: cfg.defaultCommand ?? 'claude',
-      env: memory.env(),
-      log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
-    }, {
-      signal: stop.signal,
-      onText: requestId ? (text) => { if (!evt.sender.isDestroyed()) evt.sender.send('workStyle:suggestText', { requestId, text }); } : undefined
-    });
-  } finally {
-    if (requestId) suggestRuns.delete(requestId);
-  }
-});
-ipcMain.handle('workStyle:suggestStop', (_evt, requestId: unknown) => {
-  if (typeof requestId === 'string') suggestRuns.get(requestId)?.abort();
-  return { ok: true };
-});
 /** A work style between the owner's plain description and the agent's
- *  instructions (owner, 2026-09-27). Falls back to a plain-text rewrite. */
+ *  instructions (owner, 2026-09-27). Falls back to a plain-text rewrite.
+ *  `to: 'revise'` applies the owner's "What should change?" to a job, or
+ *  writes a new one, and `workStyle:convertStop` ends it
+ *  (work-style-change-request.md, D4 and D9). */
+const reviseRuns = new Map<string, AbortController>();
 ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
+  if ((payload as { to?: unknown } | null)?.to === 'revise') {
+    const rev = readReviseRequest(payload);
+    if (!rev) return { kind: 'error', reason: 'failed' };
+    const stop = new AbortController();
+    if (rev.requestId) reviseRuns.set(rev.requestId, stop);
+    const cfg = readConfig();
+    try {
+      return await reviseWorkStyle(rev, {
+        engine: cfg.godProvider ?? 'claude',
+        engineModel: cfg.godModel,
+        cwd: cfg.harnessHome ?? app.getPath('home'),
+        command: cfg.defaultCommand ?? 'claude',
+        env: memory.env(),
+        log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+        // Checked against, never copied into the job (eng D3).
+        foundations: () => Object.entries(foundations.read().answers).flatMap(([id, a]) =>
+          isFoundationId(id) && a?.text ? [`${FOUNDATION_QUESTIONS[id].text}: ${a.text}`] : [])
+      }, stop.signal);
+    } finally {
+      if (rev.requestId) reviseRuns.delete(rev.requestId);
+    }
+  }
   const req = readConvertRequest(payload);
   if (!req) return { text: '', source: 'rules' };
   const cfg = readConfig();
@@ -6102,6 +6096,11 @@ ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
     env: memory.env(),
     log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
   });
+});
+
+ipcMain.handle('workStyle:convertStop', (_evt, requestId: unknown) => {
+  if (typeof requestId === 'string') reviseRuns.get(requestId)?.abort();
+  return { ok: true };
 });
 
 /** A job's focus area checked against the agent's Work style and its other

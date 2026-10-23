@@ -138,8 +138,11 @@ test('offices that already hired her are offered the new text once, never given 
   assert.match(read('src/renderer/src/components/AskMeTab.tsx'), /<WorkStyleUpdateCards offers=\{offers\} \/>/);
   assert.match(read('src/renderer/src/App.tsx'), /setWorkStyleOffersSource\(readWorkStyleOffers\)/);
   const decide = read('src/renderer/src/shell/workStyleOffers.ts');
-  assert.match(decide, /if \(choice === 'use'\) \{[\s\S]{0,400}useStore\.getState\(\)\.updateAgent\(offer\.agentId, \{ goal: offer\.goal, description: offer\.description \}\);/);
-  assert.match(decide, /await seedStarterJobs\(offer\.sourceCard, offer\.agentId\);/);
+  // Use it saves what the preview showed: the new text with the owner's
+  // changes reapplied (work-style-change-request.md, D7).
+  const adopt = decide.slice(decide.indexOf('export async function adoptWorkStyleOffer'));
+  assert.match(adopt, /const patch = applyJob\(agent, \{ \.\.\.revised, handles: revised\.handles \?\? split\.roleDescription \}, \{ title: split\.role, now: new Date\(\)\.toISOString\(\) \}\);/);
+  assert.match(adopt, /useStore\.getState\(\)\.updateAgent\(offer\.agentId, patch\);\s*await seedStarterJobs\(offer\.sourceCard, offer\.agentId\);\s*await decideWorkStyleOffer\(offer, 'use'\);/);
 });
 
 test('someone hired from the card under another name is never offered the card character\'s name', () => {

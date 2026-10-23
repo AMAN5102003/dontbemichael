@@ -1,5 +1,9 @@
 # Hire a team member, redesigned for business owners
 
+> 2026-10-23: the job is described once on the Role step ("What will Jordan do?") and a
+> picked job shows read only with "Anything to change?"; Suggest me and the typed Work style are
+> gone. See `docs/designs/work-style-change-request.md`.
+
 Status: in CEO review (2026-09-27, /plan-ceo-review). Branch: fix/hidden-claude-own-transcript.
 
 ## Request (owner, 2026-09-27)

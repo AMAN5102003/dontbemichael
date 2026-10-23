@@ -22,6 +22,7 @@ import type { ScheduledMission } from '@shared/missions';
 import { refocusAfterRemoval, focusOnLoad, restoreFocus } from './focusMode';
 import { chooseRosterSource } from './rosterSource';
 import { renamePatches, swapName } from '@shared/hireTemplates';
+import type { JobChangeEntry, JobVersion, PlainWords } from '@shared/jobChange';
 import { canOpen } from '../shell/closingFloor';
 import type { CenterClaim } from '../shell/wideCenter';
 import { closeTab, openTab, type FileTab, type FixedView } from './fileTabs';
@@ -128,6 +129,13 @@ export interface Agent {
    *  Mirrors `RegistryAgent.onHold`; main owns the record, this is the copy the
    *  title bar renders from. */
   onHold?: boolean;
+  /** The plain words the owner reads for `goal`, with the fingerprint of the
+   *  instructions they describe (shared/jobChange.ts, eng D5). */
+  goalPlain?: PlainWords;
+  /** The job before the owner's last change: one level of Undo, text only. */
+  jobPrevious?: JobVersion;
+  /** The owner's applied change requests, oldest first (eng D7). */
+  jobChanges?: JobChangeEntry[];
   /** The office pack card this agent's job was copied from when it was hired,
    *  `<businessType>/<cardId>` (hire redesign E2): its Profile shows that card's
    *  does, asks first and connections. Setup's pack members need none, since

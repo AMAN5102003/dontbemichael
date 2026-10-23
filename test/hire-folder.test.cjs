@@ -18,9 +18,9 @@ const modal = read('src/renderer/src/components/AddAgentModal.tsx');
 const wizard = read('src/renderer/src/components/OnboardingWizard.tsx');
 const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json'));
 
-test('the hire wizard asks for Role, what to send and Work style, stored as Role: description', () => {
-  for (const key of ['role', 'roleHelp', 'workStyle', 'wizard.workStyleIntro', 'wizard.whatToSend']) {
-    assert.match(modal, new RegExp(`tr\\('addAgent\\.${key.replace('.', '\\.')}'`), key);
+test('the hire wizard asks for Role and what they will do, stored as Role: description', () => {
+  for (const key of ['addAgent.role', 'addAgent.roleHelp', 'jobChange.whatWillDo', 'jobChange.handles']) {
+    assert.match(modal, new RegExp(`tr\\('${key.replace('.', '\\.')}'`), key);
   }
   assert.match(modal, /const description = hireRole\(title, routing\);/, 'stored as Role: description');
   assert.match(modal, /const split = splitAgentRole\(m\.description\);/, 'an imported hire fills both fields');

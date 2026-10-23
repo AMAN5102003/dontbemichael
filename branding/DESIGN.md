@@ -1208,13 +1208,40 @@ are sentence case. Closing time is the closing bar (§7.23), not a dialog.
 someone already hired, in one column, laid exactly over the person's panel it edits (its
 box and radius, kept in step on resize; with no panel, 640 wide, full height, on the right,
 left in RTL): Name, Role,
-What they handle, Work style (it takes the height left over), then a folded "Engine" line
-that names the provider and model and opens to change them. Under the engine, for anyone
+What they handle (read only text), What should change?, How they work (read only, folded to
+four lines with Show all, Undo last change and "Last change, 22 Oct: ..."), the scheduled
+jobs, then a folded "Engine" line
+that names the provider and model and opens to change them. Michael and his assistant have
+no What they handle. The footer is Close until Name, Role or the engine is edited, then
+Cancel and Save changes; the job saves only through the preview's Apply. Under the engine, for anyone
 who can be deleted (never Michael, his assistant or Pete), the Danger zone: one coral
 tinted row, r-xl corners and the 1.5 px coral ring of §6.3, its name with an info icon and
 the destructive Delete button. No section headings; field
 labels only, with explanations behind info icons. The character is chosen once, in the hire wizard, and a
 person's color is their department's, set by the job; Edit agent offers neither.
+
+**What should change?** (`JobChangeReview`, `docs/designs/work-style-change-request.md`, owner
+2026-10-23) is how a job changes: the owner never edits a job's text. A labelled box with an
+info icon, then a right aligned row with the shortcut (⌘ Enter, Ctrl Enter elsewhere, `ink-3`)
+and the secondary "See what changes". Running, the preview takes the box's place: `indigo-soft`
+fill, r-xl, no border or shadow, 12 by 14 padding. Each state has a 13 px 600 heading that takes
+focus. Working: "Working out what changes for Pam…", "This can take up to a minute." and Stop
+(`role=status`). Ready: "Here's what changes", up to six summary lines (plain text after a 6 px
+`indigo` dot) then Show all, a one-time task as one more line ("goes to Michael as a card"),
+"What Pam handles" with the new line or a `card` pill "Unchanged", a "See the whole new job"
+disclosure, and Cancel and Apply in a row that sticks to the preview's bottom. A clash: "One
+thing first", the question, two or three option rows (`cth-askme-opt`, one with a green
+"Suggested" pill) plus Something else with a text field, Cancel and Continue. An overlap:
+"Kelly already does part of this", the reason, Edit my change and Leave it with Kelly. Couldn't
+work out the change, and Pam's job changed meanwhile (the typed change shown on `card`), are
+`role=alert` with Cancel and Try again or See what changes again. After Apply or Undo the box
+comes back empty with one `role=status` line ("Pam's job is updated.") and takes focus. In the
+hire wizard the box reads "What will Jordan do?" with "See Jordan's job" until a job is applied,
+then "Anything to change?"; on Ask me the pack update card runs the same preview at once, its
+button "Use it".
+
+**Hire wizard, Role step** (DR12): name and role title, then the job as above, then the overlap
+check; Next turns on after Apply. Finalize keeps the folder and model only.
 
 **Mailboxes** (Settings, Connections; `docs/designs/mailboxes-fold.md`, owner 2026-10-01) folds so
 many mailboxes never mean a long scroll. One header line: the `Disclosure` caret, the title, the

@@ -55,7 +55,9 @@ import {
   type HireJob,
   type JobProfile
 } from '@shared/hireTemplates';
-import { firstTaskSection, roleLabel, plainFallback } from '@shared/workStyleText';
+import { roleLabel, plainFallback } from '@shared/workStyleText';
+import { jobFingerprint, type JobChangeEntry } from '@shared/jobChange';
+import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
 import { useRtl } from '@/i18n/useDirection';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { SHOW_IMPORT_HIRE, SHOW_ENGINE_PICKER, SHOW_MAILBOXES } from '@shared/buildFeatures';
@@ -249,94 +251,67 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   //    changes, so edits survive going back and forth otherwise ──
   const [title, setTitle] = useState(() => splitAgentRole(pendingHire?.description).role);
   const [routing, setRouting] = useState(() => splitAgentRole(pendingHire?.description).roleDescription);
-  // Work style in two forms (owner, 2026-09-27): the owner reads and edits a
-  // plain description (`workStyle`); the agent gets instructions written from
-  // it at Hire. `baseInstructions` are the copied job's instructions, used as
-  // they are when the owner leaves the description unchanged.
-  const [workStyle, setWorkStyle] = useState(pendingHire?.goal ? plainFallback(pendingHire.goal, roleLabel(splitAgentRole(pendingHire.description).role)) : '');
-  const [baseInstructions, setBaseInstructions] = useState(pendingHire?.goal ?? '');
-  const [plainOfBase, setPlainOfBase] = useState(pendingHire?.goal ? plainFallback(pendingHire.goal, roleLabel(splitAgentRole(pendingHire.description).role)) : '');
+  // The job (work-style-change-request.md, D2): the owner never types a Work
+  // style. A new job is described once ("What will Jordan do?") and written by
+  // the rewrite; a picked job shows read only, with "Anything to change?".
+  // `instructions` are what the agent gets; `plain` what the owner reads.
+  const [instructions, setInstructionsText] = useState(pendingHire?.goal ?? '');
+  const [plain, setPlain] = useState(pendingHire?.goal ? plainFallback(pendingHire.goal, roleLabel(splitAgentRole(pendingHire.description).role)) : '');
+  // The plain words were written by the model for these instructions, so the
+  // hire saves them with the job (eng D5); a rules rewrite is made again later.
+  const [plainSaved, setPlainSaved] = useState(false);
   const [describing, setDescribing] = useState(false);
-  // "Suggest me" (owner, 2026-10-03): a first work style written from the
-  // role, what they handle, the business and the team, for the owner to edit.
-  const [suggesting, setSuggesting] = useState(false);
-  const [suggestFailed, setSuggestFailed] = useState(false);
-  const [writingInstructions, setWritingInstructions] = useState(false);
+  // The changes the owner applied to a pack job, kept with the hire so a
+  // pack's next default keeps them (eng D7), and one-time work for Michael.
+  const [hireChanges, setHireChanges] = useState<JobChangeEntry[]>([]);
+  const [hireTask, setHireTask] = useState('');
+  const [jobBusy, setJobBusy] = useState(false);
+  const [plainAll, setPlainAll] = useState(false);
   const describeSeq = useRef(0);
   const styleCtx = () => ({ name: name.trim(), title: title.trim() || undefined, business, manager: godName });
-  // The run being written, with the text it replaces, so Stop puts it back.
-  const suggestRun = useRef<{ id: string; before: string } | null>(null);
-  const suggestWorkStyle = async (): Promise<void> => {
-    if (suggesting || !routing.trim()) return;
-    if (workStyle.trim() && !window.confirm(tr('addAgent.wizard.suggestReplace', { name: name.trim() }))) return;
-    // A suggestion replaces the description, so a rewrite still on its way
-    // from the picked job must not land on top of it.
-    describeSeq.current++;
-    setDescribing(false);
-    setSuggestFailed(false);
-    setSuggesting(true);
-    const id = `suggest-${crypto.randomUUID()}`;
-    const before = workStyle;
-    suggestRun.current = { id, before };
-    // The draft streams into the field as it is written (owner, 2026-10-03:
-    // "the user has no clue if it is still working").
-    const off = window.cth.onWorkStyleSuggestText?.((e) => {
-      if (e.requestId === id && suggestRun.current?.id === id) setWorkStyle(e.text);
-    });
-    try {
-      const res = await window.cth.workStyleSuggest({
-        requestId: id,
-        ctx: styleCtx(),
-        handles: routing.trim(),
-        businessType: cards.find((c) => c.sourceCard?.startsWith(`${config.businessType}/`))?.business,
-        team: team.map((a) => { const r = splitAgentRole(a.description); return { name: a.name, title: r.role || undefined, handles: r.roleDescription || undefined }; })
-      });
-      if (suggestRun.current?.id !== id) return; // stopped
-      const text = res?.text?.trim();
-      if (!text) { setWorkStyle(before); if (!res?.cancelled) setSuggestFailed(true); return; }
-      setWorkStyle(text);
-      // It is the owner's new description, not an edit of the picked job's
-      // instructions: Hire writes the instructions from it alone.
-      setBaseInstructions('');
-      setPlainOfBase('');
-    } catch {
-      // Whatever went wrong, the field and the button come back.
-      if (suggestRun.current?.id === id) { setWorkStyle(before); setSuggestFailed(true); }
-    } finally {
-      off?.();
-      if (suggestRun.current?.id === id) suggestRun.current = null;
-      setSuggesting(false);
-    }
-  };
-  /** Stop: the session ends and the field goes back to what it held. */
-  const stopSuggest = (): void => {
-    const run = suggestRun.current;
-    if (!run) return;
-    suggestRun.current = null;
-    void window.cth.workStyleSuggestStop?.(run.id)?.catch(() => undefined);
-    setWorkStyle(run.before);
-    setSuggesting(false);
-  };
-  // Closing the wizard mid suggestion stops it.
-  useEffect(() => () => { const run = suggestRun.current; if (run) void window.cth.workStyleSuggestStop?.(run.id)?.catch(() => undefined); }, []);
-  /** Show a job's instructions as a plain description: the quick rewrite at
-   *  once, the model's when it arrives, unless the owner has started typing. */
-  const setInstructions = (instructions: string, forName = name.trim(), forTitle = title.trim()): void => {
+  const hireWho = name.trim() || CAST_BY_NAME[character].displayName;
+  /** Show a job's instructions as plain words: the quick rewrite at once, the
+   *  model's when it arrives. */
+  const setInstructions = (next: string, forName = name.trim(), forTitle = title.trim()): void => {
     const seq = ++describeSeq.current;
-    setBaseInstructions(instructions);
-    const quick = instructions.trim() ? plainFallback(instructions, roleLabel(forTitle)) : '';
-    setWorkStyle(quick);
-    setPlainOfBase(quick);
-    if (!instructions.trim()) { setDescribing(false); return; }
+    setInstructionsText(next);
+    setHireChanges([]);
+    setHireTask('');
+    setPlainSaved(false);
+    setPlain(next.trim() ? plainFallback(next, roleLabel(forTitle)) : '');
+    if (!next.trim()) { setDescribing(false); return; }
     setDescribing(true);
-    window.cth.workStyleConvert({ to: 'plain', text: instructions, ctx: { name: forName, title: forTitle || undefined, business, manager: godName } })
+    window.cth.workStyleConvert({ to: 'plain', text: next, ctx: { name: forName, title: forTitle || undefined, business, manager: godName } })
       .then((res) => {
         if (seq !== describeSeq.current || res.source !== 'ai' || !res.text) return;
-        setWorkStyle((cur) => (cur === quick ? res.text : cur));
-        setPlainOfBase((cur) => (cur === quick ? res.text : cur));
+        setPlain(res.text);
+        setPlainSaved(true);
       })
       .catch(() => { /* the quick rewrite stays */ })
       .finally(() => { if (seq === describeSeq.current) setDescribing(false); });
+  };
+  /** "See Jordan's job" or "See what changes": the same rewrite Edit agent
+   *  runs, on the job as it stands here. */
+  const runJob = ({ typed, extras, answer, requestId }: ReviseRun) => window.cth.workStyleRevise({
+    requestId,
+    ctx: styleCtx(),
+    current: { instructions, handles: routing },
+    changes: [typed, ...extras],
+    answer
+  });
+  /** Apply fills the job in (DR13); Next then runs the overlap check. */
+  const applyHireJob = async (ok: ReviseOk, change: string): Promise<'applied'> => {
+    describeSeq.current++;
+    setDescribing(false);
+    // A change to a picked job is kept with the hire; a new job's description is the job itself.
+    if (instructions.trim() && change) setHireChanges((c) => [...c, { text: change, at: new Date().toISOString() }]);
+    setInstructionsText(ok.instructions);
+    setPlain(ok.plain);
+    setPlainSaved(true);
+    if (ok.handles) setRouting(ok.handles);
+    if (ok.oneTimeTask) setHireTask(ok.oneTimeTask);
+    setError(undefined);
+    return 'applied';
   };
   const [sourceCard, setSourceCard] = useState<string | undefined>(undefined);
   const applied = useRef<string | null>(pendingHire ? 'manifest' : null);
@@ -390,7 +365,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   }), [team, config.agentCapabilities, mailboxes]);
   const [binding, setBinding] = useState<Binding | null>(null);
   const profile: JobProfile = {
-    name: name.trim(), title: title.trim(), routing: routing.trim(), workStyle,
+    name: name.trim(), title: title.trim(), routing: routing.trim(), workStyle: instructions,
     mailbox: mailboxAddress(binding?.mailboxId)
   };
   // The check judges what to send, never the title: renaming "Sales Director"
@@ -446,10 +421,6 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   useEffect(() => {
     if (step === 'who' || step === 'job') {
       checkSeq.current++; stopCheckRun(); setChecking(false); prefetchSig.current = '';
-      // A suggestion still streaming was for the job left behind: end it, and
-      // leave the field to the job picked next (ship review pass 3).
-      const run = suggestRun.current;
-      if (run) { suggestRun.current = null; void window.cth.workStyleSuggestStop?.(run.id)?.catch(() => undefined); setSuggesting(false); }
     }
   }, [step]);
   // The check starts as soon as a job is picked on the job step (owner,
@@ -575,9 +546,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
    *  distinct from every teammate's or bound to its own mailbox, topic or
    *  connection (D6). */
   const roleReady = async (): Promise<boolean> => {
-    // What they handle is what the check judges and what Michael routes by, so
-    // there is nothing to check, or to hire, without it (owner, 2026-10-03).
-    if (!routing.trim()) { setError(tr('addAgent.wizard.errJob', { name: name.trim(), godName })); return false; }
+    // The job is written and applied first (DR13): what they handle is what
+    // the check judges and what Michael routes by (owner, 2026-10-03).
+    if (!instructions.trim() || !routing.trim()) { setError(tr('jobChange.errJobFirst', { name: name.trim() })); return false; }
     let v = verdict;
     if (!v) v = await runCheck();
     if (!v) return false;
@@ -621,27 +592,13 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     setError(undefined);
     if (whoError) { setError(whoError); setStep('who'); return; }
     if (!(await roleReady())) { setStep('role'); return; }
-    // Work style is required: it is how the new hire does the job (owner, 2026-09-27).
-    if (!workStyle.trim()) { setError(tr('addAgent.wizard.errWorkStyle')); return; }
     if (!cwd) { setError(tr('addAgent.errFolder')); return; }
     // Michael's folder is private to him (src/shared/folderAccess.ts).
     if (michaelFolder && samePath(michaelFolder, cwd)) { setError(tr('addAgent.errFolderShared', { godName })); return; }
     if (!command.trim()) { setError(tr('addAgent.errCommand')); return; }
     setBusy(true);
-    // The agent's instructions: the copied job's own when the owner left the
-    // description as it was, else written from the description, to the house
-    // prompting guidelines (owner, 2026-09-27).
-    let goal = baseInstructions.trim();
-    // What the owner typed under "First task", which the instructions leave out.
-    const typedFirstTask = firstTaskSection(workStyle)?.body.trim().slice(0, FIRST_TASK_EDITED_MAX) || '';
-    if (!goal || workStyle.trim() !== plainOfBase.trim()) {
-      setWritingInstructions(true);
-      const res = await window.cth.workStyleConvert({ to: 'instructions', text: workStyle, ctx: styleCtx(), previous: baseInstructions || undefined })
-        .catch(() => null);
-      setWritingInstructions(false);
-      goal = res?.text?.trim() || '';
-      if (!goal) { setBusy(false); setError(tr('addAgent.wizard.errInstructions')); return; }
-    }
+    // The agent's instructions, as the rewrite or the picked job left them.
+    const goal = instructions.trim();
     // The folder is made here, the first time it's needed; an existing one is
     // left exactly as it is.
     if (michaelFolder && !customCwd) {
@@ -717,6 +674,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
       tmuxTarget: '',
       cwd: spawnedCwd,
       goal: goal || undefined,
+      // The plain words the owner read, when the model wrote them for this job.
+      goalPlain: plainSaved && plain.trim() ? { text: plain.trim(), of: jobFingerprint(goal) } : undefined,
+      jobChanges: sourceCard && hireChanges.length ? hireChanges : undefined,
       sourceCard,
       status: 'idle',
       action: ACTION_CLOCKING_IN,
@@ -733,10 +693,11 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     // The card's starter jobs, each with its focus area (inbox zero, 2026-10-03),
     // and its first task as a card Michael hands out (first-task-card.md).
     void seedStarterJobs(sourceCard, id);
-    // A First task the owner typed into the Work style is one-time work: it
-    // becomes this hire's first task card (ship review SR5), in place of the
-    // pack's. Otherwise only a job taken straight from a pack card sends its
-    // first task: a clone copies the teammate's job, not their one-time work (SR1).
+    // One-time work the owner described is this hire's first task card (ship
+    // review SR5), in place of the pack's. Otherwise only a job taken straight
+    // from a pack card sends its first task: a clone copies the teammate's job,
+    // not their one-time work (SR1).
+    const typedFirstTask = hireTask.trim().slice(0, FIRST_TASK_EDITED_MAX);
     if (typedFirstTask) void sendTypedFirstTask(sourceCard, id, name.trim(), { ask: typedFirstTask, role: title.trim(), existing: false });
     else if (sourceCard && chosenJob?.source === 'card') void window.cth.hiveFirstTask(sourceCard, id, name.trim()).catch(() => undefined);
     // A binding hands the bound work back from every overlapping teammate:
@@ -811,7 +772,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
           {pendingHire && (
             <PixelButton variant="secondary" size="md" onClick={skipHire} disabled={busy}>{tr('addAgent.skipHire')}</PixelButton>
           )}
-          <PixelButton variant="ghost" size="md" onClick={close} disabled={busy || checking || writingInstructions}>{tr('common.cancel')}</PixelButton>
+          <PixelButton variant="ghost" size="md" onClick={close} disabled={busy || checking}>{tr('common.cancel')}</PixelButton>
           {stepIndex > 0 && (
             <PixelButton variant="secondary" size="md" onClick={() => { void goTo(STEPS[stepIndex - 1]); }} disabled={busy}>{tr('addAgent.wizard.back')}</PixelButton>
           )}
@@ -820,13 +781,13 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
               variant="primary"
               size="md"
               onClick={() => { void goTo(STEPS[stepIndex + 1]); }}
-              disabled={(step === 'who' && !!whoError) || (step === 'role' && (checking || (overlapNames.length > 0 && !binding)))}
+              disabled={(step === 'who' && !!whoError) || (step === 'role' && (checking || jobBusy || !instructions.trim() || (overlapNames.length > 0 && !binding)))}
             >
               {step === 'role' && checking ? tr('addAgent.wizard.checking') : tr('addAgent.wizard.next')}
             </PixelButton>
           ) : (
-            <PixelButton variant="primary" size="md" onClick={submit} disabled={busy || checking || suggesting || !workStyle.trim()}>
-              {writingInstructions ? tr('addAgent.wizard.writingInstructions', { name: name.trim() }) : busy ? tr('addAgent.spawning') : checking ? tr('addAgent.wizard.checking') : tr('addAgent.spawn')}
+            <PixelButton variant="primary" size="md" onClick={submit} disabled={busy || checking || !instructions.trim()}>
+              {busy ? tr('addAgent.spawning') : checking ? tr('addAgent.wizard.checking') : tr('addAgent.spawn')}
             </PixelButton>
           )}
         </>
@@ -1061,16 +1022,42 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                 </div>
               </div>
 
-              <Row label={tr('addAgent.wizard.whatToSend', { name: name.trim() })} info={tr('addAgent.roleHelp', { godName, name: name.trim() })}>
-                <textarea
-                  dir={rtl ? 'auto' : undefined}
-                  value={routing}
-                  onChange={(e) => { setRouting(e.target.value); setError(undefined); }}
-                  placeholder={tr('addAgent.roleDescriptionPlaceholder')}
-                  rows={3}
-                  className="cth-input" style={{ ...inputStyle, fontFamily: 'var(--cth-font-ui)', resize: 'vertical' }}
+              {/* The job, described once or changed (DR12): a new job asks what
+                  they will do; a picked one shows read only. */}
+              {instructions.trim() ? (
+                <>
+                  <ReadRow label={tr('jobChange.handles', { name: hireWho })} info={tr('addAgent.roleHelp', { godName, name: hireWho })}>
+                    <div dir={rtl ? 'auto' : undefined} style={readStyle}>{routing}</div>
+                  </ReadRow>
+                  <JobChangeReview
+                    key="change"
+                    who={hireWho}
+                    box={{ label: tr('jobChange.anythingChange'), info: tr('jobChange.anythingChangeInfo', { name: hireWho }), placeholder: tr('jobChange.whatChangePlaceholder'), button: tr('jobChange.see') }}
+                    run={runJob}
+                    apply={applyHireJob}
+                    applyLabel={tr('jobChange.apply')}
+                    onBusy={setJobBusy}
+                  />
+                  <ReadRow label={tr('jobChange.howWorks', { name: hireWho })} info={tr('jobChange.howWorksInfo', { name: hireWho })}>
+                    <div dir={rtl ? 'auto' : undefined} style={{ ...readStyle, whiteSpace: 'pre-wrap', ...(plainAll ? {} : clampStyle) }}>{plain}</div>
+                    {describing && <span aria-live="polite" style={helperStyle}>{tr('jobChange.describing')}</span>}
+                    {(plain.split('\n').length > 4 || plain.length > 320) && (
+                      <button type="button" aria-expanded={plainAll} onClick={() => setPlainAll((v) => !v)} style={{ ...linkStyle, alignSelf: 'flex-start' }}>{plainAll ? tr('jobChange.showLess') : tr('jobChange.showAll')}</button>
+                    )}
+                  </ReadRow>
+                </>
+              ) : (
+                <JobChangeReview
+                  key="new"
+                  who={hireWho}
+                  box={{ label: tr('jobChange.whatWillDo', { name: hireWho }), info: tr('jobChange.whatWillDoInfo', { name: hireWho }), placeholder: tr('jobChange.whatWillDoPlaceholder'), button: tr('jobChange.seeJob', { name: hireWho }) }}
+                  previewTitle={tr('jobChange.previewTitleNew', { name: hireWho })}
+                  run={runJob}
+                  apply={applyHireJob}
+                  applyLabel={tr('jobChange.apply')}
+                  onBusy={setJobBusy}
                 />
-              </Row>
+              )}
 
               <DistinctBox
                 checking={checking}
@@ -1111,34 +1098,6 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                   <div style={{ fontSize: 12.5, color: 'var(--cth-ink-3)' }}>{title.trim()}</div>
                 </div>
               </div>
-
-              <Row label={tr('addAgent.workStyle')} info={tr('addAgent.wizard.workStyleIntro', { name: name.trim(), godName })}>
-                <textarea
-                  dir={rtl ? 'auto' : undefined}
-                  value={workStyle}
-                  readOnly={suggesting}
-                  aria-busy={suggesting}
-                  onChange={(e) => { describeSeq.current++; setDescribing(false); setWorkStyle(e.target.value); }}
-                  placeholder={tr('addAgent.wizard.workStylePlaceholder', { name: name.trim() })}
-                  rows={7}
-                  className="cth-input" style={{ ...inputStyle, fontFamily: 'var(--cth-font-ui)', resize: 'vertical' }}
-                />
-                {describing && <span aria-live="polite" style={helperStyle}>{tr('addAgent.wizard.describing')}</span>}
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                  {suggesting ? (
-                    <>
-                      <span aria-live="polite" style={helperStyle}>{tr('addAgent.wizard.suggesting', { name: name.trim() })}</span>
-                      <PixelButton variant="secondary" size="sm" onClick={stopSuggest}>{tr('addAgent.wizard.suggestStop')}</PixelButton>
-                    </>
-                  ) : (
-                    <PixelButton variant="secondary" size="sm" onClick={() => { void suggestWorkStyle(); }} disabled={busy || !routing.trim()}
-                      title={!routing.trim() ? tr('addAgent.wizard.suggestNeedsHandles', { name: name.trim() || CAST_BY_NAME[character].displayName }) : undefined}>
-                      {tr('addAgent.wizard.suggest')}
-                    </PixelButton>
-                  )}
-                  {suggestFailed && <span role="alert" style={{ ...helperStyle, color: 'var(--cth-ink-2)' }}>{tr('addAgent.wizard.suggestFailed')}</span>}
-                </div>
-              </Row>
 
               <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
                 <div style={{ flex: '1 1 380px', minWidth: 0 }}>
@@ -1473,6 +1432,22 @@ const inputStyle: React.CSSProperties = {
 
 /** A field with its label; `info` puts the explanation behind an info icon
  *  beside the label instead of text on the screen (owner, 2026-09-27). */
+/** A read only field: its label is text, since nothing in it is typed. */
+function ReadRow({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
+  return (
+    <div role="group" aria-label={label} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}</span>
+        {info && <InfoTip text={info} label={label} />}
+      </span>
+      {children}
+    </div>
+  );
+}
+const readStyle: CSSProperties = { fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)' };
+/** The job folded to four lines, as Edit agent shows it (DR4). */
+const clampStyle: CSSProperties = { display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
+
 function Row({ label, info, children }: { label: string; info?: string; children: React.ReactNode }) {
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

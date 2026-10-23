@@ -683,23 +683,6 @@ const api = {
     ipcRenderer.invoke('hire:checkDistinct', { job, team, requestId }),
   /** Stop a check the owner moved past (another job picked, or back a step). */
   hireCheckStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('hire:checkStop', requestId),
-  /** "Suggest me": a first work style for the owner to edit; empty when it can't
-   *  run. With a `requestId`, the draft streams to onWorkStyleSuggestText. */
-  workStyleSuggest: (req: {
-    requestId?: string;
-    ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
-    handles: string;
-    businessType?: string;
-    team: Array<{ name: string; title?: string; handles?: string }>;
-  }): Promise<{ text: string; cancelled?: boolean }> => ipcRenderer.invoke('workStyle:suggest', req),
-  /** The draft as it is written, for the run with this request id. */
-  onWorkStyleSuggestText: (cb: (e: { requestId: string; text: string }) => void): (() => void) => {
-    const listener = (_e: unknown, payload: { requestId: string; text: string }) => cb(payload);
-    ipcRenderer.on('workStyle:suggestText', listener);
-    return () => ipcRenderer.removeListener('workStyle:suggestText', listener);
-  },
-  /** Stop a suggestion that is still being written. */
-  workStyleSuggestStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('workStyle:suggestStop', requestId),
   /** Rewrite a work style: the agent's instructions as the owner's plain
    *  description, or the owner's description as instructions. */
   workStyleConvert: (req: {
@@ -708,6 +691,25 @@ const api = {
     ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
     previous?: string;
   }): Promise<{ text: string; source: 'ai' | 'rules' }> => ipcRenderer.invoke('workStyle:convert', req),
+  /** "What should change?": the owner's change requests applied to a job (or
+   *  a new job written from one description): the new instructions, plain
+   *  words and "What X handles" (null when the duties didn't change), or one
+   *  question for the owner. Rides the convert channel; stop it with
+   *  workStyleConvertStop and the same request id. */
+  workStyleRevise: (req: {
+    requestId?: string;
+    ctx: { name: string; title?: string; business?: { name?: string; city?: string }; manager?: string };
+    current: { instructions: string; handles: string };
+    changes: string[];
+    answer?: { question: string; answer: string };
+    lead?: boolean;
+  }): Promise<
+    | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string }
+    | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
+    | { kind: 'error'; reason: 'failed' | 'cancelled' }
+  > => ipcRenderer.invoke('workStyle:convert', { ...req, to: 'revise' }),
+  /** Stop a rewrite still running (the dialog closed, or Stop). */
+  workStyleConvertStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('workStyle:convertStop', requestId),
   /** Check a job's focus area against the Work style and the agent's other
    *  jobs (schedule-focus-areas.md, FA3). `checked: false` when it couldn't run. */
   workStyleCheckFocus: (req: {
