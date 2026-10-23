@@ -98,7 +98,7 @@ in this order; the guard test lands last.
 - [x] **T4 (P1, human: ~4h / CC: ~20min)** Schedule editor, company profile (setup and Settings), Add a mailbox: fields from fieldText on one panel (AS1, AS2, AS4)
   - Files: `triggers/ui.tsx` `Field`, `triggers/ScheduleList.tsx`, `CompanyProfileFields.tsx`, `AddMailboxDialog.tsx`, `OnboardingWizard.tsx` where it shows fields
   - Verify: `test/onboarding-currency-defaults.test.cjs`, `test/schedule-focus-areas.test.cjs` rewritten where they pin labels
-- [ ] **T5 (P2, human: ~3h / CC: ~15min)** Profile tab, Command Center, Workers and Pulse sections use `groupName` (AS3)
+- [x] **T5 (P2, human: ~3h / CC: ~15min)** Profile tab, Command Center, Workers and Pulse sections use `groupName` (AS3)
   - Files: `ProfileTab.tsx`, `CommandCenterPanel.tsx`, `WorkersTab.tsx`, `pulse/PulseView.tsx`, `GitTab.tsx` if shown
   - Verify: `test/scheduled-jobs-group.test.cjs` (Profile heading) and section pins
 - [ ] **T6 (P1, human: ~2h / CC: ~10min)** The guard test (inline labels, capitals and ringed group cards outside fieldText, a named file exception list for cards, chat, floor and terminal, and a `/* style-guard: micro */` line marker for pills and badges); DESIGN.md §4.2, §7.12 and §7.26 (AS5)

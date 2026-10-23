@@ -40,6 +40,7 @@ import { useBackdropClose } from '@/hooks/useBackdropClose';
 import { getNeedsYouFeed, shownQuestions } from '@/shell/useNeedsYou';
 import { FOUNDATION_QUESTIONS, foundationAsk, isFoundationsDoc, type FoundationId, type FoundationsJobRow, type FoundationsMember } from '@shared/foundations';
 import { ADVICE_WINDOW_MS, EARLY_SCALE, REOPEN_MIN } from '@shared/teamAdvice';
+import { groupName } from '../fieldText';
 
 const LS_PERIOD = 'cth.pulsePeriod';
 const LS_COMPARE = 'cth.pulseCompare';
@@ -176,7 +177,7 @@ const mono: CSSProperties = { fontFamily: 'var(--cth-font-mono)' };
 function Section({ title, tip, children }: { title: string; tip?: string; children: ReactNode }) {
   return (
     <section aria-label={title} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <h2 style={{ margin: 0, fontSize: 13, fontWeight: 600, letterSpacing: '-0.01em', display: 'flex', gap: 6, alignItems: 'center' }}>
+      <h2 style={{ ...groupName, display: 'flex', gap: 6, alignItems: 'center' }}>
         {title}{tip && <InfoTip text={tip} />}
       </h2>
       {children}

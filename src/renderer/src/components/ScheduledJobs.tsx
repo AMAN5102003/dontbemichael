@@ -5,7 +5,7 @@ import { whenParts } from '@shared/scheduleTimes';
 import { RESEARCH_ID } from '@shared/research';
 import { useStore } from '@/store/store';
 import { InfoTip } from './InfoTip';
-import { fieldLabel } from './fieldText';
+import { fieldLabel, groupName } from './fieldText';
 import { useGodId, useMissions, whenText } from './triggers/ScheduleList';
 
 /**
@@ -104,7 +104,8 @@ function JobRow({ job, first }: { job: ScheduledMission; first: boolean }) {
   );
 }
 
-const sectionStyle: CSSProperties = { fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink-700)' };
+/** On the Profile tab it reads as the tab's other section names (AS3). */
+const sectionStyle: CSSProperties = groupName;
 const linkStyle: CSSProperties = {
   flexShrink: 0, padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
   fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)', textDecoration: 'underline', textUnderlineOffset: 2

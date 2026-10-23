@@ -109,3 +109,14 @@ test('the schedule editor, company profile and Add a mailbox use the shared fiel
     assert.ok(w && !/[—–]| - /.test(w), `${loc} required`);
   }
 });
+
+test('every named section uses the group name: Profile, Command Center, Git, Pulse, Workers and the jobs list', () => {
+  // Value: protects=AS3 on T5's screens; fails_when=a section name goes back to 10 to 13 px grey or small caps; why_new=T5 of app-style-rollout.md; seam=none; no_claim=source pins, not rendered
+  const c = (f) => read(`src/renderer/src/components/${f}.tsx`);
+  assert.match(c('ProfileTab'), /<h3 style=\{\{ \.\.\.groupName, margin: '0 0 8px' \}\}>/);
+  assert.match(c('CommandCenterPanel'), /<h3 style=\{\{ \.\.\.groupName, marginBottom: 6 \}\}>\{title\}<\/h3>/);
+  assert.match(c('GitTab'), /<h3 style=\{\{ \.\.\.groupName, padding: '10px 10px 4px' \}\}>\{title\}<\/h3>/);
+  assert.match(c('pulse/PulseView'), /<h2 style=\{\{ \.\.\.groupName, display: 'flex', gap: 6, alignItems: 'center' \}\}>/);
+  assert.match(c('WorkersTab'), /const sectionHead: React\.CSSProperties = groupName;/);
+  assert.match(c('ScheduledJobs'), /const sectionStyle: CSSProperties = groupName;/);
+});
