@@ -81,9 +81,9 @@ export function jobBase(job: { goal?: string; description?: string }): string {
 }
 
 /** `before`'s role line with `now`'s binding lines in place of its own.
- *  No line before stays no line. */
+ *  A job saved before routing lines existed has none to go back to. */
 function withBindingsOf(before: string, now: string): string {
-  if (!before?.trim()) return before;
+  if (typeof before !== 'string') return before;
   const was = splitAgentRole(before);
   const lines = splitBindings(splitAgentRole(now).roleDescription).lines;
   const handles = lines.reduce((h, l) => appendOnce(h, l), splitBindings(was.roleDescription).text);

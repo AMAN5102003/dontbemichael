@@ -29,7 +29,8 @@ import {
   claudeAuthStatusCommand, findClaudeFast, isEngineSetupPty, makeClaudeAuthReader, makeNoticeCoalescer, readEngineSetupStatus,
   shouldStartInstall, type EngineSetupStatus, type KeyCheckFetch
 } from './engineSetup';
-import { runHiddenClaude, setHiddenClaudeAuthEnv, sweepIsolatedLeftovers } from './hiddenClaude';
+import { runHiddenClaude, setHiddenClaudeAuthEnv } from './hiddenClaude';
+import { sweepIsolatedLeftovers } from './isolatedSweep';
 import { makeTrustLayer, TRUST_MODEL, TRUST_TIMEOUT_MS } from './trustLayer';
 import { dataClassSettings } from '../shared/dataClasses';
 import { RESEARCH_DESK_DIR, RESEARCH_ID, RESEARCH_NAME, RESEARCH_WORK_STYLE } from '../shared/research';

@@ -1,6 +1,6 @@
 import * as pty from 'node-pty';
 import { randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveCommand, userShellPath } from './shellEnv';
@@ -132,6 +132,9 @@ export interface HiddenClaudeResult {
 
 export { pasteSafe };
 
+/** The name every isolated check folder starts with (isolatedSweep.ts). */
+export const ISOLATED_PREFIX = 'dbm-check-';
+
 /**
  * A fresh Claude Code settings folder for one session: the first run and
  * trust screens already answered, the bypass warning off, and the owner's API
@@ -162,22 +165,6 @@ function isolatedConfigDir(cwd: string, auth: Record<string, string>): { dir: st
       CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: '1'
     }
   };
-}
-
-const ISOLATED_PREFIX = 'dbm-check-';
-
-/** Settings folders a check left behind when the app quit or crashed mid
- *  check: they hold the checked text. Removed once a launch; only old ones,
- *  so a check under way is never cut short. */
-export function sweepIsolatedLeftovers(olderThanMs = 10 * 60_000): void {
-  const root = tmpdir();
-  const cutoff = Date.now() - olderThanMs;
-  let names: string[] = [];
-  try { names = readdirSync(root); } catch { return; }
-  for (const n of names) {
-    if (!n.startsWith(ISOLATED_PREFIX)) continue;
-    try { if (lstatSync(join(root, n)).mtimeMs < cutoff) rmSync(join(root, n), { recursive: true, force: true, maxRetries: 3 }); } catch { /* next launch */ }
-  }
 }
 
 export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Promise<HiddenClaudeResult> {
