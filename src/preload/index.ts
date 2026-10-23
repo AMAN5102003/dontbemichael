@@ -708,6 +708,17 @@ const api = {
     | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> }
     | { kind: 'error'; reason: 'failed' | 'cancelled' }
   > => ipcRenderer.invoke('workStyle:convert', { ...req, to: 'revise' }),
+  /** Where a rewrite is (starting, reading, writing) and what it has written
+   *  so far, by its request id. Returns the unsubscribe. */
+  onWorkStyleProgress: (
+    requestId: string,
+    cb: (p: { stage: 'starting' | 'reading' | 'writing'; preview?: { summary: string[]; plain: string; question: string } }) => void
+  ): (() => void) => {
+    const channel = `workStyle:progress:${requestId}`;
+    const listener = (_e: IpcRendererEvent, p: Parameters<typeof cb>[0]) => cb(p);
+    ipcRenderer.on(channel, listener);
+    return () => ipcRenderer.removeListener(channel, listener);
+  },
   /** Stop a rewrite still running (the dialog closed, or Stop). */
   workStyleConvertStop: (requestId: string): Promise<{ ok: boolean }> => ipcRenderer.invoke('workStyle:convertStop', requestId),
   /** Check a job's focus area against the Work style and the agent's other

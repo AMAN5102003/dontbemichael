@@ -6062,7 +6062,7 @@ ipcMain.handle('hire:checkStop', (_evt, requestId: unknown) => {
  *  writes a new one, and `workStyle:convertStop` ends it
  *  (work-style-change-request.md, D4 and D9). */
 const reviseRuns = new Map<string, AbortController>();
-ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
+ipcMain.handle('workStyle:convert', async (evt, payload: unknown) => {
   if ((payload as { to?: unknown } | null)?.to === 'revise') {
     const rev = readReviseRequest(payload);
     if (!rev) return { kind: 'error', reason: 'failed' };
@@ -6077,6 +6077,11 @@ ipcMain.handle('workStyle:convert', async (_evt, payload: unknown) => {
         command: cfg.defaultCommand ?? 'claude',
         env: memory.env(),
         log: (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+        // The box's steps and the words as they are written (owner, 2026-10-23).
+        onProgress: (p) => {
+          if (!rev.requestId || evt.sender.isDestroyed()) return;
+          evt.sender.send(`workStyle:progress:${rev.requestId}`, p);
+        },
         // Checked against, never copied into the job (eng D3).
         foundations: () => Object.entries(foundations.read().answers).flatMap(([id, a]) =>
           isFoundationId(id) && a?.text ? [`${FOUNDATION_QUESTIONS[id].text}: ${a.text}`] : [])

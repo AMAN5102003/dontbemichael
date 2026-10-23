@@ -3064,7 +3064,6 @@
     "shortcutMac": "⌘ Enter",
     "shortcutOther": "Ctrl Enter",
     "working": "Working out what changes for {{name}}…",
-    "workingNote": "This can take up to a minute.",
     "stop": "Stop",
     "previewTitle": "Here's what changes",
     "previewTitleNew": "Here's {{name}}'s job",
@@ -3115,6 +3114,12 @@
     "packKeptOne": "Your change will be kept.",
     "packKeptMany": "Your {{count}} changes will be kept.",
     "packOlderEdits": "Your earlier edits to {{name}}'s job will be replaced.",
-    "seeIt": "See it"
+    "seeIt": "See it",
+    "steps": {
+      "starting": "Getting ready",
+      "reading": "Reading what you wrote",
+      "writing": "Writing {{name}}'s job"
+    },
+    "soFar": "So far"
   }
 }

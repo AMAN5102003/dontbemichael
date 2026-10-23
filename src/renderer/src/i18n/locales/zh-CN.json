@@ -3064,7 +3064,6 @@
     "shortcutMac": "⌘ Enter",
     "shortcutOther": "Ctrl Enter",
     "working": "正在为 {{name}} 整理改动…",
-    "workingNote": "这可能需要一分钟。",
     "stop": "停止",
     "previewTitle": "改动如下",
     "previewTitleNew": "这是 {{name}} 的工作",
@@ -3115,6 +3114,12 @@
     "packKeptOne": "你的改动会保留。",
     "packKeptMany": "你的 {{count}} 处改动会保留。",
     "packOlderEdits": "你之前对 {{name}} 工作的修改将被替换。",
-    "seeIt": "查看"
+    "seeIt": "查看",
+    "steps": {
+      "starting": "正在准备",
+      "reading": "正在读你写的内容",
+      "writing": "正在写 {{name}} 的工作"
+    },
+    "soFar": "目前"
   }
 }

@@ -6,11 +6,13 @@ import { InfoTip } from './InfoTip';
 import { Disclosure } from './triggers/ui';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { useRtl } from '@/i18n/useDirection';
-import { JobParts, fieldLabel } from './fieldText';
+import { JobParts, fieldLabel, hint } from './fieldText';
+import { Spinner } from './GetMichaelReady';
 
 export type ReviseResult = Awaited<ReturnType<Window['cth']['workStyleRevise']>>;
 export type ReviseOk = Extract<ReviseResult, { kind: 'ok' }>;
 type Question = Extract<ReviseResult, { kind: 'question' }>;
+type Progress = Parameters<Parameters<Window['cth']['onWorkStyleProgress']>[1]>[0];
 type Answer = { question: string; answer: string };
 
 /** What a run is given: the typed change, any change added on the way (Leave
@@ -55,7 +57,7 @@ export interface JobChangeReviewProps {
 
 type State =
   | { at: 'idle' }
-  | { at: 'working' }
+  | { at: 'working'; progress?: Progress }
   | { at: 'ok'; ok: ReviseOk; from: string }
   | { at: 'question'; q: Question }
   | { at: 'overlap'; names: string[]; why: string }
@@ -101,8 +103,15 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     answerRef.current = answer;
     setFailed(false);
     setState({ at: 'working' });
+    // Real steps and the words as they are written, from main (owner,
+    // 2026-10-23: a still box for up to a minute read as stuck).
+    const off = window.cth.onWorkStyleProgress?.(requestId, (progress) => {
+      if (runId.current !== requestId) return;
+      setState((s) => (s.at === 'working' ? { at: 'working', progress } : s));
+    });
     const from = p.base?.() ?? '';
     const res = await p.run({ typed: typed.trim(), extras: more, answer, requestId }).catch((): ReviseResult => ({ kind: 'error', reason: 'failed' }));
+    off?.();
     if (runId.current !== requestId) return; // stopped, or a newer run
     runId.current = null;
     if (res.kind === 'error') { setState(res.reason === 'cancelled' ? { at: 'idle' } : { at: 'error' }); return; }
@@ -157,13 +166,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
 
   let panel: ReactNode = null;
   if (state.at === 'working') {
-    panel = (
-      <div role="status" style={panelStyle}>
-        {head(t('jobChange.working', { name: p.who }))}
-        <span style={noteStyle}>{t('jobChange.workingNote')}</span>
-        <div style={rowEnd}><PixelButton variant="secondary" size="sm" onClick={stop}>{t('jobChange.stop')}</PixelButton></div>
-      </div>
-    );
+    panel = <Working who={p.who} progress={state.progress} heading={head(t('jobChange.working', { name: p.who }))} onStop={stop} />;
   } else if (state.at === 'ok') {
     panel = <Preview ok={state.ok} who={p.who} lead={p.lead} title={p.previewTitle ?? t('jobChange.previewTitle')} heading={heading}
       applyLabel={p.applyLabel} applying={applying} failed={failed} onCancel={cancel} onApply={() => { void doApply(state.ok, state.from); }} />;
@@ -245,6 +248,48 @@ export function JobChangeReview(p: JobChangeReviewProps) {
 }
 
 /** The new job: what changes, the new "What X handles", the whole job folded. */
+const STEPS = ['starting', 'reading', 'writing'] as const;
+
+/**
+ * While a run works: its three real steps, ticked off as main reports them,
+ * and what is written so far (the summary lines, then the plain words, or the
+ * question). Only the steps are announced; the words would chatter.
+ */
+function Working({ who, progress, heading, onStop }: { who: string; progress?: Progress; heading: ReactNode; onStop: () => void }) {
+  const { t } = useTranslation();
+  const at = STEPS.indexOf(progress?.stage ?? 'starting');
+  const seen = progress?.preview;
+  const any = !!seen && (seen.summary.length > 0 || !!seen.plain || !!seen.question);
+  return (
+    <div style={panelStyle}>
+      {heading}
+      <ol role="status" style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {STEPS.map((step, i) => (
+          <li key={step} data-step={step} data-at={i < at ? 'done' : i === at ? 'now' : 'next'} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, lineHeight: '18px', color: i < at ? 'var(--cth-ink-2)' : i === at ? 'var(--cth-ink)' : 'var(--cth-ink-3)', fontWeight: i === at ? 600 : 400 }}>
+            <span aria-hidden="true" style={stepMark}>
+              {i < at ? <span style={{ color: 'var(--cth-green-text)' }}>✓</span> : i === at ? <Spinner /> : <span style={{ ...dot, background: 'var(--cth-ink-4)', transform: 'none' }} />}
+            </span>
+            <span>{t(`jobChange.steps.${step}`, { name: who })}</span>
+          </li>
+        ))}
+      </ol>
+      {any && seen && (
+        <div aria-live="off" style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', borderRadius: 'var(--cth-r-md)', background: 'var(--cth-card)' }}>
+          <span style={hint}>{t('jobChange.soFar')}</span>
+          {seen.question && <span style={bodyStyle}>{seen.question}</span>}
+          {seen.summary.length > 0 && (
+            <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {seen.summary.map((l, i) => <li key={i} style={dotLine}><span aria-hidden="true" style={dot} /><span>{l}</span></li>)}
+            </ul>
+          )}
+          {seen.plain && <JobParts plain={seen.plain} />}
+        </div>
+      )}
+      <div style={rowEnd}><PixelButton variant="secondary" size="sm" onClick={onStop}>{t('jobChange.stop')}</PixelButton></div>
+    </div>
+  );
+}
+
 function Preview({ ok, who, lead, title, heading, applyLabel, applying, failed, onCancel, onApply }: {
   ok: ReviseOk; who: string; lead?: boolean; title: string; heading: React.RefObject<HTMLDivElement>;
   applyLabel: string; applying: boolean; failed: boolean; onCancel: () => void; onApply: () => void;
@@ -346,6 +391,7 @@ const panelStyle: CSSProperties = {
   background: 'var(--cth-indigo-soft)', fontFamily: 'var(--cth-font-ui)'
 };
 const headStyle: CSSProperties = { fontSize: 13, fontWeight: 600, lineHeight: '18px', outline: 'none' };
+const stepMark: CSSProperties = { width: 14, height: 14, flexShrink: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12 };
 const noteStyle: CSSProperties = { fontSize: 12.5, lineHeight: '18px', color: 'var(--cth-ink-2)' };
 const bodyStyle: CSSProperties = { fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)' };
 const rowEnd: CSSProperties = { display: 'flex', gap: 7, justifyContent: 'flex-end', alignItems: 'center' };

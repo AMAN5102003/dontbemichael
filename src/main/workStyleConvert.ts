@@ -13,6 +13,7 @@ import {
   parseFocusCheck,
   instructionsOpening,
   parseRevise,
+  revisePreview,
   plainFallback,
   roleLabel,
   toInstructionsPrompt,
@@ -20,6 +21,7 @@ import {
   toRevisePrompt,
   type ReviseAnswer,
   type ReviseInput,
+  type ReviseProgress,
   type WorkStyleContext
 } from '../shared/workStyleText';
 
@@ -142,9 +144,11 @@ export function readReviseRequest(v: unknown): ReviseRequest | null {
  */
 export async function reviseWorkStyle(
   req: ReviseRequest,
-  deps: ConvertDeps & { foundations?: () => string[] },
+  deps: ConvertDeps & { foundations?: () => string[]; onProgress?: (p: ReviseProgress) => void },
   signal?: AbortSignal
 ): Promise<ReviseResult> {
+  const progress = (p: ReviseProgress): void => { try { deps.onProgress?.(p); } catch { /* a step never breaks the call */ } };
+  progress({ stage: 'starting' });
   const bound = splitBindings(req.current.handles);
   let foundations: string[] = [];
   try { foundations = deps.foundations?.() ?? []; } catch { /* checked without them */ }
@@ -167,6 +171,11 @@ export async function reviseWorkStyle(
       noTools: true,
       env: deps.env,
       timeoutMs: TIMEOUT_MS,
+      // No hidden thinking (owner, 2026-10-23): measured on a real change, the
+      // model took 7s without it against 12 to 35s with it, and the owner waits.
+      thinking: false,
+      onPromptSent: () => progress({ stage: 'reading' }),
+      onScreenText: (text) => progress({ stage: 'writing', preview: revisePreview(text) }),
       signal
     });
     if (result.error === 'cancelled' || signal?.aborted) return { kind: 'error', reason: 'cancelled' };

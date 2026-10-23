@@ -63,8 +63,10 @@ test('a quick judgment skips extended thinking and takes its answer the moment i
   const convert = read('src/main/workStyleConvert.ts');
   const focus = convert.slice(convert.indexOf('export async function checkFocusArea'));
   assert.match(focus, /thinking: false,/);
-  // Writing a work style is not a quick judgment: it keeps the CLI's setting.
-  assert.doesNotMatch(convert.slice(0, convert.indexOf('export async function checkFocusArea')), /thinking: false/);
+  // Writing a work style from plain words keeps the CLI's setting; a job change
+  // runs without thinking (owner, 2026-10-23: 7s of model time against 12 to 35s).
+  assert.doesNotMatch(convert.slice(0, convert.indexOf('export async function reviseWorkStyle')), /thinking: false/);
+  assert.match(convert.slice(convert.indexOf('export async function reviseWorkStyle'), convert.indexOf('export async function checkFocusArea')), /thinking: false,/);
 });
 
 test('an answer is only taken once its text block is complete', () => {

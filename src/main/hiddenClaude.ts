@@ -74,6 +74,9 @@ export interface HiddenClaudeOptions {
    *  a headless terminal, for a live preview (screenAnswer.ts). The result
    *  still comes from the transcript. */
   onScreenText?: (text: string) => void;
+  /** The session has the prompt: it is reading, not starting any more. For a
+   *  waiting screen's steps (owner, 2026-10-23). */
+  onPromptSent?: () => void;
   /** Stops the call: the session is killed and the result is 'cancelled'. */
   signal?: AbortSignal;
   /** Remove this session's transcript once it ends: it holds text that must
@@ -259,6 +262,7 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       if (settled || promptSent) return;
       promptSent = true;
       if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+      try { opts.onPromptSent?.(); } catch { /* a step never breaks the call */ }
       // Pictures first, one paste each, so each attaches before the prompt.
       const images = opts.images ?? [];
       images.forEach((path, i) => setTimeout(() => { if (!settled) ptyProc.write(`\x1b[200~${path}\x1b[201~`); }, i * IMAGE_PASTE_MS));

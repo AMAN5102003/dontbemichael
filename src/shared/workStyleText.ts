@@ -141,6 +141,14 @@ export type ReviseAnswer =
   | { kind: 'ok'; instructions: string; plain: string; handles: string | null; summary: string[]; oneTimeTask?: string }
   | { kind: 'question'; question: string; choices: Array<{ label: string; suggested?: boolean }> };
 
+/** Where a run is, for the box while the owner waits (owner, 2026-10-23: a
+ *  still "Working out..." for up to a minute read as stuck). Real steps of the
+ *  hidden run, never a timer: the session starting, the prompt taken, the
+ *  answer being written. */
+export type ReviseStage = 'starting' | 'reading' | 'writing';
+export interface RevisePreview { summary: string[]; plain: string; question: string }
+export interface ReviseProgress { stage: ReviseStage; preview?: RevisePreview }
+
 /** At most this many summary lines and question choices are kept. */
 const SUMMARY_MAX = 8;
 const CHOICES_MAX = 3;
@@ -159,7 +167,8 @@ export function toRevisePrompt(input: ReviseInput): string {
     '',
     'Answer with one JSON object and nothing else, in one of two shapes.',
     '',
-    `Shape 1, the new job: {"kind": "ok", "instructions": "...", "plain": "...", "handles": ${input.lead ? 'null' : '"..." or null'}, "summary": ["...", "..."], "oneTimeTask": "..." or null}`,
+    // Summary and plain words first: the owner reads them while the rest is written.
+    `Shape 1, the new job, with its keys in this order: {"kind": "ok", "summary": ["...", "..."], "plain": "...", "handles": ${input.lead ? 'null' : '"..." or null'}, "instructions": "...", "oneTimeTask": "..." or null}`,
     `"instructions": the standing work style ${ctx.name} reads at the start of every session. Start with exactly this line: "${instructionsOpening(ctx.business)}" Then three sections with these markdown headings, leaving out a section with nothing in it: "### The job" (the outcome and why it matters), "### How to work" (short sentences, each with its reason after "because" or "so"), "### Needs the owner's approval" (what goes to ${michael} for the owner's approval first, with the reason). Address the team member as "you". Name no team member, because names change: call a teammate by their role. ${michael} is the only name to use. State each rule directly, at normal volume, without "must", "never" or capitals unless the owner said them. Under 300 words.`,
     fresh
       ? '"instructions" hold every duty, habit, limit and approval the owner described, and nothing the owner did not.'
@@ -404,4 +413,64 @@ export function parseFocusCheck(answer: string): { ok: true } | { ok: false; con
   const hit = /^conflict\s*:\s*([\s\S]+)$/i.exec(a);
   if (hit && hit[1].trim()) return { ok: false, conflict: hit[1].trim().replace(/\s+/g, ' ').slice(0, 400) };
   return null;
+}
+
+const ESCAPES: Record<string, string> = { n: '\n', t: '\t', r: '', '"': '"', '\\': '\\', '/': '/', b: '', f: '' };
+
+/** A JSON string from just after its opening quote, finished or not. */
+function partialString(text: string, from: number): { value: string; end: number; closed: boolean } {
+  let value = '';
+  let i = from;
+  while (i < text.length) {
+    const c = text[i];
+    if (c === '"') return { value, end: i + 1, closed: true };
+    if (c !== '\\') { value += c; i++; continue; }
+    const e = text[i + 1];
+    if (e === undefined) break; // the escape is still being written
+    if (e === 'u') {
+      const hex = text.slice(i + 2, i + 6);
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) break;
+      value += String.fromCharCode(parseInt(hex, 16));
+      i += 6;
+      continue;
+    }
+    value += ESCAPES[e] ?? e;
+    i += 2;
+  }
+  return { value, end: text.length, closed: false };
+}
+
+/** The string under `key`, as far as it is written ('' before it starts). */
+function partialField(text: string, key: string): string {
+  const m = new RegExp(`"${key}"\\s*:\\s*"`).exec(text);
+  return m ? partialString(text, m.index + m[0].length).value : '';
+}
+
+/**
+ * What the owner can read while the answer is still being written: the
+ * summary lines, the plain words, or the question, from a JSON object that may
+ * stop anywhere. The prompt puts these first, ahead of the instructions. A
+ * preview only: the answer saved is the finished one (parseRevise).
+ */
+export function revisePreview(answer: string): RevisePreview {
+  const text = answer.slice(answer.indexOf('{') + 1 || 0);
+  const summary: string[] = [];
+  const list = /"summary"\s*:\s*\[/.exec(text);
+  if (list) {
+    let i = list.index + list[0].length;
+    while (i < text.length && summary.length < SUMMARY_MAX) {
+      while (i < text.length && /[\s,]/.test(text[i])) i++;
+      if (text[i] !== '"') break;
+      const s = partialString(text, i + 1);
+      const v = s.value.replace(/\s+/g, ' ').trim();
+      if (v) summary.push(v);
+      if (!s.closed) break;
+      i = s.end;
+    }
+  }
+  return {
+    summary,
+    plain: withoutFirstTask(partialField(text, 'plain')).trim().slice(0, 3000),
+    question: partialField(text, 'question').replace(/\s+/g, ' ').trim().slice(0, 400)
+  };
 }

@@ -3064,7 +3064,6 @@
     "shortcutMac": "⌘ Enter",
     "shortcutOther": "Ctrl Enter",
     "working": "جارٍ تحديد ما يتغير لـ {{name}}…",
-    "workingNote": "قد يستغرق هذا حتى دقيقة.",
     "stop": "إيقاف",
     "previewTitle": "هذا ما يتغير",
     "previewTitleNew": "هذه وظيفة {{name}}",
@@ -3115,6 +3114,12 @@
     "packKeptOne": "سيُحتفظ بتغييرك.",
     "packKeptMany": "سيُحتفظ بتغييراتك الـ {{count}}.",
     "packOlderEdits": "ستُستبدل تعديلاتك السابقة على وظيفة {{name}}.",
-    "seeIt": "اعرضه"
+    "seeIt": "اعرضه",
+    "steps": {
+      "starting": "جارٍ التجهيز",
+      "reading": "قراءة ما كتبته",
+      "writing": "كتابة وظيفة {{name}}"
+    },
+    "soFar": "حتى الآن"
   }
 }

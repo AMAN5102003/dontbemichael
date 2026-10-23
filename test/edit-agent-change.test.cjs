@@ -92,7 +92,7 @@ test('the preview: working, ok, clash, overlap, error and changed meanwhile, wit
   // Value: protects=DR5, DR6, DR8, DR10, DR11 in the shared preview; fails_when=a state loses its role, Cmd or Ctrl+Enter, the stop on close, or the sticky Apply row; why_new=T3; seam=source pin
   const src = read('src/renderer/src/components/JobChangeReview.tsx');
   assert.match(src, /if \(e\.key === 'Enter' && \(e\.metaKey \|\| e\.ctrlKey\)\) \{ e\.preventDefault\(\); void start\(\); \}/);
-  assert.match(src, /<div role="status" style=\{panelStyle\}>\s*\{head\(t\('jobChange\.working', \{ name: p\.who \}\)\)\}/);
+  assert.match(src, /panel = <Working who=\{p\.who\} progress=\{state\.progress\} heading=\{head\(t\('jobChange\.working', \{ name: p\.who \}\)\)\} onStop=\{stop\} \/>;/, 'its steps and words (revise-progress.test.cjs)');
   assert.equal((src.match(/<div role="alert" style=\{panelStyle\}>/g) ?? []).length, 3, 'overlap, error and changed meanwhile');
   assert.match(src, /heading\.current\?\.focus\(\{ preventScroll: true \}\);/, 'focus moves to each state\'s heading');
   assert.match(src, /\{state\.at === 'idle' && p\.status && <span role="status"/);
@@ -143,6 +143,7 @@ test('the new strings have no dashes and say who, never "you" for a team member'
   // Value: protects=the no dashes rule and plain owner copy in every locale; fails_when=a dash or a hyphen used as one slips into the new copy; why_new=T3 copy; seam=pure
   for (const loc of ['en', 'ar', 'zh-CN']) {
     const d = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).jobChange;
-    for (const [k, v] of Object.entries(d)) assert.doesNotMatch(v, /[—–]| - /, `${loc} ${k}`);
+    const flat = Object.entries(d).flatMap(([k, v]) => (typeof v === 'string' ? [[k, v]] : Object.entries(v).map(([k2, v2]) => [`${k}.${k2}`, v2])));
+    for (const [k, v] of flat) assert.doesNotMatch(v, /[—–]| - /, `${loc} ${k}`);
   }
 });

@@ -134,5 +134,6 @@ function runHiddenCodex(prompt: string, opts: HiddenModelOptions): Promise<Hidde
     });
     if (opts.signal?.aborted) { onAbort(); return; }
     child.stdin?.end(prompt);
+    try { opts.onPromptSent?.(); } catch { /* a step never breaks the call */ }
   });
 }
