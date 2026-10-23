@@ -27,6 +27,7 @@ import type { AgentDefinitionV2 } from '../../../shared/agentDefinition';
 import { FIRST_TASK_EDITED_MAX, withoutLegacyFirstTask } from '../../../shared/firstTask';
 import { firstTaskSection } from '../../../shared/workStyleText';
 import { splitAgentRole } from '../../../shared/agentRole';
+import { pasteSafe } from '../../../shared/pasteSafe';
 import { ACTION_AT_PROMPT, ACTION_CLOCKING_IN } from '@/store/store';
 import { ENGINE_READY_EVENT } from '@/shell/useNeedsYou';
 import { seedStarterJobs } from '@/shell/seedStarterJobs';
@@ -144,7 +145,11 @@ function submitToPty(
     // stray "\n" doesn't submit early (#24). Single-line text (nudges, slash
     // commands) is sent raw — some TUIs (Antigravity's agy) treat the paste
     // markers as literal input and never submit, so skipping them is more robust.
-    const payload = text.includes('\n') ? `\x1b[200~${text}\x1b[201~` : text;
+    // No control characters from the message itself: a quoted email holding
+    // ESC[201~ would end the paste and type the rest as keystrokes (ship
+    // review, 2026-10-23). A lone return is pasted too, never typed as Enter.
+    const safe = pasteSafe(text);
+    const payload = /[\r\n]/.test(safe) ? `\x1b[200~${safe}\x1b[201~` : safe;
     // writePty NEVER rejects for a dead pty — it resolves { ok:false, error:
     // 'no pty: …' } — so an unchecked await here made every failed delivery look
     // successful (the queue-drain then destroyed the message it had already

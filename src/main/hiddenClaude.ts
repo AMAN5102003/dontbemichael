@@ -11,6 +11,7 @@ import { ensureKilled } from './procKill';
 import { Terminal } from '@xterm/headless';
 import { ANSWER_MARK, screenAnswer } from './screenAnswer';
 import { tokenizeCommand } from '../shared/commandLine';
+import { pasteSafe } from '../shared/pasteSafe';
 
 /**
  * Shared helper: run a HIDDEN interactive claude session (ephemeral PTY) and
@@ -129,14 +130,7 @@ export interface HiddenClaudeResult {
   error?: string;
 }
 
-/** Text made safe to paste into the session's terminal: no control
- *  characters but tab, newline and return. A file or an email holding
- *  ESC[201~ would otherwise end the bracketed paste early and type the rest
- *  into a session that runs with permissions bypassed (ship review,
- *  2026-10-23). */
-export function pasteSafe(text: string): string {
-  return text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '');
-}
+export { pasteSafe };
 
 /**
  * A fresh Claude Code settings folder for one session: the first run and
