@@ -121,9 +121,21 @@ export interface HiddenClaudeResult {
   error?: string;
 }
 
+/** Text made safe to paste into the session's terminal: no control
+ *  characters but tab, newline and return. A file or an email holding
+ *  ESC[201~ would otherwise end the bracketed paste early and type the rest
+ *  into a session that runs with permissions bypassed (ship review,
+ *  2026-10-23). */
+export function pasteSafe(text: string): string {
+  return text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, '');
+}
+
 export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Promise<HiddenClaudeResult> {
   return new Promise((resolve) => {
     if (!prompt.trim()) { resolve({ ok: false, error: 'empty prompt' }); return; }
+    // A picture path is pasted as it is, so one holding a control character
+    // is refused rather than changed (a changed path attaches nothing).
+    if ((opts.images ?? []).some((p) => p !== pasteSafe(p) || /[\r\n\t]/.test(p))) { resolve({ ok: false, error: 'picture path has control characters' }); return; }
     // Defense-in-depth: `~` is shell syntax, not a path Node understands.
     const cwd = opts.cwd ? expandTilde(opts.cwd) : opts.cwd;
     if (!cwd || !existsSync(cwd)) {
@@ -262,13 +274,12 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       if (settled || promptSent) return;
       promptSent = true;
       if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
-      try { opts.onPromptSent?.(); } catch { /* a step never breaks the call */ }
       // Pictures first, one paste each, so each attaches before the prompt.
       const images = opts.images ?? [];
       images.forEach((path, i) => setTimeout(() => { if (!settled) ptyProc.write(`\x1b[200~${path}\x1b[201~`); }, i * IMAGE_PASTE_MS));
       const afterImages = images.length * IMAGE_PASTE_MS;
       // Bracketed paste + enter — same mechanism as submitToPty in useHive.ts.
-      setTimeout(() => { if (!settled) ptyProc.write(`\x1b[200~${prompt}\x1b[201~`); }, afterImages);
+      setTimeout(() => { if (!settled) ptyProc.write(`\x1b[200~${pasteSafe(prompt)}\x1b[201~`); }, afterImages);
       setTimeout(() => { if (!settled) ptyProc.write('\r'); }, afterImages + 140);
       // Claude writes the prompt to the session's transcript as soon as it
       // takes it. An Enter that lands while Claude is still starting is
@@ -278,16 +289,22 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       // transcript shows the prompt was taken; on an empty input it does
       // nothing. None at all by promptTakenMs means a sign-in or trust screen
       // is waiting, so the caller's fallback answers now, not at the timeout.
-      const sentAt = Date.now();
-      promptTimer = setInterval(() => {
+      // All of it starts once the prompt is pasted, after any pictures: an
+      // Enter between two picture pastes would send them with no question.
+      setTimeout(() => {
         if (settled) return;
-        if (existsSync(transcriptFile(projectDir(opts.cwd), sessionId))) {
-          if (promptTimer) { clearInterval(promptTimer); promptTimer = null; }
-          return;
-        }
-        if (Date.now() - sentAt >= promptTakenMs) { finish({ ok: false, error: 'hidden session never took the prompt (signed out, or a screen is waiting)' }); return; }
-        ptyProc.write('\r');
-      }, ENTER_AGAIN_MS);
+        try { opts.onPromptSent?.(); } catch { /* a step never breaks the call */ }
+        const sentAt = Date.now();
+        promptTimer = setInterval(() => {
+          if (settled) return;
+          if (existsSync(transcriptFile(projectDir(opts.cwd), sessionId))) {
+            if (promptTimer) { clearInterval(promptTimer); promptTimer = null; }
+            return;
+          }
+          if (Date.now() - sentAt >= promptTakenMs) { finish({ ok: false, error: 'hidden session never took the prompt (signed out, or a screen is waiting)' }); return; }
+          ptyProc.write('\r');
+        }, ENTER_AGAIN_MS);
+      }, afterImages + 140);
       // With no tools the first answer is the last one, so it is taken the
       // moment it lands in this session's transcript instead of after the
       // screen has been quiet for idleMs (which added 3.5s to every call).

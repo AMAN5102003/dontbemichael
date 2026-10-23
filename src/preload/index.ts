@@ -1442,7 +1442,7 @@ const api = {
   foundationsPickFile: (): Promise<{ ok: true; path: string; name: string } | { ok: false; error: string }> => ipcRenderer.invoke('foundations:pickFile'),
   /** Read, check and add a card's file to company knowledge (nothing is added
    *  unless the check says it fits). */
-  foundationsAddFile: (id: string, path: string): Promise<{ ok: true; docId: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'misfit' | 'unchecked'; reason?: string }> =>
+  foundationsAddFile: (id: string, path: string): Promise<{ ok: true; docId: string; name: string } | { ok: false; error: 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'picture-engine' | 'misfit' | 'unchecked'; reason?: string }> =>
     ipcRenderer.invoke('foundations:addFile', id, path),
   /** The owner's answer from a file added with foundationsAddFile. */
   foundationsAnswerFile: (id: string, docId: string, words: string): Promise<{ ok: true; text: string } | { ok: false; error: string }> =>

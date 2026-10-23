@@ -67,7 +67,7 @@ export interface FoundationsDeps {
 }
 
 /** Why a file added on a card was not taken; each has its own card line. */
-export type AddFileError = 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'misfit' | 'unchecked';
+export type AddFileError = 'unknown' | 'no-office' | 'no-file' | 'unreadable' | 'picture-type' | 'picture-engine' | 'misfit' | 'unchecked';
 
 const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
 const monthName = (m: number): string => MONTHS[m - 1].charAt(0).toUpperCase() + MONTHS[m - 1].slice(1);
@@ -311,6 +311,7 @@ export class Foundations {
     if (!picture && !text?.trim()) return { ok: false, error: 'unreadable', reason: 'This file is empty.' };
     const verdict = await fitFile({ id, name, text, picture });
     if (!verdict) return { ok: false, error: 'unchecked' };
+    if ('engine' in verdict) return { ok: false, error: 'picture-engine' };
     if (!verdict.fits) return { ok: false, error: 'misfit', reason: verdict.reason };
     try {
       const docId = addToKnowledge(path, read, { title: name, tags: [FOUNDATION_FILE_TAG, id] });

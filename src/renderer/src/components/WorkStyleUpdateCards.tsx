@@ -70,9 +70,9 @@ export function WorkStyleUpdateCards({ offers }: { offers: WorkStyleOffer[] }) {
         const id = decisionId(offer.key, offer.agentId);
         const agent = agents.find((a) => a.id === offer.agentId);
         const name = agent?.name ?? offer.agentId;
-        const carry = offer.changes.length === 1 ? t('jobChange.packKeptOne')
-          : offer.changes.length > 1 ? t('jobChange.packKeptMany', { count: offer.changes.length })
-            : t('jobChange.packOlderEdits', { name });
+        const carry = offer.olderEdits ? t('jobChange.packOlderEdits', { name })
+          : offer.changes.length === 1 ? t('jobChange.packKeptOne')
+            : t('jobChange.packKeptMany', { count: offer.changes.length });
         return (
           <section key={id} data-work-style-offer aria-label={t('jobChange.packTitle', { name })} style={{
             position: 'relative', flexShrink: 0, padding: '12px 14px', borderRadius: 'var(--cth-r-xl)',
@@ -102,6 +102,7 @@ export function WorkStyleUpdateCards({ offers }: { offers: WorkStyleOffer[] }) {
                   return r;
                 }}
                 applyLabel={t('jobChange.useIt')}
+                sendsTask={false}
                 autoRun
                 onCancel={() => setOpen(null)}
               />

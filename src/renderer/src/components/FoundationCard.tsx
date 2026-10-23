@@ -8,8 +8,9 @@ import { askedAgo } from './askHeadline';
 import { useStore } from '@/store/store';
 import { useRtl } from '@/i18n/useDirection';
 import { isComposingKey } from '@shared/imeGuard';
-import { FOUNDATION_CAP, FOUNDATION_QUESTIONS, draftPending, fileAnswerLine, jobsAsking, type FoundationId, type FoundationsView } from '@shared/foundations';
+import { FOUNDATION_CAP, FOUNDATION_QUESTIONS, draftPending, jobsAsking, type FoundationId, type FoundationsView } from '@shared/foundations';
 import { refreshNeedsYou } from '@/shell/useNeedsYou';
+import { saveFileAnswer, saveTextAnswer } from '@/shell/foundationSave';
 
 /**
  * One Company foundations card in Needs you (docs/designs/office-foundations.md,
@@ -93,38 +94,29 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
     if (path) { setFile({ path, name: f.name }); setRefused(null); }
   };
 
+  // The steps and their order live in shell/foundationSave.ts; the card keeps
+  // its state around them.
   const saveFile = async (picked: { path: string; name: string }): Promise<void> => {
     setBusy(true);
     setFailed(null);
     setRefused(null);
     setChecking(true);
-    // Read and checked first: nothing is answered or added unless it fits (D3).
-    const added = await window.cth.foundationsAddFile(id, picked.path).catch(() => null);
-    setChecking(false);
-    if (!added?.ok) {
-      if (added && added.error !== 'unknown' && added.error !== 'no-office') setRefused({ name: picked.name, error: added.error, reason: added.reason });
+    // Added and checked first, then the card, the document removed if the
+    // card does not take it, then the answer naming it (or Michael adds it).
+    const res = await saveFileAnswer(id, picked, text, window.cth, onAnswer, { checked: () => setChecking(false), taken: () => setFile(null) });
+    if (res.kind === 'refused' || res.kind === 'failed') {
+      if (res.kind === 'refused') setRefused({ name: picked.name, error: res.error, reason: res.reason });
       else setFailed('save');
       setFile(null);
       setBusy(false);
       return;
     }
-    const note = `I added "${added.name}" to company knowledge for this (document ${added.docId}).`;
-    if (!(await onAnswer(text ? `${text}\n\n${note}` : note).catch(() => false))) {
-      // The card didn't take it: the document goes again, nothing is left over.
-      await window.cth.kgRemove(added.docId).catch(() => null);
+    if (res.kind === 'not-taken') {
       setFailed('save');
       setBusy(false);
       return;
     }
-    setFile(null);
-    const r = await window.cth.foundationsAnswerFile(id, added.docId, text).catch(() => null);
-    if (r?.ok) onSaved?.('saved');
-    else {
-      // Michael adds it: the exact line, so the document id survives (Codex 3).
-      const line = fileAnswerLine(text, added.docId, added.name);
-      const sent = await window.cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${line}` }, 'human').catch(() => null);
-      onSaved?.(sent?.ok ? 'michael' : 'failed');
-    }
+    onSaved?.(res.how);
     refreshNeedsYou();
     setBusy(false);
   };
@@ -135,20 +127,15 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
     if (!text) return;
     setBusy(true);
     setFailed(null);
-    // The card first: the answer reaches Michael, who closes it.
-    if (!(await onAnswer(text).catch(() => false))) {
+    // The card first, then the foundations; Michael adds it if that fails.
+    const res = await saveTextAnswer(id, text, window.cth, onAnswer);
+    if (!res.taken) {
       setFailed('save');
       setBusy(false);
       return;
     }
     // The card took it and leaves the board: the board reports from here.
-    const r = await window.cth.foundationsAnswer(id, text).catch(() => null);
-    if (r?.ok) onSaved?.('saved');
-    else {
-      // Not written: Michael adds it, as he does any owner answer.
-      const sent = await window.cth.hiveSend({ to: 'michael', act: 'request', subject: 'Add my answer to the company foundations', body: `Please add my answer to the company foundations question "${FOUNDATION_QUESTIONS[id].text}" (${id}): ${text}` }, 'human').catch(() => null);
-      onSaved?.(sent?.ok ? 'michael' : 'failed');
-    }
+    onSaved?.(res.how);
     refreshNeedsYou();
     setBusy(false);
   };
@@ -158,6 +145,7 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
     void window.cth.foundationsDraft(id, raiserId).then(() => refreshNeedsYou()).catch(() => setFailed('draft'));
   };
   const notNow = (): void => {
+    if (busy) return;
     setFailed(null);
     void window.cth.foundationsSnooze(id).then(() => refreshNeedsYou()).catch(() => setFailed('later'));
   };
@@ -187,6 +175,9 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
         className="cth-input"
         dir={rtl ? 'auto' : undefined}
         value={draft}
+        // Held while a save runs: words typed during a file check would be
+        // neither saved nor kept (ship review, 2026-10-23).
+        readOnly={busy}
         maxLength={FOUNDATION_CAP}
         onChange={(e) => setDraft(rowKey, e.target.value)}
         onKeyDown={(e) => { if (isComposingKey(e)) return; if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save(); }}
@@ -201,7 +192,7 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
         {file ? (
           <span data-foundation-file style={fileChip}>
             <span dir="auto" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>{file.name}</span>
-            <button type="button" aria-label={t('foundations.card.removeFile', { name: file.name })} disabled={busy} onClick={() => setFile(null)} style={{ ...quietLink, fontSize: 13, lineHeight: '13px' }}>×</button>
+            <button type="button" aria-label={t('foundations.card.removeFile', { name: file.name })} disabled={busy} onClick={() => setFile(null)} style={{ ...quietLink, fontSize: 13, lineHeight: '13px', minWidth: 24, minHeight: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
           </span>
         ) : (
           <button type="button" onClick={() => void pickFile()} disabled={busy} style={{ ...quietLink, fontSize: 11, color: 'var(--cth-indigo-text)' }}>{t('foundations.card.addFile')}</button>
@@ -212,6 +203,7 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
           {refused.error === 'misfit' ? t('foundations.card.fileMisfit', { name: refused.name, reason: refused.reason ?? '' })
             : refused.error === 'unreadable' ? t('foundations.card.fileUnreadable', { name: refused.name, reason: refused.reason ?? '' })
               : refused.error === 'picture-type' ? t('foundations.card.filePictureType')
+                : refused.error === 'picture-engine' ? t('foundations.card.filePictureEngine')
                 : refused.error === 'no-file' ? t('foundations.card.fileMissing', { name: refused.name })
                   : t('foundations.card.fileUnchecked')}
         </div>
@@ -231,7 +223,7 @@ export function FoundationCard({ id, rowKey, taskId, q, askedAt, raiserId, raise
             {t('foundations.card.draftBy', { name: drafter })}
           </PixelButton>
         )}
-        <button type="button" onClick={notNow} style={{ ...quietLink, marginInlineStart: 'auto' }}>{t('foundations.card.notNow')}</button>
+        <button type="button" onClick={notNow} disabled={busy} style={{ ...quietLink, marginInlineStart: 'auto' }}>{t('foundations.card.notNow')}</button>
       </div>
       {failed && <div role="alert" style={{ marginTop: 6, fontSize: 11, lineHeight: '15px', color: 'var(--cth-coral-text)' }}>{t(failed === 'save' ? 'foundations.card.failed' : failed === 'draft' ? 'foundations.card.failedDraft' : 'foundations.card.failedLater', { name: drafter })}</div>}
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--cth-line)', fontSize: 11, color: 'var(--cth-ink-3)', flexWrap: 'wrap' }}>

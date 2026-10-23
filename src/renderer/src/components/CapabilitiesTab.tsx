@@ -95,7 +95,11 @@ export function CapabilitiesTab({ agent }: { agent: Agent }) {
   useEffect(() => {
     if (!scrollToSchedules || !schedulesRef.current) return;
     setScrollToSchedules(false);
-    schedulesRef.current.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    // Instant under reduced motion; focus lands on the group the owner asked
+    // to see, so a keyboard user is there too (ship review, 2026-10-23).
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    schedulesRef.current.scrollIntoView({ block: 'start', behavior: still ? 'auto' : 'smooth' });
+    schedulesRef.current.querySelector<HTMLElement>('button[aria-expanded]')?.focus({ preventScroll: true });
   });
   if (!config) return null;
   const mailboxes = config.mailboxes ?? [];

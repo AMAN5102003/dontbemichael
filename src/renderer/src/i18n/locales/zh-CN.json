@@ -3047,6 +3047,7 @@
       "fileUnreadable": "无法读取 {{name}}：{{reason}}",
       "fileUnchecked": "无法检查这个文件，请重试。",
       "filePictureType": "请将这张图片另存为 PNG 或 JPEG 后再添加。",
+      "filePictureEngine": "只有在 Claude 上才能检查图片。请改为添加 PDF 或文档。",
       "fileMissing": "找不到 {{name}}，请重新添加。"
     }
   },

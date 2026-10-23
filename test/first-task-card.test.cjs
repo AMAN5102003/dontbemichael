@@ -171,7 +171,7 @@ test('a bare First task section ends at the old packs\' bare headings, a typed F
   const add = read('src/renderer/src/components/AddAgentModal.tsx');
   // One-time work the owner describes comes back from the rewrite on its own
   // (work-style-change-request.md, finding 4) and becomes a card.
-  assert.match(add, /if \(ok\.oneTimeTask\) setHireTask\(ok\.oneTimeTask\);/);
+  assert.match(add, /if \(ok\.oneTimeTask\) \{ const task = ok\.oneTimeTask; setHireTask\(\(t\) => \(t\.trim\(\) \? `\$\{t\}\\n\$\{task\}` : task\)\); \}/, 'each applied change adds its one-time work');
   assert.match(add, /const typedFirstTask = hireTask\.trim\(\)\.slice\(0, FIRST_TASK_EDITED_MAX\);/);
   assert.match(add, /if \(typedFirstTask\) void sendTypedFirstTask\(sourceCard, id, name\.trim\(\), \{ ask: typedFirstTask, role: title\.trim\(\), existing: false \}\);/);
   const edit = read('src/renderer/src/components/EditAgentModal.tsx');

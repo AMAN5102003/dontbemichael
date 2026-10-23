@@ -6,6 +6,7 @@
  */
 import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
 import { appendOnce, splitBindings } from '../shared/hireTemplates';
+import { JOB_CHANGES_MAX } from '../shared/jobChange';
 import {
   cleanAnswer,
   focusCheckPrompt,
@@ -109,7 +110,6 @@ export interface ReviseRequest {
 
 export type ReviseResult = ReviseAnswer | { kind: 'error'; reason: 'failed' | 'cancelled' };
 
-const CHANGES_MAX = 20;
 const CHANGE_MAX = 1500;
 
 /** The renderer's payload, trusted for nothing but short strings. */
@@ -122,13 +122,14 @@ export function readReviseRequest(v: unknown): ReviseRequest | null {
   const cur = (o.current && typeof o.current === 'object' ? o.current : {}) as Record<string, unknown>;
   const a = (o.answer && typeof o.answer === 'object' ? o.answer : null) as Record<string, unknown> | null;
   const name = str(c.name, 60).trim();
-  const changes = (Array.isArray(o.changes) ? o.changes : []).slice(-CHANGES_MAX).map((x) => str(x, CHANGE_MAX).trim()).filter(Boolean);
+  const changes = (Array.isArray(o.changes) ? o.changes : []).slice(-JOB_CHANGES_MAX).map((x) => str(x, CHANGE_MAX).trim()).filter(Boolean);
   if (!name || changes.length === 0) return null;
   const answer = a ? { question: str(a.question, 400).trim(), answer: str(a.answer, CHANGE_MAX).trim() } : undefined;
   return {
     requestId: str(o.requestId, 80) || undefined,
     ctx: { name, title: str(c.title, 120) || undefined, business: { name: str(b.name, 120) || undefined, city: str(b.city, 120) || undefined }, manager: str(c.manager, 60).trim() || undefined },
-    current: { instructions: str(cur.instructions, MAX_TEXT), handles: str(cur.handles, 1500) },
+    // The whole role line: its binding lines are split off later and must not be cut.
+    current: { instructions: str(cur.instructions, MAX_TEXT), handles: str(cur.handles, MAX_TEXT) },
     changes,
     answer: answer?.question && answer.answer ? answer : undefined,
     lead: o.lead === true

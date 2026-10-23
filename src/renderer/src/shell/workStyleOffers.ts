@@ -33,7 +33,8 @@ export async function readWorkStyleOffers(): Promise<WorkStyleOffer[]> {
   return workStyleOffers(useStore.getState().agents, map, c.businessType, { name: c.businessName, city: c.businessCity }, c.workStyleUpdatesDecided);
 }
 
-/** "Keep mine": recorded once, so the offer never returns. */
+/** The owner's decision, Keep mine or Use it (after adoptWorkStyleOffer
+ *  saved the job): recorded once, so the offer never returns. */
 export async function decideWorkStyleOffer(offer: WorkStyleOffer, choice: 'use' | 'keep'): Promise<void> {
   const config = await window.cth.getConfig() as { workStyleUpdatesDecided?: Record<string, 'use' | 'keep'> };
   await window.cth.updateConfig({ workStyleUpdatesDecided: { ...(config.workStyleUpdatesDecided ?? {}), [decisionId(offer.key, offer.agentId)]: choice } });
@@ -57,6 +58,10 @@ export async function adoptWorkStyleOffer(offer: WorkStyleOffer, revised: Revise
   if (!role?.ok) return 'failed';
   useStore.getState().updateAgent(offer.agentId, patch);
   await seedStarterJobs(offer.sourceCard, offer.agentId);
-  await decideWorkStyleOffer(offer, 'use');
+  // The member is saved now. A decision that fails to write is tried once
+  // more and never reported as a failed Use it: that would offer the update
+  // again, and a second Use it would leave Undo with the adopted job instead
+  // of the owner's own (ship review, 2026-10-23).
+  await decideWorkStyleOffer(offer, 'use').catch(() => decideWorkStyleOffer(offer, 'use').catch(() => undefined));
   return 'applied';
 }

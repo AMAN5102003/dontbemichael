@@ -3047,6 +3047,7 @@
       "fileUnreadable": "تعذّرت قراءة {{name}}: {{reason}}",
       "fileUnchecked": "تعذّر فحص هذا الملف، حاول مرة أخرى.",
       "filePictureType": "احفظ هذه الصورة بصيغة PNG أو JPEG وأضفها مرة أخرى.",
+      "filePictureEngine": "لا يمكن فحص الصور إلا على Claude. أضفها بصيغة PDF أو مستند بدلا من ذلك.",
       "fileMissing": "تعذّر العثور على {{name}}، أضفه مرة أخرى."
     }
   },

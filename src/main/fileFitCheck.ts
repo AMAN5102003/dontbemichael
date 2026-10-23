@@ -8,14 +8,15 @@
  */
 import { randomBytes } from 'node:crypto';
 import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
-import { parseStandingFit } from '../shared/mailProposals';
-import { fileFitPrompt, type FoundationId } from '../shared/foundations';
+import { fileFitPrompt, parseFileFit, type FoundationId } from '../shared/foundations';
 
 const MODEL = 'claude-haiku-4-5';
 const TIMEOUT_MS = 60_000;
 
 export interface FileFitInput { id: FoundationId; name: string; text?: string; picture?: string }
-export type FileFitCheck = (f: FileFitInput) => Promise<{ fits: true } | { fits: false; reason: string } | null>;
+/** `engine`: a picture with an engine that can't be shown one (Codex), so
+ *  the owner is told, not asked to try again. */
+export type FileFitCheck = (f: FileFitInput) => Promise<{ fits: true } | { fits: false; reason: string } | { engine: true } | null>;
 
 export function fileFitCheck(deps: { cwd: () => string; command: () => string; modelEngine?: () => HiddenModelEngine; env?: () => Record<string, string> | undefined; log?: (e: Record<string, unknown>) => void }): FileFitCheck {
   return async (f) => {
@@ -36,7 +37,8 @@ export function fileFitCheck(deps: { cwd: () => string; command: () => string; m
         dropTranscript: true,
         ...(f.picture ? { images: [f.picture] } : {})
       });
-      const verdict = result.ok && result.text ? parseStandingFit(result.text) : null;
+      if (f.picture && result.error === 'engine unavailable') return { engine: true };
+      const verdict = result.ok && result.text ? parseFileFit(result.text) : null;
       if (!verdict) deps.log?.({ kind: 'foundation-file-check-unread', question: f.id, reason: result.ok ? 'unreadable' : (result.error ?? 'failed') });
       return verdict;
     } catch (e) {

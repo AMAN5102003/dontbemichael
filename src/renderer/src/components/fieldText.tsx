@@ -80,12 +80,25 @@ export function Field({ label, info, note, read = false, children, style }: {
       {info && <InfoTip text={info} label={typeof label === 'string' ? label : undefined} />}
     </span>
   );
-  const body = <>{head}{children}{note && <span style={hint}>{note}</span>}</>;
+  const tail = note && <span style={hint}>{note}</span>;
   const box: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0, ...style };
-  return read
-    ? <div role="group" aria-label={typeof label === 'string' ? label : undefined} style={box}>{body}</div>
-    : <label style={box}>{body}</label>;
+  if (read) return <div role="group" aria-label={typeof label === 'string' ? label : undefined} style={box}>{head}{children}{tail}</div>;
+  if (!info) return <label style={box}>{head}{children}{tail}</label>;
+  // With an info icon, a <label> around everything would name its first
+  // control, the icon's button, and leave the field nameless (ship review,
+  // 2026-10-23). So the label wraps only the field, named by a hidden copy.
+  return (
+    <div style={box}>
+      {head}
+      <label style={{ display: 'contents' }}><span style={srOnly}>{label}</span>{children}</label>
+      {tail}
+    </div>
+  );
 }
+
+const srOnly: CSSProperties = {
+  position: 'absolute', width: 1, height: 1, padding: 0, margin: -1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0
+};
 
 /** The name of one part of How X works ("The job"). */
 export const partLabel: CSSProperties = { fontSize: 12, lineHeight: '16px', fontWeight: 600, color: 'var(--cth-ink)' };

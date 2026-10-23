@@ -1538,6 +1538,13 @@ D8, D10 to D13), listed after the decision cards and before reports, always open
 - **Company knowledge is always on** card (one time, a report like the Research notice): for an
   owner who had turned company knowledge off and has documents in it. Got it, and Open the list
   (Settings, Memory & Knowledge).
+- **A file** (owner, 2026-10-22, `docs/designs/foundation-card-upload.md`): an "Add a file" quiet
+  link (11 px, `indigo-text`) under the box, or a file dropped on the card, picks one file, shown
+  as a `neutral-soft` chip with its name and a remove × with a 24 px target. Save is on with words,
+  a file or both; while the file is checked Save reads "Checking the file", and the box, Draft and
+  Not now are held until it is done. A refusal is one `coral-text` line naming the file and why
+  ("doesn't look like the answer", "Couldn't read", "Save this picture as PNG or JPEG", "Pictures
+  can be checked only on Claude", "Couldn't find", "Couldn't check this file"); nothing is added.
 
 ## 8. The studio illustration [Both]
 

@@ -431,7 +431,8 @@ test('the foundation card: evidence first, a labeled box with its hint as descri
   assert.match(cardSrc, /<FileText source=\{q\}/, 'Michael\'s evidence line');
   assert.match(cardSrc, /aria-describedby=\{hintId\}/, 'the hint describes the box (D12)');
   assert.match(cardSrc, /maxLength=\{FOUNDATION_CAP\}/);
-  assert.match(cardSrc, /onAnswer\(text\)[\s\S]*window\.cth\.foundationsAnswer\(id, text\)[\s\S]*Add my answer to the company foundations/, 'the card first, then the foundations; Michael adds it if that fails');
+  assert.match(read('src/renderer/src/shell/foundationSave.ts'), /onAnswer\(text\)[\s\S]*cth\.foundationsAnswer\(id, text\)[\s\S]*Add my answer to the company foundations/, 'the card first, then the foundations; Michael adds it if that fails');
+  assert.match(cardSrc, /saveTextAnswer\(id, text, window\.cth, onAnswer\)/);
   assert.match(cardSrc, /role="status"[\s\S]*foundations\.card\.drafting/, 'drafting is a polite status (D8)');
   assert.match(cardSrc, /disabled=\{\(!text && !file\) \|\| busy\}/, 'Save stays on while a draft is pending (review, 2026-10-20), and a file alone enables it (foundation-card-upload.md)');
   assert.match(cardSrc, /const drafting = draftPending\(asked, Date\.now\(\)\)/, 'a request waits 2 days');
@@ -443,7 +444,8 @@ test('the foundation card: evidence first, a labeled box with its hint as descri
   assert.match(ask, /role=\{foundationSaved\?\.how === 'failed' \? 'alert' : 'status'\}[\s\S]*foundations\.card\.saved[\s\S]*foundations\.card\.sentToMichael[\s\S]*foundations\.card\.failedGone/);
   const card = read('src/renderer/src/components/FoundationCard.tsx');
   // The card leaves the board once it took the answer: the board reports a failure after that (pass 3 review).
-  assert.match(card, /if \(r\?\.ok\) onSaved\?\.\('saved'\);[\s\S]*onSaved\?\.\(sent\?\.ok \? 'michael' : 'failed'\);/);
+  assert.match(read('src/renderer/src/shell/foundationSave.ts'), /if \(r\?\.ok\) return \{ taken: true, how: 'saved' \};[\s\S]*return \{ taken: true, how: sent\?\.ok \? 'michael' : 'failed' \};/);
+  assert.match(card, /onSaved\?\.\(res\.how\);/);
   assert.match(ask, /!isSnoozed\(foundations\?\.snoozed, id, now\) && !foundations\?\.answers\?\.\[id\]/, 'a question answered another way leaves the board');
   // D5: no card waiting opens the document itself, read only, else where it is listed.
   assert.match(read('src/renderer/src/components/pulse/PulseView.tsx'), /docs\.find\(isFoundationsDoc\)[\s\S]{0,200}window\.cth\.kgOpen\(doc\.id\)/);
@@ -802,7 +804,7 @@ test('the fit prompt keeps the file as data, names the question and its jobs, an
   assert.deepEqual(parseStandingFit('NO: This looks like a financial statement.'), { fits: false, reason: 'This looks like a financial statement.' });
   assert.equal(parseStandingFit('Probably fits'), null, 'anything else is unread, so the card refuses (D5)');
   const check = read('src/main/fileFitCheck.ts');
-  assert.match(check, /parseStandingFit/);
+  assert.match(check, /parseFileFit\(result\.text\)/, 'its own first line rule; the mail check stays strict');
   assert.match(check, /noTools: true/);
   assert.match(check, /dropTranscript: true/, 'nothing of a private file stays in a transcript');
   assert.match(check, /\.\.\.\(f\.picture \? \{ images: \[f\.picture\] \} : \{\}\)/);
@@ -812,7 +814,7 @@ test('a picture reaches only Claude: each pasted on its own before the prompt; a
   // Value: protects=the picture is attached before the prompt that names it, and no engine judges a picture it can't see; fails_when=the prompt is pasted first or Codex is sent a picture; why_new=D10, probe 2026-10-22; seam=source pin for the paste, real call for the guard; no_claim=Claude attaching it (probe)
   const hidden = read('src/main/hiddenClaude.ts');
   assert.match(hidden, /images\.forEach\(\(path, i\) => setTimeout\(\(\) => \{ if \(!settled\) ptyProc\.write\(`\\x1b\[200~\$\{path\}\\x1b\[201~`\); \}, i \* IMAGE_PASTE_MS\)\);/);
-  assert.match(hidden, /const afterImages = images\.length \* IMAGE_PASTE_MS;[\s\S]{0,200}ptyProc\.write\(`\\x1b\[200~\$\{prompt\}\\x1b\[201~`\); \}, afterImages\);/);
+  assert.match(hidden, /const afterImages = images\.length \* IMAGE_PASTE_MS;[\s\S]{0,200}ptyProc\.write\(`\\x1b\[200~\$\{pasteSafe\(prompt\)\}\\x1b\[201~`\); \}, afterImages\);/);
   const { runHiddenModel } = loadTs('src/main/hiddenModel.ts');
   assert.deepEqual(await runHiddenModel('x', { engine: 'codex', model: 'm', cwd: os.tmpdir(), noTools: true, images: ['/tmp/a.png'] }), { ok: false, error: 'engine unavailable' });
 });
@@ -823,8 +825,10 @@ test('the card adds a file: pick or drop, read and checked first, card next, doc
   assert.match(card, /window\.cth\.foundationsPickFile\(\)/);
   assert.match(card, /onDragOver=[\s\S]{0,120}onDrop=\{dropFile\}/, 'a file dropped on the card');
   assert.match(card, /window\.cth\.pathForFile\(f\)/);
-  assert.match(card, /foundationsAddFile\(id, picked\.path\)[\s\S]*onAnswer\([\s\S]*window\.cth\.kgRemove\(added\.docId\)[\s\S]*foundationsAnswerFile\(id, added\.docId, text\)/, 'add, then the card, removal if not taken, then the answer');
-  assert.match(card, /fileAnswerLine\(text, added\.docId, added\.name\)[\s\S]{0,400}Add my answer to the company foundations/, 'Michael gets the exact line with the id (Codex 3)');
+  const save = read('src/renderer/src/shell/foundationSave.ts');
+  assert.match(save, /foundationsAddFile\(id, picked\.path\)[\s\S]*onAnswer\([\s\S]*cth\.kgRemove\(added\.docId\)[\s\S]*foundationsAnswerFile\(id, added\.docId, text\)/, 'add, then the card, removal if not taken, then the answer');
+  assert.match(save, /fileAnswerLine\(text, added\.docId, added\.name\)[\s\S]{0,400}Add my answer to the company foundations/, 'Michael gets the exact line with the id (Codex 3)');
+  assert.match(card, /saveFileAnswer\(id, picked, text, window\.cth, onAnswer/);
   for (const k of ['fileMisfit', 'fileUnreadable', 'filePictureType', 'fileMissing', 'fileUnchecked', 'checking', 'addFile', 'removeFile']) assert.match(card, new RegExp(`foundations\\.card\\.${k}`), k);
   for (const loc of ['en', 'ar', 'zh-CN']) {
     const c = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).foundations.card;
@@ -842,4 +846,65 @@ test('members and Michael read a document an answer names before work that depen
   const hive = read('src/main/hive.ts');
   const s = /When an answer names a company knowledge document, read it with get <id> before work that depends on that answer\./g;
   assert.equal(hive.match(s)?.length, 2, 'the members\' rule and Michael\'s');
+});
+
+test('the file fit check fails closed and keeps nothing of the file: only FITS or NO passes, with a fresh delimiter each run (D3, D5)', async (t) => {
+  // Value: protects=fileFitCheck turns every outcome but an exact FITS or NO into null, logs why, runs with no tools and no transcript, and shows a picture only when given; fails_when=a vague reply, a failed run or a throw reads as fits, the log goes, or the private file's transcript is kept; why_new=fileFitCheck is only source pinned; seam=stubbed hidden model; no_claim=the real model's verdicts (stubbed runner; unit only)
+  const HM = loadTs('src/main/hiddenModel.ts');
+  const { fileFitCheck } = loadTs('src/main/fileFitCheck.ts');
+  const real = HM.runHiddenModel;
+  t.after(() => { HM.runHiddenModel = real; });
+  const calls = [], logs = [];
+  let reply;
+  HM.runHiddenModel = async (prompt, opts) => { calls.push({ prompt, opts }); if (reply instanceof Error) throw reply; return reply; };
+  const check = fileFitCheck({ cwd: () => '/check', command: () => 'claude', modelEngine: () => ({ engine: 'claude', engineModel: 'm1' }), log: (e) => logs.push(e) });
+  const file = { id: 'voice', name: 'Brand voice.docx', text: 'We sound warm and plain.' };
+  reply = { ok: true, text: 'FITS' };
+  assert.deepEqual(await check(file), { fits: true });
+  reply = { ok: true, text: 'NO: This looks like a price list.' };
+  assert.deepEqual(await check(file), { fits: false, reason: 'This looks like a price list.' });
+  assert.equal(logs.length, 0, 'a verdict is not logged as unread');
+  for (const [r, reason] of [
+    [{ ok: true, text: 'It probably fits.' }, 'unreadable'],
+    [{ ok: true, text: '' }, 'unreadable'],
+    [{ ok: false, error: 'not signed in' }, 'not signed in'],
+    [{ ok: false }, 'failed']
+  ]) {
+    reply = r;
+    assert.equal(await check(file), null, JSON.stringify(r));
+    assert.deepEqual(logs.at(-1), { kind: 'foundation-file-check-unread', question: 'voice', reason });
+  }
+  reply = new Error('session gone');
+  assert.equal(await check(file), null, 'a throw is unchecked, never fits');
+  assert.match(logs.at(-1).reason, /session gone/);
+  const o = calls[0].opts;
+  assert.deepEqual([o.noTools, o.settingSources, o.dropTranscript, o.cwd, o.command, o.engine, o.engineModel, 'images' in o], [true, 'user', true, '/check', 'claude', 'claude', 'm1', false]);
+  const nonce = (p) => /--- FILE (\S+) ---/.exec(p)[1];
+  assert.notEqual(nonce(calls[0].prompt), nonce(calls[1].prompt), 'a file cannot learn its delimiter from an earlier run');
+  assert.match(calls[0].prompt, /We sound warm and plain\./);
+  reply = { ok: true, text: 'FITS' };
+  assert.deepEqual(await check({ id: 'brand', name: 'logo.png', picture: '/office/logo.png' }), { fits: true });
+  assert.deepEqual(calls.at(-1).opts.images, ['/office/logo.png']);
+  assert.match(calls.at(-1).prompt, /Name: logo\.png\nIt is the picture attached above\./);
+});
+
+test('a store that fails after the check, or no office open, adds nothing and says why', async (t) => {
+  // Value: protects=addFile and answerFile refuse plainly when knowledge can't store the file or no office is open; fails_when=a store error escapes as a rejected call, or a file is read and checked with no office to keep it; why_new=the file tests cover read, fit and doc errors, not a failing store or a closed office; seam=injected deps; no_claim=kg-core's own ingest errors (stubbed store)
+  const reads = [];
+  const deps = {
+    readFile: async (p) => { reads.push(p); return textRead('We sound warm and plain.'); },
+    fitFile: async () => ({ fits: true }),
+    addToKnowledge: () => { throw new Error('The disk is full.'); },
+    docTitle: () => 'Brand voice.pdf'
+  };
+  const o = writer(t, { deps });
+  const f = path.join(o.office, 'voice.txt');
+  fs.writeFileSync(f, 'We sound warm and plain.');
+  assert.deepEqual(await o.w.addFile('voice', f), { ok: false, error: 'unreadable', reason: 'The disk is full.' });
+  const closed = writer(t, { deps: { ...deps, home: () => null } });
+  const before = reads.length;
+  assert.deepEqual(await closed.w.addFile('voice', f), { ok: false, error: 'no-office' });
+  assert.equal(reads.length, before, 'never read without an office');
+  assert.deepEqual(closed.w.answerFile('voice', 'kg1', 'Warm and plain.'), { ok: false, error: 'no-office' });
+  assert.deepEqual(closed.profile, {}, 'nothing reaches the profile');
 });

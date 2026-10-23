@@ -142,7 +142,10 @@ test('offices that already hired her are offered the new text once, never given 
   // changes reapplied (work-style-change-request.md, D7).
   const adopt = decide.slice(decide.indexOf('export async function adoptWorkStyleOffer'));
   assert.match(adopt, /const patch = applyJob\(agent, \{ \.\.\.revised, handles: revised\.handles \?\? split\.roleDescription \}, \{ title: split\.role, now: new Date\(\)\.toISOString\(\) \}\);/);
-  assert.match(adopt, /useStore\.getState\(\)\.updateAgent\(offer\.agentId, patch\);\s*await seedStarterJobs\(offer\.sourceCard, offer\.agentId\);\s*await decideWorkStyleOffer\(offer, 'use'\);/);
+  assert.match(adopt, /useStore\.getState\(\)\.updateAgent\(offer\.agentId, patch\);\s*await seedStarterJobs\(offer\.sourceCard, offer\.agentId\);[\s\S]{0,400}await decideWorkStyleOffer\(offer, 'use'\)\.catch\(\(\) => decideWorkStyleOffer\(offer, 'use'\)\.catch\(\(\) => undefined\)\);\s*return 'applied';/);
+  // Value: protects=Use it on a pack update never saves over a job changed since its preview began, and a role that can't be saved changes nothing and records no decision (A3); fails_when=the stale check goes, or a failed role save still updates the member or records Use; why_new=the pins above cover the applied order only; seam=none; no_claim=source pins on the renderer function, not a rendered click
+  assert.match(adopt, /if \(!agent\) return 'failed';\s*if \(jobBase\(agent\) !== from\) return 'moved';/);
+  assert.match(adopt, /const role = await window\.cth\.hivePatchAgentRole\(offer\.agentId, patch\.description\)\.catch\(\(\) => null\);\s*if \(!role\?\.ok\) return 'failed';\s*useStore\.getState\(\)\.updateAgent/, 'the registry first, and a failure stops before the member or the decision');
 });
 
 test('someone hired from the card under another name is never offered the card character\'s name', () => {

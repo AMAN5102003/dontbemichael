@@ -25,7 +25,7 @@ import { useUpdates, UpdateButtons, UpdateDetails, UpdateStatusLine } from './Up
 import { DEFAULT_HERO, type HeroPayload } from '@shared/heroPayload';
 import { REPO_URL } from '@shared/updateState';
 import { reportProblemUrl } from '@shared/reportProblem';
-import { groupName, panelStyle } from './fieldText';
+import { groupName, hint, panelStyle } from './fieldText';
 
 declare const __APP_VERSION__: string;
 
@@ -96,7 +96,7 @@ export function SettingsHeroCard() {
             display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '8px 10px',
             background: 'var(--cth-card)', borderRadius: 'var(--cth-r-lg)'
           }}>
-            <span style={{ /* style-guard: micro */ fontSize: 10, fontWeight: 600, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--cth-ink-3)', flexShrink: 0 }}>
+            <span style={{ ...hint, flexShrink: 0 }}>
               {t('settingsHero.sponsoredBy')}
             </span>
             <span style={{ fontSize: 13, color: 'var(--cth-ink)', flexShrink: 0 }}>{hero.sponsor.name}</span>

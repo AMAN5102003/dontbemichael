@@ -3047,6 +3047,7 @@
       "fileUnreadable": "Couldn't read {{name}}: {{reason}}",
       "fileUnchecked": "Couldn't check this file, try again.",
       "filePictureType": "Save this picture as PNG or JPEG and add it again.",
+      "filePictureEngine": "Pictures can be checked only on Claude. Add this as a PDF or a document instead.",
       "fileMissing": "Couldn't find {{name}}, add it again."
     }
   },

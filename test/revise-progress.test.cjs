@@ -78,8 +78,8 @@ test('the run reports starting, reading and writing with a preview, and runs wit
 test('both runners say when the prompt is taken; main sends the steps to the run that asked', () => {
   // Value: protects=the reading step is real on Claude and Codex, and steps reach only their own box; fails_when=the hook is dropped or the channel loses its request id; why_new=onPromptSent and the progress channel are new; seam=none; no_claim=source pins, not a live run
   const claude = read('src/main/hiddenClaude.ts');
-  const send = claude.slice(claude.indexOf('const sendPrompt = () => {'), claude.indexOf('// Pictures first'));
-  assert.match(send, /promptSent = true;[\s\S]*try \{ opts\.onPromptSent\?\.\(\); \} catch/);
+  const send = claude.slice(claude.indexOf('const sendPrompt = () => {'), claude.indexOf('// With no tools the first answer'));
+  assert.match(send, /setTimeout\(\(\) => \{\s*if \(settled\) return;\s*try \{ opts\.onPromptSent\?\.\(\); \} catch[\s\S]*\}, afterImages \+ 140\);/, 'once the prompt is pasted, after any pictures');
   assert.match(read('src/main/hiddenModel.ts'), /child\.stdin\?\.end\(prompt\);\s*try \{ opts\.onPromptSent\?\.\(\); \} catch/);
   const main = read('src/main/index.ts');
   assert.match(main, /onProgress: \(p\) => \{\s*if \(!rev\.requestId \|\| evt\.sender\.isDestroyed\(\)\) return;\s*evt\.sender\.send\(`workStyle:progress:\$\{rev\.requestId\}`, p\);/);

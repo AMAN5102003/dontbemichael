@@ -608,7 +608,7 @@ function FloorTab({ seed, embedded = false }: { seed: { text: string; seq: numbe
 
   return (
     <Wrap>
-      <Section title={t('commandCenter.dispatchViaMichael', { godName: godName.toUpperCase() })}>
+      <Section title={t('commandCenter.dispatchViaMichael', { godName })}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
           <span style={{ ...hint, flexShrink: 0 }}>
             {t('commandCenter.suggestedOwner')}

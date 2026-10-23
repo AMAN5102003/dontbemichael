@@ -517,7 +517,7 @@ export class MailService {
 
   /** Run `fn` with the folder locked; one reconnect after a dropped socket
    *  (sleep and wake), then a classified error. */
-  private async inFolder<T>(id: string, folder: (c: ImapLike) => Promise<string>, fn: (c: ImapLike, path: string) => Promise<T>, what: string): Promise<T> {
+  private async inFolder<T>(id: string, folder: (c: ImapLike) => Promise<string>, fn: (c: ImapLike, path: string) => Promise<T>, what: string, append = false): Promise<T> {
     for (let attempt = 0; attempt < 2; attempt++) {
       let client: ImapLike | undefined;
       try {
@@ -539,7 +539,9 @@ export class MailService {
         // A read that timed out clears by itself: its connection was dropped and
         // the next try opens a new one. Say so, or an agent concludes the app
         // must be restarted and stops checking mail (owner, 2026-10-22).
-        if (err.kind === 'timeout') throw new MailError('timeout', `${err.message} ${READ_TIMEOUT_NOTE}`);
+        // Not after an append (a draft, a copy to Sent): the server may have
+        // kept it, and trying again would save it twice (ship review, 2026-10-23).
+        if (err.kind === 'timeout' && !append) throw new MailError('timeout', `${err.message} ${READ_TIMEOUT_NOTE}`);
         throw err;
       }
     }
@@ -890,7 +892,7 @@ export class MailService {
     const rec = this.record(id);
     const msg = await this.compose(id, rec.address, input, MailService.newMessageId(rec.address));
     const raw = await MailService.build(msg);
-    await this.inFolder(id, MailService.drafts, async (c, path) => { await c.append(path, raw, ['\\Draft', '\\Seen']); }, 'Saving the draft');
+    await this.inFolder(id, MailService.drafts, async (c, path) => { await c.append(path, raw, ['\\Draft', '\\Seen']); }, 'Saving the draft', true);
     return { saved: true, messageId: String(msg.messageId) };
   }
 
@@ -989,7 +991,7 @@ export class MailService {
     // Gmail files sent mail itself; other services need the copy appended.
     if (rec.provider !== 'gmail' && rec.provider !== 'google-workspace') {
       const raw = await MailService.build(msg).catch(() => null);
-      if (raw) await this.inFolder(id, MailService.sentBox, async (c, path) => { await c.append(path, raw, ['\\Seen']); }, 'Saving to Sent').catch(() => undefined);
+      if (raw) await this.inFolder(id, MailService.sentBox, async (c, path) => { await c.append(path, raw, ['\\Seen']); }, 'Saving to Sent', true).catch(() => undefined);
     }
     return { sent: true, messageId };
   }

@@ -379,6 +379,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
       focusKey={focusKey}
       onDraft={setDraft}
       onBusy={(b) => { setChanging(b); if (b) setStatus(null); }}
+      sendsTask={!agent.isGod}
     />
   );
   // In its parts, folded to the first (H4), with Undo and the last change
@@ -531,7 +532,7 @@ export function EditAgentModal({ agent, onClose, docked = true, engineOpen: open
         <>
           <PixelButton variant="ghost" size="md" onClick={requestClose}>{t('editAgent.cancel')}</PixelButton>
           <div style={{ flex: 1 }} />
-          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={busy}>{t('editAgent.save')}</PixelButton>
+          <PixelButton variant="primary" size="md" onClick={() => { void save(); }} disabled={busy || changing}>{t('editAgent.save')}</PixelButton>
         </>
       ) : (
         <>
@@ -641,15 +642,15 @@ const lockedValueStyle: CSSProperties = {
   fontSize: 13, color: 'var(--cth-ink)', fontFamily: 'var(--cth-font-ui)'
 };
 
-/** Read only text: the job as saved, in plain words. */
+/** A quiet underlined link: Show all, Undo. */
 const linkStyle: CSSProperties = {
   padding: 0, border: 'none', background: 'transparent', cursor: 'pointer',
   fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-2)', textDecoration: 'underline', textUnderlineOffset: 2
 };
 
-/** A group of fields with no heading (D3: field labels only). `id` names the
- *  group for tests and the reader; nothing shows it. */
-function Fields({ id, children }: { id: 'name' | 'briefing' | 'engine'; children: React.ReactNode }) {
+/** The engine's fields, unfolded under its line. `id` names the group for
+ *  tests and the reader; nothing shows it. */
+function Fields({ id, children }: { id: 'engine'; children: React.ReactNode }) {
   return <div id={`edit-agent-${id}`} data-fields={id} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>;
 }
 

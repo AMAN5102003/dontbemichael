@@ -34,14 +34,15 @@ const NOBODY: ReadonlySet<string> = new Set();
 import { P, STAGE_H, STAGE_W, type Pt } from './iso';
 import { PROGRAM_MARK, PROGRAM_TITLE, PROGRAM_URL } from '@shared/appName';
 
-/** The program mark's letter size on the stage: small enough to sit inside the
- *  platform's side band, between its top edge and the light line. */
-const MARK_SIZE = 7;
 import { family, sceneTokens, type Family } from './theme';
 import { HUB, HUB_CARD, POST_GY, cardRect, departmentOf, planStudio, postGx, roleOf, type PodPlan } from './layout';
 import { FLIGHT_MS, bendFor, useStudioLife } from './life';
 import { SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { DECOR, Decor, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
+
+/** The program mark's letter size on the stage: small enough to sit inside the
+ *  platform's side band, between its top edge and the light line. */
+const MARK_SIZE = 7;
 
 
 /** The agent fields the office draws. Changes to anything else (the terminal

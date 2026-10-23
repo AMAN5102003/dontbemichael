@@ -40,7 +40,9 @@ export const STUCK_AGAIN_MS = 30 * 60_000;
 /** A restart counts once the member's session starts again within this long;
  *  otherwise Michael hears they are still stuck (ship review, 2026-10-16). */
 export const STUCK_CONFIRM_MS = 60_000;
-/** Events that show a stuck member moved on: the stuck episode ends. */
+/** Events that show a stuck member moved on: the stuck episode ends. A
+ *  UserPromptSubmit does not end one already raised to Michael: a message to
+ *  the member is not a sign it recovered. */
 const STUCK_MOVED_ON = new Set(['UserPromptSubmit', 'PostToolUse', 'Stop']);
 
 /** A Claude Code session transcript: a .jsonl file in Claude's own projects

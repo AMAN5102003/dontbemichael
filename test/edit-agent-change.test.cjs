@@ -56,7 +56,8 @@ test('Apply saves the new job, the old one for Undo, and the change; unchanged d
 
 test('Undo puts back the job and the change list as they were, once', () => {
   // Value: protects=Undo restores text only, the routing line with it, and the owner's changes even after a pack update (DR7, OV4); fails_when=Undo drops a change it didn't add or can run twice; why_new=T2; seam=pure
-  const applied = { ...pam, ...J.applyJob(pam, { instructions: 'g', plain: 'p', handles: 'New duties.' }, { title: 'Customer Support', change: 'x', now: 'n' }) };
+  // A real Apply keeps the binding line (reviseWorkStyle appends it back).
+  const applied = { ...pam, ...J.applyJob(pam, { instructions: 'g', plain: 'p', handles: 'New duties. Only the support inbox.' }, { title: 'Customer Support', change: 'x', now: 'n' }) };
   const back = J.undoJob(applied);
   assert.equal(back.goal, pam.goal);
   assert.deepEqual(back.goalPlain, pam.goalPlain);
@@ -132,7 +133,7 @@ test('a pack update carries the owner\'s changes into the preview, or says earli
   assert.equal(offers[0].goal.trim(), teamMemberGoal(def, { name: 'Sunrise' }).trim());
   const card = read('src/renderer/src/components/WorkStyleUpdateCards.tsx');
   assert.match(card, /if \(offer\.changes\.length\) \{\s*return window\.cth\.workStyleRevise\(\{ requestId, ctx, current: \{ instructions: offer\.goal, handles: split\.roleDescription \}, changes: offer\.changes \}\);/);
-  assert.match(card, /applyLabel=\{t\('jobChange\.useIt'\)\}\s*autoRun/);
+  assert.match(card, /applyLabel=\{t\('jobChange\.useIt'\)\}\s*sendsTask=\{false\}\s*autoRun/, 'no card is promised: Use it sends none');
   assert.match(card, /t\('jobChange\.packOlderEdits', \{ name \}\)/);
   const en = JSON.parse(read('src/renderer/src/i18n/locales/en.json')).jobChange;
   assert.equal(en.packTitle, 'A better job description for {{name}}');

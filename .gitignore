@@ -10,7 +10,9 @@ dist/
 .env
 .env.local
 .env.signing
-.gstack/
+.gstack/*
+# The pre-gate policy is the one gstack file the repo keeps (read from main).
+!.gstack/pregate.json
 
 # signing / notarization secrets — NEVER commit these
 *.p8

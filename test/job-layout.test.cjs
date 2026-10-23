@@ -56,8 +56,7 @@ test('How X works shows its parts, folded to the first, in Edit agent, the hire 
 test('the jobs list heading is a field label in Edit agent, beside its count', () => {
   // Value: protects=H3 for Scheduled jobs on its panel; fails_when=the heading drops back to the old grey label under its own job names; why_new=2B keeps field labels; seam=none; no_claim=source pin
   const src = read('src/renderer/src/components/ScheduledJobs.tsx');
-  assert.match(src, /<span style=\{heading === 'section' \? sectionStyle : fieldLabel\}>\{title\}<\/span>/);
-  assert.doesNotMatch(src, /<h3/);
+  assert.match(src, /\{heading === 'section'\s*\? <h3 style=\{\{ \.\.\.sectionStyle, margin: 0 \}\}>\{title\}<\/h3>\s*: <span style=\{fieldLabel\}>\{title\}<\/span>\}/, 'a real heading on the Profile tab, a field label in Edit agent');
 });
 
 test('one Panel and one Field for every form screen, Edit agent and the hire wizard first', () => {
@@ -67,7 +66,9 @@ test('one Panel and one Field for every form screen, Edit agent and the hire wiz
   assert.match(ramp, /export const hint: CSSProperties = \{ fontSize: 12, lineHeight: '17px', fontWeight: 400, color: 'var\(--cth-ink-3\)' \};/);
   assert.match(ramp, /padding: '14px 16px', borderRadius: 'var\(--cth-r-xl\)', background: 'var\(--cth-bg\)'/);
   assert.match(ramp, /<h3 style=\{groupName\}>\{title\}<\/h3>/);
-  assert.match(ramp, /\? <div role="group" aria-label=\{typeof label === 'string' \? label : undefined\} style=\{box\}>\{body\}<\/div>\s*: <label style=\{box\}>\{body\}<\/label>;/, 'read only text is a named group, not a label');
+  assert.match(ramp, /if \(read\) return <div role="group" aria-label=\{typeof label === 'string' \? label : undefined\} style=\{box\}>/, 'read only text is a named group, not a label');
+  assert.match(ramp, /if \(!info\) return <label style=\{box\}>\{head\}\{children\}\{tail\}<\/label>;/);
+  assert.match(ramp, /<label style=\{\{ display: 'contents' \}\}><span style=\{srOnly\}>\{label\}<\/span>\{children\}<\/label>/, 'with an info icon the label names the field, not the icon');
   for (const f of ['EditAgentModal', 'AddAgentModal']) {
     const src = read(`src/renderer/src/components/${f}.tsx`);
     assert.match(src, /return <Field label=\{p\.label\} info=\{p\.info\}>\{p\.children\}<\/Field>;/, `${f} Row is the shared Field`);

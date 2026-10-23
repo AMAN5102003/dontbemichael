@@ -1,10 +1,10 @@
 // electron-builder `afterSign` hook — notarize + staple the macOS app.
 //
-// It runs ONLY when notarization credentials are present in the environment, so
-// contributors without an Apple account can still `npm run dist:mac` and get a
-// working (unsigned) build — this just no-ops. With a Developer ID cert in the
-// keychain + the env vars below, the produced .app/.dmg is signed, notarized,
-// and stapled, so end users get a single one-time macOS access prompt.
+// A local build with no notarization credentials (a contributor without an
+// Apple account running `npm run dist:mac`) skips notarization and still works.
+// In CI with a Developer ID cert, the build must be signed by RELEASE_TEAM_ID,
+// needs the credentials below, and fails if notarization fails; the .app/.dmg
+// is then signed, notarized and stapled, so end users get one macOS prompt.
 //
 // Credentials (set whichever pair you use):
 //   App-specific password:  APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
@@ -86,7 +86,7 @@ exports.default = async function notarizing(context) {
     if (process.env.CI && (process.env.CSC_LINK || process.env.CSC_KEYCHAIN)) {
       throw new Error('[notarize] the release is signed with a Developer ID but has no APPLE_* notarization credentials. Set APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID.');
     }
-    console.log('[notarize] no APPLE_* credentials in env — skipping notarization (build stays unsigned).');
+    console.log('[notarize] no APPLE_* credentials in env — skipping notarization.');
     return;
   }
 

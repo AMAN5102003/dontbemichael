@@ -53,6 +53,9 @@ export interface JobChangeReviewProps {
   onDraft?: (draft: boolean) => void;
   /** A run or a preview is up: the parent holds its own buttons. */
   onBusy?: (busy: boolean) => void;
+  /** False where Apply sends no card for a one-time task (Michael's own job,
+   *  the pack update card), so the preview never promises one. */
+  sendsTask?: boolean;
 }
 
 type State =
@@ -83,6 +86,9 @@ export function JobChangeReview(p: JobChangeReviewProps) {
   const [applying, setApplying] = useState(false);
   const [failed, setFailed] = useState(false);
   const runId = useRef<string | null>(null);
+  /** Bumped by every start, Stop and Cancel: a run that awaited something
+   *  (the overlap check) shows nothing once a newer step has happened. */
+  const runSeq = useRef(0);
   const box = useRef<HTMLTextAreaElement>(null);
   const heading = useRef<HTMLDivElement>(null);
   const answerRef = useRef<Answer | undefined>(undefined);
@@ -98,6 +104,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
   const start = async (more: string[] = extras, answer?: Answer): Promise<void> => {
     if (!p.autoRun && !typed.trim()) return;
     stopRun();
+    const seq = ++runSeq.current;
     const requestId = `revise-${crypto.randomUUID()}`;
     runId.current = requestId;
     answerRef.current = answer;
@@ -118,18 +125,22 @@ export function JobChangeReview(p: JobChangeReviewProps) {
     if (res.kind === 'question') { setState({ at: 'question', q: res }); return; }
     if (res.handles && p.checkOverlap) {
       const overlap = await p.checkOverlap(res).catch(() => null);
+      if (runSeq.current !== seq) return; // stopped or replaced during the check
       if (overlap?.names.length) { setState({ at: 'overlap', names: overlap.names, why: overlap.why }); return; }
     }
     setState({ at: 'ok', ok: res, from });
   };
   useEffect(() => { if (p.autoRun) void start([]); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const stop = (): void => { stopRun(); setState({ at: 'idle' }); if (p.autoRun) p.onCancel?.(); };
-  const cancel = (): void => { setState({ at: 'idle' }); setExtras([]); if (p.autoRun) p.onCancel?.(); };
+  const stop = (): void => { runSeq.current++; stopRun(); setState({ at: 'idle' }); if (p.autoRun) p.onCancel?.(); };
+  const cancel = (): void => { runSeq.current++; setState({ at: 'idle' }); setExtras([]); if (p.autoRun) p.onCancel?.(); };
   const doApply = async (ok: ReviseOk, from: string): Promise<void> => {
     setApplying(true);
     setFailed(false);
-    const change = [typed.trim(), ...extras].filter(Boolean).join(' ');
+    // The owner's answer to a clash goes with the change, so a pack update
+    // that replays the list never asks the same clash again.
+    const answered = answerRef.current?.answer.trim();
+    const change = [typed.trim(), ...extras, ...(answered ? [`(${answered})`] : [])].filter(Boolean).join(' ');
     const r = await p.apply(ok, change, from).catch(() => 'failed' as const);
     setApplying(false);
     if (r === 'moved') { setState({ at: 'moved' }); return; }
@@ -168,7 +179,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
   if (state.at === 'working') {
     panel = <Working who={p.who} progress={state.progress} heading={head(t('jobChange.working', { name: p.who }))} onStop={stop} />;
   } else if (state.at === 'ok') {
-    panel = <Preview ok={state.ok} who={p.who} lead={p.lead} title={p.previewTitle ?? t('jobChange.previewTitle')} heading={heading}
+    panel = <Preview ok={state.ok} who={p.who} lead={p.lead} sendsTask={p.sendsTask ?? true} title={p.previewTitle ?? t('jobChange.previewTitle')} heading={heading}
       applyLabel={p.applyLabel} applying={applying} failed={failed} onCancel={cancel} onApply={() => { void doApply(state.ok, state.from); }} />;
   } else if (state.at === 'question') {
     panel = <Clash q={state.q} who={p.who} heading={heading} onCancel={cancel}
@@ -232,6 +243,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
             onChange={(e) => setTyped(e.target.value)}
             onKeyDown={onBoxKey}
             placeholder={p.box.placeholder}
+            aria-label={p.box.label}
             rows={3}
             className="cth-input"
             dir={rtl ? 'auto' : undefined}
@@ -250,7 +262,7 @@ export function JobChangeReview(p: JobChangeReviewProps) {
   );
 }
 
-/** The new job: what changes, the new "What X handles", the whole job folded. */
+/** The three real steps of a run, as main reports them. */
 const STEPS = ['starting', 'reading', 'writing'] as const;
 
 /**
@@ -293,8 +305,9 @@ function Working({ who, progress, heading, onStop }: { who: string; progress?: P
   );
 }
 
-function Preview({ ok, who, lead, title, heading, applyLabel, applying, failed, onCancel, onApply }: {
-  ok: ReviseOk; who: string; lead?: boolean; title: string; heading: React.RefObject<HTMLDivElement>;
+/** The new job: what changes, the new "What X handles", the whole job folded. */
+function Preview({ ok, who, lead, sendsTask, title, heading, applyLabel, applying, failed, onCancel, onApply }: {
+  ok: ReviseOk; who: string; lead?: boolean; sendsTask: boolean; title: string; heading: React.RefObject<HTMLDivElement>;
   applyLabel: string; applying: boolean; failed: boolean; onCancel: () => void; onApply: () => void;
 }) {
   const { t } = useTranslation();
@@ -307,10 +320,10 @@ function Preview({ ok, who, lead, title, heading, applyLabel, applying, failed, 
       <div ref={heading} tabIndex={-1} style={headStyle}>{title}</div>
       <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 }}>
         {lines.map((l, i) => <li key={i} style={dotLine}><span aria-hidden="true" style={dot} /><span>{l}</span></li>)}
-        {ok.oneTimeTask && <li style={dotLine}><span aria-hidden="true" style={dot} /><span>{t('jobChange.oneTimeTask', { task: ok.oneTimeTask, manager })}</span></li>}
+        {sendsTask && ok.oneTimeTask && <li style={dotLine}><span aria-hidden="true" style={dot} /><span>{t('jobChange.oneTimeTask', { task: ok.oneTimeTask, manager })}</span></li>}
       </ul>
       {ok.summary.length > SUMMARY_SHOWN && (
-        <button type="button" onClick={() => setAll((v) => !v)} style={linkStyle}>{all ? t('jobChange.showLess') : t('jobChange.showAll')}</button>
+        <button type="button" aria-expanded={all} onClick={() => setAll((v) => !v)} style={linkStyle}>{all ? t('jobChange.showLess') : t('jobChange.showAll')}</button>
       )}
       {!lead && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>

@@ -58,7 +58,7 @@ import {
 import { roleLabel, plainFallback } from '@shared/workStyleText';
 import { jobFingerprint, type JobChangeEntry } from '@shared/jobChange';
 import { JobChangeReview, type ReviseOk, type ReviseRun } from './JobChangeReview';
-import { Field, JobParts, fieldLabel, jobPartsFold, readBody } from './fieldText';
+import { Field, JobParts, Panel, fieldLabel, jobPartsFold, readBody } from './fieldText';
 import { useRtl } from '@/i18n/useDirection';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { SHOW_IMPORT_HIRE, SHOW_ENGINE_PICKER, SHOW_MAILBOXES } from '@shared/buildFeatures';
@@ -310,7 +310,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     setPlain(ok.plain);
     setPlainSaved(true);
     if (ok.handles) setRouting(ok.handles);
-    if (ok.oneTimeTask) setHireTask(ok.oneTimeTask);
+    // Each applied change's one-time work reaches the hire's first task card,
+    // not only the last one (ship review, 2026-10-23).
+    if (ok.oneTimeTask) { const task = ok.oneTimeTask; setHireTask((t) => (t.trim() ? `${t}\n${task}` : task)); }
     setError(undefined);
     return 'applied';
   };
@@ -1027,6 +1029,8 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                   they will do; a picked one shows read only. */}
               {instructions.trim() ? (
                 <>
+                  {/* The job on its soft panel, as in Edit agent (app-style-rollout.md T1). */}
+                  <Panel>
                   <ReadRow label={tr('jobChange.handles', { name: hireWho })} info={tr('addAgent.roleHelp', { godName, name: hireWho })}>
                     <div dir={rtl ? 'auto' : undefined} style={readBody(false)}>{routing}</div>
                   </ReadRow>
@@ -1037,6 +1041,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       <button type="button" aria-expanded={plainAll} onClick={() => setPlainAll((v) => !v)} style={{ ...linkStyle, alignSelf: 'flex-start' }}>{plainAll ? tr('jobChange.showLess') : tr('jobChange.showAll')}</button>
                     )}
                   </ReadRow>
+                  </Panel>
                   <JobChangeReview
                     key="change"
                     who={hireWho}

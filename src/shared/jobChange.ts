@@ -14,6 +14,8 @@
  *   jobChanges   the change requests applied, oldest first, reapplied on a
  *                pack's new default (eng D7)
  */
+import { splitAgentRole } from './agentRole';
+import { appendOnce, splitBindings } from './hireTemplates';
 
 export interface PlainWords {
   text: string;
@@ -79,6 +81,14 @@ export function jobBase(job: { goal?: string; description?: string }): string {
 }
 
 /** "Title: handles" with a new handles part; the title is the owner's typed field (OV2). */
+/** `before`'s role line with `now`'s binding lines in place of its own. */
+function withBindingsOf(before: string, now: string): string {
+  const was = splitAgentRole(before);
+  const lines = splitBindings(splitAgentRole(now).roleDescription).lines;
+  const handles = lines.reduce((h, l) => appendOnce(h, l), splitBindings(was.roleDescription).text);
+  return withHandles(was.role, handles);
+}
+
 export function withHandles(title: string, handles: string): string {
   const t = title.trim().replace(/:+$/, '').trim();
   const h = handles.trim();
@@ -108,14 +118,17 @@ export function applyJob(
 }
 
 /** Undo: the job and the change list as they were before the last change;
- *  null when there is nothing to go back to. */
+ *  null when there is nothing to go back to. The routing line keeps today's
+ *  binding lines ("Not for refunds; that goes to Dwight."): a hire, a release
+ *  or a rename since the change set them, and Michael routes by them (ship
+ *  review, 2026-10-23). */
 export function undoJob(job: JobFields): Pick<JobFields, 'goal' | 'goalPlain' | 'description' | 'jobPrevious' | 'jobChanges'> | null {
   const prev = job.jobPrevious;
   if (!prev) return null;
   return {
     goal: prev.goal,
     goalPlain: prev.goalPlain,
-    description: prev.description,
+    description: withBindingsOf(prev.description, job.description),
     jobPrevious: undefined,
     jobChanges: prev.jobChanges
   };

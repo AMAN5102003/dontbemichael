@@ -48,7 +48,9 @@ export function ScheduledJobsList({ agentId, name, heading = 'label', onChange, 
     <div role="group" aria-label={jobs.length ? `${title}, ${jobs.length}` : title} data-scheduled-jobs style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
-          <span style={heading === 'section' ? sectionStyle : fieldLabel}>{title}</span>
+          {heading === 'section'
+            ? <h3 style={{ ...sectionStyle, margin: 0 }}>{title}</h3>
+            : <span style={fieldLabel}>{title}</span>}
           {jobs.length > 0 && <span style={{ fontSize: 12, color: 'var(--cth-ink-3)' }}>{jobs.length}</span>}
           <InfoTip text={t(office ? 'scheduledJobs.infoOffice' : 'scheduledJobs.info', { name })} label={title} />
         </div>
