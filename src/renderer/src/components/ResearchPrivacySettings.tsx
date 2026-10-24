@@ -12,6 +12,7 @@ import { useStore } from '@/store/store';
 import { isClaudeProvider } from '@shared/agentProvider';
 import { RESEARCH_ID } from '../../../shared/research';
 import { useResearchName } from '@/shell/research';
+import { groupName, hint, panelStyle } from './fieldText';
 
 /**
  * Settings, Research & privacy (issue #230, docs/designs/research-agent-privacy.md,
@@ -22,14 +23,10 @@ import { useResearchName } from '@/shell/research';
 
 type Phase = 'off' | 'starting' | 'on' | 'failed' | 'stopping';
 
-const head: CSSProperties = {
-  fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px',
-  color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10,
-  display: 'flex', alignItems: 'center', gap: 6
-};
-/** A sentence, so it is set in sentence case, not as a caps label (DESIGN.md 4.1). */
-const sentenceHead: CSSProperties = { fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink-2)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' };
-const hint: CSSProperties = { fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-3)' };
+/** Each part is a group on the shared soft panel, its name at the top
+ *  (app-style-rollout.md AS2, AS3); the rows keep their own spacing. */
+const group: CSSProperties = { ...panelStyle, gap: 0 };
+const head: CSSProperties = { ...groupName, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' };
 const dot = (color: string): CSSProperties => ({ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 });
 
 export function ResearchPrivacySettings({ config, classes, onClassesChange }: {
@@ -98,8 +95,8 @@ export function ResearchPrivacySettings({ config, classes, onClassesChange }: {
 
   return (
     <>
-      <div>
-        <div style={head}>{t('research.title')}<InfoTip label={t('research.title')} text={t('research.tip', { name: researchName })} /></div>
+      <div style={group}>
+        <h3 style={head}>{t('research.title')}<InfoTip label={t('research.title')} text={t('research.tip', { name: researchName })} /></h3>
         <div ref={stateRow} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 28 }}>
           <span role="status" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
             {line
@@ -131,18 +128,22 @@ export function ResearchPrivacySettings({ config, classes, onClassesChange }: {
             {t('research.windows', { name: researchName })}<InfoTip label={t('research.windows', { name: researchName })} text={t('research.windowsTip', { name: researchName })} />
           </div>
         )}
+        {/* Windows has no sandbox: only the team's web tools are refused there. */}
+        {win && (
+          <div style={{ ...hint, marginTop: 8, paddingInlineStart: 16, display: 'flex', alignItems: 'center', gap: 6 }}>
+            {t('research.windowsTeam')}<InfoTip label={t('research.windowsTeam')} text={t('research.windowsTeamTip', { name: researchName })} />
+          </div>
+        )}
       </div>
 
-      <div style={{ height: 1, background: 'var(--cth-line)' }} />
-
-      <div>
-        <div style={sentenceHead}>
+      <div style={group}>
+        <h3 style={head}>
           {t('research.sendTitle', { name: researchName })}
           <InfoTip label={t('research.sendTitle', { name: researchName })} text={t('research.sendTip', { name: researchName })} />
-          <span style={{ fontSize: 11.5, fontWeight: 500, textTransform: 'none', color: 'var(--cth-ink-3)', fontFamily: 'var(--cth-font-ui)' }}>
+          <span style={hint}>
             {t('research.count', { allowed: counts.allowed, private: counts.private })}
           </span>
-        </div>
+        </h3>
         {phase !== 'on' && <div style={{ ...hint, margin: '-4px 0 6px' }}>{t('research.usedWhenOn', { name: researchName })}</div>}
         <div style={{ display: 'flex', flexDirection: 'column' }}>
           {DATA_CLASSES.map((c, i) => {

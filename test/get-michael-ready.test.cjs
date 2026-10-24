@@ -159,7 +159,9 @@ test('an API key instead of a Claude account: checked with Anthropic, kept write
   // A key changed or cleared in Settings, AI engines, while it signs Claude in.
   assert.match(main, /if \(res\.ok && p\.backend === 'anthropic' && readConfig\(\)\.claudeAuth === 'apiKey'\) \{\s*try \{ approveClaudeApiKey\(p\.key\); \}/);
   assert.match(main, /const \{ verdict, reason \} = await checkAnthropicKey\(key, net\.fetch as unknown as KeyCheckFetch\);/, 'the check follows the system proxy');
-  assert.match(read('src/main/hiddenClaude.ts'), /\.\.\.hiddenClaudeAuthEnv\(\),\s*\.\.\.\(opts\.env \?\? \{\}\)/);
+  assert.match(read('src/main/hiddenClaude.ts'), /const auth = hiddenClaudeAuthEnv\(\);[\s\S]*\.\.\.auth,\s*\.\.\.\(opts\.env \?\? \{\}\)/);
+  // The key an isolated check approves is the one its session gets (cycle 3 review).
+  assert.match(read('src/main/hiddenClaude.ts'), /isolatedConfigDir\(opts\.cwd, \{ \.\.\.auth, \.\.\.\(opts\.env \?\? \{\}\) \}\)/);
   // A key counts as signed in; signing in with an account switches back.
   assert.match(main, /const status = await readEngineSetupStatus\(\{[\s\S]*?claudeAuth: cfg\.claudeAuth,\s*hasKey: \(\) => integrations\.hasSecret\(providerKeyRef\('anthropic'\)\),/);
   assert.match(main, /if \(readConfig\(\)\.claudeAuth === 'apiKey'\) writeConfig\(\{ claudeAuth: 'account' \}\);/);

@@ -11,9 +11,9 @@
  *
  * Schema evolves via PRAGMA user_version migrations: an ordered array where
  * migration N runs when user_version < N+1, then bumps it. NEVER edit a shipped
- * migration — only append. Phases B/C (agents + message_queue mirror) and the
- * cross-lane cost_ledger are reserved as future additive migrations (see below);
- * they are deliberately NOT built in v1.
+ * migration — only append. Phases B/C (agents + message_queue mirror) are
+ * reserved as future additive migrations (see below); they are deliberately
+ * NOT built in v1. The cost ledger landed in migration 5 (costLedger.ts).
  */
 import Database from 'better-sqlite3';
 import { app } from 'electron';
@@ -36,15 +36,6 @@ export interface CommandHistoryRow {
  * FUTURE (do NOT build in v1 — reserved so the array isn't painted into a corner):
  *   - Phase B: `agents` + `message_queue` mirror of the renderer roster/queues
  *     (dual-write), enabling the eventual authority flip off localStorage.
- *   - Cross-lane (Lane A #6): migrate Jim's cost ledger onto this DB so his
- *     circuit-breaker can move off transcript-polling. Column names match his
- *     <harnessHome>/hive/cost-ledger.jsonl keys 1:1 for a straight INSERT…SELECT
- *     (coordinated w/ jim-mq290qkn 2026-06-06):
- *       cost_ledger(id, agent_id, session_id TEXT, ts, input, output,
- *                   cache_read, cache_creation, model TEXT, usd REAL)
- *     Rows are CUMULATIVE snapshots (one per agent per heartbeat beat) — diff
- *     consecutive rows for velocity; index (agent_id, session_id, ts). Additive;
- *     lands as a later migration.
  */
 const MIGRATIONS: Array<(db: Database.Database) => void> = [
   // → user_version 1 (Phase A): scalar kv + net-new command history.
@@ -160,6 +151,28 @@ const MIGRATIONS: Array<(db: Database.Database) => void> = [
       CREATE INDEX IF NOT EXISTS idx_tr_open ON telemetry_runs(office, agent_id, id) WHERE end IS NULL;
       CREATE INDEX IF NOT EXISTS idx_te_office_id ON telemetry_events(office, id);
       CREATE INDEX IF NOT EXISTS idx_te_office_kind_ts ON telemetry_events(office, kind, ts);
+    `);
+  },
+  // → user_version 5: the cost ledger, moved off the agent writable
+  // hive/cost-ledger.jsonl (TODOS.md, D17). The file's keys 1:1, plus the
+  // office like the telemetry tables. Rows are running totals per agent and
+  // session (one per live agent per breaker beat); costLifetime.ts folds them.
+  (db) => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS cost_ledger (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        office         TEXT NOT NULL,
+        agent_id       TEXT NOT NULL,
+        session_id     TEXT,
+        ts             INTEGER,
+        input          INTEGER NOT NULL DEFAULT 0,
+        output         INTEGER NOT NULL DEFAULT 0,
+        cache_read     INTEGER NOT NULL DEFAULT 0,
+        cache_creation INTEGER NOT NULL DEFAULT 0,
+        model          TEXT,
+        usd            REAL NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_cl_office_id ON cost_ledger(office, id);
     `);
   }
 ];

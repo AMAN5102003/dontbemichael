@@ -8,7 +8,7 @@
  *                                   reopened cards, trust layer decisions,
  *                                   frames from a sender the app could not confirm
  *   members' sessions (transcripts) ─► working time per request, steps a setting stopped
- *   cost ledger (hive/cost-ledger.jsonl) ─► value per member and day
+ *   cost ledger (harness.db, D17) ─► value per member and day
  *
  * The processor folds them like any point, except that a past point never
  * touches today's open runs or presence, and never starts recommendations
@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type Database from 'better-sqlite3';
 import { CostFold } from '../shared/costFold';
+import { ledgerImported, ledgerRows } from './costLedger';
 import { dayKey } from '../shared/teamPerformance';
 import type { RefusalGate } from '../shared/pulseSafety';
 import type { TelemetryEvent } from './telemetryStore';
@@ -30,6 +31,8 @@ import type { TelemetryEvent } from './telemetryStore';
 export const BACKFILL_DAYS = 56;
 /** One request's working time counts at most this much. */
 const TURN_CAP_MS = 60 * 60_000;
+/** Lines read between breaks for the event loop. */
+const LINES_PER_BREAK = 500;
 const BF = { bf: 1 } as const;
 
 const markerKey = (office: string): string => `pulse:backfill:${office}`;
@@ -57,16 +60,22 @@ export function gateOfTool(tool: string, reason: string): RefusalGate | null {
   return null;
 }
 
+/** Lets hook frames and timers run before reading on. */
+const pause = (): Promise<void> => new Promise((r) => setImmediate(r));
+
 /** Working time and refused steps from one session's transcript lines: a
  *  request (a user line that is not a tool result) runs to the last line
- *  before the next request, at most an hour. */
-export function readTranscript(lines: Iterable<string>, since: number, until: number): { turns: Array<{ ts: number; ms: number }>; refused: Array<{ ts: number; gate: RefusalGate }> } {
+ *  before the next request, at most an hour. Lines go in one at a time, with a
+ *  break every few hundred. */
+export async function readTranscript(lines: AsyncIterable<string> | Iterable<string>, since: number, until: number): Promise<{ turns: Array<{ ts: number; ms: number }>; refused: Array<{ ts: number; gate: RefusalGate }> }> {
   const turns: Array<{ ts: number; ms: number }> = [];
   const refused: Array<{ ts: number; gate: RefusalGate }> = [];
   const seen = new Set<string>();
-  let start = 0, last = 0;
+  const isResult = (x: unknown): x is { type: string; tool_use_id?: string; content?: unknown } => !!x && typeof x === 'object' && (x as { type?: unknown }).type === 'tool_result';
+  let start = 0, last = 0, n = 0;
   const close = (): void => { if (start && start >= since && start < until) turns.push({ ts: start, ms: Math.min(Math.max(0, last - start), TURN_CAP_MS) }); start = 0; };
-  for (const line of lines) {
+  for await (const line of lines) {
+    if (++n % LINES_PER_BREAK === 0) await pause();
     if (!line || line[0] !== '{') continue;
     let e: { type?: string; timestamp?: string; message?: { content?: unknown } };
     try { e = JSON.parse(line); } catch { continue; }
@@ -74,13 +83,14 @@ export function readTranscript(lines: Iterable<string>, since: number, until: nu
     if (!Number.isFinite(t)) continue;
     const content = e.message?.content;
     if (e.type === 'user') {
-      const results = Array.isArray(content) ? content.filter((x): x is { type: string; tool_use_id?: string; content?: unknown } => !!x && typeof x === 'object' && (x as { type?: unknown }).type === 'tool_result') : [];
-      if (typeof content === 'string' || (Array.isArray(content) && !results.length)) { close(); start = t; last = t; continue; }
+      if (typeof content === 'string' || (Array.isArray(content) && !content.some(isResult))) { close(); start = t; last = t; continue; }
       last = Math.max(last, t);
-      for (const r of results) {
+      // Only a refusal inside the window counts, so a result outside it is never searched.
+      if (t < since || t >= until || !Array.isArray(content)) continue;
+      for (const r of content.filter(isResult)) {
         const text = typeof r.content === 'string' ? r.content : JSON.stringify(r.content ?? '');
         const m = /PreToolUse:([A-Za-z0-9_.-]+) hook (?:error|blocking error)[^:]*:\s*(.{0,200})/.exec(text);
-        if (!m || t < since || t >= until) continue;
+        if (!m) continue;
         const id = r.tool_use_id ?? `${t}:${m[1]}`;
         if (seen.has(id)) continue;
         seen.add(id);
@@ -112,7 +122,9 @@ export function logPoints(entries: Iterable<Record<string, unknown>>, since: num
         break;
       }
       case 'card-reopen': out.push({ agentId: agent, kind: 'card-reopen', ts, attrs: { id: e.id, ...BF } }); break;
-      case 'trust-layer': out.push({ agentId: null, kind: 'trust', ts, attrs: { way: e.way, decision: e.decision, by: e.by ?? null, flagged: e.flagged === true, ...BF } }); break;
+      case 'trust-layer': out.push({ agentId: null, kind: 'trust', ts, attrs: { way: e.way, decision: e.decision, by: e.by ?? null, flagged: e.flagged === true, ...(typeof e.v === 'number' ? { v: e.v } : {}), ...BF } }); break;
+      case 'trust-checked': if (e.way === 'in' || e.way === 'out') out.push({ agentId: null, kind: 'trust-checked', ts, attrs: { way: e.way, decision: e.decision, flagged: e.flagged === true, ...BF } }); break;
+      case 'trust-held': if (e.way === 'in' || e.way === 'out') out.push({ agentId: null, kind: 'trust-held', ts, attrs: { way: e.way, ...BF } }); break;
       // Before 2026-10-15 an old secret was logged as no-secret too, so only a
       // frame naming the wrong member is sure to be an impostor.
       case 'hook-frame-rejected': if (e.reason === 'wrong-sender') out.push({ agentId: agent, kind: 'refused', ts, attrs: { gate: 'impostor', ...BF } }); break;
@@ -159,7 +171,9 @@ async function* lines(file: string): AsyncGenerator<string> {
 }
 
 async function* jsonLines(file: string): AsyncGenerator<Record<string, unknown>> {
+  let n = 0;
   for await (const l of lines(file)) {
+    if (++n % LINES_PER_BREAK === 0) await pause();
     if (!l || l[0] !== '{') continue;
     try { yield JSON.parse(l) as Record<string, unknown>; } catch { /* a torn line */ }
   }
@@ -184,14 +198,12 @@ export async function runBackfill(d: BackfillDeps): Promise<number> {
   const points: TelemetryEvent[] = [];
 
   // The office log: work, trust layer decisions, and which session is whose.
-  const logEntries: Record<string, unknown>[] = [];
+  // Each entry becomes its points as it is read, so the log is never held.
   const sessions = new Map<string, string>();
   for await (const e of jsonLines(join(d.hiveRoot, 'log.jsonl'))) {
     if (e.kind === 'session' && typeof e.sessionId === 'string' && typeof e.agentId === 'string') sessions.set(e.sessionId, e.agentId);
-    const ts = Number(e.ts);
-    if (Number.isFinite(ts) && ts >= since && ts < until) logEntries.push(e);
+    points.push(...logPoints([e], since, until, d.members));
   }
-  points.push(...logPoints(logEntries, since, until, d.members));
 
   // Members' sessions: working time and refused steps.
   const files = new Map<string, string>();
@@ -205,16 +217,16 @@ export async function runBackfill(d: BackfillDeps): Promise<number> {
   for (const [sid, file] of files) {
     try { if (statSync(file).mtimeMs < since) continue; } catch { continue; }
     const agent = sessions.get(sid)!;
-    const buf: string[] = [];
-    for await (const l of lines(file)) buf.push(l);
-    const r = readTranscript(buf, since, until);
+    const r = await readTranscript(lines(file), since, until);
     for (const t of r.turns) points.push({ agentId: agent, kind: 'busy', ts: t.ts, value: t.ms, attrs: { ...BF } });
     for (const x of r.refused) points.push({ agentId: agent, kind: 'refused', ts: x.ts, attrs: { gate: x.gate, ...BF } });
   }
 
-  // The cost ledger: value per member and day.
+  // The cost ledger: value per member and day. harness.db's once the old file
+  // is copied in (D17): agents can write the file.
   const ledger = new LedgerFold(since, until);
-  for await (const r of jsonLines(join(d.hiveRoot, 'cost-ledger.jsonl'))) ledger.add(r);
+  const rows = ledgerImported(db, office) ? ledgerRows(db, office) : jsonLines(join(d.hiveRoot, 'cost-ledger.jsonl'));
+  for await (const r of rows) ledger.add(r);
   for (const [key, usd] of ledger.days()) {
     const [agent, day] = key.split('\t');
     // One point per member and day, under a key of its own, so the fold counts it whole.
@@ -226,10 +238,13 @@ export async function runBackfill(d: BackfillDeps): Promise<number> {
   const mark = db.prepare(`INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`);
   // The points and the marker land together or not at all, so a backfill cut
   // short (quit, crash, a full disk) runs again from nothing instead of
-  // counting its first rows twice.
-  db.transaction(() => {
+  // counting its first rows twice. A second run for the same office (the
+  // owner switched away and back while the first was still reading) finds the
+  // first one's marker here and writes nothing.
+  return db.transaction(() => {
+    if (backfilled(db, office)) return 0;
     for (const e of points) ins.run(office, e.agentId, e.kind, Math.round(e.ts), e.value ?? null, e.attrs ? JSON.stringify(e.attrs) : null);
     mark.run(markerKey(office), JSON.stringify({ v: 1, since, until, points: points.length }), d.now);
+    return points.length;
   })();
-  return points.length;
 }

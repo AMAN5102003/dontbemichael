@@ -206,8 +206,7 @@ test('the trust layer\'s checks keep no transcript of Research\'s text, and Rese
   assert.match(layer, /sweepOldCheckTranscripts\(\);/, 'old check transcripts are swept');
   assert.match(idx, /for \(const folder of CHECK_FOLDERS\)/, 'and those a stopped check left in its own folder');
   assert.deepEqual([...loadTs('src/main/factoryReset.ts').CHECK_FOLDERS], ['standing-check', 'trust-check']);
-  assert.match(idx, /memory\.setMineKey\(\(id\) => \(id === RESEARCH_ID \? trustLayer\.policyKey\?\.\(\) \?\? '' : ''\)\);/, 'its mined copy is made again when privacy settings change');
-  assert.match(src('src/main/memory.ts'), /const key = `\$\{mtime\}:\$\{extra\}`;/);
+  assert.doesNotMatch(idx, /setMineKey|setNotesFilter/, 'no copy of its notes is made for anyone (owner, 2026-10-16)');
   assert.match(idx, /claudeProjectsRoot\(\), \.\.\.teamFolders,/, 'its shell is walled from the projects folder wherever it is');
   // The guard itself: a link left in place of the scratch folder is replaced,
   // and what it pointed at is untouched.

@@ -1,16 +1,32 @@
 // electron-builder `afterSign` hook — notarize + staple the macOS app.
 //
-// It runs ONLY when notarization credentials are present in the environment, so
-// contributors without an Apple account can still `npm run dist:mac` and get a
-// working (unsigned) build — this just no-ops. With a Developer ID cert in the
-// keychain + the env vars below, the produced .app/.dmg is signed, notarized,
-// and stapled, so end users get a single one-time macOS access prompt.
+// A local build with no notarization credentials (a contributor without an
+// Apple account running `npm run dist:mac`) skips notarization and still works.
+// In CI with a Developer ID cert, the build must be signed by RELEASE_TEAM_ID,
+// needs the credentials below, and fails if notarization fails; the .app/.dmg
+// is then signed, notarized and stapled, so end users get one macOS prompt.
 //
 // Credentials (set whichever pair you use):
 //   App-specific password:  APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 //   App Store Connect key:  APPLE_API_KEY (path to .p8), APPLE_API_KEY_ID, APPLE_API_ISSUER
-const { execFileSync } = require('node:child_process');
+//
+// A release that is signed must also be notarized, or it fails. A signed but
+// unnotarized download still gets macOS's "cannot verify" warning, and the
+// release would look done while it is not (owner, 2026-10-22).
+const { execFileSync, spawnSync } = require('node:child_process');
 const path = require('node:path');
+
+/** The only Apple team a release is signed by: the owner's own account, never
+ *  an employer's or a contributor's (owner, 2026-10-22). It is public; every
+ *  signed copy of the app carries it. */
+const RELEASE_TEAM_ID = 'B5EHD4JBD2';
+
+/** The team that signed the app, or null when it is unsigned or ad hoc. */
+function signingTeam(appPath) {
+  const out = spawnSync('codesign', ['-dv', '--verbose=2', appPath], { encoding: 'utf8' });
+  const m = /^TeamIdentifier=(\S+)$/m.exec(`${out.stdout || ''}${out.stderr || ''}`);
+  return m && m[1] !== 'not' ? m[1] : null;
+}
 
 /**
  * Without a Developer ID cert electron-builder skips signing entirely, which
@@ -18,8 +34,9 @@ const path = require('node:path');
  * (`codesign --verify` says "code object is not signed at all"). A copy of that
  * downloaded from GitHub gets macOS's "damaged, move to Trash" dialog, with no
  * way to open it. Sealing it ad hoc turns that into the ordinary "could not
- * verify the developer" dialog, which Privacy & Security > Open Anyway clears
- * (RELEASE.md walks owners through it).
+ * verify the developer" dialog, which Privacy & Security > Open Anyway clears.
+ * Only local and dry builds take this path: a tagged release must carry a real
+ * Developer ID signature (requireDeveloperId below).
  *
  * Runs only when the bundle does not already verify, so a real Developer ID
  * signature is never touched. electron-builder 25 has no ad-hoc identity of its
@@ -40,11 +57,35 @@ function sealAdHocIfUnsigned(appPath) {
   execFileSync('codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'inherit' });
 }
 
+/**
+ * A tagged release must be Developer ID signed (owner, 2026-10-23): RELEASE.md and
+ * dontbemichael.com tell Mac owners to click Open, which an ad hoc build never
+ * offers. release.yml sets REQUIRE_DEVELOPER_ID on tags only, so a missing
+ * APPLE_CERTIFICATE_P12 secret stops the release instead of shipping it ad hoc.
+ */
+function requireDeveloperId() {
+  if (process.env.REQUIRE_DEVELOPER_ID && !(process.env.CSC_LINK || process.env.CSC_KEYCHAIN)) {
+    throw new Error('[sign] a tagged release must be signed with the Developer ID certificate, but none was imported. Check the APPLE_CERTIFICATE_P12 secret.');
+  }
+}
+
 exports.default = async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName !== 'darwin') return; // mac only
 
+  requireDeveloperId();
   sealAdHocIfUnsigned(path.join(appOutDir, `${context.packager.appInfo.productFilename}.app`));
+
+  // CI with a cert is a real release: it must be signed by the owner's team.
+  if (process.env.CI && (process.env.CSC_LINK || process.env.CSC_KEYCHAIN)) {
+    const team = signingTeam(path.join(appOutDir, `${context.packager.appInfo.productFilename}.app`));
+    if (team !== RELEASE_TEAM_ID) {
+      throw new Error(`[sign] the release must be signed by Apple team ${RELEASE_TEAM_ID}, but it was signed by ${team || 'no team'}. Check the APPLE_CERTIFICATE_P12 secret.`);
+    }
+    if (process.env.APPLE_TEAM_ID && process.env.APPLE_TEAM_ID !== RELEASE_TEAM_ID) {
+      throw new Error(`[notarize] APPLE_TEAM_ID is ${process.env.APPLE_TEAM_ID}, not the release team ${RELEASE_TEAM_ID}.`);
+    }
+  }
 
   const {
     APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID,
@@ -54,17 +95,16 @@ exports.default = async function notarizing(context) {
   const hasPassword = !!(APPLE_ID && APPLE_APP_SPECIFIC_PASSWORD && APPLE_TEAM_ID);
   const hasApiKey = !!(APPLE_API_KEY && APPLE_API_KEY_ID && APPLE_API_ISSUER);
   if (!hasPassword && !hasApiKey) {
-    console.log('[notarize] no APPLE_* credentials in env — skipping notarization (build stays unsigned).');
+    // CI with a Developer ID cert is a real release: never ship it unnotarized.
+    // A local build without credentials stays as it was.
+    if (process.env.CI && (process.env.CSC_LINK || process.env.CSC_KEYCHAIN)) {
+      throw new Error('[notarize] the release is signed with a Developer ID but has no APPLE_* notarization credentials. Set APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID.');
+    }
+    console.log('[notarize] no APPLE_* credentials in env — skipping notarization.');
     return;
   }
 
-  let notarize;
-  try {
-    ({ notarize } = require('@electron/notarize'));
-  } catch {
-    console.warn('[notarize] @electron/notarize not installed — run `npm install`. Skipping.');
-    return;
-  }
+  const { notarize } = require('@electron/notarize');
 
   const appName = context.packager.appInfo.productFilename;
   const appPath = path.join(appOutDir, `${appName}.app`);
@@ -80,16 +120,10 @@ exports.default = async function notarizing(context) {
     execFileSync('xcrun', ['stapler', 'staple', appPath], { stdio: 'inherit' });
     console.log('[notarize] done — app is signed, notarized, and stapled.');
   } catch (err) {
-    // Best-effort: notarization talks to Apple's servers and can fail for reasons
-    // outside the build (bad/expired app-specific password, unaccepted Developer
-    // Program agreement, Apple-side outage, a rejected submission). That must NOT
-    // sink the whole cross-platform release — the app is still Developer ID *signed*,
-    // which is what gives the stable identity macOS uses to remember folder-access
-    // grants (the one-time prompt). So we log loudly and ship the signed build;
-    // once the credentials are valid, the next release notarizes with no code change.
-    // Un-notarized = users may need a one-time right-click → Open on first launch.
-    console.warn('[notarize] ⚠️  NOTARIZATION FAILED — shipping a signed-but-unnotarized build.');
-    console.warn('[notarize] Fix the APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID secrets to enable it.');
-    console.warn(`[notarize] notarytool said:\n${err && err.message ? err.message : err}`);
+    // Notarization talks to Apple's servers and can fail for reasons outside the
+    // build (a bad or expired app-specific password, an unaccepted Developer
+    // Program agreement, an Apple outage, a rejected submission). Fail the Mac
+    // build so the release is not published; fix the cause and push the tag again.
+    throw new Error(`[notarize] notarization failed, so the Mac release stops here. notarytool said:\n${err && err.message ? err.message : err}`);
   }
 };

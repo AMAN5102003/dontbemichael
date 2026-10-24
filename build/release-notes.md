@@ -1,4 +1,5 @@
-- **Pulse** shows work done and what it costs.
-- **Ask me** choices answer with a click.
-- **Delete** a team member for good.
-- **Stuck members** restart and carry on.
+- **Change a job** by saying what should change.
+- **Add a file** right from a Company foundations card.
+- **One look** for every form in the app.
+- Hiring asks what the new person will do, once.
+- Safer background checks and messages to the team.

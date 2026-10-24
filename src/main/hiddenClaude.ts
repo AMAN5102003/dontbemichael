@@ -1,14 +1,17 @@
 import * as pty from 'node-pty';
 import { randomUUID } from 'node:crypto';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolveCommand, userShellPath } from './shellEnv';
 import { expandTilde } from './fs';
-import { projectDir } from './transcript';
+import { projectDir, projectKey } from './transcript';
 import { lastAssistantText, transcriptFile } from './transcriptText';
 import { ensureKilled } from './procKill';
 import { Terminal } from '@xterm/headless';
 import { ANSWER_MARK, screenAnswer } from './screenAnswer';
+import { tokenizeCommand } from '../shared/commandLine';
+import { pasteSafe } from '../shared/pasteSafe';
 
 /**
  * Shared helper: run a HIDDEN interactive claude session (ephemeral PTY) and
@@ -73,12 +76,29 @@ export interface HiddenClaudeOptions {
    *  a headless terminal, for a live preview (screenAnswer.ts). The result
    *  still comes from the transcript. */
   onScreenText?: (text: string) => void;
+  /** The session has the prompt: it is reading, not starting any more. For a
+   *  waiting screen's steps (owner, 2026-10-23). */
+  onPromptSent?: () => void;
   /** Stops the call: the session is killed and the result is 'cancelled'. */
   signal?: AbortSignal;
   /** Remove this session's transcript once it ends: it holds text that must
    *  not stay where agents can read (Research's, red team third ship). */
   dropTranscript?: boolean;
+  /** Run in a throwaway Claude Code settings folder, removed when the session
+   *  ends: Claude Code keeps every pasted prompt in its shared history.jsonl
+   *  and paste-cache, which removing the transcript does not touch. The
+   *  sign in stays the owner's own (isolatedConfigDir). For text that must
+   *  not stay on disk at all (a file checked by mistake, ship review
+   *  2026-10-23). */
+  isolateConfig?: boolean;
+  /** Pictures to show the model: each absolute path is pasted on its own
+   *  before the prompt, which Claude Code attaches as an image, so a check
+   *  with no tools can still look at a picture (foundation card upload). */
+  images?: string[];
 }
+
+/** How long each pasted picture is given to attach before the next paste. */
+const IMAGE_PASTE_MS = 600;
 
 /** How long after a session ends its transcript is removed again, for a
  *  last write as the process exits. */
@@ -110,9 +130,49 @@ export interface HiddenClaudeResult {
   error?: string;
 }
 
+export { pasteSafe };
+
+/** The name every isolated check folder starts with (isolatedSweep.ts). */
+export const ISOLATED_PREFIX = 'dbm-check-';
+
+/**
+ * A fresh Claude Code settings folder for one session: the first run and
+ * trust screens already answered, the bypass warning off, and the owner's API
+ * key approved when they chose one (that approval lives in the real
+ * ~/.claude.json, which this folder does not see). Measured 2026-10-23 on
+ * Claude Code 2.1.309: with CLAUDE_CONFIG_DIR here nothing is written under
+ * ~/.claude, and CLAUDE_SECURESTORAGE_CONFIG_DIR keeps the sign in pointed at
+ * the owner's own (empty means the default ~/.claude). That second variable is
+ * not documented: if a later Claude drops it, the session stops at sign in and
+ * the call fails as "never took the prompt", so nothing leaks.
+ */
+function isolatedConfigDir(cwd: string, auth: Record<string, string>): { dir: string; env: Record<string, string> } {
+  const dir = mkdtempSync(join(tmpdir(), ISOLATED_PREFIX));
+  let real = cwd;
+  try { real = realpathSync.native(cwd); } catch { /* as typed */ }
+  const asKey = (f: string) => (process.platform === 'win32' ? f.replaceAll('\\', '/') : f);
+  const projects = Object.fromEntries([...new Set([asKey(cwd), asKey(real)])].map((k) => [k, { hasTrustDialogAccepted: true }]));
+  const key = auth.ANTHROPIC_API_KEY?.trim();
+  const claudeJson = { hasCompletedOnboarding: true, projects, ...(key ? { customApiKeyResponses: { approved: [key.slice(-20)], rejected: [] } } : {}) };
+  writeFileSync(join(dir, '.claude.json'), JSON.stringify(claudeJson), { mode: 0o600 });
+  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ skipDangerousModePermissionPrompt: true }), { mode: 0o600 });
+  return {
+    dir,
+    env: {
+      CLAUDE_CONFIG_DIR: dir,
+      CLAUDE_SECURESTORAGE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR ?? '',
+      // A fresh folder would fetch the whole plugin marketplace on every check.
+      CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL: '1'
+    }
+  };
+}
+
 export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Promise<HiddenClaudeResult> {
   return new Promise((resolve) => {
     if (!prompt.trim()) { resolve({ ok: false, error: 'empty prompt' }); return; }
+    // A picture path is pasted as it is, so one holding a control character
+    // is refused rather than changed (a changed path attaches nothing).
+    if ((opts.images ?? []).some((p) => p !== pasteSafe(p) || /[\r\n\t]/.test(p))) { resolve({ ok: false, error: 'picture path has control characters' }); return; }
     // Defense-in-depth: `~` is shell syntax, not a path Node understands.
     const cwd = opts.cwd ? expandTilde(opts.cwd) : opts.cwd;
     if (!cwd || !existsSync(cwd)) {
@@ -121,7 +181,7 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
     }
     opts = { ...opts, cwd };
 
-    const binary = (opts.command || 'claude').trim().split(/\s+/)[0] || 'claude';
+    const binary = tokenizeCommand((opts.command || 'claude').trim())[0] || 'claude';
     const exe = resolveCommand(binary);
     const disallowed = opts.disallowedTools ?? ['Edit', 'Write', 'NotebookEdit'];
     const addDirs = (opts.addDirs ?? []).filter((d) => d && existsSync(d));
@@ -152,6 +212,18 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
     const winWrap = process.platform === 'win32' && !/\.(exe|com)$/i.test(exe);
     const spawnFile = winWrap ? (process.env.ComSpec || 'cmd.exe') : exe;
     const spawnArgs = winWrap ? ['/c', exe, ...args] : args;
+    const auth = hiddenClaudeAuthEnv();
+    let isolated: { dir: string; env: Record<string, string> } | null = null;
+    if (opts.isolateConfig) {
+      // The key approved is the one the session gets, opts.env included.
+      try { isolated = isolatedConfigDir(opts.cwd, { ...auth, ...(opts.env ?? {}) }); } catch (e) {
+        resolve({ ok: false, error: `no settings folder for the check: ${e instanceof Error ? e.message : String(e)}` });
+        return;
+      }
+    }
+    const removeIsolated = () => { if (isolated) { try { rmSync(isolated.dir, { recursive: true, force: true, maxRetries: 3 }); } catch { /* next time */ } } };
+    // Where this session's transcript lands: the throwaway folder when isolated.
+    const sessionDir = (): string => (isolated ? join(isolated.dir, 'projects', projectKey(opts.cwd)) : projectDir(opts.cwd));
     let ptyProc: pty.IPty;
     try {
       ptyProc = pty.spawn(spawnFile, spawnArgs, {
@@ -162,13 +234,16 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
         env: {
           ...process.env,
           PATH: userShellPath(),
-          ...hiddenClaudeAuthEnv(),
+          ...auth,
           ...(opts.env ?? {}),
           ...(opts.thinking === false ? { MAX_THINKING_TOKENS: '0' } : {}),
+          // Last, so nothing passed in can point the check back at ~/.claude.
+          ...(isolated?.env ?? {}),
           ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
         } as Record<string, string>,
       });
     } catch (e) {
+      removeIsolated();
       resolve({ ok: false, error: e instanceof Error ? e.message : String(e) });
       return;
     }
@@ -222,7 +297,12 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       clearTimeout(bootMaxTimer);
       clearTimeout(globalTimer);
       kill();
-      if (opts.dropTranscript) {
+      if (isolated) {
+        // The whole folder goes, history and paste cache with it; again once
+        // the process has exited, as Claude writes its history on the way out.
+        removeIsolated();
+        setTimeout(removeIsolated, DROP_AGAIN_MS).unref?.();
+      } else if (opts.dropTranscript) {
         const drop = () => {
           const dir = projectDir(opts.cwd);
           for (const p of [transcriptFile(dir, sessionId), join(dir, sessionId)]) {
@@ -235,7 +315,7 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       resolve(r);
     };
 
-    const ownAnswer = (): string | null => lastAssistantText(transcriptFile(projectDir(opts.cwd), sessionId));
+    const ownAnswer = (): string | null => lastAssistantText(transcriptFile(sessionDir(), sessionId));
     // The screen going quiet is not the answer arriving: a model can think for
     // a while with nothing on screen. Until this session's own transcript has
     // an answer, keep waiting (the global timeout still bounds it).
@@ -251,9 +331,13 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       if (settled || promptSent) return;
       promptSent = true;
       if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+      // Pictures first, one paste each, so each attaches before the prompt.
+      const images = opts.images ?? [];
+      images.forEach((path, i) => setTimeout(() => { if (!settled) ptyProc.write(`\x1b[200~${path}\x1b[201~`); }, i * IMAGE_PASTE_MS));
+      const afterImages = images.length * IMAGE_PASTE_MS;
       // Bracketed paste + enter — same mechanism as submitToPty in useHive.ts.
-      ptyProc.write(`\x1b[200~${prompt}\x1b[201~`);
-      setTimeout(() => { if (!settled) ptyProc.write('\r'); }, 140);
+      setTimeout(() => { if (!settled) ptyProc.write(`\x1b[200~${pasteSafe(prompt)}\x1b[201~`); }, afterImages);
+      setTimeout(() => { if (!settled) ptyProc.write('\r'); }, afterImages + 140);
       // Claude writes the prompt to the session's transcript as soon as it
       // takes it. An Enter that lands while Claude is still starting is
       // swallowed and the prompt waits unsent in its input box: at app launch,
@@ -262,16 +346,22 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
       // transcript shows the prompt was taken; on an empty input it does
       // nothing. None at all by promptTakenMs means a sign-in or trust screen
       // is waiting, so the caller's fallback answers now, not at the timeout.
-      const sentAt = Date.now();
-      promptTimer = setInterval(() => {
+      // All of it starts once the prompt is pasted, after any pictures: an
+      // Enter between two picture pastes would send them with no question.
+      setTimeout(() => {
         if (settled) return;
-        if (existsSync(transcriptFile(projectDir(opts.cwd), sessionId))) {
-          if (promptTimer) { clearInterval(promptTimer); promptTimer = null; }
-          return;
-        }
-        if (Date.now() - sentAt >= promptTakenMs) { finish({ ok: false, error: 'hidden session never took the prompt (signed out, or a screen is waiting)' }); return; }
-        ptyProc.write('\r');
-      }, ENTER_AGAIN_MS);
+        try { opts.onPromptSent?.(); } catch { /* a step never breaks the call */ }
+        const sentAt = Date.now();
+        promptTimer = setInterval(() => {
+          if (settled) return;
+          if (existsSync(transcriptFile(sessionDir(), sessionId))) {
+            if (promptTimer) { clearInterval(promptTimer); promptTimer = null; }
+            return;
+          }
+          if (Date.now() - sentAt >= promptTakenMs) { finish({ ok: false, error: 'hidden session never took the prompt (signed out, or a screen is waiting)' }); return; }
+          ptyProc.write('\r');
+        }, ENTER_AGAIN_MS);
+      }, afterImages + 140);
       // With no tools the first answer is the last one, so it is taken the
       // moment it lands in this session's transcript instead of after the
       // screen has been quiet for idleMs (which added 3.5s to every call).
@@ -309,7 +399,7 @@ export function runHiddenClaude(prompt: string, opts: HiddenClaudeOptions): Prom
 
     // Session exited cleanly before idle — try to capture the transcript anyway.
     ptyProc.onExit(() => {
-      if (settled) return;
+      if (settled) { removeIsolated(); return; }
       const text = ownAnswer();
       finish(text ? { ok: true, text } : { ok: false, error: 'no assistant response found in transcript' });
     });

@@ -132,7 +132,7 @@ export function PartLines({ parts, answers, onChange, onSend, who }: {
   );
 }
 
-const numStyle: CSSProperties = { fontSize: 11, fontWeight: 600, color: 'var(--cth-ink-3)', lineHeight: '18px', flexShrink: 0 };
+const numStyle: CSSProperties = { /* style-guard: micro */ fontSize: 11, fontWeight: 600, color: 'var(--cth-ink-3)', lineHeight: '18px', flexShrink: 0 };
 const recTag: CSSProperties = {
   display: 'inline-flex', alignItems: 'center', flexShrink: 0, height: 18, padding: '0 7px', borderRadius: 'var(--cth-r-pill)',
   background: 'var(--cth-green-soft)', color: 'var(--cth-green-text)', fontSize: 10.5, fontWeight: 600, whiteSpace: 'nowrap'

@@ -1,5 +1,6 @@
 import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Field as SharedField, Panel, requiredMark } from './fieldText';
 import {
   ENTITY_TYPES, SERVICE_AREAS,
   type CompanyAddress, type CompanyProfile, type RequiredProfileField
@@ -24,6 +25,8 @@ export interface CompanyProfileFieldsProps {
   missing?: RequiredProfileField[];
   /** Settings passes a way to jump to Memory & Knowledge; setup doesn't. */
   onOpenKnowledge?: () => void;
+  /** Settings only: the business name, first in the essentials panel. */
+  businessName?: { value: string; onChange: (v: string) => void };
 }
 
 /** The Mac's time zone, to prefill a new profile. */
@@ -55,7 +58,7 @@ function supported(kind: 'timeZone' | 'currency'): string[] {
   } catch { return []; }
 }
 
-export function CompanyProfileFields({ value, onChange, parts, needsIndustry, missing = [], onOpenKnowledge }: CompanyProfileFieldsProps) {
+export function CompanyProfileFields({ value, onChange, parts, needsIndustry, missing = [], onOpenKnowledge, businessName }: CompanyProfileFieldsProps) {
   const { t, i18n } = useTranslation();
   const timeZones = useMemo(() => supported('timeZone'), []);
   const currencies = useMemo(() => supported('currency'), []);
@@ -78,6 +81,13 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {parts.includes('essentials') && (
         <>
+          <Panel>
+          {businessName && (
+            <Field label={t('onboarding.business.nameLabel')} required>
+              <input value={businessName.value} onChange={(e) => businessName.onChange(e.target.value)}
+                aria-required className="cth-input" style={fieldStyle} />
+            </Field>
+          )}
           <div style={grid2}>
             <Field label={t('companyProfile.ceo')} required>
               <input value={text(value.ceo)} onChange={(e) => set({ ceo: orUndefined(e.target.value) })}
@@ -94,7 +104,8 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
                 placeholder={t('companyProfile.industryPlaceholder')} aria-required aria-invalid={miss('industry')} className="cth-input" style={fieldStyle} />
             </Field>
           )}
-          <Head>{t('companyProfile.addressHead')}</Head>
+          </Panel>
+          <Panel title={t('companyProfile.addressHead')}>
           <Field label={t('companyProfile.street')} required>
             <input value={text(value.address?.street)} onChange={(e) => setAddress({ street: orUndefined(e.target.value) })}
               placeholder={t('companyProfile.streetPlaceholder')} aria-required aria-invalid={miss('street')} className="cth-input" style={fieldStyle} />
@@ -115,12 +126,13 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
                 aria-required aria-invalid={miss('country')} className="cth-input" style={fieldStyle} />
             </Field>
           </div>
+          </Panel>
         </>
       )}
 
       {parts.includes('details') && (
         <>
-          <Head>{t('companyProfile.contactHead')}</Head>
+          <Panel title={t('companyProfile.contactHead')}>
           <div style={grid2}>
             <Field label={t('companyProfile.legalName')}>
               <input value={text(value.legalName)} onChange={(e) => set({ legalName: orUndefined(e.target.value) })}
@@ -151,8 +163,9 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
               style={{ ...fieldStyle, resize: 'vertical' }}
             />
           </Field>
+          </Panel>
 
-          <Head>{t('companyProfile.operateHead')}</Head>
+          <Panel title={t('companyProfile.operateHead')}>
           <div style={grid2}>
             <Field label={t('companyProfile.hours')}>
               <input value={text(value.hours)} onChange={(e) => set({ hours: orUndefined(e.target.value) })}
@@ -176,8 +189,9 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
                 placeholder={t('companyProfile.languagesPlaceholder')} className="cth-input" style={fieldStyle} />
             </Field>
           </div>
+          </Panel>
 
-          <Head>{t('companyProfile.moneyHead')}</Head>
+          <Panel title={t('companyProfile.moneyHead')}>
           <div style={grid2}>
             <Field label={t('companyProfile.currency')}>
               <select value={value.currency ?? ''} onChange={(e) => set({ currency: e.target.value || undefined })} className="cth-input" style={fieldStyle}>
@@ -193,6 +207,7 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
               </select>
             </Field>
           </div>
+          </Panel>
         </>
       )}
 
@@ -200,7 +215,7 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
         <div style={{
           borderRadius: 'var(--cth-r-md)',
           display: 'flex', flexDirection: 'column', gap: 6, padding: 10,
-          background: 'var(--cth-sky-light)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)'
+          background: 'var(--cth-sky-light)'
         }}>
           <span style={{ fontSize: 14, lineHeight: '19px', color: 'var(--cth-ink-900)' }}>{t('companyProfile.knowledgeHead')}</span>
           <span style={{ fontSize: 14, lineHeight: '19px', color: 'var(--cth-ink-700)' }}>{t('companyProfile.knowledgeBody')}</span>
@@ -220,21 +235,15 @@ export function CompanyProfileFields({ value, onChange, parts, needsIndustry, mi
   );
 }
 
+/** A field in the app's style (fieldText): its label, then the control, then
+ *  any hint; a required one says so beside its label. */
 function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: ReactNode }) {
+  const { t } = useTranslation();
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-      <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-2)' }}>{label}{required ? ' *' : ''}</span>
-      {children}
-      {hint && <span style={{ fontSize: 14, lineHeight: '20px', color: 'var(--cth-ink-3)' }}>{hint}</span>}
-    </label>
-  );
-}
-
-function Head({ children }: { children: ReactNode }) {
-  return (
-    <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink)', marginTop: 4 }}>
-      {children}
-    </div>
+    <SharedField
+      label={required ? <>{label}{' '}<span style={requiredMark}>{t('companyProfile.required')}</span></> : label}
+      note={hint}
+    >{children}</SharedField>
   );
 }
 

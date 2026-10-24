@@ -1,14 +1,15 @@
-# Don't Be Michael v0.2.2
+# Don't Be Michael v0.2.6
 
 **An AI office for your small business.** Pick your kind of business, pick your team, and Michael, your office manager, runs the floor while you run the business.
 
-## What's new in 0.2.2
+## What's new in 0.2.6
 
-- **Pulse: what your office got done and what it costs.** A new tab shows the work done, what the team learned, what was kept safe, your time, and each member's share of the cost. On a Claude plan, cost is your plan's real price split by each member's share of the work. Ways to save are applied only when you click Apply, and undone with Undo.
-- **Ask me cards you answer with a click.** Michael's choices show as rows to pick, several questions get a line each, and you never have to answer every one.
-- **Delete a team member for good** from the Danger zone in Edit agent.
-- **Every office on the floor names its department,** and the desk monitors are clear glass.
-- **A team member stuck on a prompt is restarted and carries on,** instead of being handed to you.
+- **Change a team member's job by saying what should change.** Type it in Edit agent, watch the steps and the new words as they are written, see exactly what changes, then Apply. Undo puts it back.
+- **Add a file right from a Company foundations card,** such as your brand voice guide. It is checked against the card's question first, pictures included, and nothing of it stays in Claude's history on your computer.
+- **One look for every form.** Settings, Access, the Command Center, the company profile, the schedule editor and Add a mailbox read like Edit agent.
+- Hiring asks what the new person will do, once.
+- A mailbox check that times out tries again by itself, and a stuck team member who recovers is reported to Michael.
+- The office floor carries the GAACC AI Labs mark.
 
 Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvivekkumar/dontbemichael/blob/main/docs/FEATURES.md)
 
@@ -16,23 +17,22 @@ Every feature, release by release: [docs/FEATURES.md](https://github.com/agentvi
 
 | Platform | Download |
 |---|---|
-| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.2-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.2-mac-universal.dmg) |
+| Mac (Apple Silicon and Intel) | [`Dont-Be-Michael-0.2.6-mac-universal.dmg`](https://github.com/agentvivekkumar/dontbemichael/releases/latest/download/Dont-Be-Michael-0.2.6-mac-universal.dmg) |
 
 <!-- windows -->
-**Windows 11 (x64):** [`Dont-Be-Michael-0.2.2-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.2/Dont-Be-Michael-0.2.2-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
+**Windows 11 (x64):** [`Dont-Be-Michael-0.2.6-win-x64-setup.exe`](https://github.com/agentvivekkumar/dontbemichael/releases/download/v0.2.6/Dont-Be-Michael-0.2.6-win-x64-setup.exe). ARM PCs aren't supported. This build is not yet signed with a Microsoft certificate: when Windows says **Windows protected your PC**, click **More info**, then **Run anyway**.
 <!-- /windows -->
 
 Linux will follow.
 
-[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.2.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.2.tar.gz)
+[Source code (zip)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.6.zip) · [Source code (tar.gz)](https://github.com/agentvivekkumar/dontbemichael/archive/refs/tags/v0.2.6.tar.gz)
 
 ## Installing on your Mac
 
 1. Open the downloaded `.dmg` and drag **Don't Be Michael** into your Applications folder.
-2. Open it from Applications. The first time, macOS says it could not verify the app. Click **Done**.
-3. Open **System Settings**, then **Privacy & Security**. Scroll down to the message about Don't Be Michael and click **Open Anyway**, then confirm.
+2. Open it from Applications. The first time, macOS asks if you're sure you want to open an app downloaded from the internet. Click **Open**.
 
-You only do this once. macOS asks because this early build is not yet signed with an Apple Developer ID. A signed build is on the way.
+You only do this once. The app is signed with an Apple Developer ID and notarized by Apple.
 
 You also need [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and signed in.
 

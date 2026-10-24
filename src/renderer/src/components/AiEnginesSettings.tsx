@@ -4,6 +4,7 @@ import type { HarnessConfig, AgentProvider } from '@/store/config';
 import { PixelButton } from './PixelButton';
 import { ProviderLogo } from './ProviderLogo';
 import { useStore } from '@/store/store';
+import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
 
 /**
  * AiEnginesSettings — the v0.3.1 per-provider config surface for the BYOK CLI
@@ -46,17 +47,9 @@ const inputStyle: CSSProperties = {
   color: 'var(--cth-ink-900)',
   outline: 'none'
 };
-const labelStyle: CSSProperties = {
-  fontFamily: 'var(--cth-font-display)',
-  fontSize: 10, fontWeight: 600,
-  lineHeight: '12px',
-  color: 'var(--cth-ink-700)',
-  textTransform: 'uppercase'
-};
-const headStyle: CSSProperties = {
-  fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px',
-  color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 2
-};
+/** Each part is a group on the shared soft panel (fieldText). */
+const labelStyle = fieldLabel;
+const group: CSSProperties = { ...panelStyle, gap: 10 };
 
 export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
   const { t } = useTranslation();
@@ -128,17 +121,15 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <div style={headStyle}>{t('aiEngines.providers')}</div>
-        <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: '18px' }}>
-          {t('aiEngines.providersDesc')}
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <h3 style={groupName}>{t('aiEngines.providers')}</h3>
+        <div style={hint}>{t('aiEngines.providersDesc')}</div>
       </div>
 
       {/* Backend API keys (write-only) */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={headStyle}>{t('aiEngines.apiKeys')}</div>
+      <div style={group}>
+        <h3 style={groupName}>{t('aiEngines.apiKeys')}</h3>
         {BACKENDS.map((b) => (
           <div key={b.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <label style={labelStyle}>
@@ -164,8 +155,8 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
       </div>
 
       {/* Per-CLI local endpoint + default model */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={headStyle}>{t('aiEngines.localEndpoint')}</div>
+      <div style={{ ...group, gap: 12 }}>
+        <h3 style={groupName}>{t('aiEngines.localEndpoint')}</h3>
         {CLIS.map((c) => (
           <div key={c.id} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <label style={{ ...labelStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -190,11 +181,7 @@ export function AiEnginesSettings({ config }: { config: HarnessConfig }) {
       </div>
 
       {/* Unsandboxed-in-auto caveat (Pam guardrail #6) */}
-      <div style={{
-        borderRadius: 'var(--cth-r-md)',
-        fontSize: 12, color: 'var(--cth-ink-700)', lineHeight: '17px',
-        padding: 8, boxShadow: 'inset 0 0 0 1px var(--cth-line-2)', background: 'var(--cth-paper-100)'
-      }}>
+      <div style={hint}>
         {t('aiEngines.autoModeCaveat')}
       </div>
     </div>

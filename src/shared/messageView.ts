@@ -5,6 +5,8 @@
  * instead of filling the tab. Pure: no React, no fs.
  */
 
+import { CLOSING_ACK_RE, CLOSING_COMPLETE_RE } from './closingTime';
+
 export interface HistoryItem {
   id: string;
   from: string;
@@ -35,12 +37,24 @@ export interface MessageView<M extends HistoryItem = HistoryItem> {
   notices: { scheduled: number; closing: number; other: number; messages: M[] };
 }
 
-const SYSTEM_SENDERS = new Set(['scheduler', 'heartbeat', 'system', 'breaker']);
-const CLOSING = /closing[\s_-]*time/i;
+const SYSTEM_SENDERS = new Set(['scheduler', 'heartbeat', 'system', 'breaker', 'foundations']);
+/** A closing time note by its subject: "Closing time" alone, followed by a
+ *  colon or dash ("Closing time: reminder", Michael's "Closing time — save
+ *  work"), or "Closing time cancelled", as src/main/closingTime.ts and Michael
+ *  write them. A subject that only mentions closing time ("What is the closing
+ *  time for this deal?") is a conversation (contributed in #479). */
+const CLOSING_NOTE = /^closing time(?:$|\s*[:—–-]\s|\s+cancelled$)/i;
+
+/** Closing time traffic: a note above, or an acknowledgement or completion in
+ *  any spelling closing time itself accepts, so what it counts is filed here. */
+function isClosingNotice(m: Pick<HistoryItem, 'subject'>): boolean {
+  const subject = (m.subject ?? '').trim();
+  return CLOSING_NOTE.test(subject) || CLOSING_ACK_RE.test(subject) || CLOSING_COMPLETE_RE.test(subject);
+}
 
 /** Traffic that isn't a handoff: the app's own notes and closing time. */
 export function isRoutine(m: Pick<HistoryItem, 'from' | 'subject'>): boolean {
-  return SYSTEM_SENDERS.has(m.from) || CLOSING.test(m.subject ?? '');
+  return SYSTEM_SENDERS.has(m.from) || isClosingNotice(m);
 }
 
 /** Local YYYY-MM-DD of an ISO time, optionally shifted by calendar days. */
@@ -61,8 +75,9 @@ export function messageView<M extends HistoryItem>(msgs: M[]): MessageView<M> {
   const notices: MessageView<M>['notices'] = { scheduled: 0, closing: 0, other: 0, messages: [] };
   const by = new Map<string, M[]>();
   for (const m of msgs) {
+    const closing = isClosingNotice(m);
     if (isRoutine(m)) {
-      if (CLOSING.test(m.subject ?? '')) notices.closing++;
+      if (closing) notices.closing++;
       else if (m.from === 'scheduler' || m.from === 'heartbeat') notices.scheduled++;
       else notices.other++;
       notices.messages.push(m);

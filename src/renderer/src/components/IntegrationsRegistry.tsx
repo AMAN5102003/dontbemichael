@@ -1,7 +1,8 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
-import { authTypeNeedsSecret as needsSecret } from '@shared/integrations';
+import { authTypeNeedsSecret as needsSecret, INTEGRATION_ID_TAKEN } from '@shared/integrations';
 import { PixelButton } from './PixelButton';
+import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
 import {
   integrationsClient,
   slugify,
@@ -60,10 +61,10 @@ function glyphFor(kind: string, label: string): { mono: string; bg: string } {
   return GLYPH[kind] ?? { mono: (label.replace(/[^A-Za-z0-9]/g, '').slice(0, 2) || '··'), bg: '#6B5878' };
 }
 
-const dispLabel: CSSProperties = { fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px', color: 'var(--cth-ink-500)', textTransform: 'uppercase' };
-const fieldLabel: CSSProperties = { ...dispLabel, color: 'var(--cth-ink-700)' };
-const subText: CSSProperties = { fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' };
-const hint: CSSProperties = { fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)' };
+/** The three views (gallery, form, list) are one group on the shared soft
+ *  panel, with the app's group name, field labels and hints (fieldText). */
+const groupBox: CSSProperties = { ...panelStyle, gap: 12 };
+const subText = hint;
 const inputStyle: CSSProperties = { width: '100%', padding: '6px 8px', background: 'var(--cth-paper-100)', border: 'none', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-900)' };
 const linkBtn: CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', padding: 0, alignSelf: 'flex-start', fontSize: 12, color: 'var(--cth-ink-500)' };
 
@@ -79,9 +80,9 @@ function usable(r: { enabled: boolean; authType: IntegrationAuthType; hasSecret:
   return r.enabled && (!needsSecret(r.authType) || r.hasSecret);
 }
 
-function draftFromTemplate(t: IntegrationTemplate, now: number): Draft {
+function draftFromTemplate(t: IntegrationTemplate, now: number, takenIds: string[]): Draft {
   return {
-    isNew: true, id: slugify(t.idSuggestion || t.label), label: t.label, kind: t.kind,
+    isNew: true, id: slugify(t.idSuggestion || t.label, takenIds), label: t.label, kind: t.kind,
     baseUrl: t.baseUrl, authType: t.authType, authHeader: t.authHeader ?? '',
     enabled: true, hasSecret: false, createdAt: now, secret: ''
   };
@@ -114,6 +115,9 @@ export function IntegrationsRegistry() {
 
   const flash = (msg: string) => { setNote(msg); setTimeout(() => setNote(''), 2400); };
   const refresh = async () => setRecords(await integrationsClient.list());
+  // A new integration never takes an id in use: saving under one replaces
+  // that integration and its secret (upsertRecord in src/main/integrations.ts).
+  const takenIds = records.map((r) => r.id);
 
   useEffect(() => {
     let alive = true;
@@ -130,7 +134,7 @@ export function IntegrationsRegistry() {
   const continueFromGallery = () => {
     const t = templates.find((x) => x.idSuggestion === picked);
     if (!t) return;
-    setDraft(draftFromTemplate(t, Date.now())); setReplacing(false); setShowSecret(false); setCfgTest(null); setErr(''); setView('configure');
+    setDraft(draftFromTemplate(t, Date.now(), takenIds)); setReplacing(false); setShowSecret(false); setCfgTest(null); setErr(''); setView('configure');
   };
   const startEdit = (r: IntegrationRecordView) => { setDraft(draftFromRecord(r)); setReplacing(false); setShowSecret(false); setCfgTest(null); setErr(''); setView('configure'); };
 
@@ -171,8 +175,13 @@ export function IntegrationsRegistry() {
     setBusy(true); setErr('');
     try {
       const secret = draft.secret.trim().length > 0 ? draft.secret : undefined;
-      const res = await integrationsClient.save(recordFromDraft(draft, Date.now()), secret);
-      if (!res.ok) { setErr(res.error || tr('integrations.couldNotSave')); return; }
+      const res = await integrationsClient.save(recordFromDraft(draft, Date.now()), secret, { isNew: draft.isNew });
+      if (!res.ok) {
+        // Taken since this form loaded (another window, or a list not loaded yet):
+        // reload it, so a changed label picks a free id.
+        if (res.error === INTEGRATION_ID_TAKEN) { await refresh(); setErr(tr('integrations.errIdTaken')); return; }
+        setErr(res.error || tr('integrations.couldNotSave')); return;
+      }
       await refresh();
       flash(draft.isNew ? tr('integrations.added') : tr('integrations.updated'));
       goList();
@@ -208,10 +217,10 @@ export function IntegrationsRegistry() {
   // ───────────────────────── GALLERY ─────────────────────────
   if (view === 'gallery') {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={groupBox}>
         <button type="button" onClick={goList} style={linkBtn}>{tr('integrations.backToList')}</button>
         <div>
-          <div style={{ ...dispLabel, marginBottom: 4 }}>{tr('integrations.pickTemplate')}</div>
+          <h3 style={{ ...groupName, marginBottom: 4 }}>{tr('integrations.pickTemplate')}</h3>
           <span style={subText}>{tr('integrations.galleryDesc')}</span>
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
@@ -250,7 +259,7 @@ export function IntegrationsRegistry() {
     const showSavedPill = !draft.isNew && draft.hasSecret && !replacing;
     const isUsable = usable(draft);
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ ...groupBox, gap: 14 }}>
         <button type="button" onClick={draft.isNew ? startAdd : goList} style={linkBtn}>{draft.isNew ? tr('integrations.backToTemplates') : tr('integrations.backToList')}</button>
 
         <div style={{ borderRadius: 'var(--cth-r-md)', display: 'flex', alignItems: 'center', gap: 12, padding: 12, background: 'var(--cth-cream-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
@@ -264,7 +273,7 @@ export function IntegrationsRegistry() {
         {/* Label */}
         <label style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={fieldLabel}>{tr('integrations.label')}</span>
-          <input value={draft.label} onChange={(e) => patch({ label: e.target.value, ...(draft.isNew ? { id: slugify(e.target.value) } : {}) })} placeholder={`e.g. ${tpl?.label ?? 'My API'} (prod)`} style={inputStyle} />
+          <input value={draft.label} onChange={(e) => patch({ label: e.target.value, ...(draft.isNew ? { id: slugify(e.target.value, takenIds) } : {}) })} placeholder={`e.g. ${tpl?.label ?? 'My API'} (prod)`} style={inputStyle} />
           <span style={hint}>{tr('integrations.labelHint')}: <code style={{ fontFamily: 'var(--cth-font-mono)' }}>{slugify(draft.id || draft.label) || '·'}</code>{draft.isNew ? '' : ` (${tr('integrations.fixed')})`}</span>
         </label>
 
@@ -355,17 +364,17 @@ export function IntegrationsRegistry() {
   // ───────────────────────── LIST (default) ─────────────────────────
   const usableCount = records.filter(usable).length;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={groupBox}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={dispLabel}>{tr('integrations.title')}</div>
+          <h3 style={groupName}>{tr('integrations.title')}</h3>
           <span style={{ ...subText, maxWidth: 440 }}>{tr('integrations.titleDesc')}</span>
         </div>
         {records.length > 0 && <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={busy || templates.length === 0}>+ {tr('integrations.addIntegration')}</PixelButton>}
       </div>
 
       {records.length === 0 ? (
-        <div style={{ borderRadius: 'var(--cth-r-md)', padding: 24, textAlign: 'center', background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
+        <div style={{ borderRadius: 'var(--cth-r-lg)', padding: 24, textAlign: 'center', background: 'var(--cth-card)' }}>
           <p style={{ margin: '0 0 12px', fontSize: 12, lineHeight: '18px', color: 'var(--cth-ink-500)' }}>{tr('integrations.empty')}</p>
           <PixelButton variant="primary" size="sm" onClick={startAdd} disabled={templates.length === 0}>+ {tr('integrations.addFirst')}</PixelButton>
         </div>
@@ -383,7 +392,7 @@ export function IntegrationsRegistry() {
                   : { dot: '●', color: 'var(--cth-green-text)', text: tr('integrations.enabled') };
               const rt = rowTest[r.id];
               return (
-                <div key={r.id} style={{ borderRadius: 'var(--cth-r-md)', display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-line-2)' }}>
+                <div key={r.id} style={{ borderRadius: 'var(--cth-r-lg)', display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-card)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <Glyph mono={g.mono} bg={g.bg} />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>

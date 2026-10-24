@@ -17,8 +17,8 @@ test('Connector Center checks encrypted secret availability before saving metada
   assert.ok(secretHandler, 'integration secret handler exists');
   assert.ok(secretHandler[0].indexOf('!integrations.canStoreSecrets()') < secretHandler[0].indexOf('integrations.setSecret('), 'main rejects unavailable encryption before writing');
 
-  const save = client.match(/save: async \(record, secret\) => \{[\s\S]*?\n  \},\n  remove:/);
+  const save = client.match(/save: async \(record, secret(?:, opts)?\) => \{[\s\S]*?\n  \},\n  remove:/);
   assert.ok(save, 'integration client save exists');
-  assert.ok(save[0].indexOf('b.integrationsCanStoreSecrets()') < save[0].indexOf('b.integrationsUpsert(record)'), 'secret availability is checked before metadata upsert');
+  assert.ok(save[0].indexOf('b.integrationsCanStoreSecrets()') < save[0].indexOf('b.integrationsUpsert(record'), 'secret availability is checked before metadata upsert');
   assert.match(save[0], /if \(secret && secret\.length > 0\)/, 'public and blank-secret saves stay available without encrypted storage');
 });

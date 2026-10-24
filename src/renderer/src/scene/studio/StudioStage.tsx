@@ -11,30 +11,38 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSPr
 import { useTranslation } from 'react-i18next';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
 import { useStore, actionText, liveActivity, ACTION_CLOCKING_IN, ROSTER_BOOT_HOME, type Agent } from '@/store/store';
+import { useClockingIn } from '@/hooks/useClockingIn';
 import type { HarnessConfig } from '@/store/config';
 import { departments, type DepartmentName } from '@/design/tokens';
 import { useAppTheme } from '@/design/theme';
 import { DeptIcon, PersonAvatar } from '@/scene/office/props';
 import { PixelBadge, type StatusKind } from '@/components/PixelBadge';
+import { NotReportingTag, useSilentEpisode } from '@/components/SilentEngine';
 import { useHasTerminalDraft } from '@/components/terminalPool';
 import { useOfficeBreak } from '@/components/OfficeBreakNotice';
 import type { OfficeBreakView } from '@shared/officeBreak';
 import { useMissions } from '@/components/triggers/ScheduleList';
-import { openQuestions, parseTasks } from '@/components/TasksKanban';
+import { parseTasks } from '@/components/TasksKanban';
 import { missionsFor, nextRunAt } from '@shared/missions';
 import { createBanter, createIdleLines } from '@/scene/office/cafeteriaLines';
 import { browserStorage, markWelcomed, welcomeArmed } from '@/scene/office/peteWelcome';
-import { getNeedsYouFeed, newestAskFor, useNeedsYou, useNeedsYouCount } from '@/shell/useNeedsYou';
+import { getNeedsYouFeed, newestAskFor, shownQuestions, useNeedsYou, useNeedsYouCount } from '@/shell/useNeedsYou';
 import { chatCandidates, stillIn } from '@/shell/closingFloor';
 
 /** Nobody has gone home (not closing time). */
 const NOBODY: ReadonlySet<string> = new Set();
 import { P, STAGE_H, STAGE_W, type Pt } from './iso';
+import { PROGRAM_MARK, PROGRAM_TITLE, PROGRAM_URL } from '@shared/appName';
+
 import { family, sceneTokens, type Family } from './theme';
 import { HUB, HUB_CARD, POST_GY, cardRect, departmentOf, planStudio, postGx, roleOf, type PodPlan } from './layout';
 import { FLIGHT_MS, bendFor, useStudioLife } from './life';
 import { SHOW_MAILBOXES } from '@shared/buildFeatures';
 import { DECOR, Decor, Flow, Hub, MailPost, Platform, Pod, PodGlow, StudioDefs, plateAt, plateWidth, type DeskState } from './StudioArt';
+
+/** The program mark's letter size on the stage: small enough to sit inside the
+ *  platform's side band, between its top edge and the light line. */
+const MARK_SIZE = 7;
 
 
 /** The agent fields the office draws. Changes to anything else (the terminal
@@ -54,7 +62,7 @@ const ROLL_TOP = 14;
  *  crosses the spot where the chip was. */
 const ROLL_PAD = 24;
 
-type Board = { todo: number; doing: number; blocked: number; done: number };
+type Board = { todo: number; doing: number; waiting: number; blocked: number; done: number };
 
 /* ── Data ─────────────────────────────────────────────────────────────────── */
 
@@ -63,23 +71,24 @@ interface TaskSnapshot { board: Board; doingBy: Record<string, number>; forYouBy
 function useTaskSnapshot(godId: string): TaskSnapshot {
   // The shared task read (shell/useNeedsYou.ts, eng R4): the "for you" chips
   // always match the pill and the board.
-  const { tasks } = useNeedsYou();
+  const { tasks, foundations } = useNeedsYou();
   return useMemo(() => {
-    const board: Board = { todo: 0, doing: 0, blocked: 0, done: 0 };
+    const board: Board = { todo: 0, doing: 0, waiting: 0, blocked: 0, done: 0 };
     const doingBy: Record<string, number> = {};
     const forYouBy: Record<string, number> = {};
     let kept = 0;
     const done: Record<string, string | undefined> = {};
     for (const t of tasks) {
-      // Michael's board has four columns; a Waiting card is nobody's work right now.
-      if (t.status !== 'waiting') board[t.status]++;
+      // Michael's board has the Tasks view's five columns (design review 2026-10-18).
+      board[t.status]++;
       if (t.status === 'done') done[t.id] = t.assignee;
       if (t.status === 'doing' && t.assignee) doingBy[t.assignee] = (doingBy[t.assignee] ?? 0) + 1;
-      if (t.assignee) { const asks = openQuestions(t).length; if (asks) forYouBy[t.assignee] = (forYouBy[t.assignee] ?? 0) + asks; }
+      // Only asks Needs you shows: a foundation question answered another way or put off is left out.
+      if (t.assignee) { const asks = shownQuestions(t, foundations).length; if (asks) forYouBy[t.assignee] = (forYouBy[t.assignee] ?? 0) + asks; }
       if (t.status !== 'done' && (t.assignee === godId || t.assignee === 'god')) kept++;
     }
     return { board, doingBy, forYouBy, kept, done };
-  }, [tasks, godId]);
+  }, [tasks, foundations, godId]);
 }
 
 /** Jobs Michael handed out today: his `request` messages in the hive log. */
@@ -464,6 +473,30 @@ export const StudioStage = memo(function StudioStage({ config: initialConfig, bl
           {life.svg}
         </svg>
 
+        {/* The program the app is part of (owner, 2026-10-22,
+            docs/designs/floor-business-name.md): a link lettered small on the
+            platform's right side from near its front corner, along the side's
+            2:1 slope, set on its baseline in SVG so no letter crosses the
+            side's top edge. It sits over the scene, so a pod hanging across the
+            side never cuts it, and under the day's light. target _blank goes
+            through the window open handler, so the site opens in the browser. */}
+        <svg viewBox={`0 0 ${STAGE_W} ${STAGE_H}`} width={STAGE_W * k} height={STAGE_H * k}
+          style={{ position: 'absolute', left: ox, top: oy, overflow: 'visible', pointerEvents: 'none' }}>
+          {(() => {
+            const [x, y] = P(5, 4.6, -13);
+            return (
+              <a href={PROGRAM_URL} target="_blank" rel="noreferrer" className="cth-st-mark"
+                style={{ pointerEvents: 'auto', ['--mark-op' as string]: T.markOp }}>
+                <title>{PROGRAM_TITLE}</title>
+                <g transform={`matrix(1 -0.5 0 1 ${x} ${y})`}>
+                  <text direction="ltr" fontFamily="Sora, sans-serif" fontWeight={600} fontSize={MARK_SIZE} letterSpacing={1}
+                    fill={T.markFill}>{PROGRAM_MARK}</text>
+                </g>
+              </a>
+            );
+          })()}
+        </svg>
+
         {/* The light of the day (DESIGN.md 8.12): morning sun from the left, a
             golden evening, a darker night where working desks keep their lamps on. */}
         <DayLight hour={hour} dark={dark} />
@@ -651,7 +684,7 @@ function PodCard({ style, dept, members, c, snap, selected, onSelect, missions, 
           // Opens the board at this pod's newest ask, focus in its reply (D11).
           <button
             className="cth-for-you"
-            onClick={() => useStore.getState().openNeedsYou({ taskId: newestAskFor(members.map((a) => a.id), getNeedsYouFeed().tasks) })}
+            onClick={() => useStore.getState().openNeedsYou({ taskId: newestAskFor(members.map((a) => a.id), getNeedsYouFeed().tasks, getNeedsYouFeed().foundations) })}
             style={{ ...forYouBadge, background: undefined, border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}
           ><i style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--cth-coral-base)', display: 'block' }} />{t('studio.forYou', { count: forYou })}</button>
         )}
@@ -677,6 +710,8 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
   const typing = useHasTerminalDraft(a.ptyId);
   const onBreak = useOfficeBreak();
   const status: StatusKind = typing ? 'typing' : breakStatus(a, onBreak);
+  // Its engine isn't reporting: the tag replaces the status (issue #326, SD14).
+  const silent = useSilentEpisode(a.id);
   const next = (() => {
     const now = Date.now();
     const times = missionsFor(missions, a.id, godId).filter((m) => m.enabled).map((m) => ({ at: nextRunAt(m, now), label: m.label })).filter((x): x is { at: number; label: string } => x.at !== null);
@@ -707,7 +742,9 @@ function MemberRow({ a, c, divider, onSelect, missions, godId }: {
           <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', letterSpacing: '-0.02em', color: a.status === 'idle' ? 'var(--cth-ink-3)' : 'var(--cth-ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInlineEnd: 78 }}>{a.name}</b>
           <i style={{ fontStyle: 'normal', fontSize: 10, lineHeight: '13px', color: 'var(--cth-ink-3)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleOf(a)}</i>
         </span>
-        <PixelBadge status={status} style={{ position: 'absolute', insetInlineEnd: 0, top: 0, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+        {silent
+          ? <NotReportingTag style={{ position: 'absolute', insetInlineEnd: 0, top: 0 }} />
+          : <PixelBadge status={status} style={{ position: 'absolute', insetInlineEnd: 0, top: 0, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />}
       </div>
       <div style={{ marginTop: 5, marginBottom: 8, fontSize: 10.5, lineHeight: '14px', color: a.status === 'idle' ? 'var(--cth-ink-3)' : 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
         title={caption}>{caption || t('studio.nothingNow')}</div>
@@ -824,6 +861,7 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
 }) {
   const { t } = useTranslation();
   const onBreak = useOfficeBreak();
+  const godSilent = useSilentEpisode(god.id);
   const ctx = god.contextTokens !== undefined && god.contextLimit ? Math.round((god.contextTokens / god.contextLimit) * 100) : null;
   const stat = (n: number, label: string, coral = false) => (
     <div style={{ padding: '6px 0 7px', textAlign: 'center' }}>
@@ -852,7 +890,9 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
             <b style={{ fontSize: 12.5, fontWeight: 600, lineHeight: '15px', color: 'var(--cth-ink)', paddingInlineEnd: 76 }}>{god.name}</b>
             <i style={{ fontStyle: 'normal', fontSize: 10, color: 'var(--cth-ink-3)', whiteSpace: 'nowrap' }}>{t('studio.officeManager')}</i>
           </span>
-          <PixelBadge status={breakStatus(god, onBreak)} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />
+          {godSilent
+            ? <NotReportingTag style={{ position: 'absolute', insetInlineEnd: 11, top: 9 }} />
+            : <PixelBadge status={breakStatus(god, onBreak)} style={{ position: 'absolute', insetInlineEnd: 11, top: 9, fontSize: 10, lineHeight: '13px', padding: '1px 7px' }} />}
         </div>
         <div style={{ marginTop: 6, fontSize: 10.5, lineHeight: '14px', color: 'var(--cth-ink-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {god.action?.trim() ? sentence(actionText(god.action.trim(), t)) : t('studio.runningTheOffice')}
@@ -864,11 +904,12 @@ function HubCard({ style, god, selected, onSelect, delegated, toYou, kept, board
         {stat(kept, t('studio.kept'))}
       </div>
       <button onClick={() => useStore.getState().setFloorView('tasks')} aria-label={t('floorView.tasks')} style={{
-        display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', width: '100%', padding: '6px 4px 7px', border: 'none', borderTop: '1px solid var(--cth-line)',
+        display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', width: '100%', padding: '6px 4px 7px', border: 'none', borderTop: '1px solid var(--cth-line)',
         background: 'transparent', cursor: 'pointer', fontFamily: 'var(--cth-font-ui)'
       }}>
         {col(board.todo, t('studio.todo'), 'var(--cth-ink-4)')}
         {col(board.doing, t('studio.doingCol'), 'var(--cth-blue)')}
+        {col(board.waiting, t('kanban.colWaiting'), 'var(--cth-amber)')}
         {col(board.blocked, t('studio.blocked'), 'var(--cth-coral-base)')}
         {col(board.done, t('studio.done'), 'var(--cth-green)')}
       </button>
@@ -984,27 +1025,6 @@ function useKickoff(pods: PodPlan<Agent>[], paused: boolean): Record<string, num
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sig, paused]);
   return kick;
-}
-
-/** Who is still clocking in: their action is the clocking in marker, for at
- *  most a minute each, so a quiet engine never leaves a desk dark. */
-function useClockingIn(agents: Agent[]): Set<string> {
-  const since = useRef(new Map<string, number>());
-  const [, tick] = useState(0);
-  const now = Date.now();
-  const out = new Set<string>();
-  for (const a of agents) {
-    if (a.action !== ACTION_CLOCKING_IN) { since.current.delete(a.id); continue; }
-    if (!since.current.has(a.id)) since.current.set(a.id, now);
-    if (now - (since.current.get(a.id) ?? now) < 60_000) out.add(a.id);
-  }
-  const waiting = out.size > 0;
-  useEffect(() => {
-    if (!waiting) return;
-    const id = window.setInterval(() => tick((n) => n + 1), 5000);
-    return () => window.clearInterval(id);
-  }, [waiting]);
-  return out;
 }
 
 /* ── Closing time and daylight (DESIGN.md 8.12) ───────────────────────────── */

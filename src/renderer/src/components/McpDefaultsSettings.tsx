@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import type { HarnessConfig } from '@/store/config';
 import { MCP_CATALOG, type McpTier } from '@shared/mcpCatalog';
 import { SHOW_READONLY_SERVERS } from '@shared/buildFeatures';
+import { fieldLabel, groupName, hint, panelStyle } from './fieldText';
 
 export interface McpDefaultsSettingsProps {
   config: HarnessConfig;
@@ -20,14 +21,6 @@ const TIER_NOTE_KEY: Record<McpTier, string> = {
   'safe-readonly': 'mcpDefaults.tiers.safeReadonlyNote',
   'write': 'mcpDefaults.tiers.writeNote',
   'secret': 'mcpDefaults.tiers.secretNote'
-};
-
-const labelStyle: React.CSSProperties = {
-  fontFamily: 'var(--cth-font-display)',
-  fontSize: 10, fontWeight: 600,
-  lineHeight: '12px',
-  color: 'var(--cth-ink-500)',
-  textTransform: 'uppercase'
 };
 
 export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
@@ -57,12 +50,10 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
   const byTier = (tier: McpTier) => MCP_CATALOG.filter((e) => e.tier === tier && e.id !== 'email-calendar');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <div style={{ ...labelStyle, marginBottom: 6 }}>{t('mcpDefaults.title')}</div>
-        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-          {t('mcpDefaults.desc')}
-        </span>
+    <div style={{ ...panelStyle, gap: 16 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <h3 style={groupName}>{t('mcpDefaults.title')}</h3>
+        <span style={hint}>{t('mcpDefaults.desc')}</span>
       </div>
 
       {TIER_ORDER.map((tier) => {
@@ -72,14 +63,10 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
         return (
           <div key={tier} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{
-                fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px',
-                color: isConsent ? 'var(--cth-coral-text)' : 'var(--cth-ink-500)',
-                textTransform: 'uppercase'
-              }}>
+              <span style={{ ...fieldLabel, color: isConsent ? 'var(--cth-coral-text)' : fieldLabel.color }}>
                 {t(TIER_LABEL_KEY[tier])}
               </span>
-              <span style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)' }}>
+              <span style={hint}>
                 {t(TIER_NOTE_KEY[tier])}
               </span>
             </div>

@@ -25,7 +25,7 @@ const PROVIDER_LABEL: Record<LocalSkill['provider'], string> = {
 
 function Chip({ text, tone = 'quiet' }: { text: string; tone?: 'quiet' | 'accent' }) {
   return (
-    <span style={{
+    <span style={{ /* style-guard: micro */ 
       borderRadius: 'var(--cth-r-md)',
       fontSize: 10, fontFamily: 'var(--cth-font-display)', letterSpacing: 0.4,
       padding: '2px 6px', flexShrink: 0, textTransform: 'uppercase',

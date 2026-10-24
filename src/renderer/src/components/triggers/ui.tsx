@@ -1,6 +1,7 @@
 import { useId, useState, type CSSProperties, type ReactNode, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRtl } from '@/i18n/useDirection';
+import { fieldLabel, groupName, hint, panelStyle } from '../fieldText';
 import { TRIGGER_MODES, type TriggerMode } from '@shared/triggers';
 import { MAX_INTERVAL_MS } from '@shared/missions';
 import {
@@ -86,9 +87,11 @@ export function Callout({ children, tone = 'warn' }: { children: ReactNode; tone
 
 /** An on/off switch. `role="switch"` + `aria-checked` so a screen reader hears
  *  "Run Triage the inbox, on" rather than a bare button (design 12A); `label`
- *  names what it switches. */
-export function Toggle({ on, onClick, onLabel, offLabel, label, disabled }: {
-  on: boolean; onClick: () => void; onLabel?: string; offLabel?: string; label?: string; disabled?: boolean;
+ *  names what it switches. `disabled` means busy. `unavailable` means it cannot
+ *  be used yet: it keeps the owner's position, greyed, stays focusable and
+ *  speaks `reason` (Pulse Compare, design D4, 2026-10-16). */
+export function Toggle({ on, onClick, onLabel, offLabel, label, disabled, unavailable, reason }: {
+  on: boolean; onClick: () => void; onLabel?: string; offLabel?: string; label?: string; disabled?: boolean; unavailable?: boolean; reason?: string;
 }) {
   const { t } = useTranslation();
   return (
@@ -98,12 +101,14 @@ export function Toggle({ on, onClick, onLabel, offLabel, label, disabled }: {
       aria-checked={on}
       aria-label={label}
       aria-busy={disabled || undefined}
+      aria-disabled={unavailable || undefined}
+      aria-description={unavailable ? reason : undefined}
       disabled={disabled}
-      onClick={onClick}
+      onClick={unavailable ? undefined : onClick}
       style={{
         // v2 switch (branding/DESIGN.md 7.12): the word, then a pill track.
         display: 'inline-flex', alignItems: 'center', gap: 8, padding: 0, border: 'none', background: 'transparent',
-        cursor: disabled ? 'progress' : 'pointer', flexShrink: 0, opacity: disabled ? 0.6 : 1,
+        cursor: disabled ? 'progress' : unavailable ? 'default' : 'pointer', flexShrink: 0, opacity: disabled ? 0.6 : unavailable ? 0.5 : 1,
         fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, lineHeight: '18px',
         color: on ? 'var(--cth-green-text)' : 'var(--cth-ink-3)'
       }}
@@ -166,14 +171,12 @@ export function Select({ value, onChange, children, style, label }: {
 }
 
 /** Label above a control. Stacked, never side-by-side — the sidebar is too
- *  narrow for a label column that does not truncate the thing it labels. */
+ *  narrow for a label column that does not truncate the thing it labels. The
+ *  app's field label (fieldText), not small grey capitals. */
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div style={{ marginTop: 8 }}>
-      <div style={{
-        fontFamily: 'var(--cth-font-ui)', fontSize: 10, fontWeight: 600, lineHeight: '13px', textTransform: 'uppercase',
-        letterSpacing: '0.05em', color: 'var(--cth-ink-3)', marginBottom: 5
-      }}>{label}</div>
+    <div style={{ marginTop: 10 }}>
+      <div style={{ ...fieldLabel, marginBottom: 5 }}>{label}</div>
       {children}
     </div>
   );
@@ -226,9 +229,10 @@ export function TriggerCard({ title, blurb, summary, action, defaultOpen = false
   const open = openProp ?? openState;
   const bodyId = useId();
   return (
-    // v2 row group (branding/DESIGN.md 7.12): a white card, the title and one
-    // quiet line of what it is, the section's own switch on the right.
-    <div style={{ marginBottom: 10, background: 'var(--cth-card)', borderRadius: 'var(--cth-r-xl)', boxShadow: 'inset 0 0 0 1px var(--cth-line)', overflow: 'hidden' }}>
+    // A group on the shared soft panel (app-style-rollout.md AS2 to AS4): its
+    // name and one quiet line of what it is, the section's own switch on the
+    // right, and the fold kept.
+    <div style={{ marginBottom: 10, background: panelStyle.background, borderRadius: panelStyle.borderRadius, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'flex-start' }}>
       <button
         type="button"
@@ -237,24 +241,19 @@ export function TriggerCard({ title, blurb, summary, action, defaultOpen = false
         onClick={() => { const next = !open; if (openProp === undefined) setOpenState(next); onToggle?.(next); }}
         style={{
           flex: 1, minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 6, textAlign: 'start',
-          padding: '11px 12px', border: 'none', cursor: 'pointer', background: 'transparent'
+          padding: '14px 16px', border: 'none', cursor: 'pointer', background: 'transparent'
         }}
       >
         <Disclosure open={open} />
         <span style={{ flex: 1, minWidth: 0 }}>
-          <span style={{
-            display: 'block', fontFamily: 'var(--cth-font-ui)', fontSize: 13, fontWeight: 600, lineHeight: '18px',
-            color: 'var(--cth-ink)'
-          }}>{title}</span>
-          <span style={{ display: 'block', fontFamily: 'var(--cth-font-ui)', fontSize: 11.5, lineHeight: '16px', color: 'var(--cth-ink-3)', marginTop: 2 }}>
-            {blurb}
-          </span>
+          <span style={{ ...groupName, display: 'block' }}>{title}</span>
+          <span style={{ ...hint, display: 'block', marginTop: 2 }}>{blurb}</span>
         </span>
         {summary !== undefined && action === undefined && <Chip>{summary}</Chip>}
       </button>
-      {action !== undefined && <div style={{ flexShrink: 0, paddingBlockStart: 11, paddingInlineEnd: 12 }}>{action}</div>}
+      {action !== undefined && <div style={{ flexShrink: 0, paddingBlockStart: 14, paddingInlineEnd: 16 }}>{action}</div>}
       </div>
-      <div id={bodyId} style={{ display: open ? 'block' : 'none', padding: '10px 12px 12px', borderTop: '1px solid var(--cth-line)' }}>{children}</div>
+      <div id={bodyId} style={{ display: open ? 'block' : 'none', padding: '0 16px 14px' }}>{children}</div>
     </div>
   );
 }

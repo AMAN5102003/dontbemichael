@@ -4,6 +4,7 @@ import type { TFunction } from 'i18next';
 import { CommitGraph } from './git/CommitGraph';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
+import { fieldLabel, groupName } from './fieldText';
 
 interface GitCommit {
   sha: string;
@@ -208,14 +209,7 @@ export function GitTab({ cwd }: GitTabProps) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 4 }}>
-      <div style={{
-        fontFamily: 'var(--cth-font-display)', fontSize: 10, fontWeight: 600, lineHeight: '12px',
-        textTransform: 'uppercase',
-        color: 'var(--cth-ink-700)',
-        padding: '8px 10px 4px',
-        background: 'var(--cth-cream-50)',
-        borderBottom: '1px solid var(--cth-ink-100)'
-      }}>{title}</div>
+      <h3 style={{ ...groupName, padding: '10px 10px 4px' }}>{title}</h3>
       {children}
     </div>
   );
@@ -229,10 +223,7 @@ function StatusGroup({ label, entries }: {
   if (entries.length === 0) return null;
   return (
     <div style={{ padding: '4px 0' }}>
-      <div style={{
-        padding: '0 12px', fontSize: 11, color: 'var(--cth-ink-500)',
-        textTransform: 'uppercase', letterSpacing: 0
-      }}>{label}</div>
+      <div style={{ ...fieldLabel, padding: '0 12px' }}>{label}</div>
       {entries.map(e => (
         <div key={`${label}-${e.path}-${e.code}`} style={{
           display: 'flex', alignItems: 'center', gap: 6,

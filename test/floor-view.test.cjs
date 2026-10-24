@@ -32,7 +32,7 @@ test('the view tabs sit in the top bar, and the board covers the office above th
   const board = app.indexOf("{floorView !== 'office' && (");
   const bottom = app.indexOf('<BottomBar />');
   assert.ok(office > 0 && board > office && bottom > board, 'office, then the board over it, then the bottom bar over both');
-  assert.match(app.slice(board, board + 700), /position: 'absolute', inset: 0, zIndex: 50,[\s\S]*paddingBottom: floorView === 'pulse' \? 0 : 96,[\s\S]*\{floorView === 'tasks' && <TasksKanban \/>\}/);
+  assert.match(app.slice(board, board + 700), /position: 'absolute', inset: 0, zIndex: 50,[\s\S]*paddingBottom: barHidden \? 0 : 96,[\s\S]*\{floorView === 'tasks' && <TasksKanban \/>\}/);
   assert.match(read('src/renderer/src/shell/TopBar.tsx'), /<ViewTabs \/>/);
   assert.doesNotMatch(app, /<FloorViewToggle \/>/);
 });
@@ -124,6 +124,31 @@ test('Tasks and Who talks to whom take the whole window: the right column hides 
   const store = read('src/renderer/src/store/store.ts');
   assert.match(store, /function officeView\(view: FloorView\): \{ floorView\?: FloorView \} \{\n\s+if \(view === 'office' \|\| view === 'file'\) return \{\};\n\s+try \{ window\.localStorage\.setItem\(LS_FLOOR_VIEW, 'office'\); \}/);
   assert.equal((store.match(/\.\.\.officeView\(s\.floorView\)/g) || []).length, 6, 'select, openAgentMemory, openAgentProfile (Pulse), openNeedsYou and both Michael tab requests');
-  assert.match(store, /rightColumn: 'person', \.\.\.officeView\(s\.floorView\) \};/);
-  assert.match(store, /rightColumn: 'board',\n\s+\.\.\.officeView\(s\.floorView\),/);
+  // Each also claims the center from the wide 1:1 (wide-dock.test.cjs, 8A).
+  assert.match(store, /rightColumn: 'person', centerClaim: 'column', \.\.\.officeView\(s\.floorView\) \};/);
+  assert.match(store, /rightColumn: 'board',\n\s+centerClaim: 'column',\n\s+\.\.\.officeView\(s\.floorView\),/);
+});
+
+test('the program mark is a link on the platform\'s right side, over the pods, opening the chamber\'s site in the browser', () => {
+  // Value: protects=GAACC AI Labs shows small on the platform's right side in every install, never cut by a pod, and opens austinasianchamber.org outside the app; fails_when=it goes under the pods, leaves the side, flips in Arabic, or navigates the app window; why_new=owner 2026-10-22, docs/designs/floor-business-name.md; seam=source pins (the scene needs React); no_claim=its look and the click on a real window (dev app)
+  const loadTs = require('./load-ts.cjs');
+  const app = loadTs('src/shared/appName.ts');
+  assert.equal(app.PROGRAM_MARK, 'GAACC AI Labs');
+  assert.equal(app.PROGRAM_URL, 'https://austinasianchamber.org/');
+  const stage = read('src/renderer/src/scene/studio/StudioStage.tsx');
+  const at = stage.indexOf('className="cth-st-mark"');
+  assert.ok(at > 0);
+  assert.ok(at > stage.indexOf('<Platform T={T} />') && at < stage.indexOf('<DayLight hour={hour} dark={dark} />'), 'over the scene SVG, under the day\'s light');
+  assert.ok(at > stage.indexOf('if (plan.compact) {'), 'not in the compact grid');
+  const link = stage.slice(stage.lastIndexOf('{(() => {', at), at + 700);
+  assert.match(link, /const \[x, y\] = P\(5, 4\.6, -13\);/, 'from near the front corner of the right side, low in its band');
+  assert.match(link, /<a href=\{PROGRAM_URL\} target="_blank" rel="noreferrer" className="cth-st-mark"[\s\S]{0,120}<title>\{PROGRAM_TITLE\}<\/title>/, 'opens in the browser through the window open handler');
+  assert.match(link, /<text direction="ltr"/, 'set on its baseline in SVG, never reversed in Arabic');
+  assert.match(link, /matrix\(1 -0\.5 0 1 \$\{x\} \$\{y\}\)/, 'along the side\'s 2:1 slope');
+  assert.match(link, /pointerEvents: 'auto', \['--mark-op' as string\]: T\.markOp/);
+  assert.match(link, /fill=\{T\.markFill\}/);
+  assert.match(stage, /const MARK_SIZE = 7;/, 'small enough for the side band, its tops 8 px below the edge');
+  assert.match(read('src/main/index.ts'), /setWindowOpenHandler\(\(\{ url \}\) => \{\s*if \(\/\^https\?:\\\/\\\/\/i\.test\(url\)\) shell\.openExternal\(url\);/, 'a new window link opens in the browser');
+  assert.match(read('src/renderer/src/design/global.css'), /\.cth-st-mark:hover, \.cth-st-mark:focus-visible \{ opacity: 1; text-decoration: underline; \}/);
+  assert.doesNotMatch(read('src/renderer/src/scene/studio/StudioArt.tsx'), /FloorMark/, 'no second copy in the SVG');
 });

@@ -245,7 +245,7 @@ export function swapName(text: string, from: string | undefined, to: string): st
   const f = from?.trim();
   const t = to.trim();
   if (!text || !f || !t || f === t) return text;
-  return text.replace(nameRe(f), t);
+  return text.replace(nameRe(f), () => t);
 }
 
 /**
@@ -458,6 +458,22 @@ export function appendOnce(line: string, extra: string): string {
   // A line the owner left without a full stop gets one, so the added sentence
   // never runs into theirs ("data issues Only the data in HubSpot.").
   return `${/[.!?:;)"'”’]$/.test(l) ? l : `${l}.`} ${extra}`;
+}
+
+/** The lines a hire binding wrote into a role line ("Only <scope>." on the
+ *  bound member, "Not for <scope>; that goes to <Name>." on teammates). Lazy
+ *  up to the full stop that ends the line, so a scope with a period or a
+ *  semicolon in it stays whole: "the owner@sunrise.com mailbox", "orders over
+ *  $1.5k", "refunds; returns". */
+export const BINDING_LINE_RE = /Only (?:(?!Only |Not for ).)+?\.(?![\p{L}\p{N}])|Not for (?:(?!Not for ).)+?; that goes to [^.]+?\.(?![\p{L}\p{N}])/gu;
+
+/** A role line's own words and its binding lines, apart: a rewrite of "What X
+ *  handles" never sees the bindings, and code puts them back word for word
+ *  (docs/designs/work-style-change-request.md, finding 1). */
+export function splitBindings(routing: string): { text: string; lines: string[] } {
+  const lines = routing.match(BINDING_LINE_RE) ?? [];
+  const text = lines.reduce((t, l) => t.replace(l, ' '), routing).replace(/\s{2,}/g, ' ').trim();
+  return { text, lines };
 }
 
 /** The stored role line for a hire. */

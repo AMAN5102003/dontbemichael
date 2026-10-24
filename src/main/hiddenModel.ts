@@ -26,7 +26,8 @@ export async function runHiddenModel(prompt: string, opts: HiddenModelOptions): 
   if (opts.signal?.aborted) return { ok: false, error: 'cancelled' };
   const { engine = 'claude', engineModel, ...claudeOpts } = opts;
   if (engine === 'claude') return runHiddenClaude(prompt, claudeOpts);
-  if (engine !== 'codex' || !opts.noTools) return { ok: false, error: 'engine unavailable' };
+  // Only Claude is shown pictures (its session attaches a pasted path).
+  if (engine !== 'codex' || !opts.noTools || opts.images?.length) return { ok: false, error: 'engine unavailable' };
   return runHiddenCodex(prompt, opts);
 }
 
@@ -133,5 +134,6 @@ function runHiddenCodex(prompt: string, opts: HiddenModelOptions): Promise<Hidde
     });
     if (opts.signal?.aborted) { onAbort(); return; }
     child.stdin?.end(prompt);
+    try { opts.onPromptSent?.(); } catch { /* a step never breaks the call */ }
   });
 }

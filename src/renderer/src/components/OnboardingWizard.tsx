@@ -16,8 +16,9 @@ import { modelsForProvider, onboardingEngineChoices, teamDefaultsFromMichael, ty
 import { isClaudeProvider, providerPreset } from '@shared/agentProvider';
 import { GetMichaelReady, GetMichaelReadyInfo } from './GetMichaelReady';
 import {
-  classifyEngineAvailability, engineAvailabilityBadge, engineAvailabilityMessage, engineBlocksOnboarding
+  classifyEngineAvailability, engineBlocksOnboarding
 } from '@shared/engineAvailability';
+import { engineBadgeWords, engineMissingWords } from './engineStatusWords';
 import type { ToolStatus } from '@shared/toolCatalog';
 import type { OfficePack } from '@shared/officePack';
 import type { AgentDefinitionV2 } from '@shared/agentDefinition';
@@ -29,6 +30,7 @@ import { missingBusinessFields, type BusinessField } from '@shared/businessProfi
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { teamPlanFromRecord, type OfficeRecord } from '@shared/officeRecord';
 import { COLLECT_USAGE_STATS } from '@shared/buildFeatures';
+import { fieldLabel, groupName, requiredMark } from './fieldText';
 
 export interface OnboardingWizardProps {
   onComplete: (config: HarnessConfig) => void;
@@ -551,7 +553,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
         <img className="cth-lockup-dark" src={lockupDark} alt="Don't Be Michael" style={{ height: 24, width: 'auto' }} />
         {stepIndex >= 0 && <StepIndicator steps={steps} current={stepIndex} />}
         {stepIndex >= 0 && (
-          <span style={{ marginInlineStart: 'auto', fontSize: 12, color: 'var(--cth-ink-3)' }}>
+          <span style={{ marginInlineStart: 'auto', fontSize: 14, color: 'var(--cth-ink-3)' }}>
             {t('onboarding.stepOf', { n: stepIndex + 1, total: steps.length })}
           </span>
         )}
@@ -584,18 +586,18 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
               <div role="status" data-damaged-config style={{
                 borderRadius: 'var(--cth-r-md)', padding: '8px 10px',
                 background: 'var(--cth-amber-soft)', color: 'var(--cth-amber-text)',
-                fontSize: 13, lineHeight: '19px'
+                fontSize: 14, lineHeight: '20px'
               }}>
                 {t('onboarding.damagedConfig')}{' '}
-                <span dir="ltr" style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 12, wordBreak: 'break-all' }}>{damagedCopy}</span>
+                <span dir="ltr" style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 14, wordBreak: 'break-all' }}>{damagedCopy}</span>
               </div>
             )}
 
             {step === 'resume' && found && (
               <>
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.resume.headline')}
-                </div>
+                </h3>
                 <p style={{ margin: 0, lineHeight: '22px' }}>
                   {t('onboarding.resume.desc', {
                     business: found.record.businessName ?? t('onboarding.resume.unnamed'),
@@ -655,8 +657,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     ever used as an id or a path. */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
                   <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    <span style={{ fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--cth-ink-2)' }}>
-                      {t('onboarding.business.nameLabel')} *
+                    <span style={fieldLabel}>
+                      {t('onboarding.business.nameLabel')}{' '}
+                      <span style={requiredMark}>{t('companyProfile.required')}</span>
                     </span>
                     <input
                       value={businessName}
@@ -671,8 +674,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
 
                 </div>
 
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, color: 'var(--cth-ink-2)' }}>
-                  {t('onboarding.business.ask')} *
+                <div style={fieldLabel}>
+                  {t('onboarding.business.ask')}{' '}
+                  <span style={requiredMark}>{t('companyProfile.required')}</span>
                 </div>
 
                 {/* Tiles come from the pack registry, so a community pack appears
@@ -907,7 +911,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                         </span>
                         {(() => {
                           const a = classifyEngineAvailability(engines, p.id);
-                          const badge = engineAvailabilityBadge(a);
+                          const badge = engineBadgeWords(a, t);
                           if (!badge) return null;
                           const bad = a.state === 'not-installable';
                           return (
@@ -978,14 +982,14 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                     background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 2px var(--cth-ink-900)',
                     fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-900)'
                   }}>
-                    <span>{engineAvailabilityMessage(selectedEngine, providerPreset(godProvider).label)}</span>
+                    <span>{engineMissingWords(selectedEngine, providerPreset(godProvider).label, t)}</span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                       <PixelButton variant="secondary" size="sm" onClick={() => { void probeEngines(); }} disabled={probing}>
-                        {probing ? 'checking...' : 'check again'}
+                        {probing ? t('onboarding.orchestrator.checking') : t('onboarding.orchestrator.checkAgain')}
                       </PixelButton>
                       {selectedEngine.docsUrl && (
                         <PixelButton variant="ghost" size="sm" onClick={() => { void window.cth.openExternal(selectedEngine.docsUrl!); }}>
-                          install instructions
+                          {t('onboarding.orchestrator.installInstructions')}
                         </PixelButton>
                       )}
                     </div>
@@ -1121,9 +1125,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 {/* AUTONOMY — one choice that maps to each engine's flag: autoMode →
                     claude bypassPermissions / codex -a never -s workspace-write
                     (sandbox kept), etc.; off → each engine's ask-first default. */}
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.permissions.autonomyHead')}
-                </div>
+                </h3>
                 <label style={{
                   borderRadius: 'var(--cth-r-md)',
                   display: 'flex', alignItems: 'center', gap: 10,
@@ -1154,9 +1158,9 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 <div style={{ height: 1, background: 'var(--cth-ink-300)', margin: '2px 0' }} />
 
                 {/* RELIABILITY — keeping work firing while you're away. */}
-                <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 14, fontWeight: 600, lineHeight: '20px', color: 'var(--cth-ink-2)' }}>
+                <h3 style={groupName}>
                   {t('onboarding.permissions.reliabilityHead')}
-                </div>
+                </h3>
                 <p style={{ margin: 0, lineHeight: '20px', fontSize: 14, color: 'var(--cth-ink-700)' }}>
                   {t('onboarding.permissions.reliabilityDesc')}
                 </p>
@@ -1250,7 +1254,7 @@ export function OnboardingWizard({ onComplete, preview }: OnboardingWizardProps)
                 padding: '6px 10px',
                 background: 'var(--cth-coral-light)',
                 boxShadow: 'inset 0 0 0 1px var(--cth-coral)',
-                fontSize: 13,
+                fontSize: 14,
                 color: 'var(--cth-ink-900)',
                 overflowWrap: 'anywhere'
               }}>{error}</div>

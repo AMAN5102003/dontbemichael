@@ -10,7 +10,7 @@ import { estimateCostUsd, normalizeModel } from './pricing';
  *
  *  One rule for every platform. The Windows branch always used it; POSIX had its
  *  own narrower spelling, and that divergence is what broke — see projectDir. */
-function projectKey(cwd: string): string {
+export function projectKey(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-');
 }
 
@@ -45,6 +45,11 @@ function legacyProjectKey(cwd: string): string {
  *  ~/.claude (red team, third ship). */
 export function claudeProjectsRoot(): string {
   return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+}
+
+/** The engine's prompt history, beside its projects folder. */
+export function engineHistoryFile(): string {
+  return path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'history.jsonl');
 }
 
 /** Every folder Claude Code may keep `cwd`'s conversations in: the current

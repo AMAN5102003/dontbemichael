@@ -24,7 +24,8 @@ import {
   type IntegrationRecord,
   validateIntegrationRecord,
   authTypeNeedsSecret,
-  secretRefFor
+  secretRefFor,
+  INTEGRATION_ID_TAKEN
 } from '../shared/integrations';
 import { readConfig, writeConfig } from './config';
 import { SECRETS_FILE_UNREADABLE } from '../shared/secretStore';
@@ -51,12 +52,16 @@ export function enabledIds(): string[] {
 }
 
 /** Create or replace a record (validated). Stamps createdAt/updatedAt; preserves the
- *  original createdAt on update. Does NOT touch the secret store. */
-export function upsertRecord(input: unknown): { ok: true; record: IntegrationRecord } | { ok: false; error: string } {
+ *  original createdAt on update. Does NOT touch the secret store. A record sent as
+ *  new (`isNew`) is refused when its id is taken: replacing would drop that
+ *  integration and orphan or overwrite its secret, so two windows adding the same
+ *  label, or an add made before the list loaded, never lose one. */
+export function upsertRecord(input: unknown, opts: { isNew?: boolean } = {}): { ok: true; record: IntegrationRecord } | { ok: false; error: string } {
   const v = validateIntegrationRecord(input);
   if (!v.ok) return v;
   const now = Date.now();
   const existing = getRecord(v.value.id);
+  if (opts.isNew && existing) return { ok: false, error: INTEGRATION_ID_TAKEN };
   const record: IntegrationRecord = {
     ...v.value,
     createdAt: existing?.createdAt ?? now,

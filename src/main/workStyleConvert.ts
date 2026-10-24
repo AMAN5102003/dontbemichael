@@ -5,18 +5,24 @@
  * says so, so hiring never waits on a sign-in problem.
  */
 import { runHiddenModel, type HiddenModelEngine } from './hiddenModel';
+import { appendOnce, splitBindings } from '../shared/hireTemplates';
+import { JOB_CHANGES_MAX } from '../shared/jobChange';
 import {
   cleanAnswer,
   focusCheckPrompt,
   instructionsFallback,
   parseFocusCheck,
   instructionsOpening,
+  parseRevise,
+  revisePreview,
   plainFallback,
   roleLabel,
-  suggestWorkStylePrompt,
   toInstructionsPrompt,
   toPlainPrompt,
-  type SuggestRequest,
+  toRevisePrompt,
+  type ReviseAnswer,
+  type ReviseInput,
+  type ReviseProgress,
   type WorkStyleContext
 } from '../shared/workStyleText';
 
@@ -92,6 +98,106 @@ export async function convertWorkStyle(req: ConvertRequest, deps: ConvertDeps): 
   return { text: fallback(), source: 'rules' };
 }
 
+/** The renderer's "What should change?" request (work-style-change-request.md). */
+export interface ReviseRequest {
+  requestId?: string;
+  ctx: WorkStyleContext;
+  current: { instructions: string; handles: string };
+  changes: string[];
+  answer?: { question: string; answer: string };
+  lead?: boolean;
+}
+
+export type ReviseResult = ReviseAnswer | { kind: 'error'; reason: 'failed' | 'cancelled' };
+
+const CHANGE_MAX = 1500;
+
+/** The renderer's payload, trusted for nothing but short strings. */
+export function readReviseRequest(v: unknown): ReviseRequest | null {
+  if (!v || typeof v !== 'object') return null;
+  const o = v as Record<string, unknown>;
+  if (o.to !== 'revise') return null;
+  const c = (o.ctx && typeof o.ctx === 'object' ? o.ctx : {}) as Record<string, unknown>;
+  const b = (c.business && typeof c.business === 'object' ? c.business : {}) as Record<string, unknown>;
+  const cur = (o.current && typeof o.current === 'object' ? o.current : {}) as Record<string, unknown>;
+  const a = (o.answer && typeof o.answer === 'object' ? o.answer : null) as Record<string, unknown> | null;
+  const name = str(c.name, 60).trim();
+  const changes = (Array.isArray(o.changes) ? o.changes : []).slice(-JOB_CHANGES_MAX).map((x) => str(x, CHANGE_MAX).trim()).filter(Boolean);
+  if (!name || changes.length === 0) return null;
+  const answer = a ? { question: str(a.question, 400).trim(), answer: str(a.answer, CHANGE_MAX).trim() } : undefined;
+  return {
+    requestId: str(o.requestId, 80) || undefined,
+    ctx: { name, title: str(c.title, 120) || undefined, business: { name: str(b.name, 120) || undefined, city: str(b.city, 120) || undefined }, manager: str(c.manager, 60).trim() || undefined },
+    // The whole role line: its binding lines are split off later and must not be cut.
+    current: { instructions: str(cur.instructions, MAX_TEXT), handles: str(cur.handles, MAX_TEXT) },
+    changes,
+    answer: answer?.question && answer.answer ? answer : undefined,
+    lead: o.lead === true
+  };
+}
+
+/**
+ * Apply the owner's change requests to a job, or write a new one (no current
+ * instructions). Sonnet on Michael's engine, stoppable. There is no rules
+ * fallback: a free text change can't be applied by rules, so a failure saves
+ * nothing (plan A1). The binding lines a hire wrote into "What X handles" are
+ * kept out of the call and put back word for word after it (finding 1).
+ */
+export async function reviseWorkStyle(
+  req: ReviseRequest,
+  deps: ConvertDeps & { foundations?: () => string[]; onProgress?: (p: ReviseProgress) => void },
+  signal?: AbortSignal
+): Promise<ReviseResult> {
+  const progress = (p: ReviseProgress): void => { try { deps.onProgress?.(p); } catch { /* a step never breaks the call */ } };
+  progress({ stage: 'starting' });
+  const bound = splitBindings(req.current.handles);
+  let foundations: string[] = [];
+  try { foundations = deps.foundations?.() ?? []; } catch { /* checked without them */ }
+  const input: ReviseInput = {
+    ctx: req.ctx,
+    instructions: req.current.instructions,
+    handles: bound.text,
+    changes: req.changes,
+    answer: req.answer,
+    lead: req.lead,
+    foundations
+  };
+  try {
+    const result = await runHiddenModel(toRevisePrompt(input), {
+      engine: deps.engine,
+      engineModel: deps.engineModel,
+      model: INSTRUCTIONS_MODEL,
+      cwd: deps.cwd,
+      command: deps.command,
+      noTools: true,
+      // The job and the saved answers stay with the app: only the owner's
+      // own user settings, no hook of theirs or the office folder's sees the
+      // prompt, and no transcript stays (Codex adversarial, 2026-10-23).
+      settingSources: 'user',
+      settingsJson: JSON.stringify({ disableAllHooks: true }),
+      dropTranscript: true,
+      env: deps.env,
+      timeoutMs: TIMEOUT_MS,
+      // No hidden thinking (owner, 2026-10-23): measured on a real change, the
+      // model took 7s without it against 12 to 35s with it, and the owner waits.
+      thinking: false,
+      onPromptSent: () => progress({ stage: 'reading' }),
+      onScreenText: (text) => progress({ stage: 'writing', preview: revisePreview(text) }),
+      signal
+    });
+    if (result.error === 'cancelled' || signal?.aborted) return { kind: 'error', reason: 'cancelled' };
+    const answer = result.ok && result.text ? parseRevise(result.text, req.ctx, req.lead) : null;
+    if (answer?.kind === 'ok' && answer.handles) {
+      return { ...answer, handles: bound.lines.reduce((h, l) => appendOnce(h, l), answer.handles) };
+    }
+    if (answer) return answer;
+    deps.log?.({ kind: 'work-style-revise-failed', reason: result.ok ? 'unreadable' : (result.error ?? 'failed') });
+  } catch (e) {
+    deps.log?.({ kind: 'work-style-revise-failed', reason: String(e).slice(0, 200) });
+  }
+  return { kind: 'error', reason: 'failed' };
+}
+
 export interface FocusCheckRequest {
   name: string;
   job: string;
@@ -143,62 +249,4 @@ export async function checkFocusArea(req: FocusCheckRequest, deps: ConvertDeps):
     deps.log?.({ kind: 'focus-check-skipped', reason: String(e).slice(0, 200) });
   }
   return { checked: false };
-}
-
-/** The renderer's "Suggest me" payload, trusted for nothing but short strings. */
-export function readSuggestRequest(v: unknown): SuggestRequest | null {
-  if (!v || typeof v !== 'object') return null;
-  const o = v as Record<string, unknown>;
-  const c = (o.ctx && typeof o.ctx === 'object' ? o.ctx : {}) as Record<string, unknown>;
-  const b = (c.business && typeof c.business === 'object' ? c.business : {}) as Record<string, unknown>;
-  const name = str(c.name, 60).trim();
-  const handles = str(o.handles, 1500).trim();
-  if (!name || !handles) return null;
-  const team = Array.isArray(o.team) ? o.team.slice(0, 20).flatMap((m) => {
-    const t = (m && typeof m === 'object' ? m : {}) as Record<string, unknown>;
-    const n = str(t.name, 60).trim();
-    return n ? [{ name: n, title: str(t.title, 120) || undefined, handles: str(t.handles, 600) || undefined }] : [];
-  }) : [];
-  return {
-    ctx: { name, title: str(c.title, 120) || undefined, business: { name: str(b.name, 120) || undefined, city: str(b.city, 120) || undefined }, manager: str(c.manager, 60).trim() || undefined },
-    handles,
-    businessType: str(o.businessType, 80) || undefined,
-    team
-  };
-}
-
-/**
- * "Suggest me" on the hire wizard: a first work style in the owner's plain
- * form, for them to review and edit (owner, 2026-10-03). Sonnet writes it, as
- * it writes instructions, without extended thinking so the owner waits
- * seconds. Empty when the call can't run: the owner writes their own.
- */
-export async function suggestWorkStyle(
-  req: SuggestRequest,
-  deps: ConvertDeps,
-  live?: { onText?: (text: string) => void; signal?: AbortSignal }
-): Promise<{ text: string; cancelled?: boolean }> {
-  try {
-    const result = await runHiddenModel(suggestWorkStylePrompt(req), {
-      engine: deps.engine,
-      engineModel: deps.engineModel,
-      model: INSTRUCTIONS_MODEL,
-      cwd: deps.cwd,
-      command: deps.command,
-      noTools: true,
-      thinking: false,
-      env: deps.env,
-      timeoutMs: TIMEOUT_MS,
-      // The draft streams into the owner's field while it is written.
-      onScreenText: live?.onText,
-      signal: live?.signal
-    });
-    if (result.error === 'cancelled') return { text: '', cancelled: true };
-    const text = result.ok && result.text ? cleanAnswer(result.text) : '';
-    if (text) return { text };
-    deps.log?.({ kind: 'work-style-suggest-failed', reason: result.ok ? 'empty' : (result.error ?? 'failed') });
-  } catch (e) {
-    deps.log?.({ kind: 'work-style-suggest-failed', reason: String(e).slice(0, 200) });
-  }
-  return { text: '' };
 }

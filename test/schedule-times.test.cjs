@@ -57,6 +57,29 @@ test('the lines read as words', () => {
   assert.equal(T.formatLine({ kind: 'every', everyMs: 30 * 60_000, days: [1, 3] }), 'every 30m Mon, Wed');
 });
 
+test('the schedule list reads the lines in the owner\'s language; Michael still reads English', () => {
+  const zh = {
+    day: (d) => ['日', '一', '二', '三', '四', '五', '六'][d],
+    everyDay: '每天', weekdays: '工作日', weekends: '周末',
+    list: (items) => items.join('、'),
+    and: (items) => (items.length > 1 ? `${items.slice(0, -1).join('、')}和${items[items.length - 1]}` : items[0]),
+    at: (days, time) => `${days} ${time}`,
+    every: (interval) => `每 ${interval}`,
+    span: (from, to) => `${from}至${to}`
+  };
+  assert.equal(T.formatTimes(owners, zh), '每 2h 工作日 08:00至18:00、周末 14:00');
+  assert.equal(T.formatTimes([{ kind: 'at', days: [1, 3], minute: 480 }, { kind: 'at', days: [1, 3], minute: 840 }], zh), '一、三 08:00和14:00');
+  assert.equal(T.formatTimes(owners, T.ENGLISH_WHEN), T.formatTimes(owners), 'English is the default');
+  assert.equal(M.whenWords({ intervalMs: 0, times: owners }), 'every 2h weekdays 08:00 to 18:00, weekends at 14:00', 'messages to Michael stay English');
+  const list = read('src/renderer/src/components/triggers/ScheduleList.tsx');
+  assert.match(list, /const words = whenWords\(t, i18n\.language\);/);
+  assert.doesNotMatch(list, /formatWeekly/, 'a weekly job is worded through the same words');
+  for (const loc of ['en', 'zh-CN', 'ar']) {
+    const s = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).schedulesSection;
+    for (const k of ['whenWeekends', 'whenAt', 'whenAnd', 'whenSpan', 'whenSep']) assert.ok(s[k], `${loc}: ${k}`);
+  }
+});
+
 test('agents ask for several times in one request, and the old forms still work', () => {
   const both = M.parseWhen([{ every: '2h', days: ['weekdays'], between: ['08:00', '18:00'] }, { days: ['weekends'], at: '14:00' }]);
   assert.deepEqual(both.times, owners);
@@ -105,7 +128,7 @@ test('main arms times like weekly, refuses bad lines, and agents are told how to
   assert.match(read('src/main/hive.ts'), /One job can have several: \\`"when": \[/);
   const list = read('src/renderer/src/components/triggers/ScheduleList.tsx');
   assert.match(list, /<WhenLines lines=\{lines\} onChange=\{setLines\} \/>/);
-  assert.match(list, /if \(times\) return formatTimes\(times\);/);
+  assert.match(list, /if \(times\) return formatTimes\(times, words\);/);
   for (const loc of ['en', 'zh-CN', 'ar']) {
     const u = JSON.parse(read(`src/renderer/src/i18n/locales/${loc}.json`)).triggersUi;
     for (const k of ['addTime', 'removeTime', 'onlyBetween', 'and', 'windowHint', 'timeN']) assert.ok(u[k], `${loc}: ${k}`);

@@ -24,6 +24,7 @@ test('every business tile is highlighted when no type is picked', () => {
 });
 
 test('business name and business type are marked required', () => {
-  assert.match(step1, /t\('onboarding\.business\.nameLabel'\)\} \*/);
-  assert.match(step1, /t\('onboarding\.business\.ask'\)\} \*/);
+  // The app's required mark, a quiet word beside the label (app-style-rollout.md AS4).
+  assert.match(step1, /t\('onboarding\.business\.nameLabel'\)\}\{' '\}\s*<span style=\{requiredMark\}>\{t\('companyProfile\.required'\)\}<\/span>/);
+  assert.match(step1, /t\('onboarding\.business\.ask'\)\}\{' '\}\s*<span style=\{requiredMark\}>\{t\('companyProfile\.required'\)\}<\/span>/);
 });

@@ -12,7 +12,8 @@ import { useHarnessConfig } from '@/hooks/useHarnessConfig';
 import { agentAccessSummary, type AccessItem } from '@shared/agentAccess';
 import { SENDING_LABEL_KEY } from './sendingLabels';
 import { effectiveWorkStyle } from '@shared/michaelWorkStyle';
-import { ScheduledJobsList, useScheduledJobs } from './ScheduledJobs';
+import { ScheduledJobsList } from './ScheduledJobs';
+import { groupName } from './fieldText';
 
 /**
  * PROFILE: who this agent is, the first tab on every agent (owner, 2026-09-25;
@@ -232,21 +233,28 @@ export function ProfileTab({ agent }: { agent: Agent }) {
         )}
 
         {/* Each scheduled job with its focus area, read only (FA1). */}
-        <ScheduledJobsSection agentId={agent.id} title={t('scheduledJobs.title')} />
+        <ScheduledJobsSection agentId={agent.id} name={name} god={god} />
       </div>
     </div>
   );
 }
 
-function ScheduledJobsSection({ agentId, title }: { agentId: string; title: string }) {
-  const jobs = useScheduledJobs(agentId);
-  return jobs.length ? <Section title={title}><ScheduledJobsList agentId={agentId} /></Section> : null;
+/** The same group as Edit agent, its heading in this tab's section style
+ *  (edit-agent-scheduled-jobs.md, T3). */
+function ScheduledJobsSection({ agentId, name, god }: { agentId: string; name: string; god: boolean }) {
+  const requestTab = useStore((s) => s.requestCommandCenterTab);
+  // Michael's jobs live on his Office schedule tab, not on Access.
+  return (
+    <section style={{ marginTop: 20 }}>
+      <ScheduledJobsList agentId={agentId} name={name} heading="section" office={god} onChange={god ? () => requestTab('triggers') : undefined} />
+    </section>
+  );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section style={{ marginTop: 20 }}>
-      <h3 style={{ margin: '0 0 8px', fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '18px', fontWeight: 600, color: 'var(--cth-ink-700)' }}>
+      <h3 style={{ ...groupName, margin: '0 0 8px' }}>
         {title}
       </h3>
       {children}

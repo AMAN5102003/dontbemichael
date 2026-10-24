@@ -1,6 +1,7 @@
 import { DiffEditor } from '@monaco-editor/react';
 import { useTranslation } from 'react-i18next';
-import { setupMonaco, CTH_MONACO_THEME, languageForPath } from './monaco';
+import { useAppTheme } from '@/design/theme';
+import { setupMonaco, monacoThemeFor, languageForPath } from './monaco';
 
 setupMonaco();
 
@@ -17,9 +18,10 @@ export interface MonacoDiffProps {
  *  built-in DiffEditor — the same dependency as the editor, no extra view layer. */
 export function MonacoDiff({ path, original, modified }: MonacoDiffProps) {
   const { t } = useTranslation();
+  const appTheme = useAppTheme();
   return (
     <DiffEditor
-      theme={CTH_MONACO_THEME}
+      theme={monacoThemeFor(appTheme)}
       language={languageForPath(path)}
       original={original}
       modified={modified}

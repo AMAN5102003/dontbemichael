@@ -5,7 +5,7 @@ import { MiniButton } from './triggers/ui';
 import { ACTION_AT_PROMPT, actionText, useStore, type Agent } from '@/store/store';
 import { useResolvedGodName } from '@/hooks/useResolvedGodName';
 import { CLOSING_TIME_REMIND_MS } from '@shared/closingTime';
-import { actionMessage, describeRow, headerLine } from './closingTimeRows';
+import { actionMessage, describeRow, headerLine, saidLine } from './closingTimeRows';
 
 /** Renderer-side closing-time view state. Mirrors the main process's
  *  ClosingTimeEvent phases, plus a local 'error' for a failed start. */
@@ -19,6 +19,9 @@ export interface ClosingTimeState {
   confirmed?: string[];
   waiting?: string[];
   excused?: string[];
+  /** Team members whose engine isn't reporting: their mail is held, so they
+   *  can't hear closing time and are not waited on. */
+  notReporting?: string[];
   godId?: string;
   godLive?: boolean;
   /** The app reopens itself once closed (a Claude Code update). */
@@ -62,6 +65,7 @@ export function ClosingTimeBar({ closing, onCancel, onForceQuit, onRetry }: Clos
   const error = c?.phase === 'error';
   const done = c?.phase === 'complete';
   const waiting = c?.waiting?.length ?? 0;
+  const silent = c?.notReporting?.length ?? 0;
   const pct = c && c.total > 0 ? Math.min(100, Math.round((c.acked / c.total) * 100)) : done ? 100 : 0;
   const force = async () => { setBusy(true); onForceQuit(); };
 
@@ -111,10 +115,12 @@ export function ClosingTimeBar({ closing, onCancel, onForceQuit, onRetry }: Clos
               <span style={{ flex: 1, height: 4, borderRadius: 2, background: 'var(--cth-line)', overflow: 'hidden' }}>
                 <span style={{ display: 'block', height: '100%', width: `${pct}%`, borderRadius: 2, background: done ? 'var(--cth-green)' : 'var(--cth-indigo)', transition: 'width 600ms var(--cth-ease)' }} />
               </span>
-              {c && !done && waiting > 0 && (
+              {c && !done && (waiting > 0 || silent > 0) && (
                 <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} style={hitBtn}>
                   <span style={linkBtn}>
-                  {open ? t('closingBar.hideWho') : (waiting === 1 ? t('closingBar.left', { count: waiting }) : t('closingBar.leftPlural', { count: waiting }))}
+                  {open ? t('closingBar.hideWho')
+                    : waiting > 0 ? (waiting === 1 ? t('closingBar.left', { count: waiting }) : t('closingBar.leftPlural', { count: waiting }))
+                    : t('closingBar.notReporting', { count: silent })}
                   {/* The list opens upward from the bar: the chevron points up to open it, down to close it. */}
                   <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round"
                     style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms var(--cth-ease)' }}>
@@ -173,7 +179,7 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
   const { t } = useTranslation();
   // Only the agents on the list: the store changes on every burst of terminal
   // output from any agent, and the dialog need not re-render for the others.
-  const listed = new Set([...(closing.waiting ?? []), ...(closing.excused ?? []), ...(closing.confirmed ?? []), closing.godId ?? '']);
+  const listed = new Set([...(closing.waiting ?? []), ...(closing.notReporting ?? []), ...(closing.excused ?? []), ...(closing.confirmed ?? []), closing.godId ?? '']);
   const agents = useStore(useShallow((s) => s.agents.filter((a) => listed.has(a.id))));
   const godName = useResolvedGodName();
   const [now, setNow] = useState(() => Date.now());
@@ -201,11 +207,27 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
     const id = setInterval(() => setNow(Date.now()), 15_000);
     return () => clearInterval(id);
   }, []);
+  // The last thing each waiting agent said, read from its transcript in main,
+  // so a long job looks different from a stuck one.
+  const [said, setSaid] = useState<Record<string, { text: string; at?: number }>>({});
+  const waitingKey = (closing.waiting ?? []).join('\n');
+  useEffect(() => {
+    if (!waitingKey) return;
+    const ids = waitingKey.split('\n');
+    let live = true;
+    const read = (): void => {
+      window.cth.closingTimeSaid(ids).then((s) => { if (live) setSaid(s); }, () => { /* keep the last lines */ });
+    };
+    read();
+    const id = setInterval(read, SAID_POLL_MS);
+    return () => { live = false; clearInterval(id); };
+  }, [waitingKey]);
 
   const godId = closing.godId;
   if (!godId) return null;
   const waiting = closing.waiting ?? [];
   const excused = closing.excused ?? [];
+  const notReporting = closing.notReporting ?? [];
   const confirmed = closing.confirmed ?? [];
   const byId = (id: string): Agent | undefined => agents.find((a) => a.id === id);
   const nameOf = (id: string): string => (id === godId ? godName : byId(id)?.name ?? id);
@@ -259,6 +281,7 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
               )}
             </div>
             {d.line && <div style={detailStyle}>{d.line}</div>}
+            {said[id] && <div style={detailStyle}>{saidLine(said[id], now, t)}</div>}
             {confirming === id && (
               <div role="alert" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
                 <span>{t('closingTime.confirmClose', { name: nameOf(id) })}</span>
@@ -270,6 +293,11 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
           </div>
         );
       })}
+      {notReporting.map((id) => (
+        <div key={id} role="listitem" style={row}>
+          <span style={{ fontWeight: 600 }}>{nameOf(id)}</span> <span style={hint}>{t('closingTime.notReporting')}</span>
+        </div>
+      ))}
       {excused.map((id) => (
         <div key={id} role="listitem" style={row}>
           <span style={{ fontWeight: 600 }}>{nameOf(id)}</span> <span style={hint}>{t('closingTime.excused')}</span>
@@ -292,6 +320,9 @@ function ClosingTimeRows({ closing }: { closing: ClosingTimeState }) {
     </div>
   );
 }
+
+/** How often the waiting rows' last lines are read again. */
+const SAID_POLL_MS = 10_000;
 
 const row: CSSProperties = { padding: '9px 0', borderTop: '1px solid var(--cth-line)', fontSize: 13, lineHeight: '19px', color: 'var(--cth-ink)' };
 /** Captions and status words (branding/DESIGN.md 4.2). */

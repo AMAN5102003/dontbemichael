@@ -6,12 +6,12 @@ build after it lands, not by the build itself. This checklist is how a release
 runner confirms it, because the paths that matter most are the ones a clean,
 successful release never touches.
 
-> **Today's releases are unsigned.** Without an Apple Developer ID the Mac can't install an update
-> on its own, so the app offers a manual download instead (the `available-manual` badge state). The
-> proving hop and the automatic install checks below apply once releases are signed and notarized.
-> Until then, a release needs the mechanical gates, plus a check that the previous version's badge
-> offers the new download. Version numbers below use `N` for the release and `N-1` for the one
-> before it.
+> **Mac releases are signed and notarized from v0.2.6.** A copy at v0.2.5 or earlier is sealed ad
+> hoc, so it can't install an update on its own and the app offers a manual download instead (the
+> `available-manual` badge state); check that its badge offers the new download. The first release
+> after v0.2.6 is the first proving hop for the automatic install checks below. A tagged release
+> without the Developer ID certificate now fails (`build/notarize.cjs`, `REQUIRE_DEVELOPER_ID`).
+> Version numbers below use `N` for the release and `N-1` for the one before it.
 
 ## Before the tag: mechanical gates (run these first)
 
@@ -28,6 +28,7 @@ successful release never touches.
   as "New in vN" (a bold part must end in `.`, `!`, `?` or `,` to count), and the update toast
   starts from the same bullets. Put owner facing items first and bold only the ones the site
   should show; write fun, fixes and developer items as plain bullets after them.
+  `npm run check:leadins` (also in CI on `release/**`) fails on a bold part the site would skip.
 - [ ] **A hand edit to a published release body is also made in `RELEASE.md`.** The body is built
   from `RELEASE.md` at the tag (`tools/release-assets.cjs`), so re-running that tag's release
   workflow puts the tag's text back. Edit both, and do not re-run an old tag's workflow after.

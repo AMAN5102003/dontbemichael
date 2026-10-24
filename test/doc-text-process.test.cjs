@@ -73,6 +73,8 @@ test('only a well formed answer is taken', () => {
 test('the knowledge store reads uploads through the separate process', () => {
   // Value: protects=ingestFile never parses in the main process when the built script is there; fails_when=ingestFile calls extractDocumentText directly again; why_new=knowledge.ts needs Electron to load; seam=source pin
   const src = fs.readFileSync(path.join(__dirname, '..', 'src/main/knowledge.ts'), 'utf8');
-  assert.match(src, /const ex = await this\.readDocument\(srcPath\);/);
+  assert.match(src, /return this\.ingestRead\(srcPath, await this\.readDocument\(srcPath\), opts\);/);
+  // The foundation card's file is read the same way (foundation-card-upload.md).
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'src/main/index.ts'), 'utf8'), /readFile: \(path\) => knowledge\.readDocument\(path\),/);
   assert.match(src, /return extractDocumentTextApart\(srcPath, \{ file: process\.execPath, args: \[script\], env: \{ \.\.\.process\.env, ELECTRON_RUN_AS_NODE: '1' \} \}\);/);
 });

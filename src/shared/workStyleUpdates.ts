@@ -1,14 +1,15 @@
 /**
  * When the app ships a better default job description for a pack card, every
  * office that already hired from that card is offered it on Ask me, never
- * given it silently: the owner may have edited the Work style (owner,
- * 2026-10-03, inbox zero). "Use the new one" replaces the role line and the
- * Work style and adds the card's starter jobs; "Keep mine" keeps everything.
+ * given it silently: the owner may have changed the job (owner, 2026-10-03,
+ * inbox zero). "See it" previews the new text with the owner's changes
+ * reapplied, and "Use it" saves that and adds the card's starter jobs; "Keep
+ * mine" keeps everything (work-style-change-request.md, D7).
  * Each update is offered once per team member.
  */
 import type { AgentDefinitionV2 } from './agentDefinition';
 import { teamMemberGoal, teamMemberName, teamMemberRole } from './teamPlan';
-import { appendOnce, swapName } from './hireTemplates';
+import { appendOnce, splitBindings, swapName } from './hireTemplates';
 
 export interface WorkStyleUpdate {
   /** Stable id, recorded once the owner decides. */
@@ -42,6 +43,12 @@ export interface WorkStyleOffer {
   sourceCard: string;
   goal: string;
   description: string;
+  /** The owner's applied change requests, oldest first, reapplied to the new
+   *  text in the preview (work-style-change-request.md, eng D7). */
+  changes: string[];
+  /** No change list to carry over: the card says earlier edits are replaced
+   *  (eng D8). Members changed before the list existed can't be told apart. */
+  olderEdits: boolean;
 }
 
 /** Where an owner's decision is kept: `${key}:${agentId}`. */
@@ -54,7 +61,7 @@ export const decisionId = (key: string, agentId: string): string => `${key}:${ag
  * text is already the new text, or the owner already decided.
  */
 export function workStyleOffers(
-  agents: Array<{ id: string; name?: string; goal?: string; description?: string; sourceCard?: string; isGod?: boolean; isAssistant?: boolean }>,
+  agents: Array<{ id: string; name?: string; goal?: string; description?: string; sourceCard?: string; isGod?: boolean; isAssistant?: boolean; jobChanges?: Array<{ text: string }> }>,
   cards: Map<string, AgentDefinitionV2>,
   businessType: string | undefined,
   business: { name?: string; city?: string },
@@ -75,16 +82,13 @@ export function workStyleOffers(
     const cardName = teamMemberName(def);
     const name = a.name?.trim() || cardName;
     const goal = swapName(teamMemberGoal(def, business), cardName, name);
-    // The lines a hire binding wrote ("Only <scope>." on the bound member,
-    // "Not for <scope>; that goes to <Name>." on teammates) stay: Michael routes
-    // by them, and the new default text knows nothing about them. Lazy up to
-    // the full stop that ends the line, as bindingRe in hireTemplates is, so a
-    // scope with a period or a semicolon in it stays whole: "the
-    // owner@sunrise.com mailbox", "orders over $1.5k", "refunds; returns".
-    const bindings = (a.description ?? '').match(/Only (?:(?!Only |Not for ).)+?\.(?![\p{L}\p{N}])|Not for (?:(?!Not for ).)+?; that goes to [^.]+?\.(?![\p{L}\p{N}])/gu) ?? [];
+    // The lines a hire binding wrote stay: Michael routes by them, and the new
+    // default text knows nothing about them (splitBindings).
+    const bindings = splitBindings(a.description ?? '').lines;
     const description = bindings.reduce((d, line) => appendOnce(d, line), swapName(teamMemberRole(def), cardName, name));
     if ((a.goal ?? '').trim() === goal.trim()) continue;
-    out.push({ key: update.key, whyKey: update.whyKey, agentId: a.id, sourceCard, goal, description });
+    const changes = (a.jobChanges ?? []).map((c) => c.text).filter(Boolean);
+    out.push({ key: update.key, whyKey: update.whyKey, agentId: a.id, sourceCard, goal, description, changes, olderEdits: changes.length === 0 });
   }
   return out;
 }

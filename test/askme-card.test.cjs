@@ -29,6 +29,9 @@ test('the headline does not truncate at common abbreviations', () => {
   assert.equal(askHeadline('Acme Inc. sent their proposal. Should we review it?'), 'Acme Inc. sent their proposal.');
   assert.equal(askHeadline('e.g. please check whether the payment cleared. It is pending.'), 'e.g. please check whether the payment cleared.');
   assert.equal(askHeadline('U.S. tax forms are ready. Should I file them?'), 'U.S. tax forms are ready.');
+  assert.equal(askHeadline('Bring cups, plates, etc. before Friday. Can you order them?'), 'Bring cups, plates, etc. before Friday.');
+  assert.equal(askHeadline('The delivery arrives at 9 a.m. tomorrow. Should I confirm it?'), 'The delivery arrives at 9 a.m. tomorrow.');
+  assert.equal(askHeadline('Close the register at 6 p.m. tonight. Who has the keys?'), 'Close the register at 6 p.m. tonight.');
 });
 
 test('the headline keeps underscores in file names and addresses, and drops them as emphasis', () => {

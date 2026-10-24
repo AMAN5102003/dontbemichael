@@ -26,7 +26,6 @@ const job = { name: 'Erin', title: 'Travel', routing: 'Erin books travel and hot
 const team = [{ name: 'Pam', title: 'Finance', routing: 'Pam prepares financial reports.' }];
 const email = { to: 'customer@example.org', subject: 'Order status', body: 'Your order is ready.' };
 const focus = { name: 'Erin', job: 'Travel', focus: 'Check hotel bookings', workStyle: 'Check dates first.', others: [] };
-const suggestion = { ctx, handles: 'Books travel', team: [] };
 
 function stub(reply) {
   const calls = [];
@@ -85,18 +84,18 @@ test('focus check uses the runner and unavailable remains unchecked', async () =
   assert.deepEqual(await W.checkFocusArea(focus, deps), { checked: false });
 });
 
-test('work style suggestion uses the runner, keeps preview/Stop and returns empty when unavailable', async () => {
+test('a job change uses the runner, stops on its signal and saves nothing when unavailable', async () => {
   const signal = new AbortController().signal;
-  const onText = () => {};
-  const calls = stub({ ok: true, text: 'The job: Books travel.' });
-  assert.deepEqual(await W.suggestWorkStyle(suggestion, deps, { signal, onText }), { text: 'The job: Books travel.' });
+  const reply = JSON.stringify({ kind: 'ok', instructions: `${instructionsOpening(ctx.business)}\n\n### The job\nBook travel.`, plain: 'The job: Books travel.', handles: null, summary: ['Erin will book travel.'] });
+  const calls = stub({ ok: true, text: reply });
+  const req = { ctx, current: { instructions: 'old', handles: 'Books travel.' }, changes: ['Also hotels'] };
+  assert.equal((await W.reviseWorkStyle(req, deps, signal)).kind, 'ok');
   assertEngine(calls);
   assert.equal(calls[0].opts.signal, signal);
-  assert.equal(calls[0].opts.onScreenText, onText);
   stub({ ok: false, error: 'engine unavailable' });
-  assert.deepEqual(await W.suggestWorkStyle(suggestion, deps), { text: '' });
+  assert.deepEqual(await W.reviseWorkStyle(req, deps), { kind: 'error', reason: 'failed' });
   stub({ ok: false, error: 'cancelled' });
-  assert.deepEqual(await W.suggestWorkStyle(suggestion, deps), { text: '', cancelled: true });
+  assert.deepEqual(await W.reviseWorkStyle(req, deps), { kind: 'error', reason: 'cancelled' });
 });
 
 test('memory tidy uses the runner and restores original notes/index when unavailable', async (t) => {
@@ -128,7 +127,7 @@ test('memory tidy uses the runner and restores original notes/index when unavail
 test('production callers take the engine and model from Michael, not a command-name guess', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'main', 'index.ts'), 'utf8');
   const section = source.slice(source.indexOf("ipcMain.handle('hire:checkDistinct'"), source.indexOf("ipcMain.handle('engine:status'"));
-  for (const fn of ['checkDistinct', 'convertWorkStyle', 'checkFocusArea', 'suggestWorkStyle']) {
+  for (const fn of ['checkDistinct', 'reviseWorkStyle', 'convertWorkStyle', 'checkFocusArea']) {
     assert.match(section, new RegExp(`${fn}\\([^]*?engine: cfg\\.godProvider \\?\\? 'claude',\\s*engineModel: cfg\\.godModel`));
   }
   assert.match(source, /modelEngine: \(\) => \{\s*const cfg = readConfig\(\);\s*return \{ engine: cfg\.godProvider \?\? 'claude', engineModel: cfg\.godModel \};/);
