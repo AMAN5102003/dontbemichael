@@ -633,7 +633,7 @@ export function PulseView() {
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--cth-amber-text)', lineHeight: '17px' }}>{txt.evidence}</div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <PixelButton size="sm" disabled={busy === a.id} onClick={() => { void apply(a); }}>
+                    <PixelButton size="sm" disabled={busy !== null && a.change.kind !== 'editor'} onClick={() => { void apply(a); }}>
                       {a.change.kind === 'editor' ? t('pulse.openSchedules') : t('pulse.apply')}
                     </PixelButton>
                     <PixelButton variant="secondary" size="sm" onClick={() => { void notNow(a); }}>{t('pulse.notNow')}</PixelButton>
