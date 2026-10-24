@@ -290,12 +290,11 @@ and signs you in where you can see it, or takes an Anthropic API key instead.
 
 1. Download the `.dmg` from the [latest release](https://github.com/agentvivekkumar/dontbemichael/releases/latest).
 2. Open it and drag **Don't Be Michael** into your Applications folder.
-3. Open it from Applications. The first time, macOS says it could not verify the app. Click
-   **Done**, then open **System Settings → Privacy & Security**, scroll to the message about Don't
-   Be Michael and click **Open Anyway**.
+3. Open it from Applications. The first time, macOS asks if you're sure you want to open an app
+   downloaded from the internet. Click **Open**.
 
-You only do step 3 once. macOS asks because this early build is not yet signed with an Apple
-Developer ID. Setup takes it from there.
+You only do step 3 once. The app is signed with an Apple Developer ID and notarized by Apple.
+Setup takes it from there.
 
 **On Windows 11**
 

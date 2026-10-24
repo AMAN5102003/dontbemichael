@@ -1845,10 +1845,16 @@ fact per line so the shell commands caveat is not buried).
 
 ### 9.10 Install dialog drawings
 
-Drawn, not screenshotted: the macOS "Not Opened" sheet and the Windows SmartScreen sheet
-("Windows protected your PC", one `ink-3` line, "More info" ringed in `indigo`, then "Run
-anyway" highlighted like Done) as `card` with `shadow-lg` and `r-lg`, beside a `card-2`
-"This is normal" panel. Under 640 px the drawing stacks under the panel.
+Drawn, not screenshotted: the macOS sheet for an app downloaded from the Internet and the
+Windows SmartScreen sheet, as `card` with `shadow-lg` and `r-lg`, each beside a `card-2` panel.
+The Mac app is signed and notarized from v0.2.6 (owner, 2026-10-23), so the Mac drawing uses
+the sheet's own words, “Don't Be Michael” is an app downloaded from the Internet. Are you sure
+you want to open it?, with curly quotes and a capital I, then Cancel and Open with Open
+highlighted, beside a "Checked by Apple" panel; the Mac install has
+two steps (drag it into Applications; open it, then click Open). The Windows drawing is
+"Windows protected your PC", one `ink-3` line, "More info" ringed in `indigo`, then "Run anyway"
+highlighted, beside a "This is normal" panel, until the installer is signed. Under 640 px the
+drawing stacks under the panel.
 
 ### 9.11 Sending switch (web)
 
@@ -2326,6 +2332,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-20 | Web: Setup foundations inset (§9.18), a second Setup inset after Then Michael gets ready: Then the team learns your business, with a read only foundation card (§7.27a) for Oscar's Financial year question, its buttons drawn, nothing clickable. |
 | 2026-10-20 | Web: privacy wording that holds on Windows: Pete does the team's web research and the rest of the team is told to ask Pete; the app turns off the web tools for everyone else, gives Pete questions only, and the trust layer checks what passes through it both ways; /security's first section is Who is given what; data kept on the computer (§9.15, §9.16). |
 | 2026-10-19 | Web: Pulse (web), a read only picture of Pulse after the file tabs with three notes (§9.17); the Ask Michael tile names picking Michael's choices with a click (§9.5); the board's Waiting note names Michael asking whether to keep waiting (§9.13); /security names the memory wall and Pulse's lists, and who is told when a message is held (§9.16); the file tabs picture shows the Pulse tab (§9.14). |
+| 2026-10-23 | Web: install dialog drawings for the signed Mac build (§9.10): the downloaded from the Internet sheet in its own words with Open highlighted, a Checked by Apple panel, and two Mac install steps; Windows unchanged. |
 
 ---
 

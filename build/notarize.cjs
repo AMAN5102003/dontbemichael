@@ -34,8 +34,9 @@ function signingTeam(appPath) {
  * (`codesign --verify` says "code object is not signed at all"). A copy of that
  * downloaded from GitHub gets macOS's "damaged, move to Trash" dialog, with no
  * way to open it. Sealing it ad hoc turns that into the ordinary "could not
- * verify the developer" dialog, which Privacy & Security > Open Anyway clears
- * (RELEASE.md walks owners through it).
+ * verify the developer" dialog, which Privacy & Security > Open Anyway clears.
+ * Only local and dry builds take this path: a tagged release must carry a real
+ * Developer ID signature (requireDeveloperId below).
  *
  * Runs only when the bundle does not already verify, so a real Developer ID
  * signature is never touched. electron-builder 25 has no ad-hoc identity of its
@@ -56,10 +57,23 @@ function sealAdHocIfUnsigned(appPath) {
   execFileSync('codesign', ['--verify', '--deep', '--strict', appPath], { stdio: 'inherit' });
 }
 
+/**
+ * A tagged release must be Developer ID signed (owner, 2026-10-23): RELEASE.md and
+ * dontbemichael.com tell Mac owners to click Open, which an ad hoc build never
+ * offers. release.yml sets REQUIRE_DEVELOPER_ID on tags only, so a missing
+ * APPLE_CERTIFICATE_P12 secret stops the release instead of shipping it ad hoc.
+ */
+function requireDeveloperId() {
+  if (process.env.REQUIRE_DEVELOPER_ID && !(process.env.CSC_LINK || process.env.CSC_KEYCHAIN)) {
+    throw new Error('[sign] a tagged release must be signed with the Developer ID certificate, but none was imported. Check the APPLE_CERTIFICATE_P12 secret.');
+  }
+}
+
 exports.default = async function notarizing(context) {
   const { electronPlatformName, appOutDir } = context;
   if (electronPlatformName !== 'darwin') return; // mac only
 
+  requireDeveloperId();
   sealAdHocIfUnsigned(path.join(appOutDir, `${context.packager.appInfo.productFilename}.app`));
 
   // CI with a cert is a real release: it must be signed by the owner's team.

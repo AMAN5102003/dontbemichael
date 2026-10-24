@@ -763,17 +763,6 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 
 ## Release
 
-### Sign and notarize the Mac build with an Apple Developer ID
-
-**What:** Add the Developer ID Application cert and notarization credentials as repo secrets (`APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). `release.yml` and `build/notarize.cjs` already use them when present.
-
-**Why:** 0.0.1 ships ad-hoc signed. Owners must clear a "could not verify" dialog through Privacy & Security on first open, and Squirrel.Mac cannot update an ad-hoc app in place, so every update falls back to "download the new version" instead of restart to install. macOS also forgets folder grants between versions without a stable signature.
-
-**Context:** Needs an Apple Developer Program membership (paid, per organization). Once the secrets exist, the ad-hoc fallback in `release.yml` switches off by itself; update RELEASE.md's install steps then.
-
-**Effort:** S (after the Apple account exists)
-**Priority:** P1
-**Depends on:** Apple Developer Program membership
 
 ## Repo
 
@@ -802,6 +791,19 @@ A live end-to-end run is required before adding an engine: Gemini has never been
 **Depends on:** None
 
 ## Completed
+
+### Sign and notarize the Mac build with an Apple Developer ID
+
+**What:** Add the Developer ID Application cert and notarization credentials as repo secrets (`APPLE_CERTIFICATE_P12`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`). `release.yml` and `build/notarize.cjs` already use them when present.
+
+**Why:** 0.0.1 ships ad-hoc signed. Owners must clear a "could not verify" dialog through Privacy & Security on first open, and Squirrel.Mac cannot update an ad-hoc app in place, so every update falls back to "download the new version" instead of restart to install. macOS also forgets folder grants between versions without a stable signature.
+
+**Context:** Needs an Apple Developer Program membership (paid, per organization). Once the secrets exist, the ad-hoc fallback in `release.yml` switches off by itself; update RELEASE.md's install steps then.
+
+**Effort:** S (after the Apple account exists)
+**Priority:** P1
+**Depends on:** Apple Developer Program membership
+**Completed:** v0.2.6 (2026-10-23) is the first Mac release signed with Developer ID team B5EHD4JBD2, notarized and stapled (`spctl`: `source=Notarized Developer ID`). RELEASE.md, README.md and dontbemichael.com now give the signed steps, and a tagged release without the certificate fails instead of shipping ad hoc (`REQUIRE_DEVELOPER_ID`, `test/release-mac-only.test.cjs`).
 
 ### A write to a connected app is never sent twice (issue #54)
 

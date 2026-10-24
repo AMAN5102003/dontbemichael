@@ -75,7 +75,7 @@ jobs:
           P12: ${{ secrets.APPLE_CERTIFICATE_P12 }}
           P12_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
-          if [ -z "$P12" ]; then echo "No Developer ID certificate: the app is sealed ad hoc."; exit 0; fi
+          if [ -z "$P12" ]; then echo "No Developer ID certificate: a dry build is sealed ad hoc; a tagged release stops in build/notarize.cjs."; exit 0; fi
           KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -hex 24)"
           echo "$P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
@@ -94,9 +94,10 @@ jobs:
         # GH_TOKEN lets electron-builder skip its own publish; we upload via the
         # release step below for full control over the asset set.
         #
-        # Without a Developer ID cert (APPLE_CERTIFICATE_P12 unset) the Mac app is
-        # sealed ad hoc by build/notarize.cjs, so a downloaded copy can still be
-        # opened through Privacy & Security > Open Anyway (RELEASE.md says how).
+        # Without a Developer ID cert (APPLE_CERTIFICATE_P12 unset) a dry build's
+        # Mac app is sealed ad hoc by build/notarize.cjs. A tag sets
+        # REQUIRE_DEVELOPER_ID, so a release without the cert fails instead: every
+        # release since v0.2.6 is signed and notarized, and RELEASE.md says so.
         #
         # The certificate comes from CSC_KEYCHAIN (the step above), never CSC_LINK:
         # electron-builder would read an empty CSC_LINK as a path to the repo
@@ -111,8 +112,9 @@ jobs:
           # ID certificate itself is imported by the step above:
           #   APPLE_CERTIFICATE_P12       = base64 of the "Developer ID Application" .p12
           #   APPLE_CERTIFICATE_PASSWORD  = that .p12's export password
-          # All optional: with the secrets unset the Mac build is sealed ad hoc
-          # instead (build/notarize.cjs).
+          # Required on a tag (REQUIRE_DEVELOPER_ID); a dry build without them is
+          # sealed ad hoc instead (build/notarize.cjs).
+          REQUIRE_DEVELOPER_ID: ${{ matrix.os == 'macos-latest' && github.ref_type == 'tag' && '1' || '' }}
           APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
           APPLE_TEAM_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_TEAM_ID || '' }}

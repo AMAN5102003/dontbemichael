@@ -30,10 +30,9 @@ Linux will follow.
 ## Installing on your Mac
 
 1. Open the downloaded `.dmg` and drag **Don't Be Michael** into your Applications folder.
-2. Open it from Applications. The first time, macOS says it could not verify the app. Click **Done**.
-3. Open **System Settings**, then **Privacy & Security**. Scroll down to the message about Don't Be Michael and click **Open Anyway**, then confirm.
+2. Open it from Applications. The first time, macOS asks if you're sure you want to open an app downloaded from the internet. Click **Open**.
 
-You only do this once. macOS asks because this early build is not yet signed with an Apple Developer ID. A signed build is on the way.
+You only do this once. The app is signed with an Apple Developer ID and notarized by Apple.
 
 You also need [Claude Code](https://docs.claude.com/en/docs/claude-code) installed and signed in.
 
