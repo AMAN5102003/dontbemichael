@@ -30,12 +30,8 @@ export function isPeerAssignment(
   const sender = agents[msg.from];
   if (!sender || sender.isGod || msg.from === godId) return false;
   if (msg.to === 'broadcast') return true;
-  // Ids match whatever their case: on a Mac or Windows disk "Pam" is pam's
-  // inbox, so a capital letter must not get a job past Michael.
-  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
-  if (same(resolvedTo, godId) || same(resolvedTo, msg.from)) return false;
-  const id = Object.keys(agents).find((k) => same(k, resolvedTo));
-  const target = id ? agents[id] : undefined;
+  if (resolvedTo === godId || resolvedTo === msg.from) return false;
+  const target = agents[resolvedTo];
   return !!target && !target.isGod;
 }
 

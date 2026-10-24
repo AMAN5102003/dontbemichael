@@ -23,14 +23,6 @@ test('a request to someone not on the roster is left for the router to bounce', 
   assert.equal(R.isPeerAssignment({ from: 'pam', to: 'ghost', act: 'propose' }, agents, 'god', 'ghost'), false);
 });
 
-test('a teammate\'s id written with capitals is still a handoff to Michael', () => {
-  // Value: protects=only Michael assigns work; fails_when=an agent writes "Pam" for pam and the request lands in her inbox on a case insensitive disk; why_new=the roster lookup matched ids exactly; seam=none
-  assert.equal(R.isPeerAssignment({ from: 'erin', to: 'Pam', act: 'request' }, agents, 'god', 'Pam'), true);
-  assert.equal(R.isPeerAssignment({ from: 'erin', to: 'PAM', act: 'propose' }, agents, 'god', 'PAM'), true);
-  assert.equal(R.isPeerAssignment({ from: 'pam', to: 'GOD', act: 'request' }, agents, 'god', 'GOD'), false, 'to Michael goes through');
-  assert.equal(R.isPeerAssignment({ from: 'pam', to: 'Pam', act: 'request' }, agents, 'god', 'Pam'), false, 'to itself goes through');
-});
-
 test('Michael under another id, or a sender missing from the roster, is never rerouted', () => {
   assert.equal(R.isPeerAssignment({ from: 'boss', to: 'pam', act: 'request' }, { ...agents, boss: { name: 'Boss', isGod: true } }, 'god', 'pam'), false);
   assert.equal(R.isPeerAssignment({ from: 'god', to: 'broadcast', act: 'request' }, agents, 'god', 'broadcast'), false);

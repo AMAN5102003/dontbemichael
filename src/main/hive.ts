@@ -3406,7 +3406,11 @@ export class HiveManager {
     const godName = resolveGodName(reg.agents[godId]?.name).toLowerCase();
     const resolveTo = (to: string): string => {
       const t = to.toLowerCase();
-      return t === 'human' || t === 'god' || t === 'michael' || t === godName ? godId : to;
+      if (t === 'human' || t === 'god' || t === 'michael' || t === godName) return godId;
+      // An id written with other capitals is still that teammate ("Pam" is pam,
+      // and on a Mac or Windows disk her inbox too), so every check below reads
+      // the roster's own id.
+      return reg.agents[to] ? to : Object.keys(reg.agents).find((id) => id.toLowerCase() === t) ?? to;
     };
     // Only Michael assigns work (owner, 2026-09-27, src/shared/handoffRule.ts):
     // a teammate handing another teammate a job goes to Michael instead.
