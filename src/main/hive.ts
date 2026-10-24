@@ -54,6 +54,7 @@ import { ORGANIZED_ARCHIVE_DIR, ORGANIZED_FILE, organizedText, parseOrganized, t
 import { isAnyFixedUpkeep, isFixedUpkeep, type UpkeepKind } from '../shared/upkeep';
 import { heldWaits, heldWhy, tidy, HELD_FILE, HELD_KEEP_MS, HELD_OPENING_MAX, HELD_SUBJECT_MAX, type HeldRow, type HeldTold, type HeldWhy } from '../shared/heldRecord';
 import type { AgentUsageSample } from './usage';
+import type { CostLedgerRow } from './costLedger';
 import { COMMAND_GROUPS } from '../shared/claudeCommands';
 import {
   isClaudeProvider,
@@ -5980,12 +5981,14 @@ export class HiveManager {
   logObserver?: (event: Record<string, unknown> & { ts: number }) => void;
   /** Called with the board each 8 s tick reads (Pulse telemetry's card diff). */
   tasksObserver?: (tasks: CardLike[]) => void;
+  /** Takes each cost row once harness.db holds this office's ledger (D17);
+   *  false while the old file still does, and the row goes to the file. */
+  costLedgerSink?: (row: CostLedgerRow) => boolean;
 
   /**
-   * Append one cost sample to the durable, append-only ledger at
-   * `<root>/cost-ledger.jsonl` (Lane A #6.6d). This is the SOLE durable cost
-   * store; its row is exactly the shape Kevin (#4) reserves for the cost_ledger
-   * SQLite table, so migration is a mechanical INSERT…SELECT.
+   * Append one cost sample to the durable, append-only ledger (Lane A #6.6d):
+   * harness.db's cost_ledger table once the old `<root>/cost-ledger.jsonl` is
+   * copied in (costLedgerSink, D17), the file until then. Same row either way.
    *
    * 🔒 PII: persist ONLY the allowlisted AgentUsageSample — NEVER a raw OTel
    * record (those carry user.email / account / org / hashed-user-id). The sample
@@ -6014,6 +6017,7 @@ export class HiveManager {
       model: sample.model,
       usd: sample.usd
     };
+    try { if (this.costLedgerSink?.(row)) return; } catch { return; }
     try { appendFileSync(join(root, 'cost-ledger.jsonl'), JSON.stringify(row) + '\n', 'utf8'); } catch { /* noop */ }
   }
 

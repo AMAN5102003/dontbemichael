@@ -8,7 +8,7 @@
  *                                   reopened cards, trust layer decisions,
  *                                   frames from a sender the app could not confirm
  *   members' sessions (transcripts) ─► working time per request, steps a setting stopped
- *   cost ledger (hive/cost-ledger.jsonl) ─► value per member and day
+ *   cost ledger (harness.db, D17) ─► value per member and day
  *
  * The processor folds them like any point, except that a past point never
  * touches today's open runs or presence, and never starts recommendations
@@ -22,6 +22,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import type Database from 'better-sqlite3';
 import { CostFold } from '../shared/costFold';
+import { ledgerImported, ledgerRows } from './costLedger';
 import { dayKey } from '../shared/teamPerformance';
 import type { RefusalGate } from '../shared/pulseSafety';
 import type { TelemetryEvent } from './telemetryStore';
@@ -221,9 +222,11 @@ export async function runBackfill(d: BackfillDeps): Promise<number> {
     for (const x of r.refused) points.push({ agentId: agent, kind: 'refused', ts: x.ts, attrs: { gate: x.gate, ...BF } });
   }
 
-  // The cost ledger: value per member and day.
+  // The cost ledger: value per member and day. harness.db's once the old file
+  // is copied in (D17): agents can write the file.
   const ledger = new LedgerFold(since, until);
-  for await (const r of jsonLines(join(d.hiveRoot, 'cost-ledger.jsonl'))) ledger.add(r);
+  const rows = ledgerImported(db, office) ? ledgerRows(db, office) : jsonLines(join(d.hiveRoot, 'cost-ledger.jsonl'));
+  for await (const r of rows) ledger.add(r);
   for (const [key, usd] of ledger.days()) {
     const [agent, day] = key.split('\t');
     // One point per member and day, under a key of its own, so the fold counts it whole.
