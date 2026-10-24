@@ -801,7 +801,8 @@ function pulseTick(office: string): number {
 }
 /** Pulse's backfill (proposal 3): once per office, the weeks before Pulse began,
  *  read in the background from the office log, members' sessions and the cost
- *  ledger. The view refreshes when it lands. */
+ *  ledger. The view refreshes when it lands, with one tick's batch folded;
+ *  the 30 s tick folds the rest a batch at a time (TICK_BATCH). */
 let pulseBackfilling: string | null = null;
 function pulseBackfillOnce(office: string): void {
   const db = persist.database();
