@@ -1,5 +1,19 @@
 # TODOS
 
+## Release notes accuracy (from the eng review of the site's 0.2.5 and 0.2.6 plan, 2026-10-24)
+
+### The 0.2.5 changelog says engine records are closed to every member's shell
+
+**What:** Reword CHANGELOG.md's 0.2.5 line "closed to every member's tools and shell, Michael included" to what the app does on every platform.
+
+**Why:** On Windows Claude Code has no sandbox, so shell commands are not limited; only Claude's own file tools are walled there (src/shared/folderAccess.ts:16-20). As written, the line is a privacy claim that is false on Windows, in public release history.
+
+**Context:** Commit 8f6b9038 (#387) walls the engine records: folderAccess.ts:97-101 adds them to the sandbox deny lists and to the Read and Edit deny rules for every agent, Michael included, and test/folder-access.test.cjs covers it. The site's wording is the model: "The app keeps each team member's conversation records out of every other member's file tools, Michael's included." The published v0.2.5 GitHub release body carries the same words and needs a hand edit too; release bodies are built from RELEASE.md on the tag run, so edit the published body directly rather than re-running the tag workflow.
+
+**Effort:** S
+**Priority:** P2
+**Depends on:** None
+
 ## Connections
 
 ### One call at a time per connected app, and a throttle notice

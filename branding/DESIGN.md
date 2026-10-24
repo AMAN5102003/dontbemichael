@@ -1809,15 +1809,25 @@ Same as the app (§6, §7.13): `card`, `line`, `r-xl`, `shadow-md`.
 
 The home page's "Everything else" list is six tiles: three across at 980 px and up, two
 across from 481 to 979 px, one column at 480 px and under (owner, 2026-10-09). A tile is an
-`ink` 20 px icon on a 36 px `neutral-soft` square, a `w-h3` title and one or two lines in
-`ink-2`. The Ask Michael tile adds decorative status pills (§7.13 colors: Sent idle, Michael
+`ink` 20 px icon on a 36 px `neutral-soft` square, a `w-h3` title and a short paragraph in
+`ink-2`, two to six lines depending on the width (measured on the live site, 2026-10-24). The Ask Michael tile adds decorative status pills (§7.13 colors: Sent idle, Michael
 has it working, Waiting on someone `amber-soft` with `amber-text`, Answered done), hidden
 from screen readers; its text carries the meaning. Its last line also says that when Michael
 offers choices you pick one and press Reply, and his pick is tagged (§7.8; owner, 2026-10-19).
+Limits in writing also says a job is changed by saying what should change, with the app's own
+example form ("ask me before any refund over $200"), and that you see the difference before you
+Apply (Edit agent, since 0.2.6). Work on a schedule also says a team member with no jobs yet is
+offered starter jobs from its pack, added paused until you turn them on (since 0.2.5; owner,
+2026-10-24).
 
 ### 9.6 Footer
 
-`chrome` ground, lockup, link columns (`w-small`), Discord, GitHub, FAQ, legal line.
+`chrome` ground, lockup, link columns (`w-small`), Discord, GitHub, FAQ, legal line. The legal
+line names the program the app is part of, as the office floor does since 0.2.6 (`PROGRAM_MARK`
+and `PROGRAM_URL` in src/shared/appName.ts): "MIT
+licensed, pre 1.0, part of GAACC AI Labs. Mac and Windows 11 now, Linux to follow.", with "GAACC AI
+Labs" linked to `PROGRAM_URL` (austinasianchamber.org), the same on every page (owner,
+2026-10-24).
 
 ### 9.7 Social card
 
@@ -1959,7 +1969,10 @@ team may send to Pete" with "4 allowed, 8 private" and the twelve kinds in the a
 order, each with a segmented Allowed | Private, Passwords and keys "Always private". Under the
 columns, three plain notes: Keeps your business data in; Built to stop agents going rogue (what
 happens to answers that come back through the trust layer, never "a web page can't give your team
-orders"); the setup inset's Pete row says the app gives Pete questions only, never the owner's files,
+orders"; then, since 0.2.5, what happens to email a team member reads: it is labelled as the
+sender's words, information and never instructions, lines written to steer an AI are pointed out
+so the member skips them, and Michael is told. Mail is not the trust layer, so its sentence never
+says "removed"; owner, 2026-10-24); the setup inset's Pete row says the app gives Pete questions only, never the owner's files,
 and its summary is shown in full (the others clamp to two lines on phones) so that clause stays visible whatever
 font the phone falls back to; Off until you turn
 them on. No card gets a coloured edge stripe. Pete's avatar is the globe
@@ -1984,7 +1997,10 @@ for every team member but Pete; one table: your team and Michael "Told to ask Pe
 team's researcher" and "Questions only, never your files", against web pages and search, your
 files and mailboxes, and connectors; and
 one line: each team member keeps its own notes and inbox, and teammates, Michael included, are
-told to ask it instead of opening them), The trust
+told to ask it instead of opening them; and, since 0.2.5, one line on mail: email a team member
+reads from a mailbox the owner adds is labelled as written by its sender, information and never
+instructions, lines written to steer an AI are pointed out so the member skips them and carries
+on, and Michael is told once for each such email; owner, 2026-10-24), The trust
 layer (out: as written, cleaned or not sent; in: instructions removed, the answer labelled, an
 answer that tries to steer flagged to Michael; nothing goes through when the check can't run, the teammate who asked is told and so is Michael, and Pulse lists each message held because the check couldn't run (when, who it was between,
 what it was about, why, and who was told); every message the app passes to Pete, from a teammate,
@@ -1998,7 +2014,10 @@ stays private (the twelve kinds with their defaults), Links in the app (every li
 names the site it opens, and shows the real one when the words name a different site, §7.8;
 owner, 2026-10-15), What goes to Claude (what an agent reads for a job goes to Claude through the owner's plan or
 key; Pete runs only on Claude; at 0.2.3 Claude is the only engine the app offers), and Where your
-data lives (kept on the computer, passwords encrypted under a key the system keeps). Every sentence holds on Mac and Windows and for every
+data lives (kept on the computer, passwords encrypted under a key the system keeps; and, since 0.2.5,
+the app keeps each team member's conversation records out of every other member's file tools,
+Michael's included: file tools, which the app holds on Mac and Windows, never shell, which Windows
+does not hold; owner, 2026-10-24). Every sentence holds on Mac and Windows and for every
 engine, and the page states no limit notes: a privacy sentence says what the app gives, tells or
 passes through the app and its trust layer, never that something can't happen where the app can't
 enforce it (Windows has no sandbox, so a member's shell is not held there; owner, 2026-10-20). Send
@@ -2010,7 +2029,9 @@ closer to their text than to the section above; the page never scrolls sideways 
 A home page section right after the file tabs (§9.14) and before the "Everything else" tiles
 (owner, 2026-10-19, site design review): eyebrow "Pulse", heading "See what the office got
 done, and what it cost.", lead "A Pulse tab beside Tasks shows the week: what each team member
-did, what it cost, and ways to save that wait for your Apply. Here it is on Friday afternoon."
+did, what it cost, and ways to save that wait for your Apply. See the emails lists every email the
+team archived, marked read or moved to junk, and who moved it. Here it is on Friday afternoon."
+(the See the emails sentence since 0.2.5, §7.27; owner, 2026-10-24; the three notes stay three)
 A read only picture of Pulse (§7.27) in the story's cast for This week, Compare off: the
 header ("Pulse" 18/24 600, the period select reading This week, the Compare switch off,
 "Collecting since" in `t-meta` `ink-3`); one recommendation card in the app's own words (Run Kelly's "check the support inbox" less
@@ -2064,12 +2085,17 @@ Under the setup inset (§9.12), a second quiet inset with the same fill, inset l
 padding, for what comes after setup (Company foundations, §7.27a): Michael's avatar, "Then the
 team learns your business" (600, 14/20), two inline items with 16 px icons ("One question to you,
 only when work needs the answer" and "Learns the rest from your answers and the team's work") and an
-`ink-3` line under them. Beside the text, a read only picture of one foundation card (§7.27a) in
+`ink-3` line under them: "Company foundations keeps what each job needs to know about your business.
+Answer on the card, add a file such as your brand voice guide, or have the team member draft it. A
+file is checked against the question first, and one that doesn't fit is turned away with the
+reason." (the file sentences since 0.2.6; owner, 2026-10-24). Beside the text, a read only picture of one foundation card (§7.27a) in
 the story's cast, at the story's app scale: the question "Financial year" as its title; Oscar's
 Finance raiser chip and "needs this, 2h ago" in `ink-3`; Michael's one bold evidence line, example
 copy in the app's form ("Oscar set this quarter's sales tax reminder without knowing when your
-financial year starts."); the visible "Your answer" label, an empty box and the hint under it ("A
-few plain sentences, under 300 characters. For more, name the file that holds it."); Save answer
+financial year starts."); the visible "Your answer" label, an empty box and, under it on one row as
+the app draws it (FoundationCard, 0.2.6), the hint ("A few plain sentences, under 300 characters,
+or add a file.") and "Add a file" as a quiet `indigo-text` link at the row's end, drawn, not a
+button; Save answer
 (primary), Have Oscar draft it (secondary) and Not now as a quiet text link at the line's end; and
 the footer above a `line` rule, "Finance uses this" and "Asked weekly until answered". Oscar is in
 every pack, so the card holds whatever business the visitor picks. The card is one picture with
@@ -2333,6 +2359,7 @@ Needs you rework on `design/studio-v2`, through 2026-10-01). Each row is **Fix**
 | 2026-10-20 | Web: privacy wording that holds on Windows: Pete does the team's web research and the rest of the team is told to ask Pete; the app turns off the web tools for everyone else, gives Pete questions only, and the trust layer checks what passes through it both ways; /security's first section is Who is given what; data kept on the computer (§9.15, §9.16). |
 | 2026-10-19 | Web: Pulse (web), a read only picture of Pulse after the file tabs with three notes (§9.17); the Ask Michael tile names picking Michael's choices with a click (§9.5); the board's Waiting note names Michael asking whether to keep waiting (§9.13); /security names the memory wall and Pulse's lists, and who is told when a message is held (§9.16); the file tabs picture shows the Pulse tab (§9.14). |
 | 2026-10-23 | Web: install dialog drawings for the signed Mac build (§9.10): the downloaded from the Internet sheet in its own words with Open highlighted, a Checked by Apple panel, and two Mac install steps; Windows unchanged. |
+| 2026-10-24 | Web: the site catches up with 0.2.5 and 0.2.6. Tiles (§9.5): their real length, Limits in writing names changing a job by saying what should change, Work on a schedule names paused starter jobs. Footer (§9.6): the legal line names GAACC AI Labs, linked. Privacy note (§9.15) and /security Who is given what (§9.16): email a member reads is labelled as the sender's words, steering lines pointed out, Michael told, never "removed". /security Where your data lives (§9.16): conversation records kept out of other members' file tools, Michael's included. Pulse lead (§9.17): See the emails. Setup foundations inset (§9.18): the 0.2.6 card hint and its Add a file link, and the inset line names adding a file. |
 
 ---
 
