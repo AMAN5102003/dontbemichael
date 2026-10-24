@@ -5,10 +5,12 @@ Signing binds the app's TCC grants (Documents/Desktop/Downloads access) to a
 instead of on every agent action. Notarization clears Gatekeeper so the app
 opens without the "unidentified developer" warning.
 
-The build is wired so this is **entirely optional**: with no credentials present,
-`npm run dist:mac` and the release CI both produce a working *unsigned* build
-(`build/notarize.cjs` no-ops, electron-builder falls back to no identity). You
-only need the steps below to ship a *signed* release.
+Local and dry builds need none of this: with no credentials present,
+`npm run dist:mac` and a manual (`workflow_dispatch`) run of the release
+workflow produce a working build sealed ad hoc (`build/notarize.cjs`). A tagged
+release is different: since v0.2.6 every release is signed and notarized, and
+RELEASE.md tells Mac owners to click Open, so a tag pushed without the
+Developer ID certificate fails (`REQUIRE_DEVELOPER_ID`) instead of shipping ad hoc.
 
 ## One-time Apple setup
 
@@ -40,7 +42,7 @@ Source them from a local `.env.signing` if you like.
 
 `.github/workflows/release.yml` reads the secrets below and passes them to
 electron-builder on the macOS runner. Add them under **Settings → Secrets and
-variables → Actions** (all optional; omit them to keep releases unsigned):
+variables → Actions** (required for a tagged release):
 
 | GitHub secret                  | Value                                              |
 | ------------------------------ | -------------------------------------------------- |
